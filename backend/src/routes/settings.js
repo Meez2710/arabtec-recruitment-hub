@@ -8,7 +8,9 @@ import { writeAudit } from '../lib/audit.js';
 const router = Router();
 
 // ---------------- Branding ----------------
-router.get('/branding', requireAuth, (req, res) => res.json({ branding: Branding.all() }));
+// Public: the login screen themes itself (colors, company name, logo) before
+// auth. Returns only presentational branding tokens — nothing sensitive.
+router.get('/branding', (req, res) => res.json({ branding: Branding.all() }));
 
 router.put('/branding', requireAuth, requirePermission('branding.manage'), (req, res) => {
   const updates = req.body?.branding || {};
