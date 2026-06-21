@@ -1,0 +1,682 @@
+// Arabtec Recruitment Hub — Phase 1 schema
+// Provider is SQLite for zero-setup local persistence.
+// To migrate to PostgreSQL: change provider to "postgresql" and update DATABASE_URL.
+// The model definitions are kept Postgres-compatible (no SQLite-only features used).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Organization
+// ----------------------------------------------------------------------------
+model BusinessUnit {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projects    Project[]
+  departments Department[]
+}
+
+model Project {
+  id             Int       @id @default(autoincrement())
+  code           String    @unique
+  name           String
+  clientName     String?
+  location       String?
+  status         String    @default("active") // planned | active | on_hold | closed
+  startDate      DateTime?
+  endDate        DateTime?
+  projectManagerId Int?
+  businessUnitId Int?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id])
+  projectManager User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  sites          Site[]
+  userScopes     UserScope[]
+}
+
+model Site {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  location     String?
+  status       String   @default("active") // active | inactive
+  siteManagerId Int?
+  projectId    Int
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project      Project  @relation(fields: [projectId], references: [id])
+  siteManager  User?    @relation("SiteManager", fields: [siteManagerId], references: [id])
+  userScopes   UserScope[]
+}
+
+model Department {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
+  name           String
+  status         String   @default("active") // active | inactive
+  headUserId     Int?
+  businessUnitId Int?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id])
+  head           User?         @relation("DepartmentHead", fields: [headUserId], references: [id])
+  users          User[]        @relation("UserDepartment")
+}
+
+// ----------------------------------------------------------------------------
+// Users, Roles, Permissions, Scope
+// ----------------------------------------------------------------------------
+model User {
+  id           Int       @id @default(autoincrement())
+  employeeNo   String?   @unique
+  fullName     String
+  email        String    @unique
+  phone        String?
+  jobTitle     String?
+  passwordHash String
+  status       String    @default("active") // active | inactive | invited
+  mfaEnabled   Boolean   @default(false)
+  departmentId Int?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  department   Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+  roles        UserRole[]
+  scopes       UserScope[]
+  sessions     Session[]
+  auditLogs    AuditLog[]
+
+  managedProjects    Project[]    @relation("ProjectManager")
+  managedSites       Site[]       @relation("SiteManager")
+  headedDepartments  Department[] @relation("DepartmentHead")
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique // e.g. request.approve
+  resource    String
+  action      String
+  description String?
+
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId Int
+  roleId Int
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model UserScope {
+  id        Int    @id @default(autoincrement())
+  userId    Int
+  scopeType String // global | project | site | department
+  projectId Int?
+  siteId    Int?
+  refId     Int?   // generic ref for department/business_unit
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project? @relation(fields: [projectId], references: [id])
+  site      Site?    @relation(fields: [siteId], references: [id])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    Int
+  token     String   @unique
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------------------------------
+// Platform configuration (branding, buttons, workflow, system settings)
+// ----------------------------------------------------------------------------
+model BrandingSetting {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+  updatedAt DateTime @updatedAt
+}
+
+model ButtonConfig {
+  id               Int      @id @default(autoincrement())
+  buttonKey        String   @unique
+  label            String
+  screen           String   @default("global")
+  visible          Boolean  @default(true)
+  enabled          Boolean  @default(true)
+  requiredPermission String?
+  allowedRoles     String?  // JSON array of role codes; null = all roles with permission
+  confirmRequired  Boolean  @default(false)
+  reasonRequired   Boolean  @default(false)
+  auditRequired    Boolean  @default(true)
+  variant          String   @default("primary")
+  updatedAt        DateTime @updatedAt
+}
+
+model WorkflowSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  name      String
+  value     String   // JSON
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+model SystemSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ----------------------------------------------------------------------------
+// Audit log (append-only by convention; never updated/deleted by the app)
+// ----------------------------------------------------------------------------
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?
+  actorName  String?
+  actorRole  String?
+  action     String   // e.g. user.created
+  entityType String
+  entityId   String?
+  oldValue   String?  // JSON
+  newValue   String?  // JSON
+  comments   String?
+  ip         String?
+  userAgent  String?
+  occurredAt DateTime @default(now())
+
+  actor      User?    @relation(fields: [actorId], references: [id])
+}
+
+// ============================================================================
+// Phase 2 — Recruitment Requests (kept in parity with src/lib/schema.js and
+// docs/SCHEMA.sql). Relations are intentionally light here since the runtime
+// uses node:sqlite; this file is the canonical documentation/Postgres model.
+// ============================================================================
+model RecruitmentRequest {
+  id               Int       @id @default(autoincrement())
+  ticketNo         String    @unique
+  title            String
+  businessUnitId   Int?
+  projectId        Int?
+  siteId           Int?
+  departmentId     Int?
+  requesterId      Int?
+  ownerId          Int?
+  employmentType   String    @default("permanent")
+  discipline       String?
+  staffCategory    String    @default("staff")
+  headcount        Int       @default(1)
+  headcountFilled  Int       @default(0)
+  priority         String    @default("medium")
+  grade            String?
+  salaryBandMin    Float?
+  salaryBandMax    Float?
+  currency         String?   @default("EGP")
+  budgetStatus     String    @default("pending")
+  budgetNote       String?
+  justification    String?
+  jobDescription   String?
+  requiredSkills   String?   // JSON
+  targetJoinDate   DateTime?
+  status           String    @default("draft")
+  slaDueAt         DateTime?
+  slaBreached      Boolean   @default(false)
+  closeReason      String?
+  openedAt         DateTime?
+  closedAt         DateTime?
+  postingDate        DateTime? // enhancement: lifecycle dates
+  firstCandidateAt   DateTime?
+  firstShortlistAt   DateTime?
+  firstInterviewAt   DateTime?
+  firstOfferAt       DateTime?
+  keyRequirements    String?   // enhancement
+  hiringManagerNotes String?   // enhancement
+  // Restructure (Arabtec ticket): simplified intake fields.
+  // NOTE: employmentType/discipline/staffCategory/grade/salaryBand*/budget* above are
+  // retained as dormant columns for back-compat but are no longer used by the app.
+  location           String?   // restructure: free-text work location
+  keyResponsibilities String?  // restructure
+  hiringManagerId    Int?      // restructure: assigned hiring manager (users.id)
+  attachmentPath     String?   // restructure: stored JD/attachment file
+  attachmentName     String?   // restructure: original attachment filename
+  version          Int       @default(1)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        Int?
+
+  seats        RequisitionSeat[]
+  approvals    RequestApproval[]
+  activity     RequestActivity[]
+  applications Application[]
+  posts        TicketPost[]
+}
+
+model RequisitionSeat {
+  id                    Int      @id @default(autoincrement())
+  requestId             Int
+  seatNo                Int
+  siteId                Int?
+  status                String   @default("open")
+  filledByApplicationId Int?
+  filledAt              DateTime?
+  cancelReason          String?
+  createdAt             DateTime @default(now())
+
+  request RecruitmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+model RequestApproval {
+  id         Int       @id @default(autoincrement())
+  requestId  Int
+  level      Int
+  name       String
+  roleCode   String?
+  approverId Int?
+  decision   String    @default("pending")
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  request RecruitmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+model RequestActivity {
+  id         Int      @id @default(autoincrement())
+  requestId  Int
+  actorId    Int?
+  actorName  String?
+  type       String
+  fromStatus String?
+  toStatus   String?
+  note       String?
+  occurredAt DateTime @default(now())
+
+  request RecruitmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// Phase 3 — Candidates & Applications
+// CRITICAL: Candidate has NO application status. Status lives on Application.
+// ============================================================================
+model Candidate {
+  id               Int      @id @default(autoincrement())
+  candidateNo      String   @unique
+  fullName         String
+  email            String?
+  phone            String?
+  nationality      String?
+  location         String?
+  linkedinUrl      String?
+  currentCompany   String?
+  currentPosition  String?
+  yearsExperience  Float?
+  expectedSalary   Float?
+  noticePeriod     String?
+  source           String?
+  employer         String?   // enhancement
+  currentProject   String?   // enhancement
+  graduationYear   Int?      // enhancement
+  university       String?   // enhancement
+  major            String?   // enhancement
+  resumePath       String?   // restructure: stored résumé file
+  resumeName       String?   // restructure: original résumé filename
+  tags             String?  // JSON
+  ownerRecruiterId Int?
+  candidateState   String   @default("active") // NOT an application status
+  dedupEmail       String?
+  dedupPhone       String?
+  dedupLinkedin    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        Int?
+
+  documents    CandidateDocument[]
+  applications Application[]
+  notes        CandidateNote[]
+  activity     CandidateActivity[]
+}
+
+model CandidateDocument {
+  id          Int      @id @default(autoincrement())
+  candidateId Int
+  docType     String   @default("cv")
+  fileName    String
+  fileHash    String?
+  fileSize    Int?
+  storedPath  String?   // restructure: on-disk stored filename
+  note        String?
+  uploadedBy  Int?
+  uploadedAt  DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+}
+
+model Application {
+  id              Int      @id @default(autoincrement())
+  applicationNo   String   @unique
+  candidateId     Int
+  requestId       Int
+  positionApplied String?
+  status          String   @default("applied") // application status (NOT on candidate)
+  matchScore      Int?
+  recruiterId     Int?
+  source          String?
+  stageDate       DateTime?
+  lastActivityAt  DateTime?
+  nextAction       String?   // enhancement
+  nextActionDate   DateTime? // enhancement
+  interviewOutcome String?   // enhancement
+  rejectionReason String?
+  onHoldReason    String?
+  withdrawnReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       Int?
+
+  candidate Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  request   RecruitmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  history   ApplicationStageHistory[]
+  assessments   ApplicationAssessment[]
+  finalDecision ApplicationFinalDecision?
+
+  @@unique([candidateId, requestId]) // one application per candidate per request
+}
+
+// ============================================================================
+// Restructure — Interview assessment (Arabtec form): one HR + one technical
+// evaluation per application, plus a shared final decision.
+// ============================================================================
+model ApplicationAssessment {
+  id                      Int      @id @default(autoincrement())
+  applicationId           Int
+  evaluatorType           String   // hr | technical
+  evaluatorId             Int?
+  evaluatorName           String?
+  behavioral              String?  // JSON: Big-Five {score,notes} per criterion
+  technical               String?  // JSON: technical competency {score,notes} per criterion
+  criticalFlags           String?  // JSON: {blaming, no_examples, cv_inconsistency}
+  recommendation          String?  // proceed | proceed_conditions | hold | cv_pool | reject
+  behavioralFit           String?  // strong | acceptable | borderline | weak
+  technicalFit            String?
+  behavioralJustification String?
+  technicalJustification  String?
+  submitted               Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, evaluatorType]) // one HR + one technical per application
+  @@index([applicationId])
+}
+
+model ApplicationFinalDecision {
+  applicationId Int       @id
+  decision      String?   // proceed | hold | reject | hired
+  decidedBy     Int?
+  decidedByName String?
+  notes         String?
+  decidedAt     DateTime?
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+// Ticket thread — email-style conversation on a recruitment request.
+model TicketPost {
+  id           Int      @id @default(autoincrement())
+  requestId    Int
+  parentPostId Int?     // reply nesting
+  postType     String   @default("message") // message | file | cv | feedback | system
+  authorId     Int?
+  authorName   String?
+  authorRole   String?
+  body         String?
+  filePath     String?
+  fileName     String?
+  candidateId  Int?
+  applicationId Int?
+  payload      String?  // JSON for structured posts
+  edited       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  request  RecruitmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  parent   TicketPost?        @relation("PostReplies", fields: [parentPostId], references: [id], onDelete: Cascade)
+  replies  TicketPost[]       @relation("PostReplies")
+
+  @@index([requestId])
+  @@index([parentPostId])
+}
+
+model ApplicationStageHistory {
+  id            Int      @id @default(autoincrement())
+  applicationId Int
+  fromStatus    String?
+  toStatus      String
+  reason        String?
+  actorId       Int?
+  actorName     String?
+  movedAt       DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model CandidateNote {
+  id            Int      @id @default(autoincrement())
+  candidateId   Int
+  applicationId Int?
+  noteType      String   @default("note")
+  body          String
+  authorId      Int?
+  authorName    String?
+  createdAt     DateTime @default(now())
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+}
+
+model CandidateActivity {
+  id            Int      @id @default(autoincrement())
+  candidateId   Int?
+  applicationId Int?
+  actorId       Int?
+  actorName     String?
+  type          String
+  note          String?
+  occurredAt    DateTime @default(now())
+
+  candidate Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+}
+
+model RejectReason {
+  id       Int     @id @default(autoincrement())
+  code     String  @unique
+  label    String
+  isActive Boolean @default(true)
+}
+
+// ============================================================================
+// Phase 4 — Interviews & Feedback
+// Every interview links to application + candidate + request.
+// interview.status is a SEPARATE lifecycle; it never replaces application.status.
+// ============================================================================
+model Interview {
+  id              Int       @id @default(autoincrement())
+  interviewNo     String    @unique
+  applicationId   Int
+  candidateId     Int
+  requestId       Int
+  round           Int       @default(1)
+  interviewType   String    @default("technical")
+  mode            String    @default("onsite")
+  scheduledAt     DateTime?
+  durationMin     Int?      @default(60)
+  locationOrLink  String?
+  organizerId     Int?
+  status          String    @default("scheduled") // interview lifecycle (NOT application status)
+  cancelReason    String?
+  overallOutcome  String?                          // advisory aggregate; not application status
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       Int?
+
+  panel    InterviewPanel[]
+  feedback InterviewFeedback[]
+  activity InterviewActivity[]
+}
+
+model InterviewPanel {
+  interviewId   Int
+  interviewerId Int
+  isLead        Boolean @default(false)
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@id([interviewId, interviewerId])
+}
+
+model InterviewFeedback {
+  id             Int      @id @default(autoincrement())
+  interviewId    Int
+  interviewerId  Int
+  criteria       String?  // JSON
+  overallScore   Float?
+  recommendation String?  // strong_yes|yes|no|strong_no
+  comments       String?
+  submittedAt    DateTime @default(now())
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, interviewerId]) // one feedback per interviewer per interview
+}
+
+model InterviewActivity {
+  id          Int      @id @default(autoincrement())
+  interviewId Int
+  actorId     Int?
+  actorName   String?
+  type        String
+  note        String?
+  occurredAt  DateTime @default(now())
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// Phase 5 — Offers & Joining
+// Every offer links to application + candidate + request. offer.status is a
+// separate lifecycle; application stage moves are explicit/controlled.
+// ============================================================================
+model Offer {
+  id             Int       @id @default(autoincrement())
+  offerNo        String    @unique
+  applicationId  Int
+  candidateId    Int
+  requestId      Int
+  positionTitle  String?
+  salaryOffered  Float?
+  currency       String?   @default("EGP")
+  benefits       String?
+  joiningDate    DateTime?
+  notes          String?
+  status         String    @default("draft")
+  preparedBy     Int?
+  approvedBy     Int?
+  sentAt         DateTime?
+  acceptedAt     DateTime?
+  rejectedAt     DateTime?
+  rejectionReason String?
+  withdrawalReason String?
+  joinedAt       DateTime?
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdBy      Int?
+
+  approvals OfferApproval[]
+  activity  OfferActivity[]
+}
+
+model OfferApproval {
+  id         Int       @id @default(autoincrement())
+  offerId    Int
+  level      Int
+  name       String
+  roleCode   String?
+  approverId Int?
+  decision   String    @default("pending")
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+}
+
+model OfferActivity {
+  id         Int      @id @default(autoincrement())
+  offerId    Int
+  actorId    Int?
+  actorName  String?
+  type       String
+  fromStatus String?
+  toStatus   String?
+  note       String?
+  occurredAt DateTime @default(now())
+
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+}

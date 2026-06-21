@@ -1,0 +1,36 @@
+# Render Blueprint — Arabtec Recruitment Hub
+# Runs the Express app natively (Node's built-in SQLite) with a persistent disk
+# so data + uploaded files survive restarts and redeploys.
+# Production note: managed Postgres is the planned next step before IT handover.
+
+services:
+  - type: web
+    name: hirebased
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Node's built-in SQLite needs this flag at runtime.
+      - key: NODE_OPTIONS
+        value: --experimental-sqlite
+      # Pin a Node version that ships the built-in SQLite driver.
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Store the SQLite DB on the persistent disk (absolute path on the mount).
+      - key: DATABASE_URL
+        value: file:/var/data/arabtec.db
+      # JWT signing secret — Render generates a strong value automatically.
+      - key: JWT_SECRET
+        generateValue: true
+      # Lock CORS to same-origin in production (the SPA is served by this service).
+      - key: CORS_ORIGINS
+        value: ""
+    disk:
+      name: arabtec-data
+      mountPath: /var/data
+      sizeGB: 1
