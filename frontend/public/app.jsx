@@ -2354,6 +2354,7 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [dups, setDups] = useState([]);
   const [override, setOverride] = useState({ on: false, reason: '' });
+  const [cvFile, setCvFile] = useState(null);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { api.get('/candidates/meta/form').then(setMeta); }, []);
 
@@ -2372,8 +2373,15 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
     try {
       const body = { ...f, tags: f.tags ? f.tags.split(',').map((s) => s.trim()).filter(Boolean) : [] };
       if (dups.length && isNew) { body.overrideDuplicate = true; body.overrideReason = override.reason; }
-      if (isNew) { const r = await api.post('/candidates', body); toast('Candidate created: ' + r.candidate.candidateNo); onSaved(r.candidate.id); }
-      else { const r = await api.put('/candidates/' + candidate.id, body); toast('Candidate updated'); onSaved(candidate.id); }
+      let candId;
+      if (isNew) { const r = await api.post('/candidates', body); candId = r.candidate.id; toast('Candidate created: ' + r.candidate.candidateNo); }
+      else { await api.put('/candidates/' + candidate.id, body); candId = candidate.id; toast('Candidate updated'); }
+      // Upload the CV (if chosen) to the candidate's résumé store — durable in the DB.
+      if (cvFile && candId) {
+        try { await api.uploadTo('/candidates/' + candId + '/resume', cvFile); }
+        catch (e) { toast('Candidate saved, but CV upload failed: ' + e.message, 'error'); }
+      }
+      onSaved(candId);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
   const blockSave = isNew && dups.length && !override.reason.trim();
@@ -2404,9 +2412,47 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
         <div className="field"><label>Source</label><select value={f.source} onChange={(e) => set('source', e.target.value)}><option value="">—</option>{(meta?.sources || []).map((s) => <option key={s}>{s}</option>)}</select></div>
         {meta?.canSeeSalary && <div className="field"><label>Expected Salary</label><input type="number" value={f.expectedSalary} onChange={(e) => set('expectedSalary', e.target.value)} /></div>}
         <div className="field full"><label>Tags (comma-separated)</label><input value={f.tags} onChange={(e) => set('tags', e.target.value)} placeholder="mechanical, senior, hvac" /></div>
-        <div className="field full"><label>CV / Attachments</label><div className="muted" style={{ padding: '8px 0' }}>File upload UI is a Phase 4 placeholder — document metadata can be recorded via the profile.</div></div>
+        <div className="field full"><label>CV / Résumé</label>
+          <input type="file" onChange={(e) => setCvFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" />
+          {cvFile
+            ? <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Selected: {cvFile.name} — uploads when you Save.</div>
+            : <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Optional. Stored as the candidate's résumé (view/download from their profile).</div>}
+        </div>
       </div>
     </Modal>
+  );
+}
+
+// CV & Attachments tab on the candidate profile — résumé view/download/upload (durable in DB).
+function CandidateCvTab({ c, user, btns, onChanged }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const canEdit = btns?.edit_candidate?.visible || user.permissions.includes('candidate.edit');
+  async function view() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
+  async function upload(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setBusy(true);
+    try { await api.uploadTo(`/candidates/${c.id}/resume`, file); toast('Résumé uploaded'); onChanged && onChanged(); }
+    catch (err) { toast(err.message, 'error'); } finally { setBusy(false); e.target.value = ''; }
+  }
+  return (
+    <div className="card card-pad">
+      <div className="section-title" style={{ marginTop: 0 }}>Résumé / CV</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px' }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ fontWeight: 600 }}>{c.hasResume ? (c.resumeName || 'Attached résumé') : <span className="muted">No résumé on file</span>}</div>
+        </div>
+        {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>View / Download</button>}
+        {canEdit && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (c.hasResume ? 'Replace' : '+ Upload CV')}<input type="file" style={{ display: 'none' }} onChange={upload} disabled={busy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
+      </div>
+      {(c.documents || []).length > 0 && (
+        <>
+          <div className="section-title">Other Documents</div>
+          <table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th></tr></thead>
+            <tbody>{c.documents.map((d) => <tr key={d.id}><td><span className="chip">{d.doc_type}</span></td><td>{d.file_name}</td><td className="muted">{fmtDate(d.uploaded_at)}</td></tr>)}</tbody></table>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2451,15 +2497,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
           <div className="full"><Info label="Tags">{(c.tags || []).length ? c.tags.map((t) => <span key={t} className="chip">{t}</span>) : '—'}</Info></div>
         </div></div>
       )}
-      {tab === 'cv' && (
-        <div className="card card-pad">
-          <div className="section-title" style={{ marginTop: 0 }}>Documents</div>
-          {(c.documents || []).length === 0 ? <Empty icon="📄" text="No documents. (Embedded CV viewer & upload arrive in Phase 4.)" /> : (
-            <table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th></tr></thead>
-              <tbody>{c.documents.map((d) => <tr key={d.id}><td><span className="chip">{d.doc_type}</span></td><td>{d.file_name}</td><td className="muted">{fmtDate(d.uploaded_at)}</td></tr>)}</tbody></table>
-          )}
-        </div>
-      )}
+      {tab === 'cv' && <CandidateCvTab c={c} user={user} btns={btns} onChanged={load} />}
       {tab === 'applications' && (
         <div className="card">
           {(c.applications || []).length === 0 ? <Empty icon="🎫" text="Not linked to any request yet." /> : (

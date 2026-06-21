@@ -5,7 +5,7 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { multipart, uploadPath, fileExists } from '../lib/upload.js';
+import { multipart, streamFile } from '../lib/upload.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
 import fs from 'node:fs';
 
@@ -199,9 +199,8 @@ router.post('/:id/resume', requirePermission('candidate.edit'), multipart, (req,
 router.get('/:id/resume', requirePermission('candidate.view'), (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
-  if (!c.resume_path || !fileExists(c.resume_path)) return res.status(404).json({ error: 'No resume on file.' });
-  res.setHeader('Content-Disposition', `inline; filename="${(c.resume_name || 'resume').replace(/"/g, '')}"`);
-  fs.createReadStream(uploadPath(c.resume_path)).pipe(res);
+  if (!c.resume_path) return res.status(404).json({ error: 'No resume on file.' });
+  streamFile(c.resume_path, res, c.resume_name || 'resume');
 });
 
 /* ---------------- NOTES ---------------- */

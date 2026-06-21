@@ -6,7 +6,7 @@ import { Router } from 'express';
 import { Posts, Requests, Candidates, Applications, Users } from '../lib/models.js';
 import { requireAuth } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { multipart, uploadPath, fileExists } from '../lib/upload.js';
+import { multipart, streamFile } from '../lib/upload.js';
 import { run as dbRun } from '../lib/db.js';
 import fs from 'node:fs';
 
@@ -99,9 +99,8 @@ router.get('/post/:postId/file', (req, res) => {
   if (!post) return res.status(404).json({ error: 'Post not found.' });
   const r = Requests.byId(post.request_id);
   if (!r || !canView(req.user, r)) return res.status(403).json({ error: 'Not allowed.' });
-  if (!post.file_path || !fileExists(post.file_path)) return res.status(404).json({ error: 'No file on this post.' });
-  res.setHeader('Content-Disposition', `inline; filename="${(post.file_name || 'file').replace(/"/g, '')}"`);
-  fs.createReadStream(uploadPath(post.file_path)).pipe(res);
+  if (!post.file_path) return res.status(404).json({ error: 'No file on this post.' });
+  streamFile(post.file_path, res, post.file_name || 'file');
 });
 
 /* ---------------- POST a CV (creates/links a candidate + application, then posts) ---------------- */

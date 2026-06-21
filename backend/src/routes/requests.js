@@ -6,7 +6,7 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { all } from '../lib/db.js';
-import { multipart, uploadPath, fileExists } from '../lib/upload.js';
+import { multipart, streamFile } from '../lib/upload.js';
 import fs from 'node:fs';
 
 const router = Router();
@@ -433,9 +433,8 @@ router.get('/:id/attachment', (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
   if (!canView(req.user, r)) return res.status(403).json({ error: 'You cannot view this request.' });
-  if (!r.attachment_path || !fileExists(r.attachment_path)) return res.status(404).json({ error: 'No attachment.' });
-  res.setHeader('Content-Disposition', `inline; filename="${(r.attachment_name || 'attachment').replace(/"/g, '')}"`);
-  fs.createReadStream(uploadPath(r.attachment_path)).pipe(res);
+  if (!r.attachment_path) return res.status(404).json({ error: 'No attachment.' });
+  streamFile(r.attachment_path, res, r.attachment_name || 'attachment');
 });
 
 export default router;

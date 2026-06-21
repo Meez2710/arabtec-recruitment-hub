@@ -1,13 +1,18 @@
 // DDL for Phase 1. Mirrors prisma/schema.prisma. Kept ANSI-friendly so the same
 // structure ports to PostgreSQL (swap AUTOINCREMENT→SERIAL/IDENTITY, DATETIME→TIMESTAMPTZ,
 // INTEGER booleans→BOOLEAN). See docs/SCHEMA.sql for the Postgres variant.
-import { exec, all, run } from './db.js';
+import { exec, all, run, driverKind } from './db.js';
 
 // Idempotent additive migration: add a column only if it doesn't already exist.
-// Lets existing seeded databases pick up new enhancement fields without a reset.
+// Works on both engines (SQLite PRAGMA vs Postgres information_schema).
 function addColumnIfMissing(table, column, definition) {
   try {
-    const cols = all(`PRAGMA table_info(${table})`).map((c) => c.name);
+    let cols;
+    if (driverKind() === 'sqlite') {
+      cols = all(`PRAGMA table_info(${table})`).map((c) => c.name);
+    } else {
+      cols = all(`SELECT column_name FROM information_schema.columns WHERE table_name = ?`, [table]).map((c) => c.column_name);
+    }
     if (!cols.includes(column)) run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   } catch (e) { /* table may not exist yet on first boot; CREATE handles it */ }
 }
@@ -609,5 +614,17 @@ export function ensureSchema() {
   );
   CREATE INDEX IF NOT EXISTS idx_ticketpost_req ON ticket_post(request_id);
   CREATE INDEX IF NOT EXISTS idx_ticketpost_parent ON ticket_post(parent_post_id);
+
+  -- ---- Durable file storage: uploaded file bytes kept IN the database so they
+  -- survive redeploys on hosts without a persistent disk (e.g. Render free tier).
+  -- Keyed by the same stored_name the rest of the app already references.
+  CREATE TABLE IF NOT EXISTS file_blob (
+    stored_name TEXT PRIMARY KEY,
+    original_name TEXT,
+    mime TEXT,
+    size INTEGER,
+    data BLOB NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   `);
 }
