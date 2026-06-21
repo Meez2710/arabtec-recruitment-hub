@@ -78,12 +78,25 @@ function Icon({ name, size = 17 }) {
 }
 
 // Brand mark — the Arabtec red twin-peak "A". Inline SVG so it inherits color/scale anywhere.
-function Logo({ size = 28, color = 'var(--brand)' }) {
-  return (
+// withText=true renders the official lockup: the red mark with the lowercase
+// "arabtec" wordmark centered below it (matching the company logo).
+function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }) {
+  const mark = (
     <svg width={size} height={size * (320 / 463)} viewBox="0 0 463 320" aria-label="Arabtec" role="img" style={{ display: 'block' }}>
       <path fill={color} d="M150 0 L223 0 L223 118 L73 263 L73 320 L0 320 L0 205 Z" />
       <path fill={color} d="M313 0 L240 0 L240 118 L390 263 L390 320 L463 320 L463 205 Z" />
     </svg>
+  );
+  if (!withText) return mark;
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: Math.round(size * 0.12), lineHeight: 1 }}>
+      {mark}
+      <span style={{
+        fontFamily: 'Arial, Helvetica, sans-serif', fontWeight: 400,
+        fontSize: Math.round(size * 0.62), letterSpacing: '0.01em',
+        color: textColor || '#6b7280',
+      }}>arabtec</span>
+    </span>
   );
 }
 function fmtDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleString(); }
@@ -223,7 +236,7 @@ function Login({ branding, onLogin }) {
   return (
     <div className="login-wrap">
       <div className="login-brand">
-        <div className="brand-logo-row"><Logo size={44} /><span className="brand-wordmark">{name}</span></div>
+        <div style={{ marginBottom: 26 }}><Logo size={72} withText /></div>
         <h1>Recruitment Hub</h1>
         <p>Enterprise Recruitment Ticketing &amp; Applicant Tracking. Every hiring need, controlled end-to-end — approvals, ownership, pipeline, and full audit.</p>
       </div>
@@ -302,9 +315,10 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   return (
     <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '240px' }}>
       <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
-        <div className="sidebar-head">
-          <div className="sidebar-logo"><Logo size={26} /></div>
-          {!collapsed && <div className="sidebar-title">{branding?.company_name || 'Arabtec Hub'}</div>}
+        <div className="sidebar-head" style={{ justifyContent: 'center' }}>
+          {collapsed
+            ? <Logo size={26} />
+            : <Logo size={40} withText />}
         </div>
         <nav className="nav">
           {visibleNav.map((n, i) => n.section
