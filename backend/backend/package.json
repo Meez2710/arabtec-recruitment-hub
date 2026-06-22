@@ -1,0 +1,29 @@
+{
+  "name": "arabtec-recruitment-hub-backend",
+  "version": "1.0.0",
+  "description": "Arabtec Recruitment Hub backend (auth, RBAC, requests, candidates, interviews, offers, dashboards, ticket threads, audit). Dual database: SQLite (local) / PostgreSQL (production).",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.5.0 <23"
+  },
+  "scripts": {
+    "start": "node --experimental-sqlite src/server.js",
+    "dev": "node --experimental-sqlite --watch src/server.js",
+    "seed": "node --experimental-sqlite prisma/seed.js",
+    "setup": "node --experimental-sqlite prisma/seed.js",
+    "reset": "node -e \"require('fs').rmSync('./prisma/dev.db',{force:true})\" && node --experimental-sqlite prisma/seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.22.0"
+  },
+  "optionalDependencies": {
+    "@electric-sql/pglite": "^0.5.3"
+  }
+}
