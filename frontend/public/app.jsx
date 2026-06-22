@@ -336,12 +336,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
           <button className="icon-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
           </button>
-          <div className="search"><input placeholder="Search…" disabled /></div>
           <div className="spacer" />
-          <button className="icon-btn" title="Notifications" aria-label="Notifications">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0" /></svg>
-            <span className="dot" />
-          </button>
           <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
             <div className="avatar">{initials(user.fullName)}</div>
             <div>
@@ -396,7 +391,7 @@ function ChartLegend({ data, labeler = (s) => s }) {
   </div>;
 }
 function Funnel({ data }) {
-  const order = ['applied', 'cv_screening', 'shortlisted', 'phone_interview', 'technical_interview', 'client_interview', 'final_interview', 'reference_check', 'offer_preparation', 'offer_sent', 'offer_accepted', 'joined'];
+  const order = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
   const map = Object.fromEntries(data.map((d) => [d.status, d.count]));
   const rows = order.filter((s) => map[s]).map((s) => ({ status: s, count: map[s] }));
   if (!rows.length) return <Empty icon="🔻" text="No applications yet." />;
@@ -874,7 +869,6 @@ function BrandingPage({ user, branding, refreshBranding }) {
           <div className="field"><label>Card Radius</label><input value={f.card_radius || ''} disabled={!canManage} onChange={(e) => set('card_radius', e.target.value)} /></div>
           <div className="field"><label>Table Density</label><select value={f.table_density || 'comfortable'} disabled={!canManage} onChange={(e) => set('table_density', e.target.value)}><option>compact</option><option>comfortable</option><option>spacious</option></select></div>
           <div className="field"><label>Sidebar Mode</label><select value={f.sidebar_mode || 'expanded'} disabled={!canManage} onChange={(e) => set('sidebar_mode', e.target.value)}><option>expanded</option><option>collapsed</option></select></div>
-          <div className="field"><label>Dark Mode</label><select value={f.dark_mode_enabled || 'false'} disabled={!canManage} onChange={(e) => set('dark_mode_enabled', e.target.value)}><option value="false">Disabled</option><option value="true">Enabled (Phase 3)</option></select></div>
         </div>
       </div>
       <div className="card card-pad">
@@ -1027,12 +1021,11 @@ function AuditPage({ user }) {
 }
 
 /* ============================ PHASE 2: Recruitment Requests ============================ */
+// Simplified request states (Phase 0). Legacy keys kept as aliases so any
+// un-migrated rows still render a sensible label.
 const REQ_STATUS = {
-  draft: { label: 'Draft', variant: 'soft' },
   pending_approval: { label: 'Pending Approval', variant: 'warning' },
-  budget_validation: { label: 'Budget Validation', variant: 'warning' },
-  approved: { label: 'Approved', variant: 'success' },
-  in_sourcing: { label: 'In Sourcing', variant: 'info' },
+  sourcing: { label: 'Sourcing', variant: 'info' },
   in_progress: { label: 'In Progress', variant: 'info' },
   partially_filled: { label: 'Partially Filled', variant: 'info' },
   filled: { label: 'Filled', variant: 'success' },
@@ -1040,7 +1033,13 @@ const REQ_STATUS = {
   on_hold: { label: 'On Hold', variant: 'warning' },
   rejected: { label: 'Rejected', variant: 'critical' },
   cancelled: { label: 'Cancelled', variant: 'critical' },
+  expired: { label: 'Expired', variant: 'soft' },
   reopened: { label: 'Reopened', variant: 'info' },
+  // legacy aliases
+  draft: { label: 'Pending Approval', variant: 'warning' },
+  budget_validation: { label: 'Pending Approval', variant: 'warning' },
+  approved: { label: 'Sourcing', variant: 'info' },
+  in_sourcing: { label: 'Sourcing', variant: 'info' },
 };
 const PRIORITY = {
   low: { label: 'Low', variant: 'soft' }, medium: { label: 'Medium', variant: 'info' },
@@ -1236,13 +1235,13 @@ function RequestDetail({ id, user, btns, onBack }) {
   const show = (key) => b(key).visible;
   // contextual enablement by status
   const s = req.status;
-  const canSubmit = show('submit_request') && ['draft', 'reopened'].includes(s);
+  const canSubmit = show('submit_request') && ['pending_approval', 'draft', 'reopened'].includes(s);
   const canApprove = show('approve_request') && s === 'pending_approval';
   const canReject = show('reject_request') && s === 'pending_approval';
-  const canAssign = show('assign_recruiter') && ['approved', 'in_sourcing', 'in_progress', 'reopened', 'partially_filled'].includes(s);
-  const canHold = show('hold_request') && ['approved', 'in_sourcing', 'in_progress', 'partially_filled', 'pending_approval'].includes(s);
+  const canAssign = show('assign_recruiter') && ['sourcing', 'in_progress', 'reopened', 'partially_filled', 'approved', 'in_sourcing'].includes(s);
+  const canHold = show('hold_request') && ['sourcing', 'in_progress', 'partially_filled', 'pending_approval', 'approved', 'in_sourcing'].includes(s);
   const canResume = show('resume_request') && s === 'on_hold';
-  const canCancel = show('cancel_request') && !['closed', 'cancelled', 'rejected', 'filled'].includes(s);
+  const canCancel = show('cancel_request') && !['closed', 'cancelled', 'rejected', 'filled', 'expired'].includes(s);
   const canClose = show('close_request') && !['closed', 'cancelled', 'rejected'].includes(s);
   const canReopen = show('reopen_request') && ['closed', 'cancelled', 'filled'].includes(s);
 
@@ -1762,34 +1761,41 @@ function TimelineTab({ req }) {
 }
 /* ============================ PHASE 3: Application statuses + pipeline ============================ */
 const APP_STATUS = {
-  // New workspace stage list
-  new: { label: 'New', variant: 'soft' },
-  screened: { label: 'Screened', variant: 'info' },
-  shortlisted: { label: 'Shortlisted', variant: 'info' },
-  interview_1: { label: 'Interview 1', variant: 'info' },
-  interview_2: { label: 'Interview 2', variant: 'info' },
-  final_interview: { label: 'Final Interview', variant: 'info' },
-  offer_preparation: { label: 'Offer Preparation', variant: 'warning' },
+  // Simplified Phase 0 stage list
+  sourced: { label: 'Sourced', variant: 'soft' },
+  matched: { label: 'Matched', variant: 'info' },
+  unmatched: { label: 'Unmatched', variant: 'soft' },
+  interviewing: { label: 'Interviewing', variant: 'info' },
+  waiting_feedback: { label: 'Waiting Feedback', variant: 'warning' },
+  issuing_offer: { label: 'Issuing Offer', variant: 'warning' },
   offer_sent: { label: 'Offer Sent', variant: 'warning' },
-  offer_accepted: { label: 'Offer Accepted', variant: 'success' },
-  joined: { label: 'Hired', variant: 'success' },
+  joined: { label: 'Joined', variant: 'success' },
+  shortlisted: { label: 'Shortlisted', variant: 'info' },
   rejected: { label: 'Rejected', variant: 'critical' },
-  withdrawn: { label: 'Withdrawn', variant: 'critical' },
+  offer_declined: { label: 'Offer Declined', variant: 'critical' },
   on_hold: { label: 'On Hold', variant: 'warning' },
-  offer_rejected: { label: 'Offer Rejected', variant: 'critical' },
-  // legacy labels so older data still renders cleanly
-  applied: { label: 'New', variant: 'soft' },
-  cv_screening: { label: 'Screened', variant: 'info' },
-  phone_interview: { label: 'Interview 1', variant: 'info' },
-  technical_interview: { label: 'Interview 1', variant: 'info' },
-  client_interview: { label: 'Interview 2', variant: 'info' },
-  reference_check: { label: 'Final Interview', variant: 'warning' },
+  // legacy aliases so any un-migrated data still renders cleanly
+  new: { label: 'Sourced', variant: 'soft' },
+  applied: { label: 'Sourced', variant: 'soft' },
+  screened: { label: 'Matched', variant: 'info' },
+  cv_screening: { label: 'Matched', variant: 'info' },
+  interview_1: { label: 'Interviewing', variant: 'info' },
+  interview_2: { label: 'Interviewing', variant: 'info' },
+  final_interview: { label: 'Interviewing', variant: 'info' },
+  phone_interview: { label: 'Interviewing', variant: 'info' },
+  technical_interview: { label: 'Interviewing', variant: 'info' },
+  client_interview: { label: 'Interviewing', variant: 'info' },
+  reference_check: { label: 'Waiting Feedback', variant: 'warning' },
+  offer_preparation: { label: 'Issuing Offer', variant: 'warning' },
+  offer_accepted: { label: 'Offer Sent', variant: 'warning' },
+  offer_rejected: { label: 'Offer Declined', variant: 'critical' },
+  withdrawn: { label: 'Rejected', variant: 'critical' },
 };
-// Ordered stage columns for the workspace (new list only — legacy keys excluded from columns).
-const APP_ORDER = ['new', 'screened', 'shortlisted', 'interview_1', 'interview_2', 'final_interview',
-  'offer_preparation', 'offer_sent', 'offer_accepted', 'joined', 'rejected', 'withdrawn', 'on_hold'];
-const REASON_STATUSES = ['rejected', 'on_hold', 'withdrawn', 'offer_rejected'];
-const TERMINAL_APP = ['joined', 'rejected', 'withdrawn'];
+// Ordered stage columns for the pipeline (canonical list only).
+const APP_ORDER = ['sourced', 'matched', 'unmatched', 'interviewing', 'waiting_feedback',
+  'issuing_offer', 'offer_sent', 'joined', 'shortlisted', 'on_hold', 'rejected', 'offer_declined'];
+const REASON_STATUSES = ['rejected', 'offer_declined', 'on_hold', 'unmatched'];
+const TERMINAL_APP = ['joined', 'rejected', 'offer_declined'];
 function AppStatusBadge({ status }) { const s = APP_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
 function MatchScore({ score }) {
   if (score == null) return <span className="muted">—</span>;
@@ -2232,7 +2238,7 @@ function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
   const [mode, setMode] = useState('existing'); // existing | new
   const [candidates, setCandidates] = useState([]);
   const [meta, setMeta] = useState(null);
-  const [sel, setSel] = useState({ candidateId: '', initialStatus: 'applied', matchScore: '', source: '' });
+  const [sel, setSel] = useState({ candidateId: '', initialStatus: 'sourced', matchScore: '', source: '' });
   const [nc, setNc] = useState({ fullName: '', email: '', phone: '', currentPosition: '', currentCompany: '', yearsExperience: '', location: '', noticePeriod: '', source: '' });
   const [busy, setBusy] = useState(false);
   useEffect(() => { api.get('/candidates').then((r) => setCandidates(r.candidates)).catch(() => {}); api.get('/candidates/meta/form').then(setMeta).catch(() => {}); }, []);
@@ -2299,7 +2305,6 @@ function CandidatesPage({ user }) {
     <div>
       <PageHead crumb="Recruitment / Talent Pool" title="Candidate Database" sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
         actions={<>
-          {btns.import_candidates?.visible && <button className="btn btn-ghost" onClick={() => alert('Import is a Phase 4 placeholder.')}>Import</button>}
           {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>+ {btns.add_candidate.label}</button>}
         </>} />
       <div className="toolbar">

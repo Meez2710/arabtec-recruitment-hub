@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ensureSchema } from './lib/schema.js';
+import { get as dbGet } from './lib/db.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import roleRoutes from './routes/roles.js';
@@ -30,8 +31,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.set('trust proxy', true);
 
+// CORS: explicit allowlist. In production we DO NOT reflect arbitrary origins.
+// Same-origin requests (the app serves its own frontend) carry no Origin header
+// and are always allowed. Set CORS_ORIGINS to a comma-list for any cross-origin clients.
 const origins = (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-app.use(cors({ origin: origins.length ? origins : true, credentials: true }));
+const isProd = process.env.NODE_ENV === 'production';
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);              // same-origin / curl / server-to-server
+    if (origins.includes(origin)) return cb(null, true);
+    if (!isProd && !origins.length) return cb(null, true); // dev convenience only
+    return cb(null, false);                          // deny cross-origin in prod unless allowlisted
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
@@ -50,8 +63,15 @@ app.use('/api/auth/login', (req, res, next) => {
   next();
 });
 
-// Health check
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'arabtec-recruitment-hub', phase: 1 }));
+// Health check — verifies the database is actually reachable.
+app.get('/api/health', (req, res) => {
+  try {
+    dbGet('SELECT 1 AS ok');
+    res.json({ ok: true, service: 'arabtec-recruitment-hub', db: 'up' });
+  } catch (e) {
+    res.status(503).json({ ok: false, service: 'arabtec-recruitment-hub', db: 'down' });
+  }
+});
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -91,9 +111,12 @@ async function bootSeedIfEmpty() {
     const { get } = await import('./lib/db.js');
     const hasUsers = get('SELECT 1 AS x FROM users LIMIT 1');
     if (!hasUsers) {
-      console.log('  • Empty database detected — seeding initial data…');
+      // In production, seed ONLY the admin + reference data unless SEED_DEMO_DATA=true.
+      // Outside production (local dev), the demo users are seeded for convenience.
+      const demo = process.env.SEED_DEMO_DATA === 'true' || process.env.NODE_ENV !== 'production';
+      console.log(`  • Empty database detected — seeding ${demo ? 'initial + demo' : 'admin-only'} data…`);
       const { seed } = await import('../prisma/seed.js');
-      await seed();
+      await seed({ demo });
       console.log('  ✓ Initial data seeded.');
     }
   } catch (e) {

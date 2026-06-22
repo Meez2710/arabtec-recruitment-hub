@@ -6,25 +6,20 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { hasOpenSeat, fillSeatAndCount } from '../lib/vacancy.js';
+import {
+  APP, APP_STATUSES as STAGES, APP_REASON_REQUIRED, APP_TERMINAL,
+  appNorm, appCanMove, APP_LABELS,
+} from '../lib/stages.js';
 
 const router = Router();
 router.use(requireAuth);
 
 const canSalary = (u) => u.permissions.includes('salary.view');
 
-// Pipeline statuses (ordered) — Workspace stage list.
-// Pre-offer stages use the new HR-approved names; offer/joining codes are kept
-// unchanged because the offer & safe vacancy-fill automation depend on them.
-// (Legacy codes from earlier phases remain accepted for backward compatibility.)
-export const APP_STATUSES = [
-  'new', 'screened', 'shortlisted', 'interview_1', 'interview_2', 'final_interview',
-  'offer_preparation', 'offer_sent', 'offer_accepted', 'joined',
-  'rejected', 'on_hold', 'withdrawn', 'offer_rejected',
-  // legacy aliases still accepted (so older data / interview module transitions don't break):
-  'applied', 'cv_screening', 'phone_interview', 'technical_interview', 'client_interview', 'reference_check',
-];
-const REASON_REQUIRED = { rejected: 'rejection_reason', on_hold: 'on_hold_reason', withdrawn: 'withdrawn_reason', offer_rejected: 'rejection_reason' };
-const TERMINAL = ['joined', 'rejected', 'withdrawn'];
+// Canonical pipeline stages now live in lib/stages.js (single source of truth).
+export const APP_STATUSES = STAGES;
+const REASON_REQUIRED = APP_REASON_REQUIRED;
+const TERMINAL = APP_TERMINAL;
 // hasOpenSeat / fillSeatAndCount now live in lib/vacancy.js (shared with offers).
 
 function appOut(a, user) {
@@ -97,7 +92,7 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
     }
   }
 
-  const initialStatus = APP_STATUSES.includes(d.initialStatus) ? d.initialStatus : 'applied';
+  const initialStatus = APP_STATUSES.includes(appNorm(d.initialStatus)) ? appNorm(d.initialStatus) : APP.SOURCED;
   const appNo = Applications.nextNo();
   const created = Applications.create({
     applicationNo: appNo, candidateId, requestId,
@@ -108,7 +103,7 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
   });
   StageHistory.add(created.id, null, initialStatus, req.user, 'Application created');
   Requests.stampLifecycle(requestId, 'first_candidate_at'); // lifecycle: first candidate added
-  if (['shortlisted'].includes(initialStatus)) Requests.stampLifecycle(requestId, 'first_shortlist_at');
+  if (initialStatus === APP.SHORTLISTED) Requests.stampLifecycle(requestId, 'first_shortlist_at');
   CandidateActivity.add({ candidateId, applicationId: created.id, actorId: req.user.id, actorName: req.user.fullName, type: 'application_created', note: `${appNo} → ${request.ticket_no}` });
   RequestActivity.add(requestId, req.user, 'candidate_linked', { note: `${candidate.full_name} linked (${appNo})` });
   writeAudit(req, { action: 'application.created', entityType: 'application', entityId: created.id, newValue: { applicationNo: appNo, candidateId, requestId, status: initialStatus } });
@@ -145,11 +140,11 @@ function performMove(appRow, toStatus, req, reason) {
   Posts.system(appRow.request_id, `${cand ? cand.full_name : 'Candidate'} moved: ${fromStatus} → ${toStatus}.`,
     { event: 'stage_changed', applicationId: appRow.id, candidateId: appRow.candidate_id, fromStatus, toStatus }, req.user);
   // lifecycle stamping on first shortlist / first interview stage
-  if (toStatus === 'shortlisted') Requests.stampLifecycle(appRow.request_id, 'first_shortlist_at');
-  if (['interview_1', 'interview_2', 'final_interview', 'phone_interview', 'technical_interview', 'client_interview'].includes(toStatus)) Requests.stampLifecycle(appRow.request_id, 'first_interview_at');
+  if (toStatus === APP.SHORTLISTED) Requests.stampLifecycle(appRow.request_id, 'first_shortlist_at');
+  if (toStatus === APP.INTERVIEWING) Requests.stampLifecycle(appRow.request_id, 'first_interview_at');
 
   // Vacancy automation on Joined: fill a seat, bump count, transition request.
-  if (toStatus === 'joined' && fromStatus !== 'joined') {
+  if (toStatus === APP.JOINED && fromStatus !== APP.JOINED) {
     const request = Requests.byId(appRow.request_id);
     const before = request.headcount_filled;
     const result = fillSeatAndCount(request, appRow.id);
@@ -163,14 +158,19 @@ function performMove(appRow, toStatus, req, reason) {
 router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) => {
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
-  const toStatus = (req.body || {}).status;
+  const toStatus = appNorm((req.body || {}).status);
   if (!APP_STATUSES.includes(toStatus)) return res.status(400).json({ error: 'Invalid status.' });
-  if (TERMINAL.includes(a.status)) return res.status(409).json({ error: `Application is terminal (${a.status}) and cannot be moved.` });
+  const fromStatus = appNorm(a.status);
+  if (TERMINAL.includes(fromStatus)) return res.status(409).json({ error: `Application is terminal (${APP_LABELS[fromStatus] || fromStatus}) and cannot be moved.` });
+  // Enforce the allowed-transition map (no skipping stages).
+  if (!appCanMove(fromStatus, toStatus)) {
+    return res.status(409).json({ error: `Cannot move from ${APP_LABELS[fromStatus] || fromStatus} to ${APP_LABELS[toStatus] || toStatus}.` });
+  }
   const reasonField = REASON_REQUIRED[toStatus];
   const reason = (req.body || {}).reason;
-  if (reasonField && (!reason || !reason.trim())) return res.status(400).json({ error: `A reason is required to set status '${toStatus}'.` });
+  if (reasonField && (!reason || !reason.trim())) return res.status(400).json({ error: `A reason is required to set status '${APP_LABELS[toStatus] || toStatus}'.` });
   // Overfill protection: block Joined when no vacancy remains.
-  if (toStatus === 'joined' && !hasOpenSeat(a.request_id)) {
+  if (toStatus === APP.JOINED && !hasOpenSeat(a.request_id)) {
     return res.status(409).json({ error: 'All vacancies for this request are already filled. Cannot join another candidate.' });
   }
   performMove(a, toStatus, req, reasonField ? reason : null);
@@ -202,7 +202,8 @@ router.post('/:id/assign', requirePermission('request.assign_recruiter'), (req, 
 
 /* ---------------- BULK ACTIONS ---------------- */
 router.post('/bulk', requirePermission('application.bulk_action'), (req, res) => {
-  const { ids, action, status, reason, recruiterId, tag } = req.body || {};
+  const { ids, action, reason, recruiterId, tag } = req.body || {};
+  const status = action === 'move' ? appNorm((req.body || {}).status) : (req.body || {}).status;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'No applications selected.' });
   const reasonField = action === 'move' ? REASON_REQUIRED[status] : null;
   if (action === 'move') {
@@ -218,8 +219,10 @@ router.post('/bulk', requirePermission('application.bulk_action'), (req, res) =>
     const a = Applications.byId(Number(id));
     if (!a) { skipped.push({ id, reason: 'not_found' }); continue; }
     if (action === 'move') {
-      if (TERMINAL.includes(a.status)) { skipped.push({ id, reason: `terminal_${a.status}` }); continue; }
-      if (status === 'joined' && !hasOpenSeat(a.request_id)) { skipped.push({ id, reason: 'no_vacancy' }); continue; }
+      const from = appNorm(a.status);
+      if (TERMINAL.includes(from)) { skipped.push({ id, reason: `terminal_${from}` }); continue; }
+      if (!appCanMove(from, status)) { skipped.push({ id, reason: `illegal_${from}_to_${status}` }); continue; }
+      if (status === APP.JOINED && !hasOpenSeat(a.request_id)) { skipped.push({ id, reason: 'no_vacancy' }); continue; }
       performMove(a, status, req, reasonField ? reason : null); affected++;
     } else if (action === 'assign' && recruiterId) {
       Applications.setRecruiter(a.id, Number(recruiterId)); affected++;

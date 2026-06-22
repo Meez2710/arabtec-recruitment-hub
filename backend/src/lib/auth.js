@@ -1,7 +1,12 @@
 import jwt from 'jsonwebtoken';
 import { userContext } from './models.js';
 
-const SECRET = process.env.JWT_SECRET || 'dev-secret';
+// Fail closed: never sign tokens with a guessable default. In production a real
+// secret MUST be provided. A dev fallback is allowed ONLY outside production.
+const SECRET = process.env.JWT_SECRET
+  || (process.env.NODE_ENV === 'production'
+    ? (() => { throw new Error('JWT_SECRET is required in production'); })()
+    : 'dev-secret-local-only');
 
 export function signToken(payload, remember = false) {
   const expiresIn = remember

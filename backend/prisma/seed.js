@@ -16,8 +16,10 @@ const upsertById = {};
 
 function log(msg) { console.log('  ✓ ' + msg); }
 
-async function main() {
-  console.log('🌱 Seeding Arabtec Recruitment Hub (Phase 1)...');
+async function main(opts = {}) {
+  // demo=true seeds sample users + demo content; demo=false seeds admin + reference data only.
+  const demo = opts.demo !== undefined ? opts.demo : (process.env.SEED_DEMO_DATA === 'true' || process.env.NODE_ENV !== 'production');
+  console.log(`🌱 Seeding Arabtec Recruitment Hub (${demo ? 'with demo data' : 'admin-only'})...`);
 
   // 1. Permissions
   for (const [code, resource, action, description] of PERMISSIONS) {
@@ -65,7 +67,9 @@ async function main() {
   upsertById.admin = admin.id;
   log(`admin user: ${adminEmail}`);
 
-  // 5. Sample users (one per role) for testing
+  // 5. Sample users (one per role) — ONLY in demo mode. Never seeded in production
+  // unless SEED_DEMO_DATA=true, so the public sample password can't be used live.
+  if (demo) {
   const samplePass = await bcrypt.hash('Arabtec@123', rounds);
   const sampleUsers = [
     ['EMP-0002', 'Layla Hassan', 'hr.director@arabtec.com', 'HR Director', 'hr_director'],
@@ -89,6 +93,9 @@ async function main() {
     upsertById[roleCode] = u.id;
   }
   log(`${sampleUsers.length} sample users (password: Arabtec@123)`);
+  } else {
+    log('Skipped sample users (production / admin-only seed).');
+  }
 
   // 6. Business units
   const buData = [['BU-EG', 'Arabtec Egypt', 'Egypt construction operations'], ['BU-INFRA', 'Infrastructure', 'Infrastructure & civil works']];

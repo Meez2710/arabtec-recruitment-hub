@@ -553,6 +553,7 @@ export function ensureSchema() {
   addColumnIfMissing('recruitment_request', 'location', 'TEXT');
   addColumnIfMissing('recruitment_request', 'key_responsibilities', 'TEXT');
   addColumnIfMissing('recruitment_request', 'hiring_manager_id', 'INTEGER');
+  addColumnIfMissing('recruitment_request', 'prev_status', 'TEXT'); // remembered state when put On Hold (resume target)
   addColumnIfMissing('recruitment_request', 'attachment_path', 'TEXT');
   addColumnIfMissing('recruitment_request', 'attachment_name', 'TEXT');
   // candidate resume real-file path + document storage path
@@ -627,4 +628,30 @@ export function ensureSchema() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   `);
+
+  migrateWorkflowStages();
+}
+
+// One-time, idempotent migration: rewrite any legacy request/application status
+// values to the simplified Phase 0 vocabulary. Safe to run on every boot.
+function migrateWorkflowStages() {
+  const reqMap = {
+    draft: 'pending_approval', budget_validation: 'pending_approval',
+    approved: 'sourcing', in_sourcing: 'sourcing',
+  };
+  for (const [oldS, newS] of Object.entries(reqMap)) {
+    try { run('UPDATE recruitment_request SET status=? WHERE status=?', [newS, oldS]); } catch {}
+  }
+  const appMap = {
+    new: 'sourced', applied: 'sourced',
+    screened: 'matched', cv_screening: 'matched',
+    interview_1: 'interviewing', interview_2: 'interviewing', final_interview: 'interviewing',
+    phone_interview: 'interviewing', technical_interview: 'interviewing', client_interview: 'interviewing',
+    reference_check: 'waiting_feedback',
+    offer_preparation: 'issuing_offer', offer_accepted: 'offer_sent',
+    offer_rejected: 'offer_declined', withdrawn: 'rejected',
+  };
+  for (const [oldS, newS] of Object.entries(appMap)) {
+    try { run('UPDATE application SET status=? WHERE status=?', [newS, oldS]); } catch {}
+  }
 }

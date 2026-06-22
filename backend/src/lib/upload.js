@@ -128,8 +128,11 @@ export function readBlob(storedName) {
 export function streamFile(storedName, res, fallbackName) {
   const f = readBlob(storedName);
   if (!f) { res.status(404).json({ error: 'File not found.' }); return false; }
+  // Hardening: never let the browser sniff/execute uploaded content. Serve as a
+  // download (attachment) with nosniff so a malicious .pdf/.txt can't run as HTML.
   res.setHeader('Content-Type', f.mime || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `inline; filename="${(f.originalName || fallbackName || 'file').replace(/"/g, '')}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `attachment; filename="${(f.originalName || fallbackName || 'file').replace(/"/g, '')}"`);
   res.end(f.data);
   return true;
 }

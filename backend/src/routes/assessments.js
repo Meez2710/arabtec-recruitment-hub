@@ -4,11 +4,13 @@ import { Router } from 'express';
 import { Assessments, Applications, Candidates, Requests, StageHistory } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { appNorm } from '../lib/stages.js';
 
 const router = Router();
 router.use(requireAuth);
 
-const INTERVIEW_STAGES = ['interview_1', 'interview_2', 'final_interview', 'phone_interview', 'technical_interview', 'client_interview', 'reference_check', 'offer_preparation', 'offer_sent', 'offer_accepted', 'joined'];
+// Assessment unlocks once the candidate reaches interviewing and stays available downstream.
+const INTERVIEW_STAGES = ['interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
 const RECS = ['proceed', 'proceed_conditions', 'hold', 'cv_pool', 'reject'];
 const FITS = ['strong', 'acceptable', 'borderline', 'weak'];
 const FINAL = ['proceed', 'hold', 'reject', 'hired'];
@@ -33,7 +35,7 @@ function bundle(appId) {
   const list = Assessments.forApplication(appId);
   return {
     applicationId: appId,
-    unlocked: app ? INTERVIEW_STAGES.includes(app.status) : false,
+    unlocked: app ? INTERVIEW_STAGES.includes(appNorm(app.status)) : false,
     candidate: cand ? { id: cand.id, fullName: cand.full_name, currentPosition: cand.current_position, yearsExperience: cand.years_experience, university: cand.university, major: cand.major, employer: cand.employer } : null,
     request: req ? { id: req.id, ticketNo: req.ticket_no, title: req.title } : null,
     hr: parse(list.find((x) => x.evaluator_type === 'hr')),
@@ -53,7 +55,7 @@ router.get('/application/:applicationId', requirePermission('candidate.view'), (
 router.post('/application/:applicationId', requirePermission('interview.feedback'), (req, res) => {
   const app = Applications.byId(Number(req.params.applicationId));
   if (!app) return res.status(404).json({ error: 'Application not found.' });
-  if (!INTERVIEW_STAGES.includes(app.status)) return res.status(409).json({ error: 'Assessment is available once the candidate reaches an interview stage.' });
+  if (!INTERVIEW_STAGES.includes(appNorm(app.status))) return res.status(409).json({ error: 'Assessment is available once the candidate reaches an interview stage.' });
   const d = req.body || {};
   const type = d.evaluatorType;
   if (!['hr', 'technical'].includes(type)) return res.status(400).json({ error: 'evaluatorType must be hr or technical.' });

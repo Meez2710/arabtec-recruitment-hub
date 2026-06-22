@@ -7,19 +7,25 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { all } from '../lib/db.js';
 import { multipart, streamFile } from '../lib/upload.js';
+import { REQ, reqNorm, REQ_LABELS } from '../lib/stages.js';
 import fs from 'node:fs';
 
 const router = Router();
 router.use(requireAuth);
 
 /* ---------------- Status workflow definition ---------------- */
+// Simplified workflow (Phase 0). Symbolic names retained for readability;
+// DRAFT and APPROVED now alias to the new canonical states (no separate draft /
+// approved / budget stages). New requests start at Pending Approval; approval
+// flows straight into Sourcing.
 const STATUS = {
-  DRAFT: 'draft', PENDING: 'pending_approval', BUDGET: 'budget_validation',
-  APPROVED: 'approved', SOURCING: 'in_sourcing', IN_PROGRESS: 'in_progress',
-  PARTIAL: 'partially_filled', FILLED: 'filled', CLOSED: 'closed',
-  ON_HOLD: 'on_hold', REJECTED: 'rejected', CANCELLED: 'cancelled', REOPENED: 'reopened',
+  DRAFT: REQ.PENDING, PENDING: REQ.PENDING, APPROVED: REQ.SOURCING,
+  SOURCING: REQ.SOURCING, IN_PROGRESS: REQ.IN_PROGRESS,
+  PARTIAL: REQ.PARTIAL, FILLED: REQ.FILLED, CLOSED: REQ.CLOSED,
+  ON_HOLD: REQ.ON_HOLD, REJECTED: REQ.REJECTED, CANCELLED: REQ.CANCELLED,
+  EXPIRED: REQ.EXPIRED, REOPENED: REQ.REOPENED,
 };
-const NON_TERMINAL = [STATUS.DRAFT, STATUS.PENDING, STATUS.BUDGET, STATUS.APPROVED, STATUS.SOURCING, STATUS.IN_PROGRESS, STATUS.PARTIAL, STATUS.ON_HOLD, STATUS.REOPENED];
+const NON_TERMINAL = [STATUS.PENDING, STATUS.SOURCING, STATUS.IN_PROGRESS, STATUS.PARTIAL, STATUS.ON_HOLD, STATUS.REOPENED];
 
 /* ---------------- Salary field-level visibility ---------------- */
 function canSeeSalary(user) { return user.permissions.includes('salary.view'); }
@@ -29,25 +35,16 @@ const daysBetween = (a, b) => (a && b ? Math.max(0, Math.round((new Date(b).getT
 const daysSince = (a) => (a ? Math.max(0, Math.round((Date.now() - new Date(a).getTime()) / DAY)) : null);
 const daysUntil = (a) => (a ? Math.round((new Date(a).getTime() - Date.now()) / DAY) : null);
 
-// Derived presentation status (single source of truth; does NOT mutate stored status).
-// Open requests show where they are based on the furthest-along application stage.
+// Derived presentation label — now simply the canonical label of the stored
+// status (single vocabulary; no second derived layer). Normalised for any
+// legacy rows that predate the simplification.
 function derivedStatus(r) {
-  const direct = { draft: 'draft', pending_approval: 'pending approval', budget_validation: 'pending approval',
-    approved: 'approved', closed: 'closed', filled: 'closed', cancelled: 'closed', rejected: 'closed', expired: 'closed', on_hold: 'on hold' };
-  if (direct[r.status]) return direct[r.status];
-  // open/active states: look at applications
-  const apps = all('SELECT status FROM application WHERE request_id=?', [r.id]).map((a) => a.status);
-  const has = (set) => apps.some((s) => set.includes(s));
-  if (has(['offer_preparation', 'offer_sent', 'offer_accepted', 'joined'])) return 'offer stage';
-  if (has(['interview_1', 'interview_2', 'final_interview', 'phone_interview', 'technical_interview', 'client_interview', 'reference_check'])) return 'interviewing';
-  if (has(['screened', 'shortlisted', 'cv_screening'])) return 'screening';
-  if (apps.length > 0) return 'sourcing';
-  return 'active';
+  return REQ_LABELS[reqNorm(r.status)] || reqNorm(r.status);
 }
 
 // Health: green/amber/red from days-open vs configurable thresholds + target-join overrun.
 function requestHealth(r) {
-  if (['closed', 'filled', 'cancelled', 'rejected'].includes(r.status)) return { level: 'green', label: 'Closed' };
+  if ([STATUS.CLOSED, STATUS.FILLED, STATUS.CANCELLED, STATUS.REJECTED, STATUS.EXPIRED].includes(reqNorm(r.status))) return { level: 'green', label: 'Closed' };
   const s = SystemSettings.all();
   const amber = parseInt(s.health_amber_days || '30', 10);
   const red = parseInt(s.health_red_days || '45', 10);
@@ -335,10 +332,9 @@ router.post('/:id/hold', requirePermission('request.hold'), (req, res) => {
   const reason = (req.body || {}).reason;
   if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required to put on hold.' });
   if (!NON_TERMINAL.includes(r.status) || r.status === STATUS.ON_HOLD) return res.status(409).json({ error: 'Request cannot be held in its current state.' });
-  Requests.setStatus(r.id, STATUS.ON_HOLD, { close_reason: null });
+  // Remember the current state in a proper column so resume restores it exactly.
+  Requests.setStatus(r.id, STATUS.ON_HOLD, { close_reason: null, prev_status: r.status });
   RequestActivity.add(r.id, req.user, 'on_hold', { fromStatus: r.status, toStatus: STATUS.ON_HOLD, note: reason });
-  // remember previous status in activity note for resume
-  RequestActivity.add(r.id, req.user, 'hold_meta', { note: `prev:${r.status}` });
   writeAudit(req, { action: 'request.on_hold', entityType: 'recruitment_request', entityId: r.id, comments: reason });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
@@ -347,10 +343,9 @@ router.post('/:id/resume', requirePermission('request.hold'), (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
   if (r.status !== STATUS.ON_HOLD) return res.status(409).json({ error: 'Request is not on hold.' });
-  // Recover previous status from activity meta.
-  const meta = RequestActivity.forRequest(r.id).find((a) => a.type === 'hold_meta');
-  const prev = meta && meta.note?.startsWith('prev:') ? meta.note.slice(5) : STATUS.IN_PROGRESS;
-  Requests.setStatus(r.id, prev);
+  // Restore the remembered previous state (proper column; defaults to Sourcing).
+  const prev = reqNorm(r.prev_status) || STATUS.SOURCING;
+  Requests.setStatus(r.id, prev, { prev_status: null });
   RequestActivity.add(r.id, req.user, 'resumed', { fromStatus: STATUS.ON_HOLD, toStatus: prev, note: 'Resumed' });
   writeAudit(req, { action: 'request.resumed', entityType: 'recruitment_request', entityId: r.id });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });

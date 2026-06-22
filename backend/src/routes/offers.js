@@ -6,13 +6,14 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { hasOpenSeat, fillSeatAndCount, applicationAlreadyFilledSeat } from '../lib/vacancy.js';
+import { APP, appNorm } from '../lib/stages.js';
 
 const router = Router();
 router.use(requireAuth);
 
 // Offer statuses
 const OFFER_STATUSES = ['draft', 'pending_approval', 'approved', 'rejected_by_approver', 'sent', 'accepted', 'rejected_by_candidate', 'withdrawn', 'joined'];
-const TERMINAL_APP = ['rejected', 'withdrawn', 'on_hold', 'joined'];
+const TERMINAL_APP = [APP.REJECTED, APP.OFFER_DECLINED, APP.JOINED];
 
 // Salary visibility for offers is gated by offer.salary_view (separate from general salary.view).
 const canSeeOfferSalary = (u) => u.permissions.includes('offer.salary_view');
@@ -117,11 +118,11 @@ router.post('/', requirePermission('offer.create'), (req, res) => {
   CandidateActivity.add({ candidateId: app.candidate_id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'offer_created', note: offerNo });
 
   // Move application to Offer Preparation if it's not already past it (controlled workflow step).
-  if (!['offer_preparation', 'offer_sent', 'offer_accepted', 'joined'].includes(app.status)) {
-    StageHistory.add(app.id, app.status, 'offer_preparation', req.user, 'Auto on offer creation');
-    Applications.setStatus(app.id, 'offer_preparation');
-    CandidateActivity.add({ candidateId: app.candidate_id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'application_status_changed', note: `→ offer_preparation` });
-    writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: 'offer_preparation' }, comments: 'Auto on offer creation' });
+  if (![APP.ISSUING_OFFER, APP.OFFER_SENT, APP.JOINED].includes(appNorm(app.status))) {
+    StageHistory.add(app.id, app.status, APP.ISSUING_OFFER, req.user, 'Auto on offer creation');
+    Applications.setStatus(app.id, APP.ISSUING_OFFER);
+    CandidateActivity.add({ candidateId: app.candidate_id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'application_status_changed', note: `→ issuing_offer` });
+    writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: APP.ISSUING_OFFER }, comments: 'Auto on offer creation' });
   }
   Requests.stampLifecycle(app.request_id, 'first_offer_at'); // lifecycle: first offer created
   writeAudit(req, { action: 'offer.created', entityType: 'offer', entityId: created.id, newValue: { offerNo, applicationId: app.id, candidateId: app.candidate_id, requestId: app.request_id }, comments: d.overrideTerminal ? `Override: ${d.overrideReason}` : null });
@@ -178,8 +179,13 @@ router.post('/:id/approve', requirePermission('offer.approve'), (req, res) => {
   if (o.status !== 'pending_approval') return res.status(409).json({ error: 'Offer is not pending approval.' });
   const pending = OfferApprovals.currentPending(o.id);
   if (!pending) return res.status(409).json({ error: 'No pending approval step.' });
-  // Director-level step requires elevated approval; in this build any offer.approve holder
-  // may action it, but we record who approved. (Configurable later.)
+  // Enforce separation of duties: a Director-level step (level >= 2, or one whose
+  // chain role demands it) requires the distinct offer.approve_director permission.
+  const needsDirector = pending.level >= 2 || pending.role_code === 'offer.approve_director';
+  if (needsDirector && !req.user.permissions.includes('offer.approve_director')) {
+    return res.status(403).json({ error: 'This approval step requires HR Director authority.' });
+  }
+  // Don't let the same person approve a step they earlier approved at a different level.
   OfferApprovals.decide(pending.id, { decision: 'approved', approverId: req.user.id, comment: (req.body || {}).comment });
   OfferActivity.add(o.id, req.user, 'approved', { note: `Approved: ${pending.name}` });
   writeAudit(req, { action: 'offer.approval_decision', entityType: 'offer', entityId: o.id, newValue: { level: pending.level, decision: 'approved' } });
@@ -214,10 +220,10 @@ router.post('/:id/send', requirePermission('offer.send'), (req, res) => {
   Offers.setStatus(o.id, 'sent', { sent_at: new Date().toISOString() });
   // Controlled application stage move: → offer_sent
   const app = Applications.byId(o.application_id);
-  if (app && app.status !== 'offer_sent') {
-    StageHistory.add(app.id, app.status, 'offer_sent', req.user, 'Offer sent');
-    Applications.setStatus(app.id, 'offer_sent');
-    writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: 'offer_sent' }, comments: 'Offer sent' });
+  if (app && appNorm(app.status) !== APP.OFFER_SENT) {
+    StageHistory.add(app.id, app.status, APP.OFFER_SENT, req.user, 'Offer sent');
+    Applications.setStatus(app.id, APP.OFFER_SENT);
+    writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: APP.OFFER_SENT }, comments: 'Offer sent' });
   }
   OfferActivity.add(o.id, req.user, 'sent', { toStatus: 'sent' });
   writeAudit(req, { action: 'offer.sent', entityType: 'offer', entityId: o.id });
@@ -234,18 +240,19 @@ router.post('/:id/result', requirePermission('offer.result_update'), (req, res) 
   if (result === 'accepted') {
     if (o.status !== 'sent') return res.status(409).json({ error: 'Only a sent offer can be accepted.' });
     Offers.setStatus(o.id, 'accepted', { accepted_at: new Date().toISOString() });
-    // Controlled: application → offer_accepted
-    if (app && app.status !== 'offer_accepted') {
-      StageHistory.add(app.id, app.status, 'offer_accepted', req.user, 'Offer accepted');
-      Applications.setStatus(app.id, 'offer_accepted');
-      writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: 'offer_accepted' }, comments: 'Offer accepted' });
-    }
+    // Application stays at Offer Sent on acceptance; it advances to Joined on the join step.
     OfferActivity.add(o.id, req.user, 'accepted', { toStatus: 'accepted' });
     writeAudit(req, { action: 'offer.accepted', entityType: 'offer', entityId: o.id });
   } else if (result === 'rejected_by_candidate') {
     if (!['sent', 'accepted'].includes(o.status)) return res.status(409).json({ error: 'Offer is not in a state the candidate can reject.' });
     if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required.' });
     Offers.setStatus(o.id, 'rejected_by_candidate', { rejected_at: new Date().toISOString(), rejection_reason: reason });
+    // Controlled: application → offer_declined (candidate declined the offer).
+    if (app && appNorm(app.status) !== APP.OFFER_DECLINED) {
+      StageHistory.add(app.id, app.status, APP.OFFER_DECLINED, req.user, 'Candidate declined offer');
+      Applications.setStatus(app.id, APP.OFFER_DECLINED, 'rejection_reason', reason);
+      writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: APP.OFFER_DECLINED }, comments: reason });
+    }
     OfferActivity.add(o.id, req.user, 'rejected_by_candidate', { toStatus: 'rejected_by_candidate', note: reason });
     writeAudit(req, { action: 'offer.rejected_by_candidate', entityType: 'offer', entityId: o.id, comments: reason });
   } else if (result === 'withdrawn') {

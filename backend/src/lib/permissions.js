@@ -43,6 +43,7 @@ export const PERMISSIONS = [
   ['offer.create', 'offer', 'create', 'Create offer'],
   ['offer.edit', 'offer', 'edit', 'Edit offer'],
   ['offer.approve', 'offer', 'approve', 'Approve offer'],
+  ['offer.approve_director', 'offer', 'approve_director', 'Approve high-value offer (HR Director)'],
   ['offer.send', 'offer', 'send', 'Send offer'],
   ['offer.result_update', 'offer', 'result_update', 'Update offer result (accept/reject/withdraw/join)'],
   ['offer.salary_view', 'offer', 'salary_view', 'View offer salary fields'],
@@ -79,7 +80,7 @@ export const ROLE_PERMISSIONS = {
     'dashboard.view', 'request.view_all', 'request.approve', 'request.reject',
     'request.budget_approve', 'request.cancel', 'request.close',
     'candidate.view', 'salary.view',
-    'offer.view', 'offer.approve', 'offer.salary_view',
+    'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
     'interview.view_all', 'report.export', 'audit.view', 'org.manage',
   ],
   hr_manager: [
