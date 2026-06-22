@@ -125,14 +125,16 @@ export function readBlob(storedName) {
 }
 
 // Stream a stored file to an Express response (used by download endpoints).
-export function streamFile(storedName, res, fallbackName) {
+export function streamFile(storedName, res, fallbackName, opts = {}) {
   const f = readBlob(storedName);
   if (!f) { res.status(404).json({ error: 'File not found.' }); return false; }
-  // Hardening: never let the browser sniff/execute uploaded content. Serve as a
-  // download (attachment) with nosniff so a malicious .pdf/.txt can't run as HTML.
+  // Hardening: nosniff always. Documents are served as downloads (attachment).
+  // Images explicitly requested inline (e.g. the logo) display in the page; this
+  // is safe because only known image mime types reach here.
   res.setHeader('Content-Type', f.mime || 'application/octet-stream');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Content-Disposition', `attachment; filename="${(f.originalName || fallbackName || 'file').replace(/"/g, '')}"`);
+  const disp = opts.inline ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition', `${disp}; filename="${(f.originalName || fallbackName || 'file').replace(/"/g, '')}"`);
   res.end(f.data);
   return true;
 }

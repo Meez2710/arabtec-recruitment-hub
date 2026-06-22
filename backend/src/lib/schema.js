@@ -627,6 +627,46 @@ export function ensureSchema() {
     data BLOB NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- ---- Super-admin UI control: built-in field visibility per form ----
+  -- One row per (form, field). Absent row = field shown with its default settings.
+  CREATE TABLE IF NOT EXISTS field_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    form TEXT NOT NULL,            -- request | candidate | offer | interview
+    field_key TEXT NOT NULL,       -- e.g. linkedinUrl, noticePeriod
+    label TEXT,                    -- optional relabel
+    visible INTEGER NOT NULL DEFAULT 1,
+    required INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(form, field_key)
+  );
+
+  -- ---- Super-admin UI control: custom fields the admin invents ----
+  CREATE TABLE IF NOT EXISTS custom_field (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT NOT NULL,          -- request | candidate
+    field_key TEXT NOT NULL,       -- machine key, unique per entity
+    label TEXT NOT NULL,
+    field_type TEXT NOT NULL DEFAULT 'text', -- text|textarea|number|date|select|checkbox
+    options TEXT,                  -- JSON array for select
+    required INTEGER NOT NULL DEFAULT 0,
+    visible INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(entity, field_key)
+  );
+  -- Stored values for custom fields, one row per (entity,record,field).
+  CREATE TABLE IF NOT EXISTS custom_field_value (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT NOT NULL,
+    record_id INTEGER NOT NULL,
+    field_key TEXT NOT NULL,
+    value TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(entity, record_id, field_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cfv_record ON custom_field_value(entity, record_id);
   `);
 
   migrateWorkflowStages();

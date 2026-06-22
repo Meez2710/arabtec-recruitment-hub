@@ -55,6 +55,7 @@ export const PERMISSIONS = [
   ['role.manage', 'role', 'manage', 'Manage roles & permissions'],
   ['branding.manage', 'branding', 'manage', 'Manage branding'],
   ['button.manage', 'button', 'manage', 'Manage button settings'],
+  ['app.manage_ui', 'app', 'manage_ui', 'Super-admin: control fields, custom fields, logo'],
   ['workflow.manage', 'workflow', 'manage', 'Manage workflow settings'],
   ['org.manage', 'org', 'manage', 'Manage projects/sites/departments'],
   ['system.manage', 'system', 'manage', 'Manage system settings'],

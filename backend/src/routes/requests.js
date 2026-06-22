@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  Requests, Seats, Approvals, RequestActivity,
+  Requests, Seats, Approvals, RequestActivity, CustomFields,
   Projects, Sites, Departments, BusinessUnits, Users, SystemSettings, Posts,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
@@ -57,6 +57,14 @@ function requestHealth(r) {
   return { level, label, daysOpen: open, daysToTarget: untilTarget };
 }
 
+// Persist admin-defined custom field values posted with a request.
+function saveRequestCustomFields(recordId, body) {
+  const vals = body && body.customFields;
+  if (!vals || typeof vals !== 'object') return;
+  const defined = new Set(CustomFields.forEntity('request').map((f) => f.field_key));
+  for (const [k, v] of Object.entries(vals)) if (defined.has(k)) CustomFields.setValue('request', recordId, k, v);
+}
+
 function serialize(r, user, { withDetail = false } = {}) {
   const seeSalary = canSeeSalary(user);
   const out = {
@@ -88,6 +96,7 @@ function serialize(r, user, { withDetail = false } = {}) {
   // Simplified intake fields (restructure)
   out.justification = r.justification;
   out.location = r.location;
+  out.customFields = CustomFields.valuesFor('request', r.id);
   // Lightweight names so the requests board cards render without a detail fetch.
   const deptLite = r.department_id ? Departments.byId(r.department_id) : null;
   const siteLite = r.site_id ? Sites.byId(r.site_id) : null;
@@ -197,6 +206,7 @@ router.post('/', requirePermission('request.create'), (req, res) => {
     key_requirements: d.keyRequirements ?? null, hiring_manager_notes: d.hiringManagerNotes ?? null,
     hiring_manager_id: d.hiringManagerId ? Number(d.hiringManagerId) : null,
   });
+  saveRequestCustomFields(created.id, d);
   RequestActivity.add(created.id, req.user, 'created', { toStatus: STATUS.DRAFT, note: `Created ${ticketNo}` });
   writeAudit(req, { action: 'request.created', entityType: 'recruitment_request', entityId: created.id, newValue: { ticketNo, title: d.title } });
   res.status(201).json({ request: serialize(Requests.byId(created.id), req.user, { withDetail: true }) });
@@ -242,6 +252,7 @@ router.put('/:id', requirePermission('request.edit'), (req, res) => {
   const materialChange = r.status === STATUS.APPROVED
     && (patch.headcount !== r.headcount || patch.salary_band_max !== r.salary_band_max || patch.grade !== r.grade);
   const updated = Requests.update(r.id, patch);
+  saveRequestCustomFields(r.id, req.body || {});
   if (materialChange) {
     Approvals.resetChain(r.id);
     Requests.setStatus(r.id, STATUS.PENDING);

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   Candidates, CandidateDocuments, Applications, CandidateNotes, CandidateActivity,
-  Users, Projects, Requests, Interviews, Offers,
+  Users, Projects, Requests, Interviews, Offers, CustomFields,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -14,6 +14,14 @@ router.use(requireAuth);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const canSalary = (u) => u.permissions.includes('salary.view');
+
+// Persist any custom-field values posted with the candidate (admin-defined fields).
+function saveCustomFields(entity, recordId, body) {
+  const vals = body && body.customFields;
+  if (!vals || typeof vals !== 'object') return;
+  const defined = new Set(CustomFields.forEntity(entity).map((f) => f.field_key));
+  for (const [k, v] of Object.entries(vals)) if (defined.has(k)) CustomFields.setValue(entity, recordId, k, v);
+}
 
 function serialize(c, user, { withDetail = false } = {}) {
   const seeSalary = canSalary(user);
@@ -33,6 +41,7 @@ function serialize(c, user, { withDetail = false } = {}) {
     salaryVisible: seeSalary,
     expectedSalary: seeSalary ? c.expected_salary : null,
     applicationCount: Applications.forCandidate(c.id).length,
+    customFields: CustomFields.valuesFor('candidate', c.id),
   };
   if (withDetail) {
     out.documents = CandidateDocuments.forCandidate(c.id);
@@ -146,6 +155,7 @@ router.post('/', requirePermission('candidate.add'), (req, res) => {
     tags: Array.isArray(d.tags) ? d.tags : (d.tags ? String(d.tags).split(',').map((s) => s.trim()).filter(Boolean) : []),
     ownerRecruiterId: d.ownerRecruiterId ? Number(d.ownerRecruiterId) : req.user.id, createdBy: req.user.id,
   });
+  saveCustomFields('candidate', created.id, d);
   CandidateActivity.add({ candidateId: created.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_created', note: candidateNo });
   writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: created.id, newValue: { candidateNo, fullName: created.full_name }, comments: d.overrideDuplicate ? `Duplicate override: ${d.overrideReason}` : null });
   res.status(201).json({ candidate: serialize(created, req.user, { withDetail: true }) });
@@ -164,6 +174,7 @@ router.put('/:id', requirePermission('candidate.edit'), (req, res) => {
   if (d.tags !== undefined) patch.tags = Array.isArray(d.tags) ? d.tags : String(d.tags).split(',').map((s) => s.trim()).filter(Boolean);
   const before = { fullName: c.full_name, currentCompany: c.current_company };
   const updated = Candidates.update(c.id, patch);
+  saveCustomFields('candidate', c.id, req.body || {});
   CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_updated' });
   writeAudit(req, { action: 'candidate.updated', entityType: 'candidate', entityId: c.id, oldValue: before, newValue: { fullName: updated.full_name } });
   res.json({ candidate: serialize(updated, req.user, { withDetail: true }) });

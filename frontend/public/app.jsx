@@ -22,6 +22,7 @@ const api = {
   get(p) { return this.call(p); },
   post(p, body) { return this.call(p, { method: 'POST', body }); },
   put(p, body) { return this.call(p, { method: 'PUT', body }); },
+  del(p) { return this.call(p, { method: 'DELETE' }); },
   async upload(p, file, fields = {}) {
     const fd = new FormData(); fd.append('file', file);
     for (const [k, v] of Object.entries(fields)) fd.append(k, v);
@@ -80,7 +81,14 @@ function Icon({ name, size = 17 }) {
 // Brand mark — the Arabtec red twin-peak "A". Inline SVG so it inherits color/scale anywhere.
 // withText=true renders the official lockup: the red mark with the lowercase
 // "arabtec" wordmark centered below it (matching the company logo).
+// Set true when the admin has uploaded a custom logo (read from branding on load).
+let HAS_CUSTOM_LOGO = false;
+function setHasCustomLogo(v) { HAS_CUSTOM_LOGO = !!v; }
 function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }) {
+  // A custom uploaded logo replaces the built-in mark everywhere.
+  if (HAS_CUSTOM_LOGO) {
+    return <img src="/api/admin-ui/logo" alt="Logo" style={{ height: withText ? size * 1.0 : size, maxWidth: size * 3.2, objectFit: 'contain', display: 'block' }} onError={(e) => { e.target.style.display = 'none'; }} />;
+  }
   const mark = (
     <svg width={size} height={size * (320 / 463)} viewBox="0 0 463 320" aria-label="Arabtec" role="img" style={{ display: 'block' }}>
       <path fill={color} d="M150 0 L223 0 L223 118 L73 263 L73 320 L0 320 L0 205 Z" />
@@ -277,6 +285,7 @@ const NAV = [
   { key: 'sites', label: 'Sites', icon: 'pin', perm: null },
   { key: 'departments', label: 'Departments', icon: 'building', perm: null },
   { section: 'Configuration' },
+  { key: 'control', label: 'Control Center', icon: 'gear', perm: 'app.manage_ui' },
   { key: 'branding', label: 'Branding Settings', icon: 'palette', perm: 'branding.manage' },
   { key: 'buttons', label: 'Button Settings', icon: 'button', perm: 'button.manage' },
   { key: 'workflow', label: 'Workflow Settings', icon: 'flow', perm: 'workflow.manage' },
@@ -305,6 +314,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     projects: <ProjectsPage user={user} />,
     sites: <SitesPage user={user} />,
     departments: <DepartmentsPage user={user} />,
+    control: <ControlCenterPage user={user} branding={branding} refreshBranding={refreshBranding} />,
     branding: <BrandingPage user={user} branding={branding} refreshBranding={refreshBranding} />,
     buttons: <ButtonsPage user={user} />,
     workflow: <WorkflowPage user={user} />,
@@ -842,6 +852,229 @@ const BRAND_COLORS = [
   ['text_gray', 'Text Gray'], ['border_color', 'Border'], ['button_color', 'Button'],
   ['success_color', 'Success'], ['warning_color', 'Warning'], ['critical_color', 'Critical'],
 ];
+/* Reusable: render admin-defined custom fields on a form. `values` is an object
+   keyed by fieldKey; `onChange(key, val)` updates it. Loads definitions for the entity. */
+function useCustomFields(entity) {
+  const [defs, setDefs] = useState([]);
+  useEffect(() => { api.get('/admin-ui/custom-fields/' + entity).then((r) => setDefs(r.fields.filter((f) => f.visible))).catch(() => setDefs([])); }, [entity]);
+  return defs;
+}
+function CustomFieldsInputs({ defs, values, onChange }) {
+  if (!defs || !defs.length) return null;
+  return <>{defs.map((f) => {
+    const v = values[f.fieldKey] ?? '';
+    const label = f.label + (f.required ? ' *' : '');
+    if (f.fieldType === 'textarea') return <div key={f.fieldKey} className="field full"><label>{label}</label><textarea value={v} onChange={(e) => onChange(f.fieldKey, e.target.value)} /></div>;
+    if (f.fieldType === 'select') return <div key={f.fieldKey} className="field"><label>{label}</label><select value={v} onChange={(e) => onChange(f.fieldKey, e.target.value)}><option value="">—</option>{(f.options || []).map((o) => <option key={o}>{o}</option>)}</select></div>;
+    if (f.fieldType === 'checkbox') return <div key={f.fieldKey} className="field"><label>{label}</label><input type="checkbox" checked={v === 'true' || v === true} onChange={(e) => onChange(f.fieldKey, e.target.checked ? 'true' : 'false')} /></div>;
+    const type = f.fieldType === 'number' ? 'number' : f.fieldType === 'date' ? 'date' : 'text';
+    return <div key={f.fieldKey} className="field"><label>{label}</label><input type={type} value={v} onChange={(e) => onChange(f.fieldKey, e.target.value)} /></div>;
+  })}</>;
+}
+
+/* ============================ SUPER-ADMIN CONTROL CENTER ============================ */
+function ControlCenterPage({ user, branding, refreshBranding }) {
+  const [tab, setTab] = useState('buttons');
+  const TABS = [['buttons', 'Buttons'], ['branding', 'Branding & Logo'], ['fields', 'Built-in Fields'], ['custom', 'Custom Fields']];
+  return (
+    <div>
+      <PageHead crumb="Configuration / Control Center" title="Control Center"
+        sub="Super-admin control of the whole app: turn buttons on/off, upload the logo, show or hide any built-in field, and add your own custom fields." />
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 18, flexWrap: 'wrap' }}>
+        {TABS.map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} className="btn btn-ghost"
+            style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--secondary)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--secondary)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>
+        ))}
+      </div>
+      {tab === 'buttons' && <ButtonsPanel user={user} />}
+      {tab === 'branding' && <BrandingLogoPanel user={user} branding={branding} refreshBranding={refreshBranding} />}
+      {tab === 'fields' && <BuiltinFieldsPanel user={user} />}
+      {tab === 'custom' && <CustomFieldsPanel user={user} />}
+    </div>
+  );
+}
+
+// --- Buttons panel (reuses the existing button registry) ---
+function ButtonsPanel({ user }) {
+  const toast = useToast();
+  const [rows, setRows] = useState(null);
+  const [q, setQ] = useState('');
+  const load = useCallback(async () => setRows((await api.get('/settings/buttons')).buttons), []);
+  useEffect(() => { load(); }, []);
+  async function update(key, patch) {
+    try { await api.put('/settings/buttons/' + key, patch); load(); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  if (!rows) return <Skeleton rows={8} />;
+  const filtered = rows.filter((b) => !q || (b.label + b.buttonKey + b.screen).toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="card card-pad">
+      <input placeholder="Search buttons…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 10, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, width: 260 }} />
+      <table><thead><tr><th>Button</th><th>Screen</th><th>Label</th><th>Visible</th><th>Enabled</th><th>Confirm</th><th>Reason</th></tr></thead>
+        <tbody>{filtered.map((b) => (
+          <tr key={b.buttonKey}>
+            <td><strong>{b.label}</strong><div className="muted" style={{ fontSize: 11 }}>{b.buttonKey}</div></td>
+            <td><span className="chip">{b.screen}</span></td>
+            <td><input defaultValue={b.label} onBlur={(e) => e.target.value !== b.label && update(b.buttonKey, { label: e.target.value })} style={{ width: 130, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
+            {['visible', 'enabled', 'confirmRequired', 'reasonRequired'].map((flag) => (
+              <td key={flag}><input type="checkbox" checked={!!b[flag]} onChange={(e) => update(b.buttonKey, { [flag]: e.target.checked })} /></td>
+            ))}
+          </tr>
+        ))}</tbody></table>
+    </div>
+  );
+}
+
+// --- Branding + logo panel ---
+function BrandingLogoPanel({ user, branding, refreshBranding }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [logoVersion, setLogoVersion] = useState(Date.now());
+  const [f, setF] = useState({ app_name: branding?.app_name || 'Arabtec', button_color: branding?.button_color || '#d2232a' });
+  const hasLogo = branding?.logo_stored_name;
+  async function saveBranding() {
+    setBusy(true);
+    try { await api.put('/settings/branding', { branding: f }); toast('Branding saved'); refreshBranding && refreshBranding(); }
+    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  async function uploadLogo(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setBusy(true);
+    try { await api.upload('/admin-ui/logo', file); toast('Logo uploaded'); setLogoVersion(Date.now()); refreshBranding && refreshBranding(); }
+    catch (err) { toast(err.message, 'error'); } finally { setBusy(false); e.target.value = ''; }
+  }
+  async function removeLogo() {
+    setBusy(true);
+    try { await api.del('/admin-ui/logo'); toast('Logo removed'); setLogoVersion(Date.now()); refreshBranding && refreshBranding(); }
+    catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="card card-pad">
+        <div className="section-title" style={{ marginTop: 0 }}>Logo</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+          <div style={{ width: 96, height: 72, border: '1px solid var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', overflow: 'hidden' }}>
+            {hasLogo ? <img src={`/api/admin-ui/logo?v=${logoVersion}`} alt="Logo" style={{ maxWidth: '100%', maxHeight: '100%' }} /> : <Logo size={40} withText />}
+          </div>
+          <div>
+            <label className="btn btn-sm" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (hasLogo ? 'Replace Logo' : '+ Upload Logo')}
+              <input type="file" style={{ display: 'none' }} accept=".png,.jpg,.jpeg,.svg" onChange={uploadLogo} disabled={busy} /></label>
+            {hasLogo && <button className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={removeLogo} disabled={busy}>Remove</button>}
+            <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>PNG, JPG or SVG. Shown app-wide and on the login screen.</div>
+          </div>
+        </div>
+      </div>
+      <div className="card card-pad">
+        <div className="section-title" style={{ marginTop: 0 }}>Identity</div>
+        <div className="field"><label>App Name</label><input value={f.app_name} onChange={(e) => setF((s) => ({ ...s, app_name: e.target.value }))} /></div>
+        <div className="field"><label>Primary Color</label><input type="color" value={f.button_color} onChange={(e) => setF((s) => ({ ...s, button_color: e.target.value }))} style={{ width: 60, height: 32, padding: 2 }} /></div>
+        <button className="btn" onClick={saveBranding} disabled={busy} style={{ marginTop: 10 }}>{busy ? 'Saving…' : 'Save'}</button>
+      </div>
+    </div>
+  );
+}
+
+// --- Built-in field visibility panel ---
+function BuiltinFieldsPanel({ user }) {
+  const toast = useToast();
+  const [form, setForm] = useState('request');
+  const [fields, setFields] = useState(null);
+  const FORMS = [['request', 'Recruitment Request'], ['candidate', 'Candidate'], ['offer', 'Offer'], ['interview', 'Interview']];
+  const load = useCallback(async (frm) => setFields((await api.get('/admin-ui/fields/' + frm)).fields), []);
+  useEffect(() => { setFields(null); load(form); }, [form]);
+  async function update(fieldKey, patch, cur) {
+    try { await api.put(`/admin-ui/fields/${form}/${fieldKey}`, { visible: cur.visible, required: cur.required, label: cur.label, ...patch }); load(form); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  return (
+    <div className="card card-pad">
+      <div style={{ marginBottom: 10 }}>
+        <label className="muted" style={{ marginRight: 8 }}>Form:</label>
+        <select value={form} onChange={(e) => setForm(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
+          {FORMS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+      </div>
+      {!fields ? <Skeleton rows={6} /> : (
+        <table><thead><tr><th>Field</th><th>Visible</th><th>Required</th><th>Custom Label</th></tr></thead>
+          <tbody>{fields.map((fl) => (
+            <tr key={fl.fieldKey}>
+              <td><strong>{fl.defaultLabel}</strong><div className="muted" style={{ fontSize: 11 }}>{fl.fieldKey}</div></td>
+              <td><input type="checkbox" checked={fl.visible} onChange={(e) => update(fl.fieldKey, { visible: e.target.checked }, fl)} /></td>
+              <td><input type="checkbox" checked={fl.required} onChange={(e) => update(fl.fieldKey, { required: e.target.checked }, fl)} /></td>
+              <td><input defaultValue={fl.label || ''} placeholder={fl.defaultLabel} onBlur={(e) => update(fl.fieldKey, { label: e.target.value || null }, fl)} style={{ width: 150, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
+            </tr>
+          ))}</tbody></table>
+      )}
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Hiding a field removes it from that form. Required fields must be filled before saving.</div>
+    </div>
+  );
+}
+
+// --- Custom fields panel ---
+function CustomFieldsPanel({ user }) {
+  const toast = useToast();
+  const [entity, setEntity] = useState('candidate');
+  const [fields, setFields] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [nf, setNf] = useState({ label: '', fieldType: 'text', required: false, options: '' });
+  const ENTITIES = [['candidate', 'Candidate'], ['request', 'Recruitment Request']];
+  const TYPES = ['text', 'textarea', 'number', 'date', 'select', 'checkbox'];
+  const load = useCallback(async (e) => setFields((await api.get('/admin-ui/custom-fields/' + e)).fields), []);
+  useEffect(() => { setFields(null); load(entity); }, [entity]);
+  async function create() {
+    if (!nf.label.trim()) { toast('Label is required', 'error'); return; }
+    try {
+      await api.post('/admin-ui/custom-fields/' + entity, { label: nf.label, fieldType: nf.fieldType, required: nf.required, options: nf.fieldType === 'select' ? nf.options : null });
+      toast('Custom field added'); setAdding(false); setNf({ label: '', fieldType: 'text', required: false, options: '' }); load(entity);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+  async function remove(key) {
+    if (!confirm('Delete this custom field and all its saved values?')) return;
+    try { await api.del(`/admin-ui/custom-fields/${entity}/${key}`); toast('Deleted'); load(entity); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  async function toggle(key, patch) {
+    try { await api.put(`/admin-ui/custom-fields/${entity}/${key}`, patch); load(entity); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  return (
+    <div className="card card-pad">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div><label className="muted" style={{ marginRight: 8 }}>Entity:</label>
+          <select value={entity} onChange={(e) => setEntity(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
+            {ENTITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select></div>
+        <button className="btn btn-sm" onClick={() => setAdding((a) => !a)}>{adding ? 'Cancel' : '+ Add Custom Field'}</button>
+      </div>
+      {adding && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 12, background: 'var(--ticket-chip-bg, #fbeef0)' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="field" style={{ margin: 0 }}><label>Label</label><input value={nf.label} onChange={(e) => setNf((s) => ({ ...s, label: e.target.value }))} placeholder="e.g. Iqama Number" /></div>
+            <div className="field" style={{ margin: 0 }}><label>Type</label><select value={nf.fieldType} onChange={(e) => setNf((s) => ({ ...s, fieldType: e.target.value }))}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+            {nf.fieldType === 'select' && <div className="field" style={{ margin: 0 }}><label>Options (comma-sep)</label><input value={nf.options} onChange={(e) => setNf((s) => ({ ...s, options: e.target.value }))} placeholder="A, B, C" /></div>}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}><input type="checkbox" checked={nf.required} onChange={(e) => setNf((s) => ({ ...s, required: e.target.checked }))} /> Required</label>
+            <button className="btn btn-sm" onClick={create}>Add</button>
+          </div>
+        </div>
+      )}
+      {!fields ? <Skeleton rows={4} /> : fields.length === 0 ? <Empty icon="➕" text="No custom fields yet. Add one above." /> : (
+        <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Visible</th><th></th></tr></thead>
+          <tbody>{fields.map((cf) => (
+            <tr key={cf.fieldKey}>
+              <td><strong>{cf.label}</strong></td>
+              <td className="muted" style={{ fontSize: 11 }}>{cf.fieldKey}</td>
+              <td><span className="chip">{cf.fieldType}</span></td>
+              <td><input type="checkbox" checked={cf.required} onChange={(e) => toggle(cf.fieldKey, { required: e.target.checked })} /></td>
+              <td><input type="checkbox" checked={cf.visible} onChange={(e) => toggle(cf.fieldKey, { visible: e.target.checked })} /></td>
+              <td><button className="btn btn-sm btn-ghost" onClick={() => remove(cf.fieldKey)}>Delete</button></td>
+            </tr>
+          ))}</tbody></table>
+      )}
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Custom fields appear on the {entity === 'candidate' ? 'Add/Edit Candidate' : 'Create/Edit Request'} form and save with the record.</div>
+    </div>
+  );
+}
+
 function BrandingPage({ user, branding, refreshBranding }) {
   const toast = useToast();
   const [f, setF] = useState(branding || {});
@@ -1166,6 +1399,8 @@ function RequestForm({ user, onClose, onSaved }) {
   const [f, setF] = useState({ title: '', justification: '', projectId: '', siteId: '', departmentId: '', location: '', hiringManagerId: '', headcount: 1, priority: 'medium', targetJoinDate: '', keyResponsibilities: '', keyRequirements: '' });
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
+  const customDefs = useCustomFields('request');
+  const [customVals, setCustomVals] = useState({});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { api.get('/requests/meta/form').then(setMeta); }, []);
   const sites = meta ? meta.sites.filter((s) => !f.projectId || s.projectId === Number(f.projectId)) : [];
@@ -1173,7 +1408,7 @@ function RequestForm({ user, onClose, onSaved }) {
   async function save() {
     setBusy(true);
     try {
-      const body = { ...f };
+      const body = { ...f, customFields: customVals };
       ['siteId', 'hiringManagerId'].forEach((k) => { if (body[k] === '') body[k] = null; });
       const r = await api.post('/requests', body);
       // Optional attachment upload (real file) after the request exists.
@@ -1200,6 +1435,7 @@ function RequestForm({ user, onClose, onSaved }) {
         <div className="field"><label>Target Join Date</label><input type="date" value={f.targetJoinDate} onChange={(e) => set('targetJoinDate', e.target.value)} /></div>
         <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>
         <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>
+        <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
         <div className="field full"><label>Attachment (Job Description / spec)</label>
           <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           {file && <div className="muted" style={{ marginTop: 4 }}>Selected: {file.name}</div>}
@@ -2360,6 +2596,8 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
   const [dups, setDups] = useState([]);
   const [override, setOverride] = useState({ on: false, reason: '' });
   const [cvFile, setCvFile] = useState(null);
+  const customDefs = useCustomFields('candidate');
+  const [customVals, setCustomVals] = useState(candidate?.customFields || {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { api.get('/candidates/meta/form').then(setMeta); }, []);
 
@@ -2376,7 +2614,7 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
   async function save() {
     setBusy(true);
     try {
-      const body = { ...f, tags: f.tags ? f.tags.split(',').map((s) => s.trim()).filter(Boolean) : [] };
+      const body = { ...f, tags: f.tags ? f.tags.split(',').map((s) => s.trim()).filter(Boolean) : [], customFields: customVals };
       if (dups.length && isNew) { body.overrideDuplicate = true; body.overrideReason = override.reason; }
       let candId;
       if (isNew) { const r = await api.post('/candidates', body); candId = r.candidate.id; toast('Candidate created: ' + r.candidate.candidateNo); }
@@ -2423,6 +2661,7 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
             ? <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Selected: {cvFile.name} — uploads when you Save.</div>
             : <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Optional. Stored as the candidate's résumé (view/download from their profile).</div>}
         </div>
+        <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
       </div>
     </Modal>
   );
@@ -2942,7 +3181,7 @@ function App() {
   const [branding, setBranding] = useState(null);
 
   const loadBranding = useCallback(async () => {
-    try { const { branding } = await api.get('/settings/branding'); setBranding(branding); applyBranding(branding); return branding; }
+    try { const { branding } = await api.get('/settings/branding'); setHasCustomLogo(!!branding.logo_stored_name); setBranding(branding); applyBranding(branding); return branding; }
     catch { return null; }
   }, []);
 

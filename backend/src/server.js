@@ -21,15 +21,18 @@ import offerRoutes from './routes/offers.js';
 import dashboardRoutes from './routes/dashboard.js';
 import assessmentRoutes from './routes/assessments.js';
 import threadRoutes from './routes/thread.js';
+import adminUiRoutes from './routes/admin-ui.js';
 
 dotenv.config();
-
-// Ensure tables exist before serving (idempotent).
-ensureSchema();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.set('trust proxy', true);
+
+// Schema/seed run AFTER the port is bound (see bottom) so the platform health
+// check never times out on a slow first DB connection. Until init finishes,
+// API calls (except health) return 503 so no request hits a missing table.
+let APP_READY = false;
 
 // CORS: explicit allowlist. In production we DO NOT reflect arbitrary origins.
 // Same-origin requests (the app serves its own frontend) carry no Origin header
@@ -63,14 +66,25 @@ app.use('/api/auth/login', (req, res, next) => {
   next();
 });
 
-// Health check — verifies the database is actually reachable.
+// Health check — LIVENESS: always 200 once the HTTP server is up, so the
+// platform's deploy health check never times out while the DB worker warms up.
+// DB connectivity is reported as extra info (and at /api/health/db for a strict check).
 app.get('/api/health', (req, res) => {
-  try {
-    dbGet('SELECT 1 AS ok');
-    res.json({ ok: true, service: 'arabtec-recruitment-hub', db: 'up' });
-  } catch (e) {
-    res.status(503).json({ ok: false, service: 'arabtec-recruitment-hub', db: 'down' });
-  }
+  let db = 'unknown';
+  try { dbGet('SELECT 1 AS ok'); db = 'up'; } catch { db = 'starting'; }
+  res.json({ ok: true, service: 'arabtec-recruitment-hub', db });
+});
+app.get('/api/health/db', (req, res) => {
+  try { dbGet('SELECT 1 AS ok'); res.json({ ok: true, db: 'up' }); }
+  catch { res.status(503).json({ ok: false, db: 'down' }); }
+});
+
+// Readiness gate: until schema+seed finish, API calls return 503 (with Retry-After)
+// rather than erroring on a not-yet-created table. Health endpoints are exempt.
+app.use('/api', (req, res, next) => {
+  if (APP_READY) return next();
+  res.setHeader('Retry-After', '5');
+  return res.status(503).json({ error: 'Service starting, please retry in a moment.' });
 });
 
 // API routes
@@ -88,6 +102,7 @@ app.use('/api/offers', offerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/assessments', assessmentRoutes);
 app.use('/api/thread', threadRoutes);
+app.use('/api/admin-ui', adminUiRoutes);
 
 // Serve the frontend (single-page app) from ../../frontend/public
 const frontendDir = path.resolve(__dirname, '../../frontend/public');
@@ -125,9 +140,21 @@ async function bootSeedIfEmpty() {
 }
 
 const PORT = process.env.PORT || 4000;
-bootSeedIfEmpty().finally(() => {
-  app.listen(PORT, () => {
-    console.log(`\n🏗️  Arabtec Recruitment Hub running at http://localhost:${PORT}`);
-    console.log(`   API health: http://localhost:${PORT}/api/health\n`);
-  });
+// Bind the port FIRST so the platform's health check sees an open port immediately
+// (Render fails a deploy if no port opens within ~60s). Schema + seed run in the
+// background; APP_READY flips true when done, opening the API gate.
+app.listen(PORT, () => {
+  console.log(`\n🏗️  Arabtec Recruitment Hub listening on ${PORT} (initialising…)`);
+  (async () => {
+    try {
+      ensureSchema();            // create/upgrade tables + migrate workflow stages
+      await bootSeedIfEmpty();   // seed admin/reference data if empty
+      APP_READY = true;
+      console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
+    } catch (e) {
+      console.error('  ! Initialisation failed:', e.message);
+      // Open the gate anyway so the operator can see real errors rather than 503s.
+      APP_READY = true;
+    }
+  })();
 });

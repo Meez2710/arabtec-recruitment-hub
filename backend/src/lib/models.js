@@ -254,6 +254,61 @@ export const Buttons = {
   },
 };
 
+// ---- Super-admin: built-in field visibility per form ----
+export const FieldConfig = {
+  forForm(form) { return all('SELECT * FROM field_config WHERE form=? ORDER BY sort_order ASC, field_key ASC', [form]); },
+  all() { return all('SELECT * FROM field_config ORDER BY form ASC, sort_order ASC'); },
+  upsert(form, fieldKey, d) {
+    run(`INSERT INTO field_config (form, field_key, label, visible, required, sort_order, updated_at)
+         VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(form, field_key) DO UPDATE SET
+           label=excluded.label, visible=excluded.visible, required=excluded.required,
+           sort_order=excluded.sort_order, updated_at=excluded.updated_at`,
+        [form, fieldKey, d.label ?? null, b(d.visible !== undefined ? d.visible : true),
+         b(d.required !== undefined ? d.required : false), d.sortOrder ?? 0, nowISO()]);
+    return get('SELECT * FROM field_config WHERE form=? AND field_key=?', [form, fieldKey]);
+  },
+};
+
+// ---- Super-admin: custom fields the admin invents ----
+export const CustomFields = {
+  forEntity(entity) { return all('SELECT * FROM custom_field WHERE entity=? ORDER BY sort_order ASC, id ASC', [entity]); },
+  all() { return all('SELECT * FROM custom_field ORDER BY entity ASC, sort_order ASC'); },
+  byKey(entity, key) { return get('SELECT * FROM custom_field WHERE entity=? AND field_key=?', [entity, key]); },
+  create(d) {
+    run(`INSERT INTO custom_field (entity, field_key, label, field_type, options, required, visible, sort_order)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [d.entity, d.fieldKey, d.label, d.fieldType || 'text',
+         d.options ? JSON.stringify(d.options) : null,
+         b(!!d.required), b(d.visible !== undefined ? d.visible : true), d.sortOrder ?? 0]);
+    return this.byKey(d.entity, d.fieldKey);
+  },
+  update(entity, key, d) {
+    const c = this.byKey(entity, key);
+    if (!c) return null;
+    run(`UPDATE custom_field SET label=?, field_type=?, options=?, required=?, visible=?, sort_order=? WHERE entity=? AND field_key=?`,
+        [d.label ?? c.label, d.fieldType ?? c.field_type,
+         d.options !== undefined ? (d.options ? JSON.stringify(d.options) : null) : c.options,
+         d.required !== undefined ? b(d.required) : c.required,
+         d.visible !== undefined ? b(d.visible) : c.visible,
+         d.sortOrder !== undefined ? d.sortOrder : c.sort_order, entity, key]);
+    return this.byKey(entity, key);
+  },
+  remove(entity, key) {
+    run('DELETE FROM custom_field WHERE entity=? AND field_key=?', [entity, key]);
+    run('DELETE FROM custom_field_value WHERE entity=? AND field_key=?', [entity, key]);
+  },
+  valuesFor(entity, recordId) {
+    return Object.fromEntries(all('SELECT field_key, value FROM custom_field_value WHERE entity=? AND record_id=?', [entity, recordId]).map((r) => [r.field_key, r.value]));
+  },
+  setValue(entity, recordId, fieldKey, value) {
+    run(`INSERT INTO custom_field_value (entity, record_id, field_key, value, updated_at)
+         VALUES (?,?,?,?,?)
+         ON CONFLICT(entity, record_id, field_key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+        [entity, recordId, fieldKey, value == null ? null : String(value), nowISO()]);
+  },
+};
+
 export const Workflows = {
   all() { return all('SELECT * FROM workflow_setting ORDER BY id ASC'); },
   byKey(key) { return get('SELECT * FROM workflow_setting WHERE key = ?', [key]); },
