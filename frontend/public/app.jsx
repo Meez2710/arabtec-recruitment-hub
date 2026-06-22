@@ -82,12 +82,25 @@ function Icon({ name, size = 17 }) {
 // withText=true renders the official lockup: the red mark with the lowercase
 // "arabtec" wordmark centered below it (matching the company logo).
 // Set true when the admin has uploaded a custom logo (read from branding on load).
+// A cache-busting version stamp forces the browser to re-fetch after a replace.
 let HAS_CUSTOM_LOGO = false;
-function setHasCustomLogo(v) { HAS_CUSTOM_LOGO = !!v; }
+let LOGO_VERSION = Date.now();
+function customLogoUrl() { return '/api/admin-ui/logo?v=' + LOGO_VERSION; }
+function setHasCustomLogo(v, version) {
+  HAS_CUSTOM_LOGO = !!v;
+  if (version) LOGO_VERSION = version;
+  // Keep the browser tab favicon in sync with the uploaded logo.
+  try {
+    let link = document.querySelector("link[rel='icon']");
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    if (HAS_CUSTOM_LOGO) { link.type = 'image/png'; link.href = customLogoUrl(); }
+    else { link.type = 'image/svg+xml'; link.href = '/logo.svg'; }
+  } catch {}
+}
 function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }) {
   // A custom uploaded logo replaces the built-in mark everywhere.
   if (HAS_CUSTOM_LOGO) {
-    return <img src="/api/admin-ui/logo" alt="Logo" style={{ height: withText ? size * 1.0 : size, maxWidth: size * 3.2, objectFit: 'contain', display: 'block' }} onError={(e) => { e.target.style.display = 'none'; }} />;
+    return <img src={customLogoUrl()} alt="Logo" style={{ height: withText ? size * 1.0 : size, maxWidth: size * 3.2, objectFit: 'contain', display: 'block' }} onError={(e) => { e.target.style.display = 'none'; }} />;
   }
   const mark = (
     <svg width={size} height={size * (320 / 463)} viewBox="0 0 463 320" aria-label="Arabtec" role="img" style={{ display: 'block' }}>
@@ -897,30 +910,62 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
 // --- Buttons panel (reuses the existing button registry) ---
 function ButtonsPanel({ user }) {
   const toast = useToast();
-  const [rows, setRows] = useState(null);
+  const [rows, setRows] = useState(null);   // edited working copy
+  const [orig, setOrig] = useState(null);   // last-saved snapshot (to detect changes)
   const [q, setQ] = useState('');
-  const load = useCallback(async () => setRows((await api.get('/settings/buttons')).buttons), []);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    const b = (await api.get('/settings/buttons')).buttons;
+    setRows(b); setOrig(JSON.parse(JSON.stringify(b)));
+  }, []);
   useEffect(() => { load(); }, []);
-  async function update(key, patch) {
-    try { await api.put('/settings/buttons/' + key, patch); load(); }
-    catch (e) { toast(e.message, 'error'); }
+  // Edit locally only; nothing is saved until "Save Changes" is clicked.
+  function edit(key, patch) {
+    setRows((rs) => rs.map((b) => b.buttonKey === key ? { ...b, ...patch } : b));
+  }
+  const FLAGS = ['label', 'visible', 'enabled', 'confirmRequired', 'reasonRequired'];
+  function changedKeys() {
+    if (!orig) return [];
+    const om = Object.fromEntries(orig.map((b) => [b.buttonKey, b]));
+    return rows.filter((b) => FLAGS.some((f) => b[f] !== om[b.buttonKey][f]));
+  }
+  async function saveAll() {
+    const changed = changedKeys();
+    if (!changed.length) { toast('No changes to save'); return; }
+    setBusy(true);
+    try {
+      for (const b of changed) {
+        await api.put('/settings/buttons/' + b.buttonKey, { label: b.label, visible: b.visible, enabled: b.enabled, confirmRequired: b.confirmRequired, reasonRequired: b.reasonRequired });
+      }
+      toast(`Saved ${changed.length} button${changed.length > 1 ? 's' : ''} ✓`);
+      await load();
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
   if (!rows) return <Skeleton rows={8} />;
   const filtered = rows.filter((b) => !q || (b.label + b.buttonKey + b.screen).toLowerCase().includes(q.toLowerCase()));
+  const dirty = changedKeys().length;
   return (
     <div className="card card-pad">
-      <input placeholder="Search buttons…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 10, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, width: 260 }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+        <input placeholder="Search buttons…" value={q} onChange={(e) => setQ(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, width: 260 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {dirty > 0 && <span className="muted" style={{ fontSize: 12.5 }}>{dirty} unsaved change{dirty > 1 ? 's' : ''}</span>}
+          {dirty > 0 && <button className="btn btn-ghost btn-sm" onClick={load} disabled={busy}>Discard</button>}
+          <button className="btn" onClick={saveAll} disabled={busy || dirty === 0}>{busy ? 'Saving…' : 'Save Changes'}</button>
+        </div>
+      </div>
       <table><thead><tr><th>Button</th><th>Screen</th><th>Label</th><th>Visible</th><th>Enabled</th><th>Confirm</th><th>Reason</th></tr></thead>
         <tbody>{filtered.map((b) => (
           <tr key={b.buttonKey}>
             <td><strong>{b.label}</strong><div className="muted" style={{ fontSize: 11 }}>{b.buttonKey}</div></td>
             <td><span className="chip">{b.screen}</span></td>
-            <td><input defaultValue={b.label} onBlur={(e) => e.target.value !== b.label && update(b.buttonKey, { label: e.target.value })} style={{ width: 130, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
+            <td><input value={b.label} onChange={(e) => edit(b.buttonKey, { label: e.target.value })} style={{ width: 130, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
             {['visible', 'enabled', 'confirmRequired', 'reasonRequired'].map((flag) => (
-              <td key={flag}><input type="checkbox" checked={!!b[flag]} onChange={(e) => update(b.buttonKey, { [flag]: e.target.checked })} /></td>
+              <td key={flag}><input type="checkbox" checked={!!b[flag]} onChange={(e) => edit(b.buttonKey, { [flag]: e.target.checked })} /></td>
             ))}
           </tr>
         ))}</tbody></table>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Toggle what you need, then click <strong>Save Changes</strong>. Nothing is applied until you save.</div>
     </div>
   );
 }
@@ -979,33 +1024,58 @@ function BuiltinFieldsPanel({ user }) {
   const toast = useToast();
   const [form, setForm] = useState('request');
   const [fields, setFields] = useState(null);
+  const [orig, setOrig] = useState(null);
+  const [busy, setBusy] = useState(false);
   const FORMS = [['request', 'Recruitment Request'], ['candidate', 'Candidate'], ['offer', 'Offer'], ['interview', 'Interview']];
-  const load = useCallback(async (frm) => setFields((await api.get('/admin-ui/fields/' + frm)).fields), []);
+  const load = useCallback(async (frm) => {
+    const fs = (await api.get('/admin-ui/fields/' + frm)).fields;
+    setFields(fs); setOrig(JSON.parse(JSON.stringify(fs)));
+  }, []);
   useEffect(() => { setFields(null); load(form); }, [form]);
-  async function update(fieldKey, patch, cur) {
-    try { await api.put(`/admin-ui/fields/${form}/${fieldKey}`, { visible: cur.visible, required: cur.required, label: cur.label, ...patch }); load(form); }
-    catch (e) { toast(e.message, 'error'); }
+  function edit(fieldKey, patch) {
+    setFields((fs) => fs.map((f) => f.fieldKey === fieldKey ? { ...f, ...patch } : f));
   }
+  function changed() {
+    if (!orig) return [];
+    const om = Object.fromEntries(orig.map((f) => [f.fieldKey, f]));
+    return fields.filter((f) => ['visible', 'required', 'label'].some((k) => f[k] !== om[f.fieldKey][k]));
+  }
+  async function saveAll() {
+    const ch = changed();
+    if (!ch.length) { toast('No changes to save'); return; }
+    setBusy(true);
+    try {
+      for (const f of ch) await api.put(`/admin-ui/fields/${form}/${f.fieldKey}`, { visible: f.visible, required: f.required, label: f.label || null });
+      toast(`Saved ${ch.length} field${ch.length > 1 ? 's' : ''} ✓`);
+      await load(form);
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  const dirty = fields ? changed().length : 0;
   return (
     <div className="card card-pad">
-      <div style={{ marginBottom: 10 }}>
-        <label className="muted" style={{ marginRight: 8 }}>Form:</label>
-        <select value={form} onChange={(e) => setForm(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
-          {FORMS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+        <div><label className="muted" style={{ marginRight: 8 }}>Form:</label>
+          <select value={form} onChange={(e) => setForm(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
+            {FORMS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {dirty > 0 && <span className="muted" style={{ fontSize: 12.5 }}>{dirty} unsaved</span>}
+          {dirty > 0 && <button className="btn btn-ghost btn-sm" onClick={() => load(form)} disabled={busy}>Discard</button>}
+          <button className="btn" onClick={saveAll} disabled={busy || dirty === 0}>{busy ? 'Saving…' : 'Save Changes'}</button>
+        </div>
       </div>
       {!fields ? <Skeleton rows={6} /> : (
         <table><thead><tr><th>Field</th><th>Visible</th><th>Required</th><th>Custom Label</th></tr></thead>
           <tbody>{fields.map((fl) => (
             <tr key={fl.fieldKey}>
               <td><strong>{fl.defaultLabel}</strong><div className="muted" style={{ fontSize: 11 }}>{fl.fieldKey}</div></td>
-              <td><input type="checkbox" checked={fl.visible} onChange={(e) => update(fl.fieldKey, { visible: e.target.checked }, fl)} /></td>
-              <td><input type="checkbox" checked={fl.required} onChange={(e) => update(fl.fieldKey, { required: e.target.checked }, fl)} /></td>
-              <td><input defaultValue={fl.label || ''} placeholder={fl.defaultLabel} onBlur={(e) => update(fl.fieldKey, { label: e.target.value || null }, fl)} style={{ width: 150, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
+              <td><input type="checkbox" checked={fl.visible} onChange={(e) => edit(fl.fieldKey, { visible: e.target.checked })} /></td>
+              <td><input type="checkbox" checked={fl.required} onChange={(e) => edit(fl.fieldKey, { required: e.target.checked })} /></td>
+              <td><input value={fl.label || ''} placeholder={fl.defaultLabel} onChange={(e) => edit(fl.fieldKey, { label: e.target.value })} style={{ width: 150, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
             </tr>
           ))}</tbody></table>
       )}
-      <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Hiding a field removes it from that form. Required fields must be filled before saving.</div>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Toggle visibility/required or rename, then click <strong>Save Changes</strong>. Nothing applies until you save.</div>
     </div>
   );
 }
@@ -3181,7 +3251,7 @@ function App() {
   const [branding, setBranding] = useState(null);
 
   const loadBranding = useCallback(async () => {
-    try { const { branding } = await api.get('/settings/branding'); setHasCustomLogo(!!branding.logo_stored_name); setBranding(branding); applyBranding(branding); return branding; }
+    try { const { branding } = await api.get('/settings/branding'); const ver = branding.logo_uploaded_at ? new Date(branding.logo_uploaded_at).getTime() : Date.now(); setHasCustomLogo(!!branding.logo_stored_name, ver); setBranding(branding); applyBranding(branding); return branding; }
     catch { return null; }
   }, []);
 
