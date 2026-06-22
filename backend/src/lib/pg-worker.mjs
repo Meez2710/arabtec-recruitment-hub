@@ -24,6 +24,10 @@ let ready = (async () => {
       };
     } else {
       const pg = (await import('pg')).default;
+      // Parse bigint (int8, OID 20) and numeric (OID 1700) as JS numbers so COUNT(*)
+      // and SUM() come back as numbers, not strings (which would break arithmetic).
+      pg.types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
+      pg.types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
       const pool = new pg.Pool({ connectionString: CONN, max: 4, ssl: sslFor(CONN), connectionTimeoutMillis: 10000 });
       // Actively verify the connection now so a bad SSL/host surfaces as a clear
       // error instead of a silent hang on the first real query.
