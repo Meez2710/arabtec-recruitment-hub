@@ -19,7 +19,9 @@ function requestScope(user, col = 'id') {
   };
 }
 
-const NON_TERMINAL_REQ = ['draft', 'pending_approval', 'budget_validation', 'approved', 'in_sourcing', 'in_progress', 'partially_filled', 'on_hold', 'reopened'];
+// Simplified workflow (Phase 0). Legacy values kept too so any un-migrated rows still count.
+const NON_TERMINAL_REQ = ['pending_approval', 'sourcing', 'in_progress', 'partially_filled', 'on_hold', 'reopened',
+  'draft', 'budget_validation', 'approved', 'in_sourcing'];
 
 router.get('/', (req, res) => {
   const user = req.user;
@@ -81,7 +83,7 @@ router.get('/', (req, res) => {
   if (viewAll) {
     recruiterLoad = all(`SELECT u.full_name name, COUNT(*) c
       FROM recruitment_request r JOIN users u ON u.id=r.owner_id
-      WHERE r.status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')}) GROUP BY r.owner_id ORDER BY c DESC LIMIT 8`, NON_TERMINAL_REQ);
+      WHERE r.status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')}) GROUP BY u.id, u.full_name ORDER BY c DESC LIMIT 8`, NON_TERMINAL_REQ);
   }
 
   // ---- My work (always scoped to the user) ----
