@@ -76,7 +76,7 @@ app.get('/api/health', (req, res) => {
 });
 app.get('/api/health/db', (req, res) => {
   try { dbGet('SELECT 1 AS ok'); res.json({ ok: true, db: 'up' }); }
-  catch { res.status(503).json({ ok: false, db: 'down' }); }
+  catch (e) { res.status(503).json({ ok: false, db: 'down', error: String(e && e.message || e).slice(0, 300) }); }
 });
 
 // Readiness gate: until schema+seed finish, API calls return 503 (with Retry-After)

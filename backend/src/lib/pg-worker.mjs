@@ -24,7 +24,12 @@ let ready = (async () => {
       };
     } else {
       const pg = (await import('pg')).default;
-      const pool = new pg.Pool({ connectionString: CONN, max: 4, ssl: sslFor(CONN) });
+      const pool = new pg.Pool({ connectionString: CONN, max: 4, ssl: sslFor(CONN), connectionTimeoutMillis: 10000 });
+      // Actively verify the connection now so a bad SSL/host surfaces as a clear
+      // error instead of a silent hang on the first real query.
+      const probe = await pool.connect();
+      await probe.query('SELECT 1');
+      probe.release();
       query = async (sql, params) => {
         const r = await pool.query(sql, unwrapParams(params));
         return { rows: r.rows, affected: r.rowCount ?? 0 };
@@ -46,11 +51,12 @@ function unwrapParams(params) {
 
 function sslFor(conn) {
   if (!conn) return undefined;
-  // Most managed Postgres (Render, Neon, Supabase) require SSL; disable cert check for those.
-  if (/sslmode=require/.test(conn) || /render\.com|neon\.tech|supabase\.co|amazonaws\.com/.test(conn)) {
-    return { rejectUnauthorized: false };
-  }
-  return undefined;
+  // Localhost / 127.0.0.1 → no SSL. Everything else (any managed/remote Postgres,
+  // including Render's INTERNAL hostname which doesn't contain "render.com") → SSL
+  // with relaxed cert check. This is the common cause of a silent connect hang.
+  if (/@(localhost|127\.0\.0\.1)[:/]/.test(conn) || process.env.PG_NO_SSL === 'true') return undefined;
+  if (/sslmode=disable/.test(conn)) return undefined;
+  return { rejectUnauthorized: false };
 }
 
 function respond(payload) {
