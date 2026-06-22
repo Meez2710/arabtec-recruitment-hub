@@ -150,7 +150,26 @@ function applyBranding(b) {
     font_family: '--font', border_radius: '--radius', card_radius: '--card-radius',
   };
   for (const [k, cssVar] of Object.entries(map)) if (b[k]) r.setProperty(cssVar, b[k]);
+  // The Control Center "Primary Color" (stored as button_color) drives the brand
+  // accent app-wide: buttons, links, nav highlight, the ticket left-accent, focus rings.
+  const primary = b.button_color || b.primary_color;
+  if (primary) {
+    r.setProperty('--brand', primary);
+    r.setProperty('--ticket-accent', primary);
+    r.setProperty('--brand-dark', shadeColor(primary, -14)); // darker hover
+    r.setProperty('--ticket-accent-dark', shadeColor(primary, -14));
+  }
   document.title = (b.company_name || 'Arabtec Recruitment Hub');
+}
+// Lighten/darken a hex color by percent (-100..100). Used to derive the hover shade.
+function shadeColor(hex, percent) {
+  try {
+    const h = hex.replace('#', '');
+    const n = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    let r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
+    const f = (v) => Math.max(0, Math.min(255, Math.round(v + (percent / 100) * 255)));
+    return '#' + [f(r), f(g), f(b)].map((v) => v.toString(16).padStart(2, '0')).join('');
+  } catch { return hex; }
 }
 
 /* ----------------------------- Auth context ----------------------------- */
@@ -1885,26 +1904,44 @@ function FieldChip({ label, children, full }) {
   );
 }
 
-// Red-accent ticket header band with logo monogram, ID/date, and action slot (per mockup).
+// Maps a workflow status label → status-chip color class.
+function statusChipClass(status) {
+  const s = (status || '').toLowerCase();
+  if (s.includes('pending') || s.includes('approval') || s.includes('waiting')) return 'pending';
+  if (s.includes('partially') || s.includes('partial')) return 'partial';
+  if (s.includes('sourcing')) return 'sourcing';
+  if (s.includes('in progress') || s.includes('progress') || s.includes('interview')) return 'progress';
+  if (s.includes('reopen')) return 'reopened';
+  if (s.includes('filled') || s.includes('joined')) return 'filled';
+  if (s.includes('closed')) return 'closed';
+  if (s.includes('expired')) return 'expired';
+  if (s.includes('hold')) return 'hold';
+  if (s.includes('reject') || s.includes('declined')) return 'rejected';
+  if (s.includes('cancel')) return 'cancelled';
+  return '';
+}
+
+// Premium ticket header: clean white card with a thin brand left accent + status chip.
 function TicketHeader({ req, children }) {
   const lc = req.lifecycle || {};
+  const statusText = req.displayStatus || (req.status ? req.status.replace(/_/g, ' ') : '');
   return (
-    <div className="ticket-header" style={{ background: 'linear-gradient(135deg, var(--ticket-accent, #b0202e), var(--ticket-accent-dark, #7d141e))', color: '#fff', borderRadius: 'var(--card-radius, 12px)', padding: '18px 22px', marginBottom: 16, boxShadow: '0 6px 20px rgba(176,32,46,.18)' }}>
+    <div className="ticket-header-card">
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ width: 46, height: 46, borderRadius: 10, background: 'rgba(255,255,255,.16)', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}><Logo size={26} color="#fff" /></div>
+        <div className="th-logo"><Logo size={24} color="var(--ink)" /></div>
         <div style={{ flex: 1, minWidth: 240 }}>
-          <div style={{ fontSize: 11, opacity: .85, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 600 }}>Recruitment Request Ticket</div>
-          <h1 style={{ margin: '2px 0 6px', fontSize: 22, fontWeight: 700, color: '#fff' }}>{req.title}</h1>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 12.5 }}>
-            <span style={{ background: 'rgba(255,255,255,.2)', padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '.3px' }}>{req.ticketNo}</span>
-            <span style={{ opacity: .9 }}>Req Date {fmtDateShort(lc.createdAt || req.createdAt)}</span>
-            <span style={{ opacity: .6 }}>·</span>
-            <span style={{ background: 'rgba(255,255,255,.92)', color: 'var(--ticket-accent-dark, #7d141e)', padding: '3px 10px', borderRadius: 20, fontWeight: 700, textTransform: 'capitalize' }}>{req.displayStatus || req.status?.replace(/_/g, ' ')}</span>
-            {req.priority && <span style={{ background: 'rgba(0,0,0,.18)', padding: '3px 10px', borderRadius: 20, fontWeight: 600, textTransform: 'capitalize' }}>{req.priority} priority</span>}
-            {req.health && <span style={{ background: 'rgba(255,255,255,.16)', padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>{req.health.label}</span>}
+          <div className="th-eyebrow">Recruitment Request Ticket</div>
+          <h1 className="th-title">{req.title}</h1>
+          <div className="th-meta">
+            <span className="th-ticketno">{req.ticketNo}</span>
+            <span className="th-sep">·</span>
+            <span>Req Date {fmtDateShort(lc.createdAt || req.createdAt)}</span>
+            {statusText && <span className={`status-chip ${statusChipClass(statusText)}`} style={{ marginLeft: 4, textTransform: 'capitalize' }}>{statusText}</span>}
+            {req.priority && <span className="meta-chip" style={{ textTransform: 'capitalize' }}>{req.priority} priority</span>}
+            {req.health && <span className="meta-chip">{req.health.label}</span>}
           </div>
         </div>
-        {children}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', flex: '0 0 auto' }}>{children}</div>
       </div>
     </div>
   );
