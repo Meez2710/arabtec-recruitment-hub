@@ -12,21 +12,28 @@ const ENGINE = workerData.engine; // 'pg' | 'pglite'
 const CONN = workerData.conn;
 
 let query; // (sql, params) => Promise<{ rows, affected }>
+let initError = null;
 let ready = (async () => {
-  if (ENGINE === 'pglite') {
-    const { PGlite } = await import('@electric-sql/pglite');
-    const db = new PGlite(CONN || undefined); // CONN may be a data dir for persistence
-    query = async (sql, params) => {
-      const r = await db.query(sql, unwrapParams(params));
-      return { rows: r.rows, affected: r.affectedRows ?? 0 };
-    };
-  } else {
-    const pg = (await import('pg')).default;
-    const pool = new pg.Pool({ connectionString: CONN, max: 4, ssl: sslFor(CONN) });
-    query = async (sql, params) => {
-      const r = await pool.query(sql, unwrapParams(params));
-      return { rows: r.rows, affected: r.rowCount ?? 0 };
-    };
+  try {
+    if (ENGINE === 'pglite') {
+      const { PGlite } = await import('@electric-sql/pglite');
+      const db = new PGlite(CONN || undefined); // CONN may be a data dir for persistence
+      query = async (sql, params) => {
+        const r = await db.query(sql, unwrapParams(params));
+        return { rows: r.rows, affected: r.affectedRows ?? 0 };
+      };
+    } else {
+      const pg = (await import('pg')).default;
+      const pool = new pg.Pool({ connectionString: CONN, max: 4, ssl: sslFor(CONN) });
+      query = async (sql, params) => {
+        const r = await pool.query(sql, unwrapParams(params));
+        return { rows: r.rows, affected: r.rowCount ?? 0 };
+      };
+    }
+  } catch (e) {
+    // Record but DON'T throw — the message handler must always be able to respond,
+    // otherwise the main thread blocks forever on Atomics.wait.
+    initError = e.message || String(e);
   }
 })();
 
@@ -61,12 +68,14 @@ function respond(payload) {
 }
 
 parentPort.on('message', async (msg) => {
-  if (msg.type === 'ping') { await ready; respond({ ok: true, ready: true }); return; }
   try {
-    await ready;
+    await ready; // never throws now (errors captured into initError)
+    if (msg.type === 'ping') { respond({ ok: true, ready: !initError, error: initError || undefined }); return; }
+    if (initError || !query) { respond({ ok: false, error: 'DB not initialised: ' + (initError || 'unknown') }); return; }
     const out = await query(msg.sql, msg.params);
     respond({ ok: true, rows: out.rows, affected: out.affected });
   } catch (e) {
-    respond({ ok: false, error: e.message });
+    // Always respond so the main thread's Atomics.wait is released.
+    respond({ ok: false, error: e.message || String(e) });
   }
 });

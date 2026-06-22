@@ -43,11 +43,14 @@ function makePostgres() {
   });
   worker.on('error', (e) => { console.error('PG worker error:', e); });
 
-  function call(message) {
+  function call(message, timeoutMs) {
     Atomics.store(sig, 0, 0);
     Atomics.store(lenArr, 1, 0);
     worker.postMessage(message);
-    Atomics.wait(sig, 0, 0);                          // block until worker signals done
+    // Block until the worker signals done. A timeout (used only for the boot ping)
+    // prevents a slow/failed DB connection from hanging the whole process at import.
+    const res = Atomics.wait(sig, 0, 0, timeoutMs);
+    if (res === 'timed-out') throw new Error('DB worker timed out');
     const overflow = Atomics.load(lenArr, 1);
     const len = Atomics.load(lenArr, 0);
     if (overflow) {
@@ -66,8 +69,11 @@ function makePostgres() {
     return p;
   }
 
-  // Block until the engine is ready (connects / boots PGlite).
-  call({ type: 'ping' });
+  // Best-effort readiness probe at import. Bounded so a slow remote Postgres can't
+  // hang the process before the HTTP port binds. If it times out here, the first
+  // real query (after the server is listening) simply waits the normal way.
+  try { call({ type: 'ping' }, 8000); }
+  catch (e) { console.warn('  • DB not ready at import (will connect on first query):', e.message); }
 
   const q = (sql, params) => call({ type: 'query', sql: translate(sql), params: normParams(params) });
 
