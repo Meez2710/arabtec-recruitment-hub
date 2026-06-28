@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
-  Projects, Sites, Departments, BusinessUnits, Users, SystemSettings, Posts,
+  Projects, Sites, Departments, BusinessUnits, Users, SystemSettings, Posts, Applications,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -151,7 +151,10 @@ router.get('/', (req, res) => {
     departmentId: req.query.departmentId, ownerId: req.query.ownerId, q: req.query.q,
     sort: req.query.sort, dir: req.query.dir, ownedOnly, userId: req.user.id,
   });
-  res.json({ requests: rows.map((r) => serialize(r, req.user)), counts: Requests.counts() });
+  // Pipeline summary per request → inline funnel mini-bar on the board cards.
+  const pipeline = Applications.stageCountsByRequest(rows.map((r) => r.id));
+  const out = rows.map((r) => { const s = serialize(r, req.user); s.pipeline = pipeline[r.id] || { total: 0, byStage: {} }; return s; });
+  res.json({ requests: out, counts: Requests.counts() });
 });
 
 /* ===================== DETAIL ===================== */

@@ -144,12 +144,21 @@ function applyBranding(b) {
   const r = document.documentElement.style;
   const map = {
     primary_color: '--primary', secondary_color: '--secondary', accent_color: '--accent',
-    background_color: '--bg', surface_color: '--surface', text_dark: '--text-dark',
+    surface_color: '--surface', text_dark: '--text-dark',
     text_gray: '--text-gray', border_color: '--border', button_color: '--button',
     success_color: '--success', warning_color: '--warning', critical_color: '--critical',
     font_family: '--font', border_radius: '--radius', card_radius: '--card-radius',
   };
   for (const [k, cssVar] of Object.entries(map)) if (b[k]) r.setProperty(cssVar, b[k]);
+  // Page background (--bg) is owned by the stylesheet (warm off-white #f6f3ec).
+  // Legacy/stale branding rows often carry a cool grey/white background_color that
+  // would override it at runtime, so we ONLY honour an explicit off-white family.
+  const OFFWHITE_OK = /^#(f[0-9a-f]{2}|fff|f6f3ec|faf8f3|fdfbf6)/i;
+  if (b.background_color && OFFWHITE_OK.test(b.background_color)) {
+    r.setProperty('--bg', b.background_color);
+  } else {
+    r.removeProperty('--bg'); // fall back to stylesheet off-white
+  }
   // The Control Center "Primary Color" (stored as button_color) drives the brand
   // accent app-wide: buttons, links, nav highlight, the ticket left-accent, focus rings.
   const primary = b.button_color || b.primary_color;
@@ -305,6 +314,7 @@ function Login({ branding, onLogin }) {
 const NAV = [
   { section: 'Overview' },
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view' },
+  { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
   { section: 'Recruitment' },
   { key: 'requests', label: 'Recruitment Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
   { key: 'candidates', label: 'Talent Pool', icon: 'user', perm: 'candidate.view' },
@@ -337,6 +347,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
 
   const Page = {
     dashboard: <Dashboard user={user} />,
+    reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} />,
     candidates: <CandidatesPage user={user} />,
     interviews: <InterviewsPage user={user} />,
@@ -448,6 +459,50 @@ function Funnel({ data }) {
   ))}</div>;
 }
 
+// Canonical pipeline stage → swatch color, for the inline funnel mini-bar and reports.
+// Grouped by phase so the bar reads left→right as candidates progress.
+const STAGE_COLORS = {
+  sourced: '#9aa3ad', matched: '#2160a6', shortlisted: '#00A3E0', interviewing: '#1976D2',
+  waiting_feedback: '#F59E0B', issuing_offer: '#d98324', offer_sent: '#b7791f', joined: '#1d6e3e',
+  unmatched: '#c7ccd2', on_hold: '#6a4ca6', rejected: '#c0392b', offer_declined: '#a93b34',
+};
+const FUNNEL_ORDER = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+
+// Compact, Workable-style pipeline funnel rendered on each request card.
+// Shows total candidates + a proportional stacked bar across active stages.
+function FunnelMini({ pipeline }) {
+  const byStage = (pipeline && pipeline.byStage) || {};
+  const total = (pipeline && pipeline.total) || 0;
+  const segs = FUNNEL_ORDER.map((s) => ({ s, c: byStage[s] || 0 })).filter((x) => x.c > 0);
+  const segTotal = segs.reduce((a, b) => a + b.c, 0) || 1;
+  return (
+    <div className="funnel-mini">
+      <div className="fm-head">
+        <span className="fm-label">Pipeline</span>
+        <span className="fm-total">{total} candidate{total === 1 ? '' : 's'}</span>
+      </div>
+      {segs.length === 0 ? (
+        <div className="fm-empty">No candidates sourced yet</div>
+      ) : (
+        <>
+          <div className="fm-track">
+            {segs.map(({ s, c }) => (
+              <span key={s} className="fm-seg" title={`${(APP_STATUS[s] || {}).label || s}: ${c}`}
+                style={{ width: (c / segTotal * 100) + '%', background: STAGE_COLORS[s] || '#9aa3ad' }} />
+            ))}
+          </div>
+          <div className="fm-legend">
+            {segs.slice(0, 4).map(({ s, c }) => (
+              <span key={s} className="fm-leg"><span className="fm-dot" style={{ background: STAGE_COLORS[s] || '#9aa3ad' }} />{(APP_STATUS[s] || {}).label || s} {c}</span>
+            ))}
+            {segs.length > 4 && <span className="fm-leg">+{segs.length - 4} more</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ user }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
@@ -517,6 +572,107 @@ function Dashboard({ user }) {
               <table><tbody>{d.recruiterLoad.map((r, i) => (
                 <tr key={i}><td>{r.name}</td><td style={{ width: '60%' }}><span style={{ display: 'inline-block', height: 10, borderRadius: 3, background: CHART_COLORS[i % CHART_COLORS.length], width: `${(r.c / Math.max(...d.recruiterLoad.map((x) => x.c))) * 100}%`, minWidth: 6 }} /></td><td style={{ textAlign: 'right' }}><strong>{r.c}</strong></td></tr>
               ))}</tbody></table>
+            )}
+          </div></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- Reports / analytics ----------------------------- */
+// A horizontal bar metric row (label · proportional fill · value).
+function MetricBar({ rows, labeler = (s) => s, max }) {
+  const items = (rows || []).filter((r) => r.count > 0);
+  if (!items.length) return <Empty icon="📊" text="No data yet." />;
+  const m = max || Math.max(...items.map((r) => r.count), 1);
+  return <div>{items.map((r, i) => (
+    <div className="metric-row" key={i}>
+      <span className="mr-label">{labeler(r.status)}</span>
+      <span className="mr-track"><span className="mr-fill" style={{ width: (r.count / m * 100) + '%', background: STAGE_COLORS[r.status] || CHART_COLORS[i % CHART_COLORS.length] }} /></span>
+      <span className="mr-val">{r.count}</span>
+    </div>
+  ))}</div>;
+}
+// A proportional, tapering hiring-funnel with stage-to-stage conversion %.
+function ReportFunnel({ data }) {
+  const map = Object.fromEntries((data || []).map((d) => [d.status, d.count]));
+  const rows = FUNNEL_ORDER.filter((s) => map[s] != null).map((s) => ({ status: s, count: map[s] }));
+  if (!rows.length) return <Empty icon="🔻" text="No applications yet." />;
+  const max = Math.max(...rows.map((r) => r.count), 1);
+  return <div>{rows.map((r, i) => {
+    const prev = i > 0 ? rows[i - 1].count : null;
+    const conv = prev ? Math.round(r.count / prev * 100) : null;
+    return (
+      <div key={r.status}>
+        {conv != null && <div className="report-conv">↓ {conv}% conversion</div>}
+        <div className="report-funnel-step" style={{ width: Math.max(28, r.count / max * 100) + '%', background: STAGE_COLORS[r.status] || CHART_COLORS[i % CHART_COLORS.length] }}>
+          <span>{(APP_STATUS[r.status] || {}).label || r.status}</span><span>{r.count}</span>
+        </div>
+      </div>
+    );
+  })}</div>;
+}
+function ReportsPage({ user }) {
+  const toast = useToast();
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    if (!can(user, 'dashboard.view')) { setErr('You do not have analytics access.'); return; }
+    api.get('/dashboard').then(setD).catch((e) => setErr(e.message));
+  }, []);
+
+  function exportCsv() {
+    if (!d) return;
+    const lines = [['Report', 'Category', 'Count']];
+    d.requestsByStatus.forEach((r) => lines.push(['Requests by Status', (REQ_STATUS[r.status] || {}).label || r.status, r.count]));
+    d.applicationsByStatus.forEach((r) => lines.push(['Hiring Funnel', (APP_STATUS[r.status] || {}).label || r.status, r.count]));
+    d.offersByStatus.forEach((r) => lines.push(['Offer Outcomes', (OFFER_STATUS[r.status] || {}).label || r.status, r.count]));
+    Object.entries(d.aging).forEach(([k, v]) => lines.push(['Requisition Aging', k + ' days', v]));
+    const k = d.kpis;
+    [['Open Requests', k.openRequests], ['Fill Rate %', k.fillRate], ['Total Applications', k.totalApplications],
+     ['Offer Acceptance %', k.offerAcceptanceRate ?? ''], ['Joined', k.joined], ['Avg Time-to-Fill (days)', k.timeToFillDays ?? '']]
+      .forEach(([kk, vv]) => lines.push(['KPI', kk, vv]));
+    const csv = lines.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `arabtec-recruitment-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Report exported');
+  }
+
+  if (err) return <div><PageHead crumb="Overview / Reports" title="Reports" /><div className="card"><div className="error-banner" style={{ margin: 20 }}>{err}</div></div></div>;
+  if (!d) return <div><PageHead crumb="Overview / Reports" title="Reports" /><Skeleton rows={8} /></div>;
+  const k = d.kpis;
+  const agingData = Object.entries(d.aging).map(([status, count]) => ({ status, count }));
+
+  return (
+    <div>
+      <PageHead crumb="Overview / Reports" title="Recruitment Reports"
+        sub={(d.scope === 'all' ? 'Organization-wide' : 'Your scope') + ' · Hiring funnel, time-to-fill, sources and outcomes. Read-only · No salary data.'}
+        actions={<button className="btn btn-secondary" onClick={exportCsv}>↓ Export CSV</button>} />
+
+      <div className="grid-kpi">
+        {[
+          { label: 'Time-to-Fill', value: k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd', hint: 'avg, filled requests' },
+          { label: 'Fill Rate', value: k.fillRate + '%', hint: `${k.headcountFilled}/${k.headcountTotal} seats` },
+          { label: 'Offer Acceptance', value: k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate + '%', hint: 'accepted / decided' },
+          { label: 'Joined', value: k.joined, hint: 'total hires' },
+        ].map((c, i) => <div className="kpi" key={i}><div className="label">{c.label}</div><div className="value">{c.value}</div><div className="hint">{c.hint}</div></div>)}
+      </div>
+
+      <div className="report-grid">
+        <div className="card"><div className="card-head"><h3>Hiring Funnel</h3></div><div className="card-pad"><ReportFunnel data={d.applicationsByStatus} /></div></div>
+        <div className="card"><div className="card-head"><h3>Requests by Status</h3></div><div className="card-pad">
+          <MetricBar rows={d.requestsByStatus} labeler={(s) => (REQ_STATUS[s] || {}).label || s} /></div></div>
+        <div className="card"><div className="card-head"><h3>Requisition Aging (open)</h3></div><div className="card-pad">
+          <MetricBar rows={agingData} labeler={(s) => s + ' days'} /></div></div>
+        <div className="card"><div className="card-head"><h3>Offer Outcomes</h3></div><div className="card-pad">
+          <MetricBar rows={d.offersByStatus} labeler={(s) => (OFFER_STATUS[s] || {}).label || s} /></div></div>
+        {d.scope === 'all' && (
+          <div className="card full"><div className="card-head"><h3>Recruiter Load (open requests)</h3></div><div className="card-pad">
+            {d.recruiterLoad.length === 0 ? <Empty icon="👥" text="No assigned recruiters yet." /> : (
+              <MetricBar rows={d.recruiterLoad.map((r) => ({ status: r.name, count: r.c }))} labeler={(s) => s} />
             )}
           </div></div>
         )}
@@ -1402,6 +1558,7 @@ function RequestTicketCard({ r, onOpen }) {
           <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Location</span>{r.location || r.site?.name || '—'}</span>
           <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Seats</span>{r.headcountFilled ?? 0} / {r.headcount}</span>
         </div>
+        {r.pipeline && <div style={{ marginBottom: 12 }}><FunnelMini pipeline={r.pipeline} /></div>}
         <div className="row-between" style={{ alignItems: 'center' }}>
           {r.displayStatus ? <Badge variant="info">{r.displayStatus}</Badge> : <ReqStatus status={r.status} />}
           <HealthBadge health={r.health} />
@@ -2140,6 +2297,23 @@ const APP_ORDER = ['sourced', 'matched', 'unmatched', 'interviewing', 'waiting_f
 const REASON_STATUSES = ['rejected', 'offer_declined', 'on_hold', 'unmatched'];
 const TERMINAL_APP = ['joined', 'rejected', 'offer_declined'];
 function AppStatusBadge({ status }) { const s = APP_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
+// Source attribution chip (Workable pattern: "via LinkedIn / careers / referral").
+// Maps free-text source values to a small set of branded chips.
+function sourceClass(src) {
+  const s = (src || '').toLowerCase();
+  if (s.includes('linkedin')) return 'src-linkedin';
+  if (s.includes('career') || s.includes('website') || s.includes('portal')) return 'src-careers';
+  if (s.includes('refer')) return 'src-referral';
+  if (s.includes('agency') || s.includes('manpower') || s.includes('supplier')) return 'src-agency';
+  return 'src-direct';
+}
+function SourceChip({ source }) {
+  if (!source) return <span className="muted" style={{ fontSize: 11.5 }}>No source</span>;
+  return <span className={'src-chip ' + sourceClass(source)}><span className="src-dot" />{source}</span>;
+}
+// Group an application/candidate stage into qualified vs disqualified (Workable split).
+const DISQUALIFIED_STAGES = ['unmatched', 'rejected', 'offer_declined', 'on_hold'];
+function isDisqualified(status) { return DISQUALIFIED_STAGES.includes(status); }
 function MatchScore({ score }) {
   if (score == null) return <span className="muted">—</span>;
   const color = score >= 80 ? 'var(--success)' : score >= 50 ? 'var(--warning)' : 'var(--critical)';
@@ -2209,8 +2383,18 @@ function RequestPipeline({ request, user, btns }) {
   if (!apps) return <Skeleton rows={6} />;
 
   const cols = APP_ORDER;
+  // Qualified / disqualified split (Workable pattern) for the pipeline summary strip.
+  const qualified = apps.filter((a) => !isDisqualified(a.status)).length;
+  const disqualified = apps.length - qualified;
   return (
     <div>
+      {apps.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+          <span className="status-chip filled" title="Active in pipeline">Qualified {qualified}</span>
+          <span className="status-chip rejected" title="Rejected / unmatched / declined / on hold">Disqualified {disqualified}</span>
+          <span className="meta-chip">Total {apps.length}</span>
+        </div>
+      )}
       <div className="toolbar">
         <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
           {['kanban', 'list', 'compact'].map((v) => <button key={v} className={'btn btn-sm ' + (view === v ? '' : 'btn-secondary')} style={{ borderRadius: 0, textTransform: 'capitalize' }} onClick={() => setView(v)}>{v}</button>)}
@@ -2632,6 +2816,8 @@ function CandidatesPage({ user }) {
   const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '' });
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [view, setView] = useState('board'); // board | table
+  const [srcTab, setSrcTab] = useState('all'); // source-attribution filter
   const btns = useResolvedButtons();
 
   const load = useCallback(async () => {
@@ -2644,10 +2830,22 @@ function CandidatesPage({ user }) {
 
   if (selectedId) return <CandidateProfile id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
 
+  // Source-attribution tabs with live counts (Workable pattern).
+  const SRC_TABS = [
+    ['all', 'All'], ['src-linkedin', 'LinkedIn'], ['src-careers', 'Careers'],
+    ['src-referral', 'Referral'], ['src-agency', 'Agency'], ['src-direct', 'Direct'],
+  ];
+  const srcCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => sourceClass(c.source) === key).length;
+  const shown = !candidates ? [] : srcTab === 'all' ? candidates : candidates.filter((c) => sourceClass(c.source) === srcTab);
+
   return (
     <div>
       <PageHead crumb="Recruitment / Talent Pool" title="Candidate Database" sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
         actions={<>
+          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+            <button className={'btn btn-sm ' + (view === 'board' ? '' : 'btn-secondary')} style={{ borderRadius: 0 }} onClick={() => setView('board')}>Board</button>
+            <button className={'btn btn-sm ' + (view === 'table' ? '' : 'btn-secondary')} style={{ borderRadius: 0 }} onClick={() => setView('table')}>Table</button>
+          </div>
           {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>+ {btns.add_candidate.label}</button>}
         </>} />
       <div className="toolbar">
@@ -2658,13 +2856,25 @@ function CandidatesPage({ user }) {
         <input placeholder="Max exp" type="number" value={filters.maxExp} onChange={(e) => setFilters((f) => ({ ...f, maxExp: e.target.value }))} style={{ width: 80 }} />
         <input placeholder="Tag" value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))} style={{ width: 100 }} />
         <div className="spacer" />
-        {candidates && <span className="muted">{candidates.length} candidates</span>}
+        {candidates && <span className="muted">{shown.length} of {candidates.length} candidates</span>}
       </div>
-      <div className="card">
-        {!candidates ? <Skeleton /> : candidates.length === 0 ? <Empty icon="👤" text="No candidates found." /> : (
+
+      {/* Source-attribution segmented tabs with live counts */}
+      <div className="seg-tabs">
+        {SRC_TABS.map(([k, label]) => (
+          <button key={k} className={'seg-tab' + (srcTab === k ? ' active' : '')} onClick={() => setSrcTab(k)}>
+            {label}<span className="seg-count">{srcCount(k)}</span>
+          </button>
+        ))}
+      </div>
+
+      {!candidates ? <Skeleton /> : shown.length === 0 ? (
+        <div className="card"><Empty icon="👤" text="No candidates in this view." /></div>
+      ) : view === 'table' ? (
+        <div className="card">
           <table>
             <thead><tr><th>ID</th><th>Name</th><th>Position / Company</th><th>Exp</th><th>Location</th><th>Notice</th>{user.permissions.includes('salary.view') && <th>Expected</th>}<th>Source</th><th>Owner</th><th>Apps</th><th></th></tr></thead>
-            <tbody>{candidates.map((c) => (
+            <tbody>{shown.map((c) => (
               <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(c.id)}>
                 <td><strong>{c.candidateNo}</strong></td>
                 <td>{c.fullName}{c.tags?.length ? <div>{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}</td>
@@ -2673,15 +2883,38 @@ function CandidatesPage({ user }) {
                 <td>{c.location || '—'}</td>
                 <td>{c.noticePeriod || '—'}</td>
                 {user.permissions.includes('salary.view') && <td>{c.expectedSalary ?? '—'}</td>}
-                <td>{c.source || '—'}</td>
+                <td><SourceChip source={c.source} /></td>
                 <td className="muted">{c.ownerRecruiter?.name || '—'}</td>
                 <td><span className="chip">{c.applicationCount}</span></td>
                 <td><button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setSelectedId(c.id); }}>Open</button></td>
               </tr>
             ))}</tbody>
           </table>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="cand-grid">
+          {shown.map((c) => (
+            <div key={c.id} className="card cand-card" onClick={() => setSelectedId(c.id)}>
+              <div className="cc-top">
+                <div className="cc-avatar">{initials(c.fullName)}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="cc-name">{c.fullName}</div>
+                  <div className="cc-headline">{c.currentPosition || '—'}{c.currentCompany ? ' · ' + c.currentCompany : ''}</div>
+                </div>
+              </div>
+              <div className="cc-meta">
+                <SourceChip source={c.source} />
+                {c.yearsExperience != null && <span className="meta-chip">{c.yearsExperience}y exp</span>}
+                {c.location && <span className="meta-chip">{c.location}</span>}
+              </div>
+              <div className="cc-meta" style={{ justifyContent: 'space-between' }}>
+                <span className="muted" style={{ fontSize: 11.5 }}>{c.candidateNo}</span>
+                <span className="meta-chip" title="Applications">{c.applicationCount} app{c.applicationCount === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {creating && <CandidateForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
     </div>
   );
@@ -2823,16 +3056,31 @@ function CandidateProfile({ id, user, btns, onBack }) {
   return (
     <div>
       <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Talent Pool</a></div>
-      <div className="page-head">
-        <div><h1 className="page-title">{c.fullName}</h1>
-          <p className="page-sub"><strong>{c.candidateNo}</strong> · {c.currentPosition || '—'}{c.currentCompany ? ' @ ' + c.currentCompany : ''} · {c.applicationCount} application(s)</p></div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {btns.edit_candidate?.visible && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
-          {btns.add_note?.visible && <button className="btn btn-secondary" onClick={() => setNoteOpen(true)}>Add Note</button>}
+
+      {/* Workable-style structured profile header over the existing record */}
+      <div className="card" style={{ marginBottom: 16, padding: 0 }}>
+        <div className="profile-header">
+          <div className="ph-avatar">{initials(c.fullName)}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="ph-name">{c.fullName}</div>
+            <div className="ph-headline">{c.currentPosition || '—'}{c.currentCompany ? ' · ' + c.currentCompany : ''}</div>
+            <div className="ph-meta">
+              <span className="meta-chip">{c.candidateNo}</span>
+              <SourceChip source={c.source} />
+              {c.yearsExperience != null && <span className="meta-chip">{c.yearsExperience}y exp</span>}
+              {c.location && <span className="meta-chip">{c.location}</span>}
+              {c.noticePeriod && <span className="meta-chip">Notice: {c.noticePeriod}</span>}
+              <span className="meta-chip">{c.applicationCount} application{c.applicationCount === 1 ? '' : 's'}</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            {btns.edit_candidate?.visible && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
+            {btns.add_note?.visible && <button className="btn btn-secondary" onClick={() => setNoteOpen(true)}>Add Note</button>}
+          </div>
         </div>
-      </div>
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 18, flexWrap: 'wrap' }}>
-        {TABS.map(([k, label]) => <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--secondary)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--secondary)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>)}
+        <div className="profile-tabs">
+          {TABS.map(([k, label]) => <button key={k} onClick={() => setTab(k)} className={'profile-tab' + (tab === k ? ' active' : '')}>{label}</button>)}
+        </div>
       </div>
 
       {tab === 'overview' && (

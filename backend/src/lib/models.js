@@ -596,6 +596,21 @@ export const Applications = {
   },
   forRequest(requestId) { return all('SELECT * FROM application WHERE request_id=? ORDER BY created_at', [requestId]); },
   forCandidate(candidateId) { return all('SELECT * FROM application WHERE candidate_id=? ORDER BY created_at DESC', [candidateId]); },
+  // Pipeline summary per request: { [requestId]: { total, byStage: {status:count} } }.
+  // One grouped query feeds the inline funnel mini-bar on the requests board.
+  stageCountsByRequest(requestIds) {
+    const out = {};
+    if (!requestIds || !requestIds.length) return out;
+    const ph = requestIds.map(() => '?').join(',');
+    const rows = all(`SELECT request_id, status, COUNT(*) c FROM application WHERE request_id IN (${ph}) GROUP BY request_id, status`, requestIds);
+    for (const r of rows) {
+      const id = r.request_id;
+      (out[id] ??= { total: 0, byStage: {} });
+      out[id].byStage[r.status] = Number(r.c);
+      out[id].total += Number(r.c);
+    }
+    return out;
+  },
   setStatus(id, status, reasonField = null, reason = null) {
     const sets = ['status=?', 'stage_date=?', 'last_activity_at=?', 'updated_at=?'];
     const p = [status, nowISO(), nowISO(), nowISO()];
