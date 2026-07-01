@@ -1,0 +1,67 @@
+name: CI
+
+# Runs the functional test suites on every push and pull request.
+# The "core" job is the merge gate (blocking); "legacy" is advisory only
+# until those suites are modernized to the simplified workflow vocabulary.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    name: Core test suite (blocking)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run core test suite
+        run: npm test
+        env:
+          NODE_ENV: test
+          SEED_DEMO_DATA: 'true'
+          JWT_SECRET: ci-test-secret-not-used-in-prod
+
+  legacy-tests:
+    name: Legacy test suite (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true   # never blocks merge; signal only
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run full suite incl. legacy
+        run: npm test
+        env:
+          NODE_ENV: test
+          SEED_DEMO_DATA: 'true'
+          RUN_LEGACY: '1'
+          JWT_SECRET: ci-test-secret-not-used-in-prod
