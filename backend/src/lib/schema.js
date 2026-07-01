@@ -531,6 +531,18 @@ export function ensureSchema() {
   `);
 
   // ---- Enhancement (Workspace release): additive migrations for existing DBs ----
+  // Security (Phase 1): force first-login password rotation. 1 = user must change
+  // their password before doing anything else. Reversible (drop column on rollback).
+  addColumnIfMissing('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+  // Account lockout (C1.3): count consecutive failed logins; lock the account until
+  // locked_until after too many. Both reset on a successful login. Reversible.
+  addColumnIfMissing('users', 'failed_login_count', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('users', 'locked_until', 'TEXT');
+  // Screening gate (target-flow alignment): where a candidate sits in the Database
+  // fitness screen, BEFORE they are attached to a requisition. Distinct from
+  // candidate_state (contactability) and from application status (pipeline stage).
+  //   new → screening → fit | unfit
+  addColumnIfMissing('candidate', 'screening_status', "TEXT NOT NULL DEFAULT 'new'");
   // candidate — HR-leadership-requested fields
   addColumnIfMissing('candidate', 'employer', 'TEXT');
   addColumnIfMissing('candidate', 'current_project', 'TEXT');

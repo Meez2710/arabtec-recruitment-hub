@@ -56,7 +56,9 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   c('offer links to application/candidate/request', offer.application?.id === o1.appId && offer.candidate?.id === o1.candId && offer.request?.id === o1.reqId);
   c('offer status draft', offer.status === 'draft');
   const appAfter = await api(`/api/applications/${o1.appId}`, { token: recruiter });
-  c('application moved to offer_preparation', appAfter.json.application.status === 'offer_preparation', appAfter.json.application.status);
+  // Workflow was simplified (Phase 0): offer creation now lands on the canonical
+  // 'issuing_offer' stage (formerly 'offer_preparation').
+  c('application moved to issuing_offer', appAfter.json.application.status === 'issuing_offer', appAfter.json.application.status);
 
   console.log('\n— Salary restriction server-side —');
   const asHm = await api(`/api/offers/${offer.id}`, { token: hm });
@@ -113,7 +115,10 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   const accept = await api(`/api/offers/${offer.id}/result`, { method: 'POST', token: recruiter, body: { result: 'accepted' } });
   c('accept → accepted', accept.json.offer.status === 'accepted');
   const appAcc = await api(`/api/applications/${o1.appId}`, { token: recruiter });
-  c('application → offer_accepted (controlled)', appAcc.json.application.status === 'offer_accepted');
+  // In the simplified workflow, offer acceptance is tracked on the OFFER object
+  // (offer.status = 'accepted'); the application stage remains 'offer_sent' until
+  // the candidate joins. There is no separate 'offer_accepted' application stage.
+  c('application stays offer_sent after accept (acceptance tracked on offer)', appAcc.json.application.status === 'offer_sent', appAcc.json.application.status);
 
   console.log('\n— Joining + vacancy automation (no overfill/double-count, transactional) —');
   const join = await api(`/api/offers/${offer.id}/result`, { method: 'POST', token: recruiter, body: { result: 'joined' } });

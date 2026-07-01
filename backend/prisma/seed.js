@@ -2,6 +2,7 @@
 // Run with: npm run seed   (uses --experimental-sqlite)
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import { randomBytes } from 'node:crypto';
 import { ensureSchema } from '../src/lib/schema.js';
 import { get, run, all } from '../src/lib/db.js';
 import {
@@ -49,16 +50,29 @@ async function main(opts = {}) {
   log('role→permission mappings');
 
   // 4. Admin user
+  // SECURITY (Phase 1, C1.1): no hardcoded default password. The bootstrap admin
+  // password comes from SEED_ADMIN_PASSWORD if provided; otherwise we generate a
+  // strong random one-time password and print it ONCE to the boot log. Either way
+  // the admin is flagged must_change_password=1, so it must be rotated at first login.
   const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@arabtec.com').toLowerCase();
-  const adminPass = process.env.SEED_ADMIN_PASSWORD || 'Admin@12345';
+  const providedPass = process.env.SEED_ADMIN_PASSWORD;
+  const adminPass = providedPass || ('Arb-' + randomBytes(9).toString('base64url') + '!9');
   const adminHash = await bcrypt.hash(adminPass, rounds);
   let admin = get('SELECT * FROM users WHERE email=?', [adminEmail]);
   if (!admin) {
-    run(`INSERT INTO users (employee_no,full_name,email,job_title,phone,password_hash,status)
-         VALUES (?,?,?,?,?,?,?)`,
+    run(`INSERT INTO users (employee_no,full_name,email,job_title,phone,password_hash,status,must_change_password)
+         VALUES (?,?,?,?,?,?,?,1)`,
       ['EMP-0001', process.env.SEED_ADMIN_NAME || 'System Administrator', adminEmail,
        'System Administrator', '+20 100 000 0001', adminHash, 'active']);
     admin = get('SELECT * FROM users WHERE email=?', [adminEmail]);
+    if (!providedPass) {
+      console.log('\n  ============================================================');
+      console.log('   FIRST-RUN ADMIN PASSWORD (shown once — must be changed at login):');
+      console.log('     email:    ' + adminEmail);
+      console.log('     password: ' + adminPass);
+      console.log('   Set SEED_ADMIN_PASSWORD to control this. Rotate immediately.');
+      console.log('  ============================================================\n');
+    }
   }
   const adminRole = get('SELECT id FROM role WHERE code=?', ['system_admin']);
   run('INSERT OR IGNORE INTO user_role (user_id,role_id) VALUES (?,?)', [admin.id, adminRole.id]);
@@ -204,8 +218,10 @@ async function main(opts = {}) {
     [upsertById.admin, 'System Administrator', 'system_admin', 'system.seeded', 'system', 'phase1', 'Phase 1 database seeded.']);
 
   console.log('✅ Seed complete.\n');
-  console.log('   Admin login:  ' + adminEmail + '  /  ' + adminPass);
-  console.log('   Sample users: <role>@arabtec.com  /  Arabtec@123\n');
+  // Never echo a real admin password in normal logs. If it was env-provided, the
+  // operator already knows it; the random first-run case was printed once above.
+  console.log('   Admin login:  ' + adminEmail + '  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)');
+  if (demo) console.log('   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)\n');
 }
 
 export { main as seed };

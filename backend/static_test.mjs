@@ -21,6 +21,8 @@ c('SPA fallback for client route /users', spa.status === 200 && spa.body.include
 const apiMiss = await txt('/api/nonexistent');
 c('unknown /api route is 404 (not SPA html)', apiMiss.status === 404);
 const health = await txt('/api/health');
-c('api health ok', health.status === 200 && health.body.includes('phase'));
+// Health payload is { ok, service, db } — assert on the real shape (the old
+// 'phase' field was removed when the liveness check was simplified).
+c('api health ok', health.status === 200 && health.body.includes('"ok":true') && health.body.includes('arabtec'));
 console.log(`\n=== STATIC: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

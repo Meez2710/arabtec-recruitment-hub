@@ -1,14 +1,18 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import { Users, UserRoles, UserScopes, Sessions, Audit } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { validatePassword } from '../lib/passwords.js';
 
 const router = Router();
 router.use(requireAuth);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PWD_MIN = 8;
+// Strong random temp password that satisfies the policy (upper+lower+digit+symbol).
+function genTempPassword() { return 'Arb-' + randomBytes(9).toString('base64url') + '!7'; }
 
 function serializeUser(u) {
   if (!u) return null;
@@ -64,8 +68,15 @@ router.post('/', requirePermission('user.manage'), async (req, res) => {
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Invalid email format.' });
   if (Users.byEmail(email.toLowerCase().trim())) return res.status(409).json({ error: 'A user with this email already exists.' });
 
-  const initialPassword = password || 'Arabtec@123';
-  if (initialPassword.length < PWD_MIN) return res.status(400).json({ error: `Password must be at least ${PWD_MIN} characters.` });
+  // No hardcoded default credential. If the admin supplies a password it must pass
+  // policy; otherwise we generate a strong temporary one and return it ONCE so the
+  // admin can share it. Either way the new user must change it at first login.
+  const generated = !password;
+  const initialPassword = password || genTempPassword();
+  if (password) {
+    const policy = validatePassword(password, { minLength: PWD_MIN });
+    if (!policy.ok) return res.status(400).json({ error: policy.error });
+  }
 
   const rounds = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
   const passwordHash = await bcrypt.hash(initialPassword, rounds);
@@ -75,11 +86,13 @@ router.post('/', requirePermission('user.manage'), async (req, res) => {
     employeeNo: employeeNo || null, departmentId: departmentId ? Number(departmentId) : null,
     passwordHash, status: 'active',
   });
+  Users.setPasswordForceChange(created.id, passwordHash); // flag must_change_password
   applyAssignments(created.id, { roleCodes, projectIds, siteIds, globalScope });
 
   const out = serializeUser(Users.byId(created.id));
   writeAudit(req, { action: 'user.created', entityType: 'user', entityId: created.id, newValue: out });
-  res.status(201).json({ user: out });
+  // temporaryPassword is returned only when we generated it (never echo an admin-chosen one).
+  res.status(201).json({ user: out, temporaryPassword: generated ? initialPassword : undefined });
 });
 
 router.put('/:id', requirePermission('user.manage'), (req, res) => {
@@ -123,13 +136,21 @@ router.post('/:id/deactivate', requirePermission('user.manage'), (req, res) => {
 
 router.post('/:id/reset-password', requirePermission('user.manage'), async (req, res) => {
   const id = Number(req.params.id);
-  const pwd = (req.body || {}).newPassword || 'Arabtec@123';
-  if (pwd.length < PWD_MIN) return res.status(400).json({ error: `Password must be at least ${PWD_MIN} characters.` });
+  // No hardcoded default. Use the admin-supplied password (must pass policy) or
+  // generate a strong temporary one returned once. The user is forced to change it.
+  const provided = (req.body || {}).newPassword;
+  const generated = !provided;
+  const pwd = provided || genTempPassword();
+  if (provided) {
+    const policy = validatePassword(provided, { minLength: PWD_MIN });
+    if (!policy.ok) return res.status(400).json({ error: policy.error });
+  }
   const rounds = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
-  Users.setPassword(id, await bcrypt.hash(pwd, rounds));
-  Sessions.revokeForUser(id); // force re-login after reset
+  Users.setPasswordForceChange(id, await bcrypt.hash(pwd, rounds)); // force change at next login
+  Users.clearFailedLogins(id);  // an admin reset also unlocks a locked account
+  Sessions.revokeForUser(id);   // force re-login after reset
   writeAudit(req, { action: 'user.password_reset', entityType: 'user', entityId: id });
-  res.json({ ok: true, message: 'Password reset. The user must log in again.' });
+  res.json({ ok: true, message: 'Password reset. The user must log in and set a new password.', temporaryPassword: generated ? pwd : undefined });
 });
 
 export default router;

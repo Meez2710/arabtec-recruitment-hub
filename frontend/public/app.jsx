@@ -150,15 +150,11 @@ function applyBranding(b) {
     font_family: '--font', border_radius: '--radius', card_radius: '--card-radius',
   };
   for (const [k, cssVar] of Object.entries(map)) if (b[k]) r.setProperty(cssVar, b[k]);
-  // Page background (--bg) is owned by the stylesheet (warm off-white #f6f3ec).
-  // Legacy/stale branding rows often carry a cool grey/white background_color that
-  // would override it at runtime, so we ONLY honour an explicit off-white family.
-  const OFFWHITE_OK = /^#(f[0-9a-f]{2}|fff|f6f3ec|faf8f3|fdfbf6)/i;
-  if (b.background_color && OFFWHITE_OK.test(b.background_color)) {
-    r.setProperty('--bg', b.background_color);
-  } else {
-    r.removeProperty('--bg'); // fall back to stylesheet off-white
-  }
+  // Page background (--bg) is OWNED BY THE STYLESHEET (warm off-white #f6f3ec).
+  // We deliberately do NOT let branding's background_color drive it: legacy/stale
+  // rows carry cool greys/whites (e.g. #f6f7f9) that made the page look grey.
+  // Always clear any inline override so the stylesheet off-white wins.
+  r.removeProperty('--bg');
   // The Control Center "Primary Color" (stored as button_color) drives the brand
   // accent app-wide: buttons, links, nav highlight, the ticket left-accent, focus rings.
   const primary = b.button_color || b.primary_color;
@@ -2812,12 +2808,14 @@ function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
 
 /* ----------------------------- Candidates page ----------------------------- */
 function CandidatesPage({ user }) {
+  const toast = useToast();
   const [candidates, setCandidates] = useState(null);
   const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '' });
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState('board'); // board | table
   const [srcTab, setSrcTab] = useState('all'); // source-attribution filter
+  const [screenTab, setScreenTab] = useState('all'); // Database fitness-screen filter
   const btns = useResolvedButtons();
 
   const load = useCallback(async () => {
@@ -2836,7 +2834,26 @@ function CandidatesPage({ user }) {
     ['src-referral', 'Referral'], ['src-agency', 'Agency'], ['src-direct', 'Direct'],
   ];
   const srcCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => sourceClass(c.source) === key).length;
-  const shown = !candidates ? [] : srcTab === 'all' ? candidates : candidates.filter((c) => sourceClass(c.source) === srcTab);
+  // Database fitness-screen tabs (target flow: new → screening → fit | unfit).
+  const SCREEN_TABS = [['all', 'All'], ['new', 'New'], ['screening', 'Screening'], ['fit', 'Fit'], ['unfit', 'Unfit']];
+  const scOf = (c) => c.screeningStatus || 'new';
+  const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
+  const shown = !candidates ? [] : candidates
+    .filter((c) => srcTab === 'all' || sourceClass(c.source) === srcTab)
+    .filter((c) => screenTab === 'all' || scOf(c) === screenTab);
+
+  async function setScreening(id, status, reason) {
+    try {
+      await api.post(`/candidates/${id}/screening`, { status, reason });
+      toast(status === 'fit' ? 'Marked fit for position' : status === 'unfit' ? 'Marked unfit' : 'Screening updated');
+      load();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+  // Map screening state → existing status-chip style + label.
+  const SCREEN_CHIP = {
+    new: ['closed', 'New'], screening: ['sourcing', 'Screening'], fit: ['filled', 'Fit'], unfit: ['rejected', 'Unfit'],
+  };
+  const canScreen = user.permissions.includes('candidate.edit');
 
   return (
     <div>
@@ -2859,6 +2876,15 @@ function CandidatesPage({ user }) {
         {candidates && <span className="muted">{shown.length} of {candidates.length} candidates</span>}
       </div>
 
+      {/* Database fitness-screen tabs (new → screening → fit | unfit) */}
+      <div className="seg-tabs" title="Screen candidates for fitness before attaching them to a requisition">
+        {SCREEN_TABS.map(([k, label]) => (
+          <button key={k} className={'seg-tab' + (screenTab === k ? ' active' : '')} onClick={() => setScreenTab(k)}>
+            {label}<span className="seg-count">{screenCount(k)}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Source-attribution segmented tabs with live counts */}
       <div className="seg-tabs">
         {SRC_TABS.map(([k, label]) => (
@@ -2873,7 +2899,7 @@ function CandidatesPage({ user }) {
       ) : view === 'table' ? (
         <div className="card">
           <table>
-            <thead><tr><th>ID</th><th>Name</th><th>Position / Company</th><th>Exp</th><th>Location</th><th>Notice</th>{user.permissions.includes('salary.view') && <th>Expected</th>}<th>Source</th><th>Owner</th><th>Apps</th><th></th></tr></thead>
+            <thead><tr><th>ID</th><th>Name</th><th>Position / Company</th><th>Exp</th><th>Location</th><th>Notice</th>{user.permissions.includes('salary.view') && <th>Expected</th>}<th>Screening</th><th>Source</th><th>Owner</th><th>Apps</th><th></th></tr></thead>
             <tbody>{shown.map((c) => (
               <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(c.id)}>
                 <td><strong>{c.candidateNo}</strong></td>
@@ -2883,6 +2909,7 @@ function CandidatesPage({ user }) {
                 <td>{c.location || '—'}</td>
                 <td>{c.noticePeriod || '—'}</td>
                 {user.permissions.includes('salary.view') && <td>{c.expectedSalary ?? '—'}</td>}
+                <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td><SourceChip source={c.source} /></td>
                 <td className="muted">{c.ownerRecruiter?.name || '—'}</td>
                 <td><span className="chip">{c.applicationCount}</span></td>
@@ -2903,10 +2930,18 @@ function CandidatesPage({ user }) {
                 </div>
               </div>
               <div className="cc-meta">
+                <span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]} title="Database fitness screen">{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span>
                 <SourceChip source={c.source} />
                 {c.yearsExperience != null && <span className="meta-chip">{c.yearsExperience}y exp</span>}
                 {c.location && <span className="meta-chip">{c.location}</span>}
               </div>
+              {canScreen && scOf(c) !== 'fit' && scOf(c) !== 'unfit' && (
+                <div className="cc-meta" style={{ gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                  {scOf(c) === 'new' && <button className="btn btn-ghost btn-sm" onClick={() => setScreening(c.id, 'screening')}>Start screening</button>}
+                  <button className="btn btn-sm" onClick={() => setScreening(c.id, 'fit')}>Mark fit</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => { const r = prompt('Reason this candidate is unfit:'); if (r) setScreening(c.id, 'unfit', r); }}>Unfit</button>
+                </div>
+              )}
               <div className="cc-meta" style={{ justifyContent: 'space-between' }}>
                 <span className="muted" style={{ fontSize: 11.5 }}>{c.candidateNo}</span>
                 <span className="meta-chip" title="Applications">{c.applicationCount} app{c.applicationCount === 1 ? '' : 's'}</span>

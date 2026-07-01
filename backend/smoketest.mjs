@@ -24,7 +24,9 @@ async function api(path, { method = 'GET', token, body } = {}) {
   check('admin login (200)', login.status === 200, `got ${login.status}`);
   const adminToken = login.json?.token;
   check('admin has system_admin role', login.json?.user?.roles?.includes('system_admin'));
-  check('admin has all permissions (47)', login.json?.user?.permissions?.length === 47, `got ${login.json?.user?.permissions?.length}`);
+  // Admin must hold the FULL permission catalogue. Assert ">= baseline" rather than
+  // an exact count so adding a permission (e.g. MFA in Phase 1) doesn't falsely fail.
+  check('admin has the full permission set (>=47)', (login.json?.user?.permissions?.length || 0) >= 47, `got ${login.json?.user?.permissions?.length}`);
 
   const me = await api('/api/auth/me', { token: adminToken });
   check('/me returns user', me.json?.user?.email === 'admin@arabtec.com');

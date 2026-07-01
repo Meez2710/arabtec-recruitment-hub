@@ -36,6 +36,7 @@ function serialize(c, user, { withDetail = false } = {}) {
     graduationYear: c.graduation_year, university: c.university, major: c.major,
     resumeName: c.resume_name, hasResume: !!c.resume_path,
     tags: c.tags ? JSON.parse(c.tags) : [], candidateState: c.candidate_state,
+    screeningStatus: c.screening_status || 'new',
     ownerRecruiter: owner ? { id: owner.id, name: owner.full_name } : null,
     ownerRecruiterId: c.owner_recruiter_id, createdAt: c.created_at, updatedAt: c.updated_at,
     salaryVisible: seeSalary,
@@ -99,8 +100,9 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
     q: req.query.q, source: req.query.source, location: req.query.location,
     currentCompany: req.query.currentCompany, noticePeriod: req.query.noticePeriod,
     ownerRecruiterId: req.query.ownerRecruiterId, minExp: req.query.minExp, maxExp: req.query.maxExp, tag: req.query.tag,
+    screeningStatus: req.query.screeningStatus,
   });
-  res.json({ candidates: rows.map((c) => serialize(c, req.user)) });
+  res.json({ candidates: rows.map((c) => serialize(c, req.user)), screeningCounts: Candidates.screeningCounts() });
 });
 
 /* ---------------- DETAIL ---------------- */
@@ -177,6 +179,31 @@ router.put('/:id', requirePermission('candidate.edit'), (req, res) => {
   saveCustomFields('candidate', c.id, req.body || {});
   CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_updated' });
   writeAudit(req, { action: 'candidate.updated', entityType: 'candidate', entityId: c.id, oldValue: before, newValue: { fullName: updated.full_name } });
+  res.json({ candidate: serialize(updated, req.user, { withDetail: true }) });
+});
+
+/* ---------------- SCREENING GATE (Database fitness screen) ----------------
+   Moves a candidate through new → screening → fit | unfit, BEFORE they are
+   attached to a requisition. 'unfit' is where the future auto-rejection email
+   will fire (queue/email not built yet). Gated on candidate.edit. */
+const SCREENING_STATES = ['new', 'screening', 'fit', 'unfit'];
+router.post('/:id/screening', requirePermission('candidate.edit'), (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  const status = String((req.body || {}).status || '').toLowerCase();
+  if (!SCREENING_STATES.includes(status)) {
+    return res.status(400).json({ error: `Invalid screening status. One of: ${SCREENING_STATES.join(', ')}.` });
+  }
+  const reason = (req.body || {}).reason || null;
+  if (status === 'unfit' && !reason) {
+    return res.status(400).json({ error: 'A reason is required to mark a candidate unfit.' });
+  }
+  const before = c.screening_status || 'new';
+  const updated = Candidates.setScreening(c.id, status);
+  CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName,
+    type: 'screening_changed', note: `${before} → ${status}${reason ? ' — ' + reason : ''}` });
+  writeAudit(req, { action: 'candidate.screening_changed', entityType: 'candidate', entityId: c.id,
+    oldValue: { screeningStatus: before }, newValue: { screeningStatus: status }, comments: reason || undefined });
   res.json({ candidate: serialize(updated, req.user, { withDetail: true }) });
 });
 

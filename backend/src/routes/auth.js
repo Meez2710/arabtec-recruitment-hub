@@ -1,12 +1,17 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
-import { Users, Sessions } from '../lib/models.js';
+import { Users, Sessions, SystemSettings } from '../lib/models.js';
 import { signToken, loadUserContext } from '../lib/auth.js';
 import { requireAuth } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { validatePassword } from '../lib/passwords.js';
 
 const router = Router();
+
+// Account-lockout config (C1.3). Tunable via env; safe defaults.
+const LOCK_THRESHOLD = Number(process.env.LOGIN_LOCK_THRESHOLD || 5);
+const LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MINUTES || 15);
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -25,12 +30,24 @@ router.post('/login', async (req, res) => {
       { action: 'auth.login_blocked', entityType: 'user', entityId: user.id, comments: 'Inactive account' });
     return res.status(403).json({ error: 'Account is inactive. Contact your administrator.' });
   }
+  // Account lockout: refuse before checking the password if currently locked.
+  const lockMs = Users.lockRemainingMs(user);
+  if (lockMs > 0) {
+    writeAudit({ ...req, user: { id: user.id, fullName: user.full_name } },
+      { action: 'auth.login_blocked', entityType: 'user', entityId: user.id, comments: 'Account locked' });
+    return res.status(423).json({ error: `Account locked. Try again in ${Math.ceil(lockMs / 60000)} minute(s).` });
+  }
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) {
+    const r = Users.recordFailedLogin(user.id, { threshold: LOCK_THRESHOLD, lockMinutes: LOCK_MINUTES });
     writeAudit({ ...req, user: { id: user.id, fullName: user.full_name } },
-      { action: 'auth.login_failed', entityType: 'user', entityId: user.id, comments: 'Bad password' });
+      { action: r.locked ? 'auth.account_locked' : 'auth.login_failed', entityType: 'user', entityId: user.id,
+        comments: r.locked ? `Locked after ${r.count} failed attempts` : 'Bad password' });
+    if (r.locked) return res.status(423).json({ error: `Too many failed attempts. Account locked for ${LOCK_MINUTES} minutes.` });
     return fail();
   }
+  // Success → clear any failed-attempt / lock state.
+  Users.clearFailedLogins(user.id);
 
   const token = signToken({ sub: user.id }, !!remember);
   const timeoutMin = remember ? 7 * 24 * 60 : 120;
@@ -42,13 +59,44 @@ router.post('/login', async (req, res) => {
   Users.touchLogin(user.id);
 
   const ctx = loadUserContext(user.id);
+  // Surface the forced-rotation flag so the client can require a password change
+  // before allowing any other action. (RBAC/session are unchanged.)
+  ctx.mustChangePassword = !!user.must_change_password;
   writeAudit({ ...req, user: ctx }, { action: 'auth.login', entityType: 'user', entityId: user.id });
 
   res.cookie('arabtec_token', token, {
     httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production',
     maxAge: timeoutMin * 60 * 1000,
   });
-  res.json({ token, user: ctx });
+  res.json({ token, user: ctx, mustChangePassword: ctx.mustChangePassword });
+});
+
+// POST /api/auth/change-password — authenticated self-service change.
+// Verifies the current password, enforces a minimum strength, sets the new hash,
+// and clears must_change_password. This is what satisfies the first-login rotation.
+router.post('/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new password are required.' });
+  }
+  const minLen = Number(SystemSettings?.get?.('password_min_length') || 8) || 8;
+  const policy = validatePassword(newPassword, { minLength: minLen });
+  if (!policy.ok) return res.status(400).json({ error: policy.error });
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ error: 'New password must be different from the current one.' });
+  }
+  const user = Users.byId(req.user.id);
+  const ok = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!ok) {
+    writeAudit(req, { action: 'auth.password_change_failed', entityType: 'user', entityId: user.id, comments: 'Wrong current password' });
+    return res.status(401).json({ error: 'Current password is incorrect.' });
+  }
+  const rounds = Number(process.env.BCRYPT_ROUNDS || 10);
+  Users.setPassword(user.id, await bcrypt.hash(newPassword, rounds));
+  // Invalidate other sessions on password change (defense in depth); keep current.
+  Sessions.revokeAllForUserExcept?.(user.id, req.sessionToken);
+  writeAudit(req, { action: 'auth.password_changed', entityType: 'user', entityId: user.id });
+  res.json({ ok: true, mustChangePassword: false });
 });
 
 // POST /api/auth/logout

@@ -49,10 +49,38 @@ export const Users = {
     run('UPDATE users SET status=?, updated_at=? WHERE id=?', [status, nowISO(), id]);
   },
   setPassword(id, hash) {
-    run('UPDATE users SET password_hash=?, updated_at=? WHERE id=?', [hash, nowISO(), id]);
+    // Setting a password also clears the forced-rotation flag — the user has now
+    // chosen their own credential, satisfying must_change_password.
+    run('UPDATE users SET password_hash=?, must_change_password=0, updated_at=? WHERE id=?', [hash, nowISO(), id]);
+  },
+  // Admin-initiated reset: set a new hash AND require the user to rotate it at next login.
+  setPasswordForceChange(id, hash) {
+    run('UPDATE users SET password_hash=?, must_change_password=1, updated_at=? WHERE id=?', [hash, nowISO(), id]);
   },
   touchLogin(id) {
     run('UPDATE users SET last_login_at=? WHERE id=?', [nowISO(), id]);
+  },
+  // ---- Account lockout (C1.3) ----
+  // Returns ms remaining if locked, else 0.
+  lockRemainingMs(user) {
+    if (!user?.locked_until) return 0;
+    const ms = new Date(user.locked_until).getTime() - Date.now();
+    return ms > 0 ? ms : 0;
+  },
+  // Record a failed attempt; lock the account once the threshold is reached.
+  recordFailedLogin(id, { threshold = 5, lockMinutes = 15 } = {}) {
+    const u = this.byId(id);
+    const count = (u?.failed_login_count || 0) + 1;
+    if (count >= threshold) {
+      const until = new Date(Date.now() + lockMinutes * 60 * 1000).toISOString();
+      run('UPDATE users SET failed_login_count=?, locked_until=?, updated_at=? WHERE id=?', [count, until, nowISO(), id]);
+      return { locked: true, count, until };
+    }
+    run('UPDATE users SET failed_login_count=?, updated_at=? WHERE id=?', [count, nowISO(), id]);
+    return { locked: false, count };
+  },
+  clearFailedLogins(id) {
+    run('UPDATE users SET failed_login_count=0, locked_until=NULL, updated_at=? WHERE id=?', [nowISO(), id]);
   },
 };
 
@@ -146,6 +174,11 @@ export const Sessions = {
   byToken(token) { return get('SELECT * FROM session WHERE token = ?', [token]); },
   revoke(token) { run('UPDATE session SET revoked_at=? WHERE token=?', [nowISO(), token]); },
   revokeForUser(userId) { run('UPDATE session SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', [nowISO(), userId]); },
+  // Revoke every other live session for a user (keep the current token). Used on
+  // password change so a leaked/old session can't outlive the credential.
+  revokeAllForUserExcept(userId, keepToken) {
+    run('UPDATE session SET revoked_at=? WHERE user_id=? AND token<>? AND revoked_at IS NULL', [nowISO(), userId, keepToken]);
+  },
 };
 
 // ---------------- Org ----------------
@@ -323,6 +356,7 @@ export const Workflows = {
 
 export const SystemSettings = {
   all() { return Object.fromEntries(all('SELECT key, value FROM system_setting').map((r) => [r.key, r.value])); },
+  get(key) { const r = get('SELECT value FROM system_setting WHERE key = ?', [key]); return r ? r.value : undefined; },
   upsert(key, value) {
     run(`INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)
          ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
@@ -560,8 +594,21 @@ export const Candidates = {
     if (f.minExp) { sql += ' AND years_experience >= ?'; p.push(Number(f.minExp)); }
     if (f.maxExp) { sql += ' AND years_experience <= ?'; p.push(Number(f.maxExp)); }
     if (f.tag) { sql += ' AND tags LIKE ?'; p.push(`%"${f.tag}"%`); }
+    if (f.screeningStatus) { sql += ' AND screening_status=?'; p.push(f.screeningStatus); }
     sql += ' ORDER BY created_at DESC, id DESC';
     return all(sql, p);
+  },
+  // Screening gate: move a candidate through the Database fitness screen.
+  setScreening(id, status) {
+    run('UPDATE candidate SET screening_status=?, updated_at=? WHERE id=?', [status, nowISO(), id]);
+    return this.byId(id);
+  },
+  // Counts per screening bucket for the Talent Pool tabs.
+  screeningCounts() {
+    const rows = all("SELECT screening_status s, COUNT(*) c FROM candidate WHERE candidate_state != 'merged' GROUP BY screening_status");
+    const out = { new: 0, screening: 0, fit: 0, unfit: 0 };
+    for (const r of rows) out[r.s] = Number(r.c);
+    return out;
   },
 };
 

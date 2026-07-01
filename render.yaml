@@ -3,14 +3,21 @@ databases:
     plan: free
     databaseName: arabtec
     user: arabtec
+  # Staging database — isolated from prod so staging tests never touch prod data.
+  - name: arabtec-db-staging
+    plan: free
+    databaseName: arabtec_staging
+    user: arabtec_staging
 
 services:
+  # ---------------- PRODUCTION ----------------
   - type: web
     name: arabtec
     runtime: node
     plan: free
     region: oregon
     rootDir: backend
+    branch: main                 # prod tracks main
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
@@ -30,7 +37,45 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: "https://arabtec.onrender.com"
-      # Demo sample-users are NOT seeded in production. Set SEED_DEMO_DATA=true only
-      # for a throwaway demo environment.
+      # Demo sample-users are NOT seeded in production.
       - key: SEED_DEMO_DATA
         value: "false"
+      # Error tracking — set the DSN value in the Render dashboard (do NOT commit it).
+      # Absent = Sentry disabled (app runs normally).
+      - key: SENTRY_DSN
+        sync: false
+
+  # ---------------- STAGING ----------------
+  # Mirrors prod but tracks the `staging` branch and uses its own DB. A push to
+  # `staging` auto-deploys here, replacing manual file uploads for verification.
+  - type: web
+    name: arabtec-staging
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    branch: staging
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_OPTIONS
+        value: --experimental-sqlite
+      - key: NODE_VERSION
+        value: "22.11.0"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: arabtec-db-staging
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: "https://arabtec-staging.onrender.com"
+      # Staging may seed demo users for testing convenience.
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: SENTRY_DSN
+        sync: false

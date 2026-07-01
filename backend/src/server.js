@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { ensureSchema } from './lib/schema.js';
 import { get as dbGet } from './lib/db.js';
+import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import roleRoutes from './routes/roles.js';
@@ -50,6 +51,32 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
+
+// Structured per-request logging (one JSON line per request; assigns x-request-id).
+app.use(requestLogger);
+
+// Global rate limiter (C1.4): per-IP cap across ALL /api traffic, protecting every
+// endpoint from abuse/scraping (the login limiter below is a tighter, separate cap).
+// In-memory sliding window — fine for a single instance; move to Redis if scaled out.
+// Health checks are exempt so uptime probes are never throttled.
+const GLOBAL_MAX = Number(process.env.RATE_LIMIT_MAX || 300);       // requests
+const GLOBAL_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000); // per minute
+const apiHits = new Map();
+setInterval(() => apiHits.clear(), GLOBAL_WINDOW_MS).unref?.(); // periodic reset; don't hold the event loop
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health' || req.path === '/health/db') return next();
+  if (process.env.NODE_ENV === 'test' || process.env.RATE_LIMIT_DISABLED === 'true') return next();
+  const key = req.ip;
+  const rec = apiHits.get(key) || { count: 0, ts: Date.now() };
+  if (Date.now() - rec.ts > GLOBAL_WINDOW_MS) { rec.count = 0; rec.ts = Date.now(); }
+  rec.count += 1;
+  apiHits.set(key, rec);
+  if (rec.count > GLOBAL_MAX) {
+    res.setHeader('Retry-After', Math.ceil(GLOBAL_WINDOW_MS / 1000));
+    return res.status(429).json({ error: 'Too many requests. Please slow down and retry shortly.' });
+  }
+  next();
+});
 
 // Basic in-memory rate limiter for auth endpoints (per IP).
 const attempts = new Map();
@@ -112,10 +139,11 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(frontendDir, 'index.html'));
 });
 
-// Central error handler
+// Central error handler — also reports to Sentry (no-op if not configured).
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error.' });
+  console.error(JSON.stringify({ level: 'error', msg: 'unhandled', requestId: req?.requestId, error: String(err && err.message || err) }));
+  captureError(err, req);
+  res.status(500).json({ error: 'Internal server error.', requestId: req?.requestId });
 });
 
 // Boot-seed: on a fresh deploy (empty DB) populate roles, permissions, admin and
@@ -147,6 +175,7 @@ app.listen(PORT, () => {
   console.log(`\n🏗️  Arabtec Recruitment Hub listening on ${PORT} (initialising…)`);
   (async () => {
     try {
+      await initObservability(); // Sentry (no-op without SENTRY_DSN)
       ensureSchema();            // create/upgrade tables + migrate workflow stages
       await bootSeedIfEmpty();   // seed admin/reference data if empty
       APP_READY = true;
