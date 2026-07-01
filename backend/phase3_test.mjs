@@ -58,17 +58,17 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   c('HR manager: salaryVisible true', candAsHr.json?.candidate?.salaryVisible === true);
 
   console.log('\n— Application: link candidate ↔ request (separation) —');
-  const app1 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: reqId, initialStatus: 'applied', matchScore: 82, source: 'referral' } });
+  const app1 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: reqId, initialStatus: 'sourced', matchScore: 82, source: 'referral' } });
   c('link creates application (201)', app1.status === 201, `got ${app1.status}`);
-  c('application has APP id + status applied', app1.json?.application?.applicationNo?.startsWith('APP-') && app1.json?.application?.status === 'applied');
+  c('application has APP id + status sourced', app1.json?.application?.applicationNo?.startsWith('APP-') && app1.json?.application?.status === 'sourced');
   const appId = app1.json.application.id;
   const dupApp = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: reqId } });
   c('duplicate application to same request blocked (409)', dupApp.status === 409, `got ${dupApp.status}`);
 
   // Second request → same candidate, independent application
   const cr2 = await api('/api/requests', { method: 'POST', token: hrMgr, body: { title: 'Project Engineer', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount: 1 } });
-  const app2 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: cr2.json.request.id, initialStatus: 'cv_screening' } });
-  c('same candidate, 2nd request = independent application', app2.status === 201 && app2.json.application.status === 'cv_screening');
+  const app2 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: cr2.json.request.id, initialStatus: 'matched' } });
+  c('same candidate, 2nd request = independent application', app2.status === 201 && app2.json.application.status === 'matched');
 
   console.log('\n— Candidate profile shows multiple applications with independent statuses —');
   const profile = await api(`/api/candidates/${candId}`, { token: recruiter });
@@ -78,17 +78,20 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
 
   console.log('\n— Stage movement + reason rules —');
   const move = await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: 'shortlisted' } });
-  c('recruiter moves stage (applied→shortlisted)', move.json?.application?.status === 'shortlisted');
+  c('recruiter moves stage (sourced→shortlisted)', move.json?.application?.status === 'shortlisted');
   const rejNoReason = await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: 'rejected' } });
   c('reject without reason blocked (400)', rejNoReason.status === 400, `got ${rejNoReason.status}`);
-  const interviewerMove = await api(`/api/applications/${appId}/move`, { method: 'POST', token: interviewer, body: { status: 'technical_interview' } });
+  const interviewerMove = await api(`/api/applications/${appId}/move`, { method: 'POST', token: interviewer, body: { status: 'interviewing' } });
   c('interviewer cannot move pipeline (403)', interviewerMove.status === 403, `got ${interviewerMove.status}`);
-  const hmMove = await api(`/api/applications/${appId}/move`, { method: 'POST', token: hm, body: { status: 'technical_interview' } });
+  const hmMove = await api(`/api/applications/${appId}/move`, { method: 'POST', token: hm, body: { status: 'interviewing' } });
   c('hiring manager cannot move pipeline (403)', hmMove.status === 403, `got ${hmMove.status}`);
   const viewerView = await api(`/api/applications/request/${reqId}`, { token: viewer });
   c('viewer can read pipeline (200)', viewerView.status === 200);
 
   console.log('\n— Joined → vacancy automation —');
+  await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: 'interviewing' } });
+  await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: 'issuing_offer' } });
+  await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: 'offer_sent' } });
   await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: 'joined' } });
   const reqAfter = await api(`/api/requests/${reqId}`, { token: hrMgr });
   c('headcount_filled incremented to 1', reqAfter.json?.request?.headcountFilled === 1, `got ${reqAfter.json?.request?.headcountFilled}`);
@@ -98,7 +101,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   // link a fresh candidate to bulk-move
   const c2 = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Sara Nabil', phone: '+20 122 333 4444', currentPosition: 'Civil Engineer' } });
   const a2 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: c2.json.candidate.id, requestId: reqId } });
-  const bulk = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: [a2.json.application.id], action: 'move', status: 'cv_screening' } });
+  const bulk = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: [a2.json.application.id], action: 'move', status: 'matched' } });
   c('bulk move (200, affected 1)', bulk.status === 200 && bulk.json.affected === 1, JSON.stringify(bulk.json));
   const bulkRejNoReason = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: [a2.json.application.id], action: 'move', status: 'rejected' } });
   c('bulk reject without reason blocked (400)', bulkRejNoReason.status === 400, `got ${bulkRejNoReason.status}`);

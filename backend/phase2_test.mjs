@@ -46,12 +46,12 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   c('submit moves to pending_approval', submit.json?.request?.status === 'pending_approval', submit.json?.request?.status);
   c('single-step approval chain (HR Director only)', submit.json?.request?.approvals?.length === 1, `got ${submit.json?.request?.approvals?.length}`);
   const approved = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: { comment: 'ok' } });
-  c('single approval → approved', approved.json?.request?.status === 'approved', approved.json?.request?.status);
+  c('single approval → sourcing', approved.json?.request?.status === 'sourcing', approved.json?.request?.status);
 
   console.log('\n— Recruiter assignment —');
   const recruiterUser = meta.json.recruiters.find((r) => r.name === 'Karim Adel');
   const assign = await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recruiterUser.id } });
-  c('assign recruiter → in_sourcing', assign.json?.request?.status === 'in_sourcing', assign.json?.request?.status);
+  c('assign recruiter → sourcing', assign.json?.request?.status === 'sourcing', assign.json?.request?.status);
   c('owner set', assign.json?.request?.owner?.id === recruiterUser.id);
   const recruiterCantAssign = await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recruiter, body: { ownerId: recruiterUser.id } });
   c('recruiter blocked from assigning (403)', recruiterCantAssign.status === 403, `got ${recruiterCantAssign.status}`);
@@ -62,7 +62,7 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   const hold = await api(`/api/requests/${reqId}/hold`, { method: 'POST', token: hrMgr, body: { reason: 'Awaiting client sign-off' } });
   c('hold with reason → on_hold', hold.json?.request?.status === 'on_hold', hold.json?.request?.status);
   const resume = await api(`/api/requests/${reqId}/resume`, { method: 'POST', token: hrMgr });
-  c('resume → previous (in_sourcing)', resume.json?.request?.status === 'in_sourcing', resume.json?.request?.status);
+  c('resume → previous (sourcing)', resume.json?.request?.status === 'sourcing', resume.json?.request?.status);
   const close = await api(`/api/requests/${reqId}/close`, { method: 'POST', token: hrMgr, body: { reason: 'Position filled externally' } });
   c('close with reason → closed', close.json?.request?.status === 'closed', close.json?.request?.status);
   const reopen = await api(`/api/requests/${reqId}/reopen`, { method: 'POST', token: hrMgr, body: { reason: 'New attrition seat' } });

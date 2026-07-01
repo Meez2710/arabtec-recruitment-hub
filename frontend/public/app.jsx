@@ -333,6 +333,77 @@ const NAV = [
 ];
 
 /* ----------------------------- Shell ----------------------------- */
+/* ----------------------------- Notification bell ----------------------------- */
+function NotificationBell({ onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([]);
+  const [unread, setUnread] = useState(0);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get('/notifications');
+      setItems(r.notifications || []);
+      setUnread(r.unreadCount || 0);
+    } catch { /* ignore — never break the shell */ }
+  }, []);
+
+  // Poll every 45s (and once on mount). Cheap in-app polling; no websockets needed.
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 45000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const openPanel = () => { setOpen((o) => !o); if (!open) load(); };
+
+  const markAll = async () => {
+    try { await api.post('/notifications/read-all'); } catch {}
+    setItems((xs) => xs.map((n) => ({ ...n, isRead: true })));
+    setUnread(0);
+  };
+
+  const clickItem = async (n) => {
+    if (!n.isRead) {
+      try { await api.post('/notifications/' + n.id + '/read'); } catch {}
+      setUnread((u) => Math.max(0, u - 1));
+      setItems((xs) => xs.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
+    }
+    // Deep-link to the related record where we know the route.
+    if (n.linkType === 'request' && onNavigate) onNavigate('requests');
+    setOpen(false);
+  };
+
+  return (
+    <div className="notif" style={{ position: 'relative' }}>
+      <button className="icon-btn" onClick={openPanel} title="Notifications" aria-label="Notifications">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 01-3.4 0" />
+        </svg>
+        {unread > 0 && <span className="notif-dot">{unread > 9 ? '9+' : unread}</span>}
+      </button>
+      {open && (
+        <div className="notif-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="notif-head">
+            <strong>Notifications</strong>
+            {unread > 0 && <button className="linklike" onClick={markAll}>Mark all read</button>}
+          </div>
+          <div className="notif-list">
+            {items.length === 0
+              ? <div className="notif-empty">You're all caught up.</div>
+              : items.slice(0, 20).map((n) => (
+                <div key={n.id} className={'notif-item' + (n.isRead ? '' : ' unread')} onClick={() => clickItem(n)}>
+                  <div className="notif-title">{n.title}</div>
+                  {n.body && <div className="notif-body">{n.body}</div>}
+                  <div className="notif-time">{timeAgo(n.createdAt)}</div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Shell({ user, branding, onLogout, refreshBranding }) {
   const [route, setRoute] = useState('dashboard');
   const [collapsed, setCollapsed] = useState(branding?.sidebar_mode === 'collapsed');
@@ -386,6 +457,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
           </button>
           <div className="spacer" />
+          <NotificationBell onNavigate={setRoute} />
           <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
             <div className="avatar">{initials(user.fullName)}</div>
             <div>
@@ -3087,7 +3159,9 @@ function CandidateProfile({ id, user, btns, onBack }) {
   useEffect(() => { load(); }, [id]);
   if (!c) return <Skeleton rows={8} />;
 
+  const canPrivacy = can(user, 'candidate.privacy');
   const TABS = [['overview', 'Overview'], ['cv', 'CV & Attachments'], ['applications', `Applications (${c.applications?.length || 0})`], ['interviews', 'Interviews'], ['offers', 'Offers'], ['notes', 'Notes & Activity']];
+  if (canPrivacy) TABS.push(['privacy', 'Data & Privacy']);
   return (
     <div>
       <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Talent Pool</a></div>
@@ -3185,11 +3259,63 @@ function CandidateProfile({ id, user, btns, onBack }) {
         </div>
       )}
 
+      {tab === 'privacy' && canPrivacy && <CandidatePrivacyTab c={c} onChanged={load} />}
+
       {editing && <CandidateForm user={user} candidate={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
       {noteOpen && <NoteModal candidateId={c.id} onClose={() => setNoteOpen(false)} onSaved={() => { setNoteOpen(false); load(); }} />}
     </div>
   );
 }
+// GDPR/PDPL controls on the candidate profile — consent, data export, erasure.
+function CandidatePrivacyTab({ c, onChanged }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const erased = c.candidateState === 'erased';
+  const consentVariant = { given: 'success', withdrawn: 'critical', unknown: 'soft' }[c.consentStatus || 'unknown'];
+
+  async function setConsent(status) {
+    setBusy(true);
+    try { await api.post(`/candidates/${c.id}/consent`, { status, source: 'manual' }); toast(`Consent marked ${status}`); onChanged(); }
+    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  async function exportData() {
+    try { await api.download(`/candidates/${c.id}/export`, `${c.candidateNo}-data-export.json`); toast('Data export downloaded'); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  async function erase() {
+    const reason = window.prompt('This permanently anonymises all personal data for this candidate and deletes their CV. This cannot be undone.\n\nType a reason to confirm:');
+    if (reason == null) return;
+    setBusy(true);
+    try { await api.post(`/candidates/${c.id}/erase`, { confirm: 'ERASE', reason }); toast('Personal data erased'); onChanged(); }
+    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card card-pad">
+      {erased && <div style={{ marginBottom: 16, padding: '10px 12px', borderRadius: 8, background: 'color-mix(in srgb, var(--warning, #F59E0B) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--warning, #F59E0B) 40%, transparent)', fontSize: 13 }}>This candidate's personal data was erased on {fmtDate(c.erasedAt)}. The record is retained (anonymised) for audit integrity.</div>}
+      <div className="form-grid">
+        <Info label="Consent status"><Badge variant={consentVariant}>{(c.consentStatus || 'unknown').replace(/^\w/, (m) => m.toUpperCase())}</Badge></Info>
+        <Info label="Consent recorded">{c.consentAt ? fmtDate(c.consentAt) : '—'}</Info>
+        <Info label="Retention until">{c.retentionUntil ? fmtDateShort(c.retentionUntil) : '—'}</Info>
+        <Info label="Erased">{erased ? fmtDate(c.erasedAt) : 'No'}</Info>
+      </div>
+
+      {!erased && (
+        <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('given')}>Mark consent given</button>
+          <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('withdrawn')}>Mark consent withdrawn</button>
+          <button className="btn btn-secondary" onClick={exportData}>Export data (JSON)</button>
+          <button className="btn btn-danger" disabled={busy} onClick={erase}>Erase personal data…</button>
+        </div>
+      )}
+      {erased && <div style={{ marginTop: 20 }}><button className="btn btn-secondary" onClick={exportData}>Export retained record</button></div>}
+      <p className="muted" style={{ marginTop: 16, fontSize: 12 }}>
+        Data-protection actions (GDPR / Egypt PDPL): record the candidate's consent to hold their data, export everything held about them for a subject-access request, or erase their personal data on request. All actions are written to the audit log.
+      </p>
+    </div>
+  );
+}
+
 function NoteModal({ candidateId, onClose, onSaved }) {
   const toast = useToast();
   const [body, setBody] = useState(''); const [noteType, setNoteType] = useState('note'); const [busy, setBusy] = useState(false);

@@ -7,6 +7,8 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { hasOpenSeat, fillSeatAndCount, applicationAlreadyFilledSeat } from '../lib/vacancy.js';
 import { APP, appNorm } from '../lib/stages.js';
+import { sendMail } from '../lib/mailer.js';
+import { offerSent as offerSentTpl } from '../lib/email_templates.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -227,6 +229,14 @@ router.post('/:id/send', requirePermission('offer.send'), (req, res) => {
   }
   OfferActivity.add(o.id, req.user, 'sent', { toStatus: 'sent' });
   writeAudit(req, { action: 'offer.sent', entityType: 'offer', entityId: o.id });
+  // Email the candidate (best-effort, non-blocking; no-ops until email is configured).
+  const cand = Candidates.byId(o.candidate_id);
+  if (cand?.email) {
+    const tpl = offerSentTpl({ candidateName: cand.full_name, position: o.position_title });
+    sendMail({ to: cand.email, subject: tpl.subject, html: tpl.html })
+      .then((r) => { if (r.ok) CandidateActivity.add({ candidateId: cand.id, applicationId: o.application_id, actorId: req.user.id, actorName: 'System', type: 'email_sent', note: 'Offer email sent' }); })
+      .catch(() => {});
+  }
   res.json({ offer: serialize(Offers.byId(o.id), req.user, { detail: true }) });
 });
 

@@ -189,7 +189,7 @@ async function main(opts = {}) {
   log(`${workflows.length} workflow settings`);
 
   // 12. System settings
-  const sys = [['ticket_prefix', 'REQ'], ['candidate_prefix', 'CAN'], ['application_prefix', 'APP'], ['interview_prefix', 'INT'], ['offer_prefix', 'OFR'], ['session_timeout_minutes', '120'], ['password_min_length', '8'], ['mfa_required', 'false'], ['default_currency', 'EGP'], ['request_counter', '0'], ['candidate_counter', '0'], ['application_counter', '0'], ['interview_counter', '0'], ['offer_counter', '0'], ['sla_approval_hours', '48'], ['sla_sourcing_days', '5'], ['salary_band_max_threshold', '50000'], ['director_approval_headcount', '10'], ['offer_director_threshold', '50000'], ['allow_duplicate_application', 'false'], ['health_amber_days', '30'], ['health_red_days', '45']];
+  const sys = [['ticket_prefix', 'REQ'], ['candidate_prefix', 'CAN'], ['application_prefix', 'APP'], ['interview_prefix', 'INT'], ['offer_prefix', 'OFR'], ['session_timeout_minutes', '120'], ['password_min_length', '8'], ['mfa_required', 'false'], ['default_currency', 'EGP'], ['request_counter', '0'], ['candidate_counter', '0'], ['application_counter', '0'], ['interview_counter', '0'], ['offer_counter', '0'], ['sla_approval_hours', '48'], ['sla_sourcing_days', '5'], ['salary_band_max_threshold', '50000'], ['director_approval_headcount', '10'], ['offer_director_threshold', '50000'], ['allow_duplicate_application', 'false'], ['health_amber_days', '30'], ['health_red_days', '45'], ['retention_months', '24']];
   for (const [key, value] of sys) run('INSERT INTO system_setting (key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING', [key, value]);
   log(`${sys.length} system settings`);
 

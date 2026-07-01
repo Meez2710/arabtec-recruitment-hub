@@ -8,6 +8,7 @@ import { writeAudit } from '../lib/audit.js';
 import { all } from '../lib/db.js';
 import { multipart, streamFile } from '../lib/upload.js';
 import { REQ, reqNorm, REQ_LABELS } from '../lib/stages.js';
+import { notifyUser, notifyByPermission } from '../lib/notify.js';
 import fs from 'node:fs';
 
 const router = Router();
@@ -282,6 +283,12 @@ router.post('/:id/submit', requirePermission('request.submit'), (req, res) => {
   RequestActivity.add(r.id, req.user, 'submitted', { fromStatus: r.status, toStatus: STATUS.PENDING, note: 'Submitted for approval' });
   Posts.system(r.id, 'Request submitted for HR Director approval.', { event: 'submitted' }, req.user);
   writeAudit(req, { action: 'request.submitted', entityType: 'recruitment_request', entityId: r.id });
+  // Notify everyone who can approve (in-app + email), except the submitter.
+  notifyByPermission('request.approve', {
+    type: 'approval_needed', title: `Approval needed: ${r.ticket_no} — ${r.title}`,
+    body: `${req.user.fullName} submitted a recruitment request that needs your approval.`,
+    linkType: 'request', linkId: r.id,
+  }, { excludeUserId: req.user.id });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
@@ -336,6 +343,12 @@ router.post('/:id/assign', requirePermission('request.assign_recruiter'), (req, 
   RequestActivity.add(r.id, req.user, 'assigned', { note: `Assigned to ${owner.full_name}` });
   Posts.system(r.id, `Recruiter assigned: ${owner.full_name}.`, { event: 'assigned', ownerId }, req.user);
   writeAudit(req, { action: 'request.recruiter_assigned', entityType: 'recruitment_request', entityId: r.id, newValue: { ownerId } });
+  // Notify the assigned recruiter (in-app + email).
+  if (owner.id !== req.user.id) notifyUser(owner, {
+    type: 'recruiter_assigned', title: `You’ve been assigned: ${r.ticket_no} — ${r.title}`,
+    body: `${req.user.fullName} assigned you as the recruiter for this request. Start sourcing candidates.`,
+    linkType: 'request', linkId: r.id,
+  });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 

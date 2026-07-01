@@ -23,6 +23,9 @@ const SUITES = [
   'hardening_test.mjs',       // security hardening gate items
   'auth_security_test.mjs',   // C1.1 rotation + C1.3 password policy + lockout
   'rate_limit_test.mjs',      // C1.4 global rate limiter
+  'email_test.mjs',           // C2.2 email module (SMTP, dry-run)
+  'notifications_test.mjs',   // C2.3 in-app notifications + assignment/approval wiring
+  'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
 ];

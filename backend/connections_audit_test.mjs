@@ -47,11 +47,11 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   await api(`/api/requests/${rid}/submit`, { method: 'POST', token: hrMgr });
   c('→ status pending_approval', (await api(`/api/requests/${rid}`, { token: hrMgr })).json.request.status === 'pending_approval');
   await api(`/api/requests/${rid}/approve`, { method: 'POST', token: hrMgr, body: {} });
-  c('→ status approved', (await api(`/api/requests/${rid}`, { token: hrMgr })).json.request.status === 'approved');
+  c('→ status sourcing (approval flows into sourcing)', (await api(`/api/requests/${rid}`, { token: hrMgr })).json.request.status === 'sourcing');
   c('→ audited request.approval_decision', (await auditActions()).has('request.approval_decision'));
   await api(`/api/requests/${rid}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
   const afterAssign = (await api(`/api/requests/${rid}`, { token: hrMgr })).json.request;
-  c('→ owner set + status in_sourcing', afterAssign.owner?.id === recId && afterAssign.status === 'in_sourcing');
+  c('→ owner set + status sourcing', afterAssign.owner?.id === recId && afterAssign.status === 'sourcing');
   c('→ audited request.recruiter_assigned', (await auditActions()).has('request.recruiter_assigned'));
 
   console.log('\n— ACTION: Ticket thread message → lands in the thread (right path) —');
@@ -84,7 +84,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   c('→ stage move auto-posted into thread', (await api(`/api/thread/request/${rid}`, { token: hrMgr })).json.posts.some((p) => p.type === 'system' && /moved/i.test(p.body || '')));
 
   console.log('\n— ACTION: Interview assessment (unlocks at interview stage) → persists + shared —');
-  await api(`/api/applications/${cv.json.applicationId}/move`, { method: 'POST', token: recruiter, body: { status: 'interview_1' } });
+  await api(`/api/applications/${cv.json.applicationId}/move`, { method: 'POST', token: recruiter, body: { status: 'interviewing' } });
   const asmt = await api(`/api/assessments/application/${cv.json.applicationId}`, { method: 'POST', token: interviewer, body: { evaluatorType: 'technical', technical: { technical_knowledge: { score: 4 } }, recommendation: 'proceed', technicalFit: 'strong' } });
   c('assessment submitted (201)', asmt.status === 201);
   c('→ assessment persisted + readable', (await api(`/api/assessments/application/${cv.json.applicationId}`, { token: recruiter })).json.assessment.technical?.recommendation === 'proceed');

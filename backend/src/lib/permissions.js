@@ -29,6 +29,7 @@ export const PERMISSIONS = [
   ['candidate.move_stage', 'candidate', 'move_stage', 'Move candidate stage'],
   ['candidate.merge', 'candidate', 'merge', 'Merge duplicate candidates / override duplicate'],
   ['candidate.note', 'candidate', 'note', 'Add candidate notes'],
+  ['candidate.privacy', 'candidate', 'privacy', 'Export or erase candidate personal data (GDPR/PDPL); manage consent'],
   ['application.bulk_action', 'application', 'bulk_action', 'Perform bulk application actions'],
   // Interviews (Phase 4)
   ['interview.view_all', 'interview', 'view_all', 'View all interviews'],
@@ -80,7 +81,7 @@ export const ROLE_PERMISSIONS = {
   hr_director: [
     'dashboard.view', 'request.view_all', 'request.approve', 'request.reject',
     'request.budget_approve', 'request.cancel', 'request.close',
-    'candidate.view', 'salary.view',
+    'candidate.view', 'candidate.privacy', 'salary.view',
     'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
     'interview.view_all', 'report.export', 'audit.view', 'org.manage',
   ],
@@ -89,7 +90,7 @@ export const ROLE_PERMISSIONS = {
     'request.submit', 'request.approve', 'request.reject', 'request.assign_recruiter',
     'request.budget_approve', 'request.hold', 'request.cancel', 'request.close', 'request.reopen',
     'candidate.view', 'candidate.add', 'candidate.edit', 'candidate.link', 'candidate.move_stage',
-    'candidate.merge', 'candidate.note', 'application.bulk_action',
+    'candidate.merge', 'candidate.note', 'candidate.privacy', 'application.bulk_action',
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',
     'salary.view', 'offer.view',
     'offer.create', 'offer.edit', 'offer.approve', 'offer.send', 'offer.result_update',

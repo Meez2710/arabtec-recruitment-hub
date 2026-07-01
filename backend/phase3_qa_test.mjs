@@ -32,6 +32,12 @@ async function linkCandidate(token, requestId, name, contact) {
   const app = await api('/api/applications', { method: 'POST', token, body: { candidateId: cand.json.candidate.id, requestId } });
   return { candId: cand.json.candidate.id, appId: app.json.application.id };
 }
+// Walk an application from 'sourced' up to 'offer_sent' (one valid hop short of 'joined').
+async function driveToOfferSent(token, appId) {
+  for (const st of ['matched', 'interviewing', 'issuing_offer', 'offer_sent']) {
+    await api(`/api/applications/${appId}/move`, { method: 'POST', token, body: { status: st } });
+  }
+}
 
 (async () => {
   const admin = await login('admin@arabtec.com', 'Admin@12345');
@@ -42,18 +48,36 @@ async function linkCandidate(token, requestId, name, contact) {
   const interviewer = await login('interviewer@arabtec.com');
   const viewer = await login('viewer@arabtec.com');
 
-  console.log('\n— 1. All 16 statuses accepted —');
-  const req16 = await approvedRequest(hrMgr, recMgr, 5);
-  const STATUSES = ['applied', 'cv_screening', 'shortlisted', 'phone_interview', 'technical_interview', 'client_interview', 'final_interview', 'reference_check', 'offer_preparation', 'offer_sent', 'offer_accepted', 'offer_rejected', 'joined', 'rejected', 'on_hold', 'withdrawn'];
+  console.log('\n— 1. All 12 canonical stages reachable via valid paths —');
+  const req16 = await approvedRequest(hrMgr, recMgr, 12);
+  // Each entry: a valid transition path from the initial 'sourced' stage to the target stage.
+  // Reason-required stages (rejected, offer_declined, on_hold, unmatched) carry a reason on that hop.
+  const PATHS = [
+    ['sourced', []],
+    ['matched', ['matched']],
+    ['shortlisted', ['shortlisted']],
+    ['interviewing', ['matched', 'interviewing']],
+    ['waiting_feedback', ['matched', 'interviewing', 'waiting_feedback']],
+    ['issuing_offer', ['matched', 'interviewing', 'issuing_offer']],
+    ['offer_sent', ['matched', 'interviewing', 'issuing_offer', 'offer_sent']],
+    ['offer_declined', ['matched', 'interviewing', 'issuing_offer', 'offer_declined']],
+    ['joined', ['matched', 'interviewing', 'issuing_offer', 'offer_sent', 'joined']],
+    ['rejected', ['rejected']],
+    ['on_hold', ['on_hold']],
+  ];
+  const REASONED = ['rejected', 'offer_declined', 'on_hold', 'unmatched'];
   let ok16 = true;
-  for (const st of STATUSES) {
-    const { appId } = await linkCandidate(recruiter, req16, 'S_' + st, { phone: '+2010' + Math.floor(Math.random() * 1e8) });
-    const reasonable = ['rejected', 'on_hold', 'withdrawn', 'offer_rejected'].includes(st) ? { reason: 'qa' } : {};
-    // joined needs a seat; req has 5 seats but we only join a couple — fine for first joins
-    const mv = await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: st, ...reasonable } });
-    if (mv.json?.application?.status !== st) { ok16 = false; console.log('   status failed:', st, mv.status, mv.json?.error); }
+  for (const [target, path] of PATHS) {
+    const { appId } = await linkCandidate(recruiter, req16, 'S_' + target, { phone: '+2010' + Math.floor(Math.random() * 1e8) });
+    let last = { json: { application: { status: 'sourced' } }, status: 200 };
+    for (const st of path) {
+      const body = REASONED.includes(st) ? { status: st, reason: 'qa' } : { status: st };
+      last = await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body });
+    }
+    const final = path.length ? last.json?.application?.status : 'sourced';
+    if (final !== target) { ok16 = false; console.log('   status failed:', target, last.status, last.json?.error); }
   }
-  c('all 16 application statuses accepted', ok16);
+  c('all canonical application stages reachable via valid paths', ok16);
 
   console.log('\n— 2. Status move updates stage/last-activity/history/activity —');
   const reqU = await approvedRequest(hrMgr, recMgr, 2);
@@ -67,9 +91,18 @@ async function linkCandidate(token, requestId, name, contact) {
   c('last activity updated', after.json.application.lastActivityAt !== before.lastActivityAt || true);
   c('stage history recorded', after.json.history.some((h) => h.to_status === 'shortlisted'));
 
-  console.log('\n— 3. Reason required for rejected/on_hold/withdrawn/offer_rejected —');
-  for (const st of ['rejected', 'on_hold', 'withdrawn', 'offer_rejected']) {
+  console.log('\n— 3. Reason required for rejected/on_hold/unmatched/offer_declined —');
+  // Each reason-required stage must be reachable from the app's current stage so the
+  // 400 (reason missing) check fires rather than the 409 (illegal transition) check.
+  const REASON_CASES = [
+    ['rejected', []],
+    ['on_hold', []],
+    ['unmatched', []],
+    ['offer_declined', ['matched', 'interviewing', 'issuing_offer']],
+  ];
+  for (const [st, setup] of REASON_CASES) {
     const { appId } = await linkCandidate(recruiter, reqU, 'R_' + st, { phone: '+2011' + Math.floor(Math.random() * 1e8) });
+    for (const s of setup) await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: s } });
     const noReason = await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: st } });
     c(`reason required for ${st} (400)`, noReason.status === 400, `got ${noReason.status}`);
   }
@@ -77,7 +110,7 @@ async function linkCandidate(token, requestId, name, contact) {
   console.log('\n— 4. Terminal locked + invalid status safe —');
   const { appId: aT } = await linkCandidate(recruiter, reqU, 'Terminal', { phone: '+201299999999' });
   await api(`/api/applications/${aT}/move`, { method: 'POST', token: recruiter, body: { status: 'rejected', reason: 'x' } });
-  const moveAfterTerminal = await api(`/api/applications/${aT}/move`, { method: 'POST', token: recruiter, body: { status: 'applied' } });
+  const moveAfterTerminal = await api(`/api/applications/${aT}/move`, { method: 'POST', token: recruiter, body: { status: 'sourced' } });
   c('cannot move a terminal (rejected) application (409)', moveAfterTerminal.status === 409, `got ${moveAfterTerminal.status}`);
   const invalid = await api(`/api/applications/${aT}/move`, { method: 'POST', token: recruiter, body: { status: 'banana' } });
   c('invalid status rejected (400)', invalid.status === 400, `got ${invalid.status}`);
@@ -87,6 +120,9 @@ async function linkCandidate(token, requestId, name, contact) {
   const v1 = await linkCandidate(recruiter, reqV, 'V1', { phone: '+201300000001' });
   const v2 = await linkCandidate(recruiter, reqV, 'V2', { phone: '+201300000002' });
   const v3 = await linkCandidate(recruiter, reqV, 'V3', { phone: '+201300000003' });
+  await driveToOfferSent(recruiter, v1.appId);
+  await driveToOfferSent(recruiter, v2.appId);
+  await driveToOfferSent(recruiter, v3.appId);
   const j1 = await api(`/api/applications/${v1.appId}/move`, { method: 'POST', token: recruiter, body: { status: 'joined' } });
   let r = (await api(`/api/requests/${reqV}`, { token: hrMgr })).json.request;
   c('join #1 → filled=1', r.headcountFilled === 1, `got ${r.headcountFilled}`);
@@ -145,7 +181,7 @@ async function linkCandidate(token, requestId, name, contact) {
   const rA = await approvedRequest(hrMgr, recMgr, 1);
   const rB = await approvedRequest(hrMgr, recMgr, 1);
   await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rA, initialStatus: 'shortlisted' } });
-  await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rB, initialStatus: 'cv_screening' } });
+  await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rB, initialStatus: 'matched' } });
   const prof = await api(`/api/candidates/${cMulti.json.candidate.id}`, { token: recruiter });
   c('candidate linked to 2 independent applications', prof.json.candidate.applications.length === 2);
   c('the two applications have different statuses', new Set(prof.json.candidate.applications.map((a) => a.status)).size === 2);
@@ -155,7 +191,7 @@ async function linkCandidate(token, requestId, name, contact) {
   console.log('\n— 9b. Note + bulk action (for audit coverage) —');
   await api(`/api/candidates/${cMulti.json.candidate.id}/notes`, { method: 'POST', token: recruiter, body: { body: 'QA note', noteType: 'assessment' } });
   const bulkApps = prof.json.candidate.applications.map((a) => a.id);
-  const bulk = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: bulkApps, action: 'move', status: 'phone_interview' } });
+  const bulk = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: bulkApps, action: 'move', status: 'interviewing' } });
   c('bulk move reports affected + skipped array', bulk.status === 200 && Array.isArray(bulk.json.skipped));
 
   console.log('\n— 10. Audit coverage for new events —');

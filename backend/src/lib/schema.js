@@ -191,10 +191,25 @@ export function ensureSchema() {
     occurred_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Notifications (C2.3): one row per alert delivered to a user.
+  CREATE TABLE IF NOT EXISTS notification (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,                 -- approval_needed|recruiter_assigned|offer_approval|sla_breach|info
+    title TEXT NOT NULL,
+    body TEXT,
+    link_type TEXT,                     -- e.g. 'request' | 'offer' | 'interview'
+    link_id INTEGER,                    -- entity id the alert points to
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    read_at TEXT
+  );
+
   CREATE INDEX IF NOT EXISTS idx_audit_occurred ON audit_log(occurred_at);
   CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_id);
   CREATE INDEX IF NOT EXISTS idx_session_token ON session(token);
   CREATE INDEX IF NOT EXISTS idx_user_email ON users(email);
+  CREATE INDEX IF NOT EXISTS idx_notif_user ON notification(user_id, is_read);
 
   -- ===================== Phase 2: Recruitment Requests =====================
   CREATE TABLE IF NOT EXISTS recruitment_request (
@@ -549,6 +564,16 @@ export function ensureSchema() {
   addColumnIfMissing('candidate', 'graduation_year', 'INTEGER');
   addColumnIfMissing('candidate', 'university', 'TEXT');
   addColumnIfMissing('candidate', 'major', 'TEXT');
+  // candidate — GDPR/PDPL data-protection fields (C1.6)
+  //   consent_status: unknown|given|withdrawn — lawful basis to hold/process this person's data
+  //   retention_until: date after which the record is due for review/erasure (retention stub)
+  //   erased_at: set when the right-to-erasure is exercised (row kept, PII anonymised for audit integrity)
+  addColumnIfMissing('candidate', 'consent_status', "TEXT NOT NULL DEFAULT 'unknown'");
+  addColumnIfMissing('candidate', 'consent_at', 'TEXT');
+  addColumnIfMissing('candidate', 'consent_source', 'TEXT');
+  addColumnIfMissing('candidate', 'consent_note', 'TEXT');
+  addColumnIfMissing('candidate', 'retention_until', 'TEXT');
+  addColumnIfMissing('candidate', 'erased_at', 'TEXT');
   // application — workspace tracking fields
   addColumnIfMissing('application', 'next_action', 'TEXT');
   addColumnIfMissing('application', 'next_action_date', 'TEXT');

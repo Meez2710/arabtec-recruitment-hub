@@ -82,6 +82,33 @@ export const Users = {
   clearFailedLogins(id) {
     run('UPDATE users SET failed_login_count=0, locked_until=NULL, updated_at=? WHERE id=?', [nowISO(), id]);
   },
+  // Active users who hold a given permission (via any of their roles). Used to
+  // find notification recipients (e.g. who can approve a request).
+  withPermission(code) {
+    return all(`SELECT DISTINCT u.* FROM users u
+      JOIN user_role ur ON ur.user_id = u.id
+      JOIN role_permission rp ON rp.role_id = ur.role_id
+      JOIN permission p ON p.id = rp.permission_id
+      WHERE p.code = ? AND u.status = 'active'`, [code]);
+  },
+};
+
+// ---------------- Notifications (C2.3) ----------------
+export const Notifications = {
+  create({ userId, type, title, body, linkType, linkId }) {
+    const r = run(`INSERT INTO notification (user_id,type,title,body,link_type,link_id) VALUES (?,?,?,?,?,?)`,
+      [userId, type, title, body || null, linkType || null, linkId || null]);
+    return get('SELECT * FROM notification WHERE id=?', [Number(r.lastInsertRowid)]);
+  },
+  forUser(userId, { unreadOnly = false, limit = 50 } = {}) {
+    let sql = 'SELECT * FROM notification WHERE user_id=?';
+    if (unreadOnly) sql += ' AND is_read=0';
+    sql += ' ORDER BY created_at DESC, id DESC LIMIT ?';
+    return all(sql, [userId, limit]);
+  },
+  unreadCount(userId) { return get('SELECT COUNT(*) c FROM notification WHERE user_id=? AND is_read=0', [userId]).c; },
+  markRead(id, userId) { run('UPDATE notification SET is_read=1, read_at=? WHERE id=? AND user_id=?', [nowISO(), id, userId]); },
+  markAllRead(userId) { run('UPDATE notification SET is_read=1, read_at=? WHERE user_id=? AND is_read=0', [nowISO(), userId]); },
 };
 
 // ---------------- Roles & permissions ----------------
@@ -548,7 +575,58 @@ export const Candidates = {
        d.tags ? JSON.stringify(d.tags) : null, d.ownerRecruiterId || null,
        normEmail(d.email), normPhone(d.phone), normLinkedin(d.linkedinUrl), d.createdBy, nowISO(), nowISO()],
     );
-    return this.byId(Number(r.lastInsertRowid));
+    const id = Number(r.lastInsertRowid);
+    // GDPR/PDPL retention stub: stamp the review/erasure-due date from the configured window.
+    const months = parseInt(get("SELECT value FROM system_setting WHERE key='retention_months'")?.value || '24', 10);
+    const due = new Date(); due.setMonth(due.getMonth() + (Number.isFinite(months) ? months : 24));
+    run('UPDATE candidate SET retention_until=? WHERE id=?', [due.toISOString(), id]);
+    return this.byId(id);
+  },
+  // GDPR/PDPL — record or withdraw consent (lawful basis to hold/process this person's data).
+  setConsent(id, { status, source, note }) {
+    run('UPDATE candidate SET consent_status=?, consent_at=?, consent_source=?, consent_note=?, updated_at=? WHERE id=?',
+      [status, nowISO(), source || null, note || null, nowISO(), id]);
+    return this.byId(id);
+  },
+  // GDPR/PDPL — Subject Access Request: gather everything held about a candidate.
+  exportData(id) {
+    const c = this.byId(id);
+    if (!c) return null;
+    return {
+      exportedAt: nowISO(),
+      candidate: c,
+      documents: all('SELECT id, doc_type, file_name, file_size, note, uploaded_at FROM candidate_document WHERE candidate_id=?', [id]),
+      notes: all('SELECT * FROM candidate_note WHERE candidate_id=?', [id]),
+      activity: all('SELECT * FROM candidate_activity WHERE candidate_id=?', [id]),
+      applications: all('SELECT * FROM application WHERE candidate_id=?', [id]),
+      interviews: all('SELECT * FROM interview WHERE candidate_id=?', [id]),
+      offers: all('SELECT * FROM offer WHERE candidate_id=?', [id]),
+    };
+  },
+  // GDPR/PDPL — right to erasure. Anonymise all PII in place and drop CV binaries,
+  // but KEEP the row (state='erased') so audit trail, counts and FKs stay intact.
+  erase(id) {
+    const c = this.byId(id);
+    if (!c) return null;
+    run(`UPDATE candidate SET
+        full_name='[Erased]', email=NULL, phone=NULL, nationality=NULL, location=NULL, linkedin_url=NULL,
+        current_company=NULL, current_position=NULL, employer=NULL, current_project=NULL,
+        university=NULL, major=NULL, expected_salary=NULL, tags=NULL,
+        resume_name=NULL, resume_path=NULL,
+        dedup_email=NULL, dedup_phone=NULL, dedup_linkedin=NULL,
+        consent_status='withdrawn',
+        candidate_state='erased', erased_at=?, updated_at=? WHERE id=?`, [nowISO(), nowISO(), id]);
+    // Remove document binaries + rows (the CV blobs are the heaviest PII).
+    run('DELETE FROM candidate_document WHERE candidate_id=?', [id]);
+    // Scrub free-text notes that may carry personal data (keep rows for audit count).
+    run("UPDATE candidate_note SET body='[Erased under data-protection request]' WHERE candidate_id=?", [id]);
+    return this.byId(id);
+  },
+  // GDPR/PDPL — retention report: active candidates whose retention window has lapsed.
+  retentionOverdue() {
+    return all(`SELECT * FROM candidate
+      WHERE candidate_state='active' AND retention_until IS NOT NULL AND retention_until < ?
+      ORDER BY retention_until ASC`, [nowISO()]);
   },
   update(id, d) {
     const c = this.byId(id);

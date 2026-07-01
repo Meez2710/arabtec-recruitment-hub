@@ -23,6 +23,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import assessmentRoutes from './routes/assessments.js';
 import threadRoutes from './routes/thread.js';
 import adminUiRoutes from './routes/admin-ui.js';
+import notificationRoutes from './routes/notifications.js';
 
 dotenv.config();
 
@@ -130,6 +131,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/assessments', assessmentRoutes);
 app.use('/api/thread', threadRoutes);
 app.use('/api/admin-ui', adminUiRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Serve the frontend (single-page app) from ../../frontend/public
 const frontendDir = path.resolve(__dirname, '../../frontend/public');

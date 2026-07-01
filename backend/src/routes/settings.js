@@ -4,6 +4,8 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { isConfigured as emailConfigured, verifyConnection, sendMail } from '../lib/mailer.js';
+import { testEmail } from '../lib/email_templates.js';
 
 const router = Router();
 
@@ -90,6 +92,34 @@ router.put('/system', requireAuth, requirePermission('system.manage'), (req, res
   const after = SystemSettings.all();
   writeAudit(req, { action: 'system.setting_changed', entityType: 'system', entityId: 'global', oldValue: before, newValue: after });
   res.json({ settings: after });
+});
+
+// ---------------- Email (C2.2) ----------------
+// Status: is the mailbox connection configured? (admin-visible; no secrets returned)
+router.get('/email/status', requireAuth, requirePermission('system.manage'), (req, res) => {
+  res.json({
+    configured: emailConfigured(),
+    host: process.env.SMTP_HOST || 'smtp.office365.com',
+    from: process.env.MAIL_FROM || process.env.SMTP_USER || '(not set)',
+  });
+});
+
+// Verify the SMTP credentials without sending.
+router.post('/email/verify', requireAuth, requirePermission('system.manage'), async (req, res) => {
+  const r = await verifyConnection();
+  writeAudit(req, { action: 'email.verify', entityType: 'system', entityId: 'smtp', comments: r.ok ? 'ok' : r.error });
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+// Send a test email to a chosen address to confirm end-to-end delivery.
+router.post('/email/test', requireAuth, requirePermission('system.manage'), async (req, res) => {
+  const to = (req.body || {}).to;
+  if (!to) return res.status(400).json({ error: 'Recipient address (to) is required.' });
+  if (!emailConfigured()) return res.status(400).json({ error: 'Email is not configured yet. Set SMTP_USER and SMTP_PASS first.' });
+  const { subject, html } = testEmail();
+  const r = await sendMail({ to, subject, html });
+  writeAudit(req, { action: 'email.test_sent', entityType: 'system', entityId: 'smtp', comments: `to ${to}: ${r.ok ? 'sent' : r.error}` });
+  res.status(r.ok ? 200 : 502).json(r);
 });
 
 export default router;

@@ -7,6 +7,8 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile } from '../lib/upload.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
+import { sendMail } from '../lib/mailer.js';
+import { rejection as rejectionTpl } from '../lib/email_templates.js';
 import fs from 'node:fs';
 
 const router = Router();
@@ -37,6 +39,9 @@ function serialize(c, user, { withDetail = false } = {}) {
     resumeName: c.resume_name, hasResume: !!c.resume_path,
     tags: c.tags ? JSON.parse(c.tags) : [], candidateState: c.candidate_state,
     screeningStatus: c.screening_status || 'new',
+    // GDPR/PDPL status (shown on the candidate profile)
+    consentStatus: c.consent_status || 'unknown', consentAt: c.consent_at,
+    retentionUntil: c.retention_until, erasedAt: c.erased_at,
     ownerRecruiter: owner ? { id: owner.id, name: owner.full_name } : null,
     ownerRecruiterId: c.owner_recruiter_id, createdAt: c.created_at, updatedAt: c.updated_at,
     salaryVisible: seeSalary,
@@ -204,6 +209,75 @@ router.post('/:id/screening', requirePermission('candidate.edit'), (req, res) =>
     type: 'screening_changed', note: `${before} → ${status}${reason ? ' — ' + reason : ''}` });
   writeAudit(req, { action: 'candidate.screening_changed', entityType: 'candidate', entityId: c.id,
     oldValue: { screeningStatus: before }, newValue: { screeningStatus: status }, comments: reason || undefined });
+  // Auto-email a respectful decline when marked unfit (best-effort; no-op until email configured).
+  if (status === 'unfit' && c.email) {
+    const tpl = rejectionTpl({ candidateName: c.full_name, position: c.current_position });
+    sendMail({ to: c.email, subject: tpl.subject, html: tpl.html })
+      .then((r) => { if (r.ok) CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: 'System', type: 'email_sent', note: 'Rejection email sent' }); })
+      .catch(() => {});
+  }
+  res.json({ candidate: serialize(updated, req.user, { withDetail: true }) });
+});
+
+/* ---------------- GDPR / PDPL data-protection (C1.6) ---------------- */
+// Retention report — active candidates past their retention window. MUST be registered
+// before the '/:id/...' routes so 'privacy' is never captured as an :id segment.
+router.get('/privacy/retention', requirePermission('candidate.privacy'), (req, res) => {
+  const rows = Candidates.retentionOverdue();
+  const months = parseInt(dbGet("SELECT value FROM system_setting WHERE key='retention_months'")?.value || '24', 10);
+  res.json({
+    retentionMonths: months,
+    overdueCount: rows.length,
+    candidates: rows.map((c) => ({
+      id: c.id, candidateNo: c.candidate_no, fullName: c.full_name,
+      createdAt: c.created_at, retentionUntil: c.retention_until, consentStatus: c.consent_status || 'unknown',
+    })),
+  });
+});
+
+// Record or withdraw consent (lawful basis). Editable by anyone who can edit candidates.
+router.post('/:id/consent', requirePermission('candidate.edit'), (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  const status = String((req.body || {}).status || '').toLowerCase();
+  if (!['given', 'withdrawn', 'unknown'].includes(status)) {
+    return res.status(400).json({ error: 'Consent status must be one of: given, withdrawn, unknown.' });
+  }
+  const updated = Candidates.setConsent(c.id, { status, source: (req.body || {}).source, note: (req.body || {}).note });
+  CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName,
+    type: 'consent_changed', note: `Consent ${status}` });
+  writeAudit(req, { action: 'candidate.consent_changed', entityType: 'candidate', entityId: c.id,
+    oldValue: { consentStatus: c.consent_status || 'unknown' }, newValue: { consentStatus: status } });
+  res.json({ candidate: serialize(updated, req.user, { withDetail: true }) });
+});
+
+// Subject Access Request — export everything held about the candidate as a JSON file.
+router.get('/:id/export', requirePermission('candidate.privacy'), (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  const data = Candidates.exportData(c.id);
+  writeAudit(req, { action: 'candidate.data_exported', entityType: 'candidate', entityId: c.id,
+    newValue: { candidateNo: c.candidate_no } });
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${c.candidate_no}-data-export.json"`);
+  res.send(JSON.stringify(data, null, 2));
+});
+
+// Right to erasure — anonymise PII in place, drop CV binaries; row kept for audit integrity.
+// Requires an explicit typed confirmation to guard against accidental irreversible action.
+router.post('/:id/erase', requirePermission('candidate.privacy'), (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  if (c.candidate_state === 'erased') return res.status(409).json({ error: 'This candidate has already been erased.' });
+  const reason = (req.body || {}).reason || null;
+  if ((req.body || {}).confirm !== 'ERASE') {
+    return res.status(400).json({ error: 'Erasure must be confirmed by sending confirm:"ERASE". This action is irreversible.' });
+  }
+  const updated = Candidates.erase(c.id);
+  CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName,
+    type: 'data_erased', note: reason ? `Erased — ${reason}` : 'Personal data erased' });
+  writeAudit(req, { action: 'candidate.data_erased', entityType: 'candidate', entityId: c.id,
+    oldValue: { candidateNo: c.candidate_no }, comments: reason || undefined });
   res.json({ candidate: serialize(updated, req.user, { withDetail: true }) });
 });
 

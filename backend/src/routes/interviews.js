@@ -5,6 +5,8 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { sendMail } from '../lib/mailer.js';
+import { interviewInvite as interviewInviteTpl } from '../lib/email_templates.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -150,6 +152,16 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   Requests.stampLifecycle(app.request_id, 'first_interview_at'); // lifecycle: first interview scheduled
   writeAudit(req, { action: 'interview.scheduled', entityType: 'interview', entityId: created.id, newValue: { interviewNo, applicationId: app.id, candidateId: app.candidate_id, requestId: app.request_id, panel: panel.map((m) => m.interviewerId) }, comments: d.overrideTerminal ? `Terminal-app override: ${d.overrideReason}` : null });
   // NOTE: scheduling an interview does NOT change application.status. They are independent.
+  // Auto-email the candidate an invitation (best-effort; no-op until email configured).
+  const cand = Candidates.byId(app.candidate_id);
+  if (cand?.email) {
+    const dateText = created.scheduled_at ? new Date(created.scheduled_at).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' }) : '';
+    const tpl = interviewInviteTpl({ candidateName: cand.full_name, position: cand.current_position,
+      dateText, mode: created.mode, locationOrLink: created.location_or_link });
+    sendMail({ to: cand.email, subject: tpl.subject, html: tpl.html })
+      .then((r) => { if (r.ok) CandidateActivity.add({ candidateId: cand.id, applicationId: app.id, actorId: req.user.id, actorName: 'System', type: 'email_sent', note: 'Interview invite sent' }); })
+      .catch(() => {});
+  }
   res.status(201).json({ interview: serialize(created, req.user, { detail: true }) });
 });
 
