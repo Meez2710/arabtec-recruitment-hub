@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   Candidates, CandidateDocuments, Applications, CandidateNotes, CandidateActivity,
-  Users, Projects, Requests, Interviews, Offers, CustomFields,
+  Users, Projects, Requests, Interviews, Offers, CustomFields, StageHistory,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -165,7 +165,30 @@ router.post('/', requirePermission('candidate.add'), (req, res) => {
   saveCustomFields('candidate', created.id, d);
   CandidateActivity.add({ candidateId: created.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_created', note: candidateNo });
   writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: created.id, newValue: { candidateNo, fullName: created.full_name }, comments: d.overrideDuplicate ? `Duplicate override: ${d.overrideReason}` : null });
-  res.status(201).json({ candidate: serialize(created, req.user, { withDetail: true }) });
+
+  // Auto-link to request when requestId is provided (single-step create+link).
+  let linkedApp = null;
+  if (d.requestId && req.user.permissions.includes('candidate.link')) {
+    const reqId = Number(d.requestId);
+    const request = Requests.byId(reqId);
+    if (request && !['closed','cancelled','rejected','filled'].includes(request.status)) {
+      const existing = Applications.existing(created.id, reqId);
+      if (!existing) {
+        const appNo = Applications.nextNo();
+        const app = Applications.create({
+          applicationNo: appNo, candidateId: created.id, requestId: reqId,
+          positionApplied: d.positionApplied || request.title, status: 'sourced',
+          recruiterId: req.user.id, source: d.source, createdBy: req.user.id,
+        });
+        StageHistory.add(app.id, null, 'sourced', req.user);
+        CandidateActivity.add({ candidateId: created.id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'linked_to_request', note: `Linked to ${request.ticket_no}` });
+        linkedApp = app;
+      }
+    }
+  }
+  const result = { candidate: serialize(created, req.user, { withDetail: true }) };
+  if (linkedApp) result.application = linkedApp;
+  res.status(201).json(result);
 });
 
 /* ---------------- EDIT ---------------- */
