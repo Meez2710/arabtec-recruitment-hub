@@ -10,6 +10,7 @@ import { run as dbRun, get as dbGet } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
 import { parseHeuristic as parseCV } from '../lib/cv-parser.js';
+import { getWatcherStatus } from '../lib/cv-watcher.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -193,13 +194,70 @@ router.post('/', requirePermission('candidate.add'), (req, res) => {
   res.status(201).json(result);
 });
 
-/* ---------------- PARSE CV (upload + extract) ---------------- */
+/* ---------------- PARSE CV (upload + extract + auto-create candidate) ---------------- */
 router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (req, res) => {
   if (!req.uploadedFile) return res.status(400).json({ error: 'CV file is required.' });
   try {
     const filePath = uploadPath(req.uploadedFile.storedName);
     const parsed = await parseCV(filePath);
-    res.json({ parsed, file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size } });
+
+    // Auto-create the candidate in the talent pool if we got text
+    let candidate = null;
+    let application = null;
+    let duplicate = false;
+    if (parsed.extraction_status !== 'failed' && parsed.full_name) {
+      const dups = parsed.email ? Candidates.findDuplicates({ email: parsed.email }) : [];
+      if (dups.length) {
+        // Return existing candidate instead of creating duplicate
+        candidate = Candidates.byId(dups[0].id);
+        duplicate = true;
+      } else {
+        const candidateNo = Candidates.nextNo();
+        candidate = Candidates.create({
+          candidateNo,
+          fullName: parsed.full_name,
+          email: parsed.email,
+          phone: parsed.phone,
+          yearsExperience: parsed.years_experience,
+          source: 'folder_drop',
+          ownerRecruiterId: req.user.id,
+          createdBy: req.user.id,
+          resumeName: req.uploadedFile.originalName,
+          resumePath: filePath,
+        });
+        CandidateDocuments.add({
+          candidateId: candidate.id, docType: 'cv',
+          fileName: req.uploadedFile.originalName,
+          fileHash: null, uploadedBy: req.user.id,
+        });
+        CandidateActivity.add({
+          candidateId: candidate.id, actorId: req.user.id,
+          actorName: req.user.fullName, type: 'candidate_created',
+          note: `${candidateNo} (CV parsed: ${req.uploadedFile.originalName})`,
+        });
+        writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: candidate.id,
+          newValue: { candidateNo, fullName: candidate.full_name, source: 'cv_parse' } });
+
+        // Auto-link to request if provided
+        const requestId = req.fields?.requestId ? Number(req.fields.requestId) : null;
+        if (requestId && req.user.permissions.includes('candidate.link')) {
+          const request = Requests.byId(requestId);
+          if (request && !['closed','cancelled','rejected','filled'].includes(request.status)) {
+            const appNo = Applications.nextNo();
+            application = Applications.create({
+              applicationNo: appNo, candidateId: candidate.id, requestId,
+              positionApplied: request.title, status: 'sourced',
+              recruiterId: req.user.id, source: 'cv_parse', createdBy: req.user.id,
+            });
+            StageHistory.add(application.id, null, 'sourced', req.user);
+          }
+        }
+      }
+    }
+    res.json({ parsed, file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
+      candidate: candidate ? { id: candidate.id, candidateNo: candidate.candidate_no, fullName: candidate.full_name, duplicate } : null,
+      application: application ? { id: application.id, applicationNo: application.application_no } : null,
+    });
   } catch (e) {
     res.status(500).json({ error: 'CV parsing failed.', detail: e.message });
   }
@@ -314,6 +372,11 @@ router.post('/inbox-scan', requirePermission('candidate.add'), async (req, res) 
   }
 
   res.json({ imported: imported.length, skipped: skipped.length, errors: errors.length, details: { imported, skipped, errors } });
+});
+
+/* ---------------- WATCHER STATUS ---------------- */
+router.get('/watcher/status', requireAuth, (req, res) => {
+  res.json(getWatcherStatus());
 });
 
 /* ---------------- EDIT ---------------- */

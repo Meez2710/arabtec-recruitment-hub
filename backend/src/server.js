@@ -6,7 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ensureSchema } from './lib/schema.js';
-import { ensureFeatureFlags } from './lib/feature-flags.js';
+import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
+import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
 import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import authRoutes from './routes/auth.js';
@@ -103,6 +104,10 @@ app.get('/api/health', (req, res) => {
   try { dbGet('SELECT 1 AS ok'); db = 'up'; } catch { db = 'starting'; }
   res.json({ ok: true, service: 'arabtec-recruitment-hub', db });
 });
+app.get('/api/health/watcher', (req, res) => {
+  res.json(getWatcherStatus());
+});
+
 app.get('/api/health/db', (req, res) => {
   try { dbGet('SELECT 1 AS ok'); res.json({ ok: true, db: 'up' }); }
   catch (e) { res.status(503).json({ ok: false, db: 'down', error: String(e && e.message || e).slice(0, 300) }); }
@@ -184,6 +189,11 @@ app.listen(PORT, () => {
       await bootSeedIfEmpty();   // seed admin/reference data if empty
       APP_READY = true;
       console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
+      // Start the CV inbox folder watcher if the feature flag is enabled
+      if (isEnabled('folder_watcher')) {
+        startWatcher();
+        console.log('   📁 CV inbox watcher started.\n');
+      }
     } catch (e) {
       console.error('  ! Initialisation failed:', e.message);
       // Open the gate anyway so the operator can see real errors rather than 503s.
