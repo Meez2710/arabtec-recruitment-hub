@@ -1,0 +1,8 @@
+<svg viewBox="0 0 463 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Arabtec">
+  <!-- Twin-peak "A" mark -->
+  <path fill="#d2232a" d="M150 0 L223 0 L223 118 L73 263 L73 320 L0 320 L0 205 Z"/>
+  <path fill="#d2232a" d="M313 0 L240 0 L240 118 L390 263 L390 320 L463 320 L463 205 Z"/>
+  <!-- Wordmark -->
+  <text x="231" y="420" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-size="120" fill="#6b7280">arabtec</text>
+</svg>
