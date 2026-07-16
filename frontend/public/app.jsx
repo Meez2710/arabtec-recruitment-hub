@@ -283,7 +283,7 @@ function Login({ branding, onLogin }) {
       <div className="login-brand">
         <div style={{ marginBottom: 26 }}><Logo size={72} withText /></div>
         <h1>Recruitment Hub</h1>
-        <p>Enterprise Recruitment Ticketing &amp; Applicant Tracking. Every hiring need, controlled end-to-end — approvals, ownership, pipeline, and full audit.</p>
+        <p>End-to-end recruitment tracking. Create requests, manage candidates, and move them through your hiring pipeline.</p>
       </div>
       <div className="login-form-side">
         <form className="login-card" onSubmit={submit}>
@@ -631,7 +631,6 @@ function Dashboard({ user }) {
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
             <div><div className="value" style={{ fontSize: 24, fontWeight: 700, color: 'var(--primary)' }}>{d.myWork.myOpenRequests}</div><div className="muted">my open requests</div></div>
             <div><div className="value" style={{ fontSize: 24, fontWeight: 700, color: 'var(--primary)' }}>{d.myWork.myInterviews}</div><div className="muted">my upcoming interviews</div></div>
-            {d.myWork.myPendingOfferApprovals != null && <div><div className="value" style={{ fontSize: 24, fontWeight: 700, color: 'var(--warning)' }}>{d.myWork.myPendingOfferApprovals}</div><div className="muted">offers awaiting approval</div></div>}
           </div>
         </div></div>
         {d.scope === 'all' && (
@@ -1591,17 +1590,7 @@ const PRIORITY = {
   low: { label: 'Low', variant: 'soft' }, medium: { label: 'Medium', variant: 'info' },
   high: { label: 'High', variant: 'warning' }, critical: { label: 'Critical', variant: 'critical' },
 };
-function ReqStatus({ status }) { const s = REQ_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
 function PriorityBadge({ p }) { const x = PRIORITY[p] || { label: p, variant: 'soft' }; return <Badge variant={x.variant}>{x.label}</Badge>; }
-function SlaIndicator({ req }) {
-  if (req.slaBreached) return <Badge variant="critical">SLA Breached</Badge>;
-  if (!req.slaDueAt) return <span className="muted">—</span>;
-  const due = new Date(req.slaDueAt), now = new Date();
-  const hrs = (due - now) / 3.6e6;
-  if (hrs < 0) return <Badge variant="critical">Overdue</Badge>;
-  if (hrs < 24) return <Badge variant="warning">{Math.round(hrs)}h left</Badge>;
-  return <Badge variant="success">{Math.round(hrs / 24)}d left</Badge>;
-}
 
 // Resolve admin-controlled buttons for current user from the server.
 function useResolvedButtons() {
@@ -1624,13 +1613,8 @@ function RequestTicketCard({ r, onOpen }) {
         <div className="muted" style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
           <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Dept</span>{r.department?.name || '—'}</span>
           <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Location</span>{r.location || r.site?.name || '—'}</span>
-          <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Seats</span>{r.headcountFilled ?? 0} / {r.headcount}</span>
         </div>
         {r.pipeline && <div style={{ marginBottom: 12 }}><FunnelMini pipeline={r.pipeline} /></div>}
-        <div className="row-between" style={{ alignItems: 'center' }}>
-          {r.displayStatus ? <Badge variant="info">{r.displayStatus}</Badge> : <ReqStatus status={r.status} />}
-          <HealthBadge health={r.health} />
-        </div>
       </div>
     </div>
   );
@@ -1684,16 +1668,13 @@ function RequestsPage({ user }) {
         <div className="card"><Empty icon="🎫" text="No recruitment requests yet." /></div>
       ) : view === 'table' ? (
         <div className="card"><table>
-          <thead><tr><th>Ticket</th><th>Position</th><th>Department</th><th>Location</th><th>Priority</th><th>Seats</th><th>Status</th><th>Health</th></tr></thead>
+          <thead><tr><th>Ticket</th><th>Position</th><th>Department</th><th>Location</th><th>Priority</th></tr></thead>
           <tbody>{data.requests.map((r) => (
             <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(r.id)}>
               <td><strong>{r.ticketNo}</strong></td><td>{r.title}</td>
               <td className="muted">{r.department?.name || '—'}</td>
               <td className="muted">{r.location || r.site?.name || '—'}</td>
               <td><PriorityBadge p={r.priority} /></td>
-              <td>{r.headcountFilled}/{r.headcount}</td>
-              <td>{r.displayStatus ? <Badge variant="info">{r.displayStatus}</Badge> : <ReqStatus status={r.status} />}</td>
-              <td><HealthBadge health={r.health} /></td>
             </tr>
           ))}</tbody>
         </table></div>
@@ -1710,7 +1691,7 @@ function RequestsPage({ user }) {
 function RequestForm({ user, onClose, onSaved }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ title: '', justification: '', projectId: '', siteId: '', departmentId: '', location: '', hiringManagerId: '', headcount: 1, priority: 'medium', targetJoinDate: '', keyResponsibilities: '', keyRequirements: '' });
+  const [f, setF] = useState({ title: '', projectId: '', siteId: '', departmentId: '', location: '', hiringManagerId: '', priority: 'medium', keyResponsibilities: '', keyRequirements: '' });
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const customDefs = useCustomFields('request');
@@ -1738,15 +1719,12 @@ function RequestForm({ user, onClose, onSaved }) {
       <p className="muted" style={{ marginTop: 0 }}>Req ID and Req Date are generated automatically on creation.</p>
       <div className="form-grid">
         <div className="field full"><label>Position *</label><input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Site Engineer" /></div>
-        <div className="field"><label>Justification</label><select value={f.justification} onChange={(e) => set('justification', e.target.value)}><option value="">— Select —</option>{meta.justifications.map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
         <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
         <div className="field"><label>Department *</label><select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}><option value="">— Select —</option>{meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
         <div className="field"><label>Project *</label><select value={f.projectId} onChange={(e) => set('projectId', e.target.value)}><option value="">— Select —</option>{meta.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
         <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-        <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. Aliva MV" /></div>
-        <div className="field"><label>Headcount *</label><input type="number" min="1" value={f.headcount} onChange={(e) => set('headcount', e.target.value)} /></div>
+        <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>
         <div className="field"><label>Priority</label><select value={f.priority} onChange={(e) => set('priority', e.target.value)}>{Object.keys(PRIORITY).map((p) => <option key={p}>{p}</option>)}</select></div>
-        <div className="field"><label>Target Join Date</label><input type="date" value={f.targetJoinDate} onChange={(e) => set('targetJoinDate', e.target.value)} /></div>
         <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>
         <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
@@ -1765,12 +1743,10 @@ function RequestDetail({ id, user, btns, onBack }) {
   const [req, setReq] = useState(null);
   const [tab, setTab] = useState('thread');
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [meta, setMeta] = useState(null);
-  const [action, setAction] = useState(null); // {key,title,reason,danger,run}
-  const [assignOpen, setAssignOpen] = useState(false);
+  const [action, setAction] = useState(null);
 
   const load = useCallback(async () => { setReq((await api.get('/requests/' + id)).request); }, [id]);
-  useEffect(() => { load(); api.get('/requests/meta/form').then(setMeta).catch(() => {}); }, [id]);
+  useEffect(() => { load(); }, [id]);
 
   async function doAction(path, body, okMsg) {
     try { const r = await api.post(`/requests/${id}/${path}`, body || {}); setReq(r.request); toast(okMsg); }
@@ -1781,25 +1757,12 @@ function RequestDetail({ id, user, btns, onBack }) {
   }
 
   if (!req) return <Skeleton rows={8} />;
-  const b = (key) => btns[key] || {};
-  const show = (key) => b(key).visible;
-  // contextual enablement by status
   const s = req.status;
-  const canSubmit = show('submit_request') && ['pending_approval', 'draft', 'reopened'].includes(s);
-  const canApprove = show('approve_request') && s === 'pending_approval';
-  const canReject = show('reject_request') && s === 'pending_approval';
-  const canAssign = show('assign_recruiter') && ['sourcing', 'in_progress', 'reopened', 'partially_filled', 'approved', 'in_sourcing'].includes(s);
-  const canHold = show('hold_request') && ['sourcing', 'in_progress', 'partially_filled', 'pending_approval', 'approved', 'in_sourcing'].includes(s);
-  const canResume = show('resume_request') && s === 'on_hold';
-  const canCancel = show('cancel_request') && !['closed', 'cancelled', 'rejected', 'filled', 'expired'].includes(s);
-  const canClose = show('close_request') && !['closed', 'cancelled', 'rejected'].includes(s);
-  const canReopen = show('reopen_request') && ['closed', 'cancelled', 'filled'].includes(s);
 
   // Conversation-first ticket: the thread is the main view (like an email thread);
   // request details collapse at the top; everything else stays a tab away.
   const TABS = [
-    ['thread', 'Conversation'], ['pipeline', 'Candidates'], ['jd', 'Responsibilities & Requirements'],
-    ['approvals', 'Approval'], ['timeline', 'Activity'],
+    ['thread', 'Conversation'], ['pipeline', 'Candidates'], ['jd', 'Details'], ['timeline', 'Activity'],
   ];
 
   return (
@@ -1808,15 +1771,9 @@ function RequestDetail({ id, user, btns, onBack }) {
 
       <TicketHeader req={req}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 560 }}>
-          {canSubmit && <button className="btn" onClick={() => doAction('submit', {}, 'Submitted for approval')}>{b('submit_request').label}</button>}
-          {canApprove && <button className="btn" onClick={() => doAction('approve', {}, 'Approved')}>{b('approve_request').label}</button>}
-          {canReject && <button className="btn btn-danger" onClick={() => reasonAction('reject', 'Reject Request', 'Request rejected', true)}>{b('reject_request').label}</button>}
-          {canAssign && <button className="btn btn-secondary" onClick={() => setAssignOpen(true)}>{b('assign_recruiter').label}</button>}
-          {canHold && <button className="btn btn-secondary" onClick={() => reasonAction('hold', 'Put Request On Hold', 'Request on hold')}>{b('hold_request').label}</button>}
-          {canResume && <button className="btn btn-secondary" onClick={() => doAction('resume', {}, 'Resumed')}>{b('resume_request').label}</button>}
-          {canClose && <button className="btn btn-secondary" onClick={() => reasonAction('close', 'Close Request', 'Request closed')}>{b('close_request').label}</button>}
-          {canCancel && <button className="btn btn-danger" onClick={() => reasonAction('cancel', 'Cancel Request', 'Request cancelled', true)}>{b('cancel_request').label}</button>}
-          {canReopen && <button className="btn btn-secondary" onClick={() => reasonAction('reopen', 'Reopen Request', 'Request reopened')}>{b('reopen_request').label}</button>}
+          {btns.edit_request?.visible && !['closed','cancelled','rejected','filled'].includes(s) && <button className="btn btn-secondary" onClick={() => { setEditing(true); }}>Edit</button>}
+          {btns.close_request?.visible && !['closed','cancelled','rejected'].includes(s) && <button className="btn btn-secondary" onClick={() => reasonAction('close', 'Close Request', 'Request closed')}>Close</button>}
+          {btns.reopen_request?.visible && ['closed','cancelled','filled'].includes(s) && <button className="btn btn-secondary" onClick={() => reasonAction('reopen', 'Reopen Request', 'Request reopened')}>Reopen</button>}
         </div>
       </TicketHeader>
 
@@ -1825,7 +1782,7 @@ function RequestDetail({ id, user, btns, onBack }) {
         <button className="row-between" onClick={() => setDetailsOpen((o) => !o)}
           style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '12px 16px', textAlign: 'left' }}>
           <strong style={{ fontSize: 13.5 }}>Request details</strong>
-          <span className="muted" style={{ fontSize: 12 }}>{detailsOpen ? '▲ Hide' : '▼ Show'} · {req.department?.name || '—'} · {req.location || req.site?.name || '—'} · {req.headcountFilled ?? 0}/{req.headcount} seats</span>
+          <span className="muted" style={{ fontSize: 12 }}>{detailsOpen ? '▲ Hide' : '▼ Show'} · {req.department?.name || '—'} · {req.location || req.site?.name || '—'}</span>
         </button>
         {detailsOpen && <div style={{ padding: '0 16px 16px' }}><OverviewTab req={req} onReload={load} btns={btns} embedded /></div>}
       </div>
@@ -1839,11 +1796,9 @@ function RequestDetail({ id, user, btns, onBack }) {
       {tab === 'thread' && <TicketThread req={req} user={user} />}
       {tab === 'pipeline' && <RequestPipeline request={req} user={user} btns={btns} />}
       {tab === 'jd' && <JDTab req={req} />}
-      {tab === 'approvals' && <ApprovalsTab req={req} />}
       {tab === 'timeline' && <TimelineTab req={req} />}
 
       {action && <Confirm title={action.title} message="Please provide a reason. This will be recorded in the audit trail." requireReason danger={action.danger} confirmLabel="Confirm" onConfirm={action.run} onClose={() => setAction(null)} />}
-      {assignOpen && meta && <AssignModal recruiters={meta.recruiters} onClose={() => setAssignOpen(false)} onAssign={(ownerId) => { setAssignOpen(false); doAction('assign', { ownerId }, 'Recruiter assigned'); }} />}
     </div>
   );
 }
@@ -2146,24 +2101,19 @@ function statusChipClass(status) {
   return '';
 }
 
-// Premium ticket header: clean white card with a thin brand left accent + status chip.
 function TicketHeader({ req, children }) {
-  const lc = req.lifecycle || {};
-  const statusText = req.displayStatus || (req.status ? req.status.replace(/_/g, ' ') : '');
   return (
     <div className="ticket-header-card">
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div className="th-logo"><Logo size={24} color="var(--ink)" /></div>
         <div style={{ flex: 1, minWidth: 240 }}>
-          <div className="th-eyebrow">Recruitment Request Ticket</div>
+          <div className="th-eyebrow">Recruitment Request</div>
           <h1 className="th-title">{req.title}</h1>
           <div className="th-meta">
             <span className="th-ticketno">{req.ticketNo}</span>
             <span className="th-sep">·</span>
-            <span>Req Date {fmtDateShort(lc.createdAt || req.createdAt)}</span>
-            {statusText && <span className={`status-chip ${statusChipClass(statusText)}`} style={{ marginLeft: 4, textTransform: 'capitalize' }}>{statusText}</span>}
-            {req.priority && <span className="meta-chip" style={{ textTransform: 'capitalize' }}>{req.priority} priority</span>}
-            {req.health && <span className="meta-chip">{req.health.label}</span>}
+            <span>{req.department?.name || '—'}</span>
+            {req.priority && <><span className="th-sep">·</span><span style={{ textTransform: 'capitalize' }}>{req.priority} priority</span></>}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', flex: '0 0 auto' }}>{children}</div>
@@ -2198,14 +2148,6 @@ function AttachmentRow({ req, onReload }) {
   );
 }
 
-// Health indicator (green/amber/red) from the backend-computed request health.
-function HealthBadge({ health }) {
-  if (!health) return null;
-  const map = { green: 'var(--success)', amber: 'var(--warning)', red: 'var(--critical)' };
-  const c = map[health.level] || map.green;
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: c, fontWeight: 600, fontSize: 12.5 }}>
-    <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flex: '0 0 auto' }} />{health.label}</span>;
-}
 
 // Lifecycle milestone strip + computed durations (always visible on the workspace).
 function LifecycleStrip({ req }) {
@@ -2242,39 +2184,20 @@ function OverviewTab({ req, onReload, btns, embedded }) {
         {!embedded && <div className="section-title" style={{ marginTop: 0 }}>Ticket Details</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
           <FieldChip label="Req ID">{req.ticketNo}</FieldChip>
-          <FieldChip label="Req Date">{fmtDateShort(req.lifecycle?.createdAt || req.createdAt)}</FieldChip>
-          <FieldChip label="Justification"><span style={{ textTransform: 'capitalize' }}>{(req.justification || '—').replace(/_/g, ' ')}</span></FieldChip>
           <FieldChip label="Position">{req.title}</FieldChip>
           <FieldChip label="Department">{req.department?.name}</FieldChip>
           <FieldChip label="Project">{req.project?.name}</FieldChip>
           <FieldChip label="Location">{req.location || req.site?.name}</FieldChip>
           <FieldChip label="Hiring Manager">{req.hiringManager?.name || '—'}</FieldChip>
-          <FieldChip label="Headcount">{req.headcountFilled ?? 0} / {req.headcount}</FieldChip>
           <FieldChip label="Priority"><span style={{ textTransform: 'capitalize' }}>{req.priority || '—'}</span></FieldChip>
-          <FieldChip label="Target Join Date">{fmtDateShort(req.targetJoinDate)}</FieldChip>
-          <FieldChip label="Recruiter (Owner)">{req.owner?.name || 'Unassigned'}</FieldChip>
+          <FieldChip label="Recruiter">{req.owner?.name || 'Unassigned'}</FieldChip>
         </div>
         <div className="section-title">Attachment</div>
         <AttachmentRow req={req} onReload={onReload} />
-        {embedded && req.requester && <div style={{ marginTop: 12 }}><Info label="Requested by">{req.requester.name}</Info></div>}
       </div>
   );
   if (embedded) return inner;
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
-      {inner}
-      <div className="card card-pad">
-        <div className="section-title" style={{ marginTop: 0 }}>Seats ({req.headcountFilled ?? 0}/{req.headcount})</div>
-        {(req.seats || []).map((seat) => (
-          <div key={seat.id} className="row-between" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-            <span>Seat #{seat.seat_no}</span>
-            <Badge variant={seat.status === 'filled' ? 'success' : seat.status === 'cancelled' ? 'critical' : 'soft'}>{seat.status}</Badge>
-          </div>
-        ))}
-        {req.requester && <div style={{ marginTop: 12 }}><Info label="Requested by">{req.requester.name}</Info></div>}
-      </div>
-    </div>
-  );
+  return inner;
 }
 function JDTab({ req }) {
   return (
@@ -2294,20 +2217,6 @@ function JDTab({ req }) {
         )}
       </div>
     </div>
-  );
-}
-function ApprovalsTab({ req }) {
-  const appr = req.approvals || [];
-  if (!appr.length) return <div className="card"><Empty icon="🛡" text="No approval yet — submit the request for HR Director approval." /></div>;
-  return (
-    <div className="card"><table>
-      <thead><tr><th>Step</th><th>Approver Role</th><th>Decision</th><th>Approver</th><th>Comment</th><th>Decided</th></tr></thead>
-      <tbody>{appr.map((a) => (
-        <tr key={a.id}><td>{a.level}</td><td>{a.name}</td>
-          <td><Badge variant={a.decision === 'approved' ? 'success' : a.decision === 'rejected' ? 'critical' : 'warning'}>{a.decision}</Badge></td>
-          <td className="muted">{a.approver_id ? '#' + a.approver_id : '—'}</td><td className="muted">{a.comment || '—'}</td><td className="muted">{fmtDate(a.decided_at)}</td></tr>
-      ))}</tbody>
-    </table></div>
   );
 }
 function TimelineTab({ req }) {
@@ -3643,10 +3552,7 @@ function OfferDetail({ id, user, onBack }) {
         <div><h1 className="page-title">Offer — {o.candidate?.fullName}</h1>
           <p className="page-sub"><strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · {o.request?.ticketNo}</p></div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 520 }}>
-          {btns.submit_offer?.visible && s === 'draft' && <button className="btn" onClick={() => act('submit', {}, 'Submitted for approval')}>Submit for Approval</button>}
-          {btns.approve_offer?.visible && s === 'pending_approval' && <button className="btn" onClick={() => act('approve', {}, 'Approved')}>Approve</button>}
-          {btns.reject_offer_approval?.visible && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => setAction({ title: 'Reject Offer (Approver)', path: 'reject-approval', body: (r) => ({ reason: r }), msg: 'Offer rejected' })}>Reject</button>}
-          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
+          {btns.send_offer?.visible && ['draft','approved'].includes(s) && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
           {btns.accept_offer?.visible && s === 'sent' && <button className="btn" onClick={() => act('result', { result: 'accepted' }, 'Marked accepted')}>Mark Accepted</button>}
           {btns.reject_offer_candidate?.visible && ['sent', 'accepted'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Mark Rejected by Candidate', path: 'result', body: (r) => ({ result: 'rejected_by_candidate', reason: r }), msg: 'Marked rejected by candidate' })}>Rejected by Candidate</button>}
           {btns.withdraw_offer?.visible && !['joined', 'withdrawn', 'rejected_by_candidate'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Withdraw Offer', path: 'result', body: (r) => ({ result: 'withdrawn', reason: r }), msg: 'Offer withdrawn' })}>Withdraw</button>}
@@ -3668,18 +3574,12 @@ function OfferDetail({ id, user, onBack }) {
           {o.salaryVisible && <Info label="Benefits">{o.benefits || '—'}</Info>}
           <Info label="Joining Date">{fmtDateShort(o.joiningDate)}</Info>
           <Info label="Prepared By">{o.preparedBy?.name}</Info>
-          <Info label="Approved By">{o.approvedBy?.name || '—'}</Info>
           {o.rejectionReason && <Info label="Rejection Reason">{o.rejectionReason}</Info>}
           {o.withdrawalReason && <Info label="Withdrawal Reason">{o.withdrawalReason}</Info>}
           {o.notes && <Info label="Notes">{o.notes}</Info>}
         </div>
         <div className="card card-pad">
-          <div className="section-title" style={{ marginTop: 0 }}>Approval Timeline</div>
-          {(o.approvals || []).length === 0 ? <p className="muted">Not submitted for approval yet.</p> : (
-            <table><thead><tr><th>Level</th><th>Stage</th><th>Decision</th><th>By</th><th>When</th></tr></thead>
-              <tbody>{o.approvals.map((a) => <tr key={a.id}><td>{a.level}</td><td>{a.name}</td><td><Badge variant={a.decision === 'approved' ? 'success' : a.decision === 'rejected' ? 'critical' : 'warning'}>{a.decision}</Badge></td><td className="muted">{a.approver_id ? '#' + a.approver_id : '—'}</td><td className="muted">{fmtDate(a.decided_at)}</td></tr>)}</tbody></table>
-          )}
-          <div className="section-title">Activity</div>
+          <div className="section-title" style={{ marginTop: 0 }}>Activity</div>
           {(o.activity || []).map((a) => <div key={a.id} style={{ fontSize: 12.5, padding: '4px 0' }}><strong style={{ textTransform: 'capitalize' }}>{a.type.replace(/_/g, ' ')}</strong>{a.note ? ' — ' + a.note : ''} <span className="muted">· {a.actor_name} · {fmtDate(a.occurred_at)}</span></div>)}
         </div>
       </div>
