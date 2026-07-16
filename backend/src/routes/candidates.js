@@ -1,15 +1,17 @@
 import { Router } from 'express';
 import {
   Candidates, CandidateDocuments, Applications, CandidateNotes, CandidateActivity,
-  Users, Projects, Requests, Interviews, Offers, CustomFields,
+  Users, Projects, Requests, Interviews, Offers, CustomFields, StageHistory,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { multipart, streamFile } from '../lib/upload.js';
+import { multipart, streamFile, uploadPath } from '../lib/upload.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
+import { parseHeuristic as parseCV } from '../lib/cv-parser.js';
 import fs from 'node:fs';
+import path from 'node:path';
 
 const router = Router();
 router.use(requireAuth);
@@ -165,7 +167,153 @@ router.post('/', requirePermission('candidate.add'), (req, res) => {
   saveCustomFields('candidate', created.id, d);
   CandidateActivity.add({ candidateId: created.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_created', note: candidateNo });
   writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: created.id, newValue: { candidateNo, fullName: created.full_name }, comments: d.overrideDuplicate ? `Duplicate override: ${d.overrideReason}` : null });
-  res.status(201).json({ candidate: serialize(created, req.user, { withDetail: true }) });
+
+  // Auto-link to request when requestId is provided (single-step create+link).
+  let linkedApp = null;
+  if (d.requestId && req.user.permissions.includes('candidate.link')) {
+    const reqId = Number(d.requestId);
+    const request = Requests.byId(reqId);
+    if (request && !['closed','cancelled','rejected','filled'].includes(request.status)) {
+      const existing = Applications.existing(created.id, reqId);
+      if (!existing) {
+        const appNo = Applications.nextNo();
+        const app = Applications.create({
+          applicationNo: appNo, candidateId: created.id, requestId: reqId,
+          positionApplied: d.positionApplied || request.title, status: 'sourced',
+          recruiterId: req.user.id, source: d.source, createdBy: req.user.id,
+        });
+        StageHistory.add(app.id, null, 'sourced', req.user);
+        CandidateActivity.add({ candidateId: created.id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'linked_to_request', note: `Linked to ${request.ticket_no}` });
+        linkedApp = app;
+      }
+    }
+  }
+  const result = { candidate: serialize(created, req.user, { withDetail: true }) };
+  if (linkedApp) result.application = linkedApp;
+  res.status(201).json(result);
+});
+
+/* ---------------- PARSE CV (upload + extract) ---------------- */
+router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (req, res) => {
+  if (!req.uploadedFile) return res.status(400).json({ error: 'CV file is required.' });
+  try {
+    const filePath = uploadPath(req.uploadedFile.storedName);
+    const parsed = await parseCV(filePath);
+    res.json({ parsed, file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size } });
+  } catch (e) {
+    res.status(500).json({ error: 'CV parsing failed.', detail: e.message });
+  }
+});
+
+/* ---------------- SCAN INBOX (folder-drop CV import) ---------------- */
+router.post('/inbox-scan', requirePermission('candidate.add'), async (req, res) => {
+  const inboxDir = process.env.CV_INBOX || path.resolve(process.cwd(), '../../cv_inbox');
+  if (!fs.existsSync(inboxDir)) {
+    return res.status(400).json({ error: 'CV inbox folder not found.', path: inboxDir });
+  }
+  const requestId = req.body?.requestId ? Number(req.body.requestId) : null;
+  const imported = [];
+  const skipped = [];
+  const errors = [];
+
+  const files = fs.readdirSync(inboxDir).filter(f => {
+    const ext = path.extname(f).toLowerCase();
+    return ['.pdf', '.docx', '.doc'].includes(ext);
+  });
+
+  for (const file of files) {
+    const filePath = path.join(inboxDir, file);
+    try {
+      const parsed = await parseCV(filePath);
+      if (parsed.extraction_status === 'failed') {
+        skipped.push({ file, reason: 'Could not extract text' });
+        continue;
+      }
+
+      // Check for duplicates by email
+      if (parsed.email) {
+        const dups = Candidates.findDuplicates({ email: parsed.email });
+        if (dups.length) {
+          skipped.push({ file, reason: `Duplicate email: ${parsed.email} (existing: ${dups[0].candidate_no})` });
+          continue;
+        }
+      }
+
+      const candidateNo = Candidates.nextNo();
+      const created = Candidates.create({
+        candidateNo,
+        fullName: parsed.full_name,
+        email: parsed.email,
+        phone: parsed.phone,
+        yearsExperience: parsed.years_experience,
+        source: 'folder_drop',
+        ownerRecruiterId: req.user.id,
+        createdBy: req.user.id,
+        resumeName: file,
+        resumePath: filePath,
+      });
+
+      CandidateDocuments.add({
+        candidateId: created.id,
+        docType: 'cv',
+        fileName: file,
+        fileHash: null,
+        uploadedBy: req.user.id,
+      });
+
+      CandidateActivity.add({
+        candidateId: created.id,
+        actorId: req.user.id,
+        actorName: req.user.fullName,
+        type: 'candidate_created',
+        note: `${candidateNo} (folder_drop: ${file})`,
+      });
+
+      writeAudit(req, {
+        action: 'candidate.created',
+        entityType: 'candidate',
+        entityId: created.id,
+        newValue: { candidateNo, fullName: created.full_name, source: 'folder_drop' },
+      });
+
+      // Auto-link to request if provided
+      let linkedApp = null;
+      if (requestId && req.user.permissions.includes('candidate.link')) {
+        const request = Requests.byId(requestId);
+        if (request && !['closed', 'cancelled', 'rejected', 'filled'].includes(request.status)) {
+          const existing = Applications.existing(created.id, requestId);
+          if (!existing) {
+            const appNo = Applications.nextNo();
+            const app = Applications.create({
+              applicationNo: appNo,
+              candidateId: created.id,
+              requestId,
+              positionApplied: request.title,
+              status: 'sourced',
+              recruiterId: req.user.id,
+              source: 'folder_drop',
+              createdBy: req.user.id,
+            });
+            StageHistory.add(app.id, null, 'sourced', req.user);
+            linkedApp = app;
+          }
+        }
+      }
+
+      imported.push({
+        file,
+        candidateNo: created.candidate_no,
+        fullName: created.full_name,
+        email: parsed.email,
+        phone: parsed.phone,
+        applicationNo: linkedApp?.application_no || null,
+      });
+    } catch (e) {
+      errors.push({ file, error: e.message });
+    }
+  }
+
+  res.json({ imported: imported.length, skipped: skipped.length, errors: errors.length, details: { imported, skipped, errors } });
 });
 
 /* ---------------- EDIT ---------------- */

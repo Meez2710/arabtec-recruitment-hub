@@ -6,6 +6,7 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { isConfigured as emailConfigured, verifyConnection, sendMail } from '../lib/mailer.js';
 import { testEmail } from '../lib/email_templates.js';
+import { allFlags, setFlag, isEnabled } from '../lib/feature-flags.js';
 
 const router = Router();
 
@@ -120,6 +121,19 @@ router.post('/email/test', requireAuth, requirePermission('system.manage'), asyn
   const r = await sendMail({ to, subject, html });
   writeAudit(req, { action: 'email.test_sent', entityType: 'system', entityId: 'smtp', comments: `to ${to}: ${r.ok ? 'sent' : r.error}` });
   res.status(r.ok ? 200 : 502).json(r);
+});
+
+// ---------------- Feature Flags ----------------
+router.get('/features', requireAuth, (req, res) => {
+  res.json({ features: allFlags() });
+});
+
+router.put('/features/:key', requireAuth, requirePermission('system.manage'), (req, res) => {
+  const { key } = req.params;
+  const enabled = (req.body || {}).enabled === true || (req.body || {}).enabled === 'true';
+  setFlag(key, enabled);
+  writeAudit(req, { action: `feature.${enabled ? 'enabled' : 'disabled'}`, entityType: 'feature_flag', entityId: key, newValue: { enabled } });
+  res.json({ key, enabled: isEnabled(key) });
 });
 
 export default router;

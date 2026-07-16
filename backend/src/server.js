@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ensureSchema } from './lib/schema.js';
+import { ensureFeatureFlags } from './lib/feature-flags.js';
 import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import authRoutes from './routes/auth.js';
@@ -179,6 +180,7 @@ app.listen(PORT, () => {
     try {
       await initObservability(); // Sentry (no-op without SENTRY_DSN)
       ensureSchema();            // create/upgrade tables + migrate workflow stages
+      ensureFeatureFlags();      // seed feature toggles (idempotent)
       await bootSeedIfEmpty();   // seed admin/reference data if empty
       APP_READY = true;
       console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
