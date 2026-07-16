@@ -2845,6 +2845,10 @@ function CandidatesPage({ user }) {
             <button className={'btn btn-sm ' + (view === 'table' ? '' : 'btn-secondary')} style={{ borderRadius: 0 }} onClick={() => setView('table')}>Table</button>
           </div>
           {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>+ {btns.add_candidate.label}</button>}
+          {btns.import_candidates?.visible && <button className="btn btn-secondary" onClick={async () => {
+            const busy = toast;
+            try { const r = await api.post('/candidates/inbox-scan', {}); toast(`Imported ${r.imported} CVs from inbox.${r.skipped ? ' Skipped ' + r.skipped + '.' : ''}`); load(); } catch (e) { toast('Scan failed: ' + e.message, 'error'); }
+          }}>Scan CV Inbox</button>}
         </>} />
       <div className="toolbar">
         <input placeholder="Search name / id / company / email…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 240 }} />
@@ -3012,10 +3016,27 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
         {meta?.canSeeSalary && <div className="field"><label>Expected Salary</label><input type="number" value={f.expectedSalary} onChange={(e) => set('expectedSalary', e.target.value)} /></div>}
         <div className="field full"><label>Tags (comma-separated)</label><input value={f.tags} onChange={(e) => set('tags', e.target.value)} placeholder="mechanical, senior, hvac" /></div>
         <div className="field full"><label>CV / Résumé</label>
-          <input type="file" onChange={(e) => setCvFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="file" onChange={(e) => setCvFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ flex: 1 }} />
+            {cvFile && isNew && <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={async () => {
+              setBusy(true);
+              try {
+                const result = await api.uploadTo('/candidates/parse-cv', cvFile);
+                const p = result.parsed;
+                if (p) {
+                  if (p.full_name) set('fullName', p.full_name);
+                  if (p.email) set('email', p.email);
+                  if (p.phone) set('phone', p.phone);
+                  if (p.years_experience) set('yearsExperience', String(p.years_experience));
+                  toast('CV parsed: ' + (p.full_name || 'fields extracted'));
+                }
+              } catch (e) { toast('Parse failed: ' + e.message, 'error'); }
+              setBusy(false);
+            }} disabled={busy}>{busy ? 'Parsing…' : 'Parse CV'}</button>}
+          </div>
           {cvFile
-            ? <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Selected: {cvFile.name} — uploads when you Save.</div>
-            : <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Optional. Stored as the candidate's résumé (view/download from their profile).</div>}
+            ? <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Selected: {cvFile.name} — click Parse CV to auto-fill fields, then Save.</div>
+            : <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Upload a CV and click Parse CV to auto-fill the form.</div>}
         </div>
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
       </div>
