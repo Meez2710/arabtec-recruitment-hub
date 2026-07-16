@@ -8,11 +8,11 @@
 //   • Best-effort: a mail failure never throws into a request handler.
 //
 // Configuration (set in the server environment / Render, never in code):
-//   SMTP_HOST       default smtp.office365.com
+//   SMTP_HOST       default smtp-relay.brevo.com
 //   SMTP_PORT       default 587  (STARTTLS)
-//   SMTP_USER       the mailbox login, e.g. career@arabtecegy.com   (REQUIRED to send)
-//   SMTP_PASS       the mailbox app-password                        (REQUIRED to send)
-//   MAIL_FROM       default = SMTP_USER (e.g. career@arabtecegy.com)
+//   SMTP_USER       your Brevo account email / API key login       (REQUIRED to send)
+//   SMTP_PASS       your Brevo SMTP master password / API key      (REQUIRED to send)
+//   MAIL_FROM       default = SMTP_USER
 //   MAIL_FROM_NAME  default "Arabtec Careers"
 import nodemailer from 'nodemailer';
 
@@ -20,7 +20,7 @@ let transport = null;
 
 function cfg() {
   return {
-    host: process.env.SMTP_HOST || 'smtp.office365.com',
+    host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
     port: Number(process.env.SMTP_PORT || 587),
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
