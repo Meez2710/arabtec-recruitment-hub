@@ -10,6 +10,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
 const YEARS_RE = /(\d{1,2})\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?experience/i;
@@ -25,16 +28,16 @@ const NAME_STOP = new Set([
 const PHONE_LABEL_RE = /(?:phone|mobile|mob|tel|cell|whatsapp|contact)\s*[:#]?\s*([+()\d][\d()\s.\-]{6,}\d)/i;
 const PHONE_ANY_RE = /(\+?\d[\d()\s.\-]{7,}\d)/;
 
-// --- Text extraction -------------------------------------------------------------
+// --- Text extraction (pure JS — pdf-parse + mammoth) ----------------------------
 
 export function extractText(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   try {
     if (ext === '.pdf') {
-      return extractPdfText(filePath);
+      return extractPdfTextSync(filePath);
     }
     if (ext === '.docx' || ext === '.doc') {
-      return extractDocxText(filePath);
+      return extractDocxTextSync(filePath);
     }
     return fs.readFileSync(filePath, 'utf-8').trim();
   } catch {
@@ -42,38 +45,59 @@ export function extractText(filePath) {
   }
 }
 
-function extractPdfText(filePath) {
+export async function extractTextAsync(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
   try {
-    const { execSync } = require('node:child_process');
-    return execSync(`python3 -c "
-import sys
-try:
-    import pdfplumber
-    with pdfplumber.open(sys.argv[1]) as pdf:
-        text = '\\n'.join((p.extract_text() or '') for p in pdf.pages)
-    print(text.strip())
-except Exception as e:
-    print('', file=sys.stderr)
-    sys.exit(0)
-" "${filePath}"`, { encoding: 'utf-8', timeout: 15000, maxBuffer: 5 * 1024 * 1024 }).trim();
+    if (ext === '.pdf') {
+      return await extractPdfText(filePath);
+    }
+    if (ext === '.docx' || ext === '.doc') {
+      return await extractDocxText(filePath);
+    }
+    return fs.readFileSync(filePath, 'utf-8').trim();
   } catch {
     return '';
   }
 }
 
-function extractDocxText(filePath) {
+async function extractPdfText(filePath) {
   try {
-    const { execSync } = require('node:child_process');
-    return execSync(`python3 -c "
-import sys
-try:
-    from docx import Document
-    doc = Document(sys.argv[1])
-    text = '\\n'.join(p.text for p in doc.paragraphs)
-    print(text.strip())
-except Exception:
-    sys.exit(0)
-" "${filePath}"`, { encoding: 'utf-8', timeout: 10000, maxBuffer: 5 * 1024 * 1024 }).trim();
+    const { PDFParse } = require('pdf-parse');
+    const buf = new Uint8Array(fs.readFileSync(filePath));
+    const parser = new PDFParse(buf);
+    await parser.load();
+    const result = await parser.getText();
+    return (result.text || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function extractPdfTextSync(filePath) {
+  try {
+    const { PDFParse } = require('pdf-parse');
+    const buf = new Uint8Array(fs.readFileSync(filePath));
+    const parser = new PDFParse(buf);
+    return parser.load().then(() => parser.getText()).then(r => (r.text || '').trim()).catch(() => '');
+  } catch {
+    return '';
+  }
+}
+
+async function extractDocxText(filePath) {
+  try {
+    const mammoth = require('mammoth');
+    const result = await mammoth.extractRawText({ path: filePath });
+    return (result.value || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function extractDocxTextSync(filePath) {
+  try {
+    const mammoth = require('mammoth');
+    return mammoth.extractRawText({ path: filePath }).then(r => (r.value || '').trim()).catch(() => '');
   } catch {
     return '';
   }
@@ -194,21 +218,21 @@ export async function claudeParse(text, filename) {
   }
 }
 
-// --- Top-level entry -------------------------------------------------------------
+// --- Top-level entries ----------------------------------------------------------
 
+// Async: use pdf-parse/mammoth + optional Claude.
 export async function parse(filePath) {
   const filename = path.basename(filePath);
-  const text = extractText(filePath);
+  const text = await extractTextAsync(filePath);
   if ((process.env.ANTHROPIC_API_KEY || '').trim()) {
     return claudeParse(text, filename);
   }
   return heuristicParse(text, filename);
 }
 
-// Synchronous wrapper for non-Claude (heuristic-only) parsing, useful when
-// async is not available (e.g. in the sync codebase pattern).
-export function parseSync(filePath) {
+// Heuristic-only async (for file uploads where Claude isn't needed).
+export async function parseHeuristic(filePath) {
   const filename = path.basename(filePath);
-  const text = extractText(filePath);
+  const text = await extractTextAsync(filePath);
   return heuristicParse(text, filename);
 }
