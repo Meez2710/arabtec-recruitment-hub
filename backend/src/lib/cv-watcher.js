@@ -24,9 +24,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_INBOX = path.resolve(__dirname, '../../cv_inbox');
 const DEFAULT_INTERVAL_MIN = 60;
-function apiUrl() {
+function apiConfig() {
+  const key = process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY || '';
   const base = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '');
-  return base + '/chat/completions';
+  return { key, url: base + '/chat/completions', model: process.env.DEEPSEEK_MODEL || 'deepseek-chat' };
 }
 
 let watcherTimer = null;
@@ -44,7 +45,7 @@ export function getWatcherStatus() {
   }
   return {
     running: watcherTimer !== null,
-    engine: process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'heuristic',
+    engine: (process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY) ? 'ai' : 'heuristic',
     intervalMin: parseInt(process.env.CV_WATCH_INTERVAL_MIN, 10) || DEFAULT_INTERVAL_MIN,
     inboxDir, inboxExists: exists, pendingFiles: fileCount,
     lastScanAt, lastScanResult, scanCount,
@@ -73,8 +74,8 @@ async function extractText(filePath) {
 
 // DeepSeek API extraction with strict structured prompt
 async function deepseekExtract(text) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey || !text) return null;
+  const cfg = apiConfig();
+  if (!cfg.key || !text) return null;
 
   const systemPrompt = `You are an expert ATS data extraction API. Extract the following from the provided resume text. You must return ONLY a valid JSON object matching this exact schema. Do not include markdown formatting or conversational text.
 
@@ -88,14 +89,14 @@ Schema:
 }`;
 
   try {
-    const res = await fetch(apiUrl(), {
+    const res = await fetch(cfg.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${cfg.key}`,
       },
       body: JSON.stringify({
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        model: cfg.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: text.slice(0, 12000) },
@@ -151,7 +152,7 @@ async function parseCV(filePath) {
   const text = await extractText(filePath);
   if (!text) return { ...heuristicParse('', filename), extraction_status: 'failed' };
 
-  if (process.env.DEEPSEEK_API_KEY) {
+  if (process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY) {
     const ai = await deepseekExtract(text);
     if (ai && ai.full_name) {
       return {
