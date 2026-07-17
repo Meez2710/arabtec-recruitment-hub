@@ -2237,42 +2237,57 @@ function TimelineTab({ req }) {
   );
 }
 /* ============================ PHASE 3: Application statuses + pipeline ============================ */
+// === HARCODED KANBAN PIPELINE (Objective 1) ===
+// Strict left-to-right order. Disqualified candidates hidden from board.
 const APP_STATUS = {
-  // Simplified Phase 0 stage list
-  sourced: { label: 'Sourced', variant: 'soft' },
-  matched: { label: 'Matched', variant: 'info' },
-  unmatched: { label: 'Unmatched', variant: 'soft' },
-  interviewing: { label: 'Interviewing', variant: 'info' },
-  waiting_feedback: { label: 'Waiting Feedback', variant: 'warning' },
-  issuing_offer: { label: 'Issuing Offer', variant: 'warning' },
-  offer_sent: { label: 'Offer Sent', variant: 'warning' },
-  joined: { label: 'Joined', variant: 'success' },
-  shortlisted: { label: 'Shortlisted', variant: 'info' },
-  rejected: { label: 'Rejected', variant: 'critical' },
-  offer_declined: { label: 'Offer Declined', variant: 'critical' },
-  on_hold: { label: 'On Hold', variant: 'warning' },
-  // legacy aliases so any un-migrated data still renders cleanly
-  new: { label: 'Sourced', variant: 'soft' },
-  applied: { label: 'Sourced', variant: 'soft' },
-  screened: { label: 'Matched', variant: 'info' },
-  cv_screening: { label: 'Matched', variant: 'info' },
-  interview_1: { label: 'Interviewing', variant: 'info' },
-  interview_2: { label: 'Interviewing', variant: 'info' },
-  final_interview: { label: 'Interviewing', variant: 'info' },
-  phone_interview: { label: 'Interviewing', variant: 'info' },
-  technical_interview: { label: 'Interviewing', variant: 'info' },
-  client_interview: { label: 'Interviewing', variant: 'info' },
-  reference_check: { label: 'Waiting Feedback', variant: 'warning' },
-  offer_preparation: { label: 'Issuing Offer', variant: 'warning' },
-  offer_accepted: { label: 'Offer Sent', variant: 'warning' },
-  offer_rejected: { label: 'Offer Declined', variant: 'critical' },
-  withdrawn: { label: 'Rejected', variant: 'critical' },
+  sourced:            { label: 'Sourced', variant: 'soft', column: 1 },
+  screening:          { label: 'Screening', variant: 'info', column: 2 },
+  interview_hr:       { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  interview_technical:{ label: '2nd Interview (Technical)', variant: 'info', column: 4 },
+  offer:              { label: 'Offer', variant: 'warning', column: 5 },
+  hired:              { label: 'Hired', variant: 'success', column: 6 },
+  // Hidden from active board — disqualified
+  rejected:           { label: 'Rejected', variant: 'critical', column: 99 },
+  offer_declined:     { label: 'Offer Declined', variant: 'critical', column: 99 },
+  on_hold:            { label: 'On Hold', variant: 'warning', column: 99 },
+  // Legacy aliases — mapped to canonical stages
+  new:         { label: 'Sourced', variant: 'soft', column: 1 },
+  applied:     { label: 'Sourced', variant: 'soft', column: 1 },
+  matched:     { label: 'Screening', variant: 'info', column: 2 },
+  screened:    { label: 'Screening', variant: 'info', column: 2 },
+  cv_screening:{ label: 'Screening', variant: 'info', column: 2 },
+  unmatched:   { label: 'Screening', variant: 'info', column: 2 },
+  shortlisted: { label: 'Screening', variant: 'info', column: 2 },
+  interviewing:{ label: '1st Interview (HR)', variant: 'info', column: 3 },
+  interview_1: { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  interview_2: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
+  technical_interview: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
+  waiting_feedback: { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  issuing_offer: { label: 'Offer', variant: 'warning', column: 5 },
+  offer_sent:  { label: 'Offer', variant: 'warning', column: 5 },
+  offer_preparation: { label: 'Offer', variant: 'warning', column: 5 },
+  joined:      { label: 'Hired', variant: 'success', column: 6 },
 };
-// Ordered stage columns for the pipeline (canonical list only).
-const APP_ORDER = ['sourced', 'matched', 'unmatched', 'interviewing', 'waiting_feedback',
-  'issuing_offer', 'offer_sent', 'joined', 'shortlisted', 'on_hold', 'rejected', 'offer_declined'];
-const REASON_STATUSES = ['rejected', 'offer_declined', 'on_hold', 'unmatched'];
-const TERMINAL_APP = ['joined', 'rejected', 'offer_declined'];
+const APP_ORDER = ['sourced', 'screening', 'interview_hr', 'interview_technical', 'offer', 'hired'];
+const DISQUALIFIED_STAGES = ['rejected', 'offer_declined', 'on_hold'];
+const REASON_STATUSES = ['rejected', 'offer_declined', 'on_hold'];
+const TERMINAL_APP = ['hired', 'rejected', 'offer_declined'];
+
+// Normalize any stored status to its canonical pipeline column
+function pipelineStage(status) {
+  const s = APP_STATUS[status];
+  if (!s) return 'sourced';
+  if (DISQUALIFIED_STAGES.includes(status)) return status;
+  // Map to canonical column stage
+  if (s.column === 1) return 'sourced';
+  if (s.column === 2) return 'screening';
+  if (s.column === 3) return 'interview_hr';
+  if (s.column === 4) return 'interview_technical';
+  if (s.column === 5) return 'offer';
+  if (s.column === 6) return 'hired';
+  return status;
+}
+function isDisqualified(status) { return DISQUALIFIED_STAGES.includes(status); }
 function AppStatusBadge({ status }) { const s = APP_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
 // Source attribution chip (Workable pattern: "via LinkedIn / careers / referral").
 // Maps free-text source values to a small set of branded chips.
@@ -2360,15 +2375,14 @@ function RequestPipeline({ request, user, btns }) {
   if (!apps) return <Skeleton rows={6} />;
 
   const cols = APP_ORDER;
-  // Qualified / disqualified split (Workable pattern) for the pipeline summary strip.
-  const qualified = apps.filter((a) => !isDisqualified(a.status)).length;
-  const disqualified = apps.length - qualified;
+  const activeApps = visibleApps.filter((a) => !isDisqualified(a.status));
+  const disqualifiedCount = visibleApps.filter((a) => isDisqualified(a.status)).length;
   return (
     <div>
       {apps.length > 0 && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-          <span className="status-chip filled" title="Active in pipeline">Qualified {qualified}</span>
-          <span className="status-chip rejected" title="Rejected / unmatched / declined / on hold">Disqualified {disqualified}</span>
+          <span className="status-chip filled">Active {activeApps.length}</span>
+          {disqualifiedCount > 0 && <span className="status-chip rejected">Disqualified {disqualifiedCount}</span>}
           <span className="meta-chip">Total {apps.length}</span>
         </div>
       )}
@@ -2403,8 +2417,12 @@ function RequestPipeline({ request, user, btns }) {
         : view === 'kanban' ? (
           <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12 }}>
             {cols.map((st) => {
-              const items = visibleApps.filter((a) => a.status === st);
-              if (items.length === 0 && !['new', 'screened', 'shortlisted', 'interview_1', 'offer_sent', 'joined'].includes(st)) return null;
+              // Map items to canonical pipeline stage, hide disqualified
+              const items = visibleApps.filter((a) => {
+                const canonical = pipelineStage(a.status);
+                return canonical === st && !isDisqualified(a.status);
+              });
+              // Always show all 6 columns (even if empty — for clean board structure)
               return (
                 <div key={st} style={{ minWidth: 250, flex: '0 0 250px' }}>
                   <div className="row-between" style={{ marginBottom: 8 }}><strong style={{ fontSize: 13 }}>{APP_STATUS[st].label}</strong><span className="chip">{items.length}</span></div>
@@ -2499,17 +2517,22 @@ function PipelineCard({ app, wide, canMove, canBulk, selected, onSelect, onView,
         <AppStatusBadge status={app.status} />
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="btn btn-ghost btn-sm" onClick={onView}>View</button>
-          {canMove && !TERMINAL_APP.includes(app.status) && <button className="btn btn-secondary btn-sm" onClick={() => setMenu((m) => !m)}>Actions ▾</button>}
+          {canMove && !isDisqualified(app.status) && app.status !== 'hired' && (
+            <button className="btn btn-secondary btn-sm" onClick={() => setMenu((m) => !m)}>Move ▾</button>
+          )}
+          {canMove && !isDisqualified(app.status) && (
+            <button className="btn btn-sm" style={{ color: 'var(--critical)', borderColor: 'var(--critical)' }}
+              onClick={() => onMove('rejected')}>Disqualify</button>
+          )}
         </div>
       </div>
       {menu && (
         <div className="menu" style={{ right: 12, top: 'auto' }} onMouseLeave={() => setMenu(false)}>
-          {btns.shortlist_candidate?.visible && <div className="menu-item" onClick={() => { setMenu(false); onMove('shortlisted'); }}>Shortlist</div>}
-          {btns.send_to_hm?.visible && <div className="menu-item" onClick={() => { setMenu(false); onMove('final_interview'); }}>Send to Hiring Manager (Final)</div>}
-          <div className="menu-item" onClick={() => { setMenu(false); onMove('interview_1'); }}>Move to Interview 1</div>
+          {APP_ORDER.filter(s => APP_STATUS[s].column > (APP_STATUS[pipelineStage(app.status)]?.column || 0)).map(stage => (
+            <div key={stage} className="menu-item" onClick={() => { setMenu(false); onMove(stage); }}>Move to {APP_STATUS[stage].label}</div>
+          ))}
           {onNote && <div className="menu-item" onClick={() => { setMenu(false); onNote(); }}>Set Next Action</div>}
-          {btns.hold_candidate?.visible && <div className="menu-item" onClick={() => { setMenu(false); onMove('on_hold'); }}>Put On Hold</div>}
-          {btns.reject_candidate?.visible && <div className="menu-item" style={{ color: 'var(--critical)' }} onClick={() => { setMenu(false); onMove('rejected'); }}>Reject</div>}
+          <div className="menu-item" style={{ color: 'var(--text-gray)' }} onClick={() => { setMenu(false); onMove('on_hold'); }}>Put On Hold</div>
           {btns.schedule_interview?.visible && <div className="menu-item" onClick={() => { setMenu(false); onSchedule(); }}>Schedule Interview</div>}
           {btns.generate_offer?.visible && <div className="menu-item" onClick={() => { setMenu(false); onOffer(); }}>Generate Offer</div>}
         </div>
