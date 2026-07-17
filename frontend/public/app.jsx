@@ -2303,9 +2303,6 @@ function SourceChip({ source }) {
   if (!source) return <span className="muted" style={{ fontSize: 11.5 }}>No source</span>;
   return <span className={'src-chip ' + sourceClass(source)}><span className="src-dot" />{source}</span>;
 }
-// Group an application/candidate stage into qualified vs disqualified (Workable split).
-const DISQUALIFIED_STAGES = ['unmatched', 'rejected', 'offer_declined', 'on_hold'];
-function isDisqualified(status) { return DISQUALIFIED_STAGES.includes(status); }
 function MatchScore({ score }) {
   if (score == null) return <span className="muted">—</span>;
   const color = score >= 80 ? 'var(--success)' : score >= 50 ? 'var(--warning)' : 'var(--critical)';
