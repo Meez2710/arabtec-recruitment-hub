@@ -6,8 +6,11 @@
 // Config via env vars:
 //   CV_INBOX               — watched folder (default: ../../cv_inbox)
 //   CV_WATCH_INTERVAL_MIN  — poll interval in minutes (default: 60, 0 = disabled)
-//   DEEPSEEK_API_KEY       — DeepSeek API key (required for AI extraction)
+//   DEEPSEEK_API_KEY       — DeepSeek or SiliconFlow API key
 //   DEEPSEEK_MODEL         — model name (default: deepseek-chat)
+//   DEEPSEEK_BASE_URL      — API base URL (change for SiliconFlow etc.)
+//     DeepSeek:    https://api.deepseek.com/v1
+//     SiliconFlow: https://api.siliconflow.cn/v1
 //
 // Controlled by feature flag: feature.folder_watcher
 
@@ -21,7 +24,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_INBOX = path.resolve(__dirname, '../../cv_inbox');
 const DEFAULT_INTERVAL_MIN = 60;
-const DEEPSEEK_URL = 'https://api.deepseek.com/v1/chat/completions';
+function apiUrl() {
+  const base = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '');
+  return base + '/chat/completions';
+}
 
 let watcherTimer = null;
 let lastScanAt = null;
@@ -82,7 +88,7 @@ Schema:
 }`;
 
   try {
-    const res = await fetch(DEEPSEEK_URL, {
+    const res = await fetch(apiUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

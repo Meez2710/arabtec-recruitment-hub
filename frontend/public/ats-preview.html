@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATS — All Pages Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; }
+  .page { background: white; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.08); overflow: hidden; }
+  .page-header { background: #1b1f24; color: white; padding: 10px 16px; font-size: 13px; font-weight: 600; letter-spacing: .3px; display: flex; justify-content: space-between; align-items: center; }
+  .page-header span:last-child { font-weight: 400; opacity: .6; font-size: 11px; }
+  .page iframe { width: 100%; height: 700px; border: none; display: block; }
+  .toolbar { position: sticky; top: 0; z-index: 10; background: #1b1f24; color: white; padding: 12px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+  .toolbar h1 { font-size: 16px; }
+  .toolbar button { padding: 8px 16px; border: 1px solid rgba(255,255,255,.2); background: transparent; color: white; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .toolbar button:hover { background: rgba(255,255,255,.1); }
+  .toolbar input { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1); color: white; font-size: 12px; width: 180px; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>Arabtec ATS — All Pages Preview</h1>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span style="font-size:11px;opacity:.7;">Server:</span>
+    <input id="server" value="http://localhost:4000" placeholder="Server URL" />
+    <button onclick="location.href=document.getElementById('server').value" target="_blank">Open ATS</button>
+    <button onclick="document.querySelectorAll('iframe').forEach(f=>f.src=f.src)">Reload All</button>
+    <button onclick="window.print()">Print / PDF</button>
+  </div>
+</div>
+
+<!-- Login Page -->
+<div class="page">
+  <div class="page-header"><span>1. Login Page</span><span>/</span></div>
+  <iframe id="f-login" src="about:blank" data-path="/"></iframe>
+</div>
+
+<!-- Dashboard -->
+<div class="page">
+  <div class="page-header"><span>2. Dashboard</span><span>/dashboard</span></div>
+  <iframe id="f-dash" src="about:blank" data-path="/"></iframe>
+</div>
+
+<!-- Requests Table -->
+<div class="page">
+  <div class="page-header"><span>3. Recruitment Requests — Table View</span><span>/requests</span></div>
+  <iframe id="f-req" src="about:blank" data-path="/"></iframe>
+</div>
+
+<!-- Request Detail + Pipeline -->
+<div class="page">
+  <div class="page-header"><span>4. Request Detail — Pipeline / Kanban</span><span>/requests/:id (Candidates tab)</span></div>
+  <iframe id="f-detail" src="about:blank" data-path="/"></iframe>
+</div>
+
+<!-- Candidates / Talent Pool -->
+<div class="page">
+  <div class="page-header"><span>5. Talent Pool — Candidates Directory</span><span>/candidates</span></div>
+  <iframe id="f-cand" src="about:blank" data-path="/"></iframe>
+</div>
+
+<!-- Candidate Profile -->
+<div class="page">
+  <div class="page-header"><span>6. Candidate Profile</span><span>/candidates/:id</span></div>
+  <iframe id="f-cprof" src="about:blank" data-path="/"></iframe>
+</div>
+
+<!-- Interviews -->
+<div class="page">
+  <div class="page-header"><span>7. Interviews</span><span>/interviews</span></div>
+  <iframe id="f-int" src="about:blank" data-path="/"></iframe>
+</div>
+
+<!-- Offers -->
+<div class="page">
+  <div class="page-header"><span>8. Offers</span><span>/offers</span></div>
+  <iframe id="f-offer" src="about:blank" data-path="/"></iframe>
+</div>
+
+<script>
+// Auto-login and then load each iframe
+const SERVER = 'http://localhost:4000';
+
+async function login() {
+  try {
+    const res = await fetch(SERVER + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@arabtec.com', password: 'Admin@12345' })
+    });
+    const data = await res.json();
+    return data.token;
+  } catch(e) { return null; }
+}
+
+async function loadAll() {
+  const token = await login();
+  if (!token) {
+    alert('Cannot connect to ATS server at ' + SERVER + '\n\nMake sure you ran: npm start');
+    return;
+  }
+
+  // Store token in localStorage via a small injected script in each iframe
+  const injectToken = `
+    <script>
+      localStorage.setItem('arabtec_token', '${token}');
+      window.location.href = '${SERVER}/';
+    </scr` + `ipt>`;
+
+  // Load each iframe — they share localStorage so auth persists
+  const frames = document.querySelectorAll('iframe');
+  const paths = ['/', '/', '/', '/', '/', '/', '/', '/'];
+
+  frames.forEach((f, i) => {
+    // Create a temp page that sets the token then redirects
+    const blob = new Blob([`
+      <!DOCTYPE html><html><body>
+      <script>
+        localStorage.setItem('arabtec_token', '${token}');
+        window.location.href = '${SERVER}/';
+      </scr` + `ipt>
+      </body></html>
+    `], { type: 'text/html' });
+    f.src = URL.createObjectURL(blob);
+    f.style.height = (i === 3 || i === 5 ? '900px' : '700px');
+  });
+}
+
+// Try auto-load
+loadAll();
+</script>
+
+</body>
+</html>
