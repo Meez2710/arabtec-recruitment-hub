@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import RequestWizard from '../components/RequestWizard';
 
 export default function Requests() {
   const { hasPerm } = useAuth();
+  const nav = useNavigate();
   const [data, setData] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
 
@@ -44,7 +46,7 @@ export default function Requests() {
           </thead>
           <tbody>
             {requests.map(r => (
-              <tr key={r.id} className="border-t border-gray-50 hover:bg-gray-50 cursor-pointer">
+              <tr key={r.id} onClick={() => nav('/requests/' + r.id)} className="border-t border-gray-50 hover:bg-gray-50 cursor-pointer">
                 <td className="px-4 py-3 font-medium">{r.ticketNo}</td>
                 <td className="px-4 py-3">{r.title}</td>
                 <td className="px-4 py-3 text-gray-500">{r.department?.name || '—'}</td>

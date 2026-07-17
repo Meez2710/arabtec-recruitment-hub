@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Requests from './pages/Requests';
 import TalentPool from './pages/TalentPool';
 import InterviewHub from './pages/InterviewHub';
+import RequestDetail from './pages/RequestDetail';
 import './index.css';
 
 function Protected({ children }) {
@@ -25,6 +26,7 @@ function App() {
           <Route path="/*" element={<Protected><Shell><Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/requests" element={<Requests />} />
+            <Route path="/requests/:id" element={<RequestDetail />} />
             <Route path="/talent-pool" element={<TalentPool />} />
             <Route path="/interviews" element={<InterviewHub />} />
           </Routes></Shell></Protected>} />
