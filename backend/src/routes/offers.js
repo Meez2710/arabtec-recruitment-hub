@@ -8,7 +8,7 @@ import { writeAudit } from '../lib/audit.js';
 import { hasOpenSeat, fillSeatAndCount, applicationAlreadyFilledSeat } from '../lib/vacancy.js';
 import { APP, appNorm } from '../lib/stages.js';
 import { sendMail } from '../lib/mailer.js';
-import { offerSent as offerSentTpl } from '../lib/email_templates.js';
+import { offerSent as offerSentTpl, offerLetterHtml } from '../lib/email_templates.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -232,7 +232,14 @@ router.post('/:id/send', requirePermission('offer.send'), (req, res) => {
   // Email the candidate (best-effort, non-blocking; no-ops until email is configured).
   const cand = Candidates.byId(o.candidate_id);
   if (cand?.email) {
-    const tpl = offerSentTpl({ candidateName: cand.full_name, position: o.position_title });
+    const tpl = offerSentTpl({
+      candidateName: cand.full_name,
+      position: o.position_title,
+      salary: o.salary_offered,
+      allowances: 0,
+      offerDate: o.created_at,
+      totalSalary: o.salary_offered,
+    });
     sendMail({ to: cand.email, subject: tpl.subject, html: tpl.html })
       .then((r) => { if (r.ok) CandidateActivity.add({ candidateId: cand.id, applicationId: o.application_id, actorId: req.user.id, actorName: 'System', type: 'email_sent', note: 'Offer email sent' }); })
       .catch(() => {});
@@ -304,6 +311,23 @@ router.post('/:id/result', requirePermission('offer.result_update'), (req, res) 
 /* ---------------- form meta ---------------- */
 router.get('/meta/form', requirePermission('offer.view'), (req, res) => {
   res.json({ canSeeSalary: canSeeOfferSalary(req.user), canEditSalary: canEditOfferSalary(req.user), statuses: OFFER_STATUSES });
+});
+
+// Preview printable offer letter (HTML — open in browser, Ctrl+P to save as PDF)
+router.get('/:id/preview', requirePermission('offer.view'), (req, res) => {
+  const o = Offers.byId(Number(req.params.id));
+  if (!o) return res.status(404).json({ error: 'Offer not found.' });
+  const cand = Candidates.byId(o.candidate_id);
+  const html = offerLetterHtml({
+    candidateName: cand?.full_name,
+    position: o.position_title,
+    salary: o.salary_offered,
+    allowances: 0,
+    offerDate: o.created_at,
+    offerNo: o.offer_no,
+  });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
 });
 
 export default router;

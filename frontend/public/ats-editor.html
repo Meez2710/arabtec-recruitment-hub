@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arabtec Recruitment Hub — UI Review</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f1f3;padding:20px;color:#1b1f24}
+.page{border-radius:12px;margin-bottom:32px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.06);background:#fff}
+.page-head{background:#1b1f24;color:#fff;padding:10px 16px;font-size:12px;font-weight:600;display:flex;justify-content:space-between}
+.page-head span:last-child{opacity:.5;font-weight:400}
+.page-body{padding:0;min-height:400px;position:relative}
+
+/* Shared */
+.breadcrumb{font-size:11px;color:#8a929c;margin-bottom:8px}
+.btn{padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:default;border:none;display:inline-block}
+.btn-red{background:#d2232a;color:#fff}
+.btn-outline{border:1px solid #d5d8dc;background:#fff;color:#1b1f24}
+.btn-ghost{background:transparent;color:#8a929c;border:none}
+.sidebar{width:200px;background:#1b1f24;color:#fff;min-height:400px;padding:16px 0;float:left}
+.sidebar .logo{padding:0 16px 14px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:700;font-size:14px}
+.sidebar .logo span{color:#d2232a}
+.sidebar .nav{padding:8px 16px;font-size:12px;color:rgba(255,255,255,.55);cursor:default;border-left:3px solid transparent}
+.sidebar .nav.active{color:#fff;border-left-color:#d2232a;background:rgba(210,35,42,.12)}
+.main{overflow:hidden;padding:20px}
+h1{font-size:18px;font-weight:700;margin-bottom:4px}
+h2{font-size:15px;font-weight:700}
+.sub{font-size:12px;color:#8a929c;margin-bottom:16px}
+.card{border:1px solid #e7eaee;border-radius:8px;padding:16px;margin-bottom:12px}
+
+/* Dashboard */
+.greeting{font-size:14px;color:#8a929c;margin-bottom:2px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.kpi{border:1px solid #e7eaee;border-radius:8px;padding:14px;background:#fff}
+.kpi .val{font-size:22px;font-weight:700}
+.kpi .lbl{font-size:11px;color:#8a929c;margin-top:2px}
+.req-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f1f3;font-size:13px}
+.req-row .meta{font-size:11px;color:#8a929c}
+.update{display:flex;gap:8px;align-items:flex-start;padding:8px 0;font-size:12px}
+.update .dot{width:6px;height:6px;border-radius:50%;background:#d2232a;margin-top:5px;flex-shrink:0}
+
+/* Table */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:10px 12px;background:#f6f7f9;color:#8a929c;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+td{padding:10px 12px;border-top:1px solid #f0f1f3}
+tr:hover{background:#fafbfc}
+
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;text-transform:capitalize}
+.b-hi{background:#fef3c7;color:#b7791f}
+.b-me{background:#e8eaed;color:#5a6270}
+.b-cr{background:#fde8e8;color:#c0392b}
+.b-gr{background:#e6f4ea;color:#1f7a44}
+
+/* Ticket Header */
+.ticket-head{border-left:4px solid #d2232a;padding:16px}
+.ticket-head .eyebrow{font-size:10px;color:#8a929c;text-transform:uppercase;letter-spacing:.4px}
+.ticket-head h2{font-size:17px;margin:4px 0}
+.ticket-head .tno{font-size:12px;color:#8a929c}
+.meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px;margin-top:12px;padding-top:12px;border-top:1px solid #f0f1f3}
+.meta-grid div span:first-child{color:#8a929c;display:block;font-size:10px;text-transform:uppercase;margin-bottom:2px}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin:16px 0 0;border-bottom:1px solid #e7eaee;padding-bottom:0}
+.tab{padding:8px 14px;border:none;background:transparent;font-size:12px;color:#8a929c;cursor:default;border-bottom:2px solid transparent;font-weight:500}
+.tab.active{color:#d2232a;border-bottom-color:#d2232a;font-weight:600}
+
+/* Thread */
+.thread-msg{padding:12px 0;border-bottom:1px solid #f0f1f3;font-size:12px}
+.thread-msg .author{font-weight:600;margin-bottom:2px}
+.thread-msg .time{color:#8a929c;font-size:10px}
+.thread-msg .body{margin-top:4px;line-height:1.5}
+.thread-msg.system{color:#8a929c;font-style:italic}
+
+/* Pipeline Kanban */
+.pipeline{display:flex;gap:10px;overflow-x:auto;padding:8px 0}
+.p-col{min-width:230px;background:#f6f7f9;border-radius:8px;padding:10px}
+.p-col h4{font-size:11px;text-transform:uppercase;color:#8a929c;margin-bottom:8px;display:flex;justify-content:space-between}
+.p-col h4 .count{color:#d2232a}
+.p-card{background:#fff;border:1px solid #e7eaee;border-radius:6px;padding:10px;margin-bottom:6px;font-size:12px}
+.p-card .name{font-weight:600;margin-bottom:2px}
+.p-card .detail{color:#8a929c;font-size:11px}
+.p-card .actions{margin-top:6px;display:flex;gap:4px}
+.p-card .actions span{padding:2px 6px;border:1px solid #d5d8dc;border-radius:4px;font-size:10px;color:#5a6270;cursor:default}
+
+/* Toolbar */
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.toolbar input{padding:7px 10px;border:1px solid #d5d8dc;border-radius:6px;font-size:12px;min-width:180px}
+.toolbar select{padding:7px 10px;border:1px solid #d5d8dc;border-radius:6px;font-size:12px}
+
+/* Scorecard */
+.score-row{margin-bottom:10px}
+.score-row .label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.score-row .label span:last-child{font-weight:700}
+.bar{display:flex;gap:2px}
+.bar .seg{flex:1;height:6px;border-radius:1px}
+.bar .seg.on{background:#d2232a}
+.bar .seg.off{background:#e8eaed}
+.avg{text-align:center;padding-top:10px;border-top:1px solid #e7eaee;margin-top:10px}
+.avg .num{font-size:20px;font-weight:700}
+.avg .lab{font-size:10px;color:#8a929c}
+
+@media print{
+  .toolbar{display:none}
+  .page{margin-bottom:20px;border:2px solid #000;break-inside:avoid}
+  body{padding:0;background:#fff}
+}
+</style>
+</head>
+<body>
+
+<!-- ====== PAGE 1: DASHBOARD ====== -->
+<div class="page">
+  <div class="page-head"><span>1. Dashboard</span><span>Welcome back, Karim</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav active">Dashboard</div>
+      <div class="nav">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+        <div>
+          <div class="greeting">Welcome back, Karim</div>
+          <h1>Here is what needs your attention today.</h1>
+        </div>
+        <span class="btn btn-red">+ New Hiring Request</span>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi"><div class="val" style="color:#d2232a">12</div><div class="lbl">Open Requests</div></div>
+        <div class="kpi"><div class="val" style="color:#1b1f24">34</div><div class="lbl">Candidates</div></div>
+        <div class="kpi"><div class="val" style="color:#2563eb">3</div><div class="lbl">Interviews Today</div></div>
+        <div class="kpi"><div class="val" style="color:#059669">2</div><div class="lbl">Offers</div></div>
+      </div>
+
+      <div class="card">
+        <h2 style="font-size:13px;margin-bottom:12px">My Open Hiring Requests</h2>
+        <div class="req-row"><div><strong>Senior Site Engineer</strong><div class="meta">REQ-2026-00001</div></div><span class="badge b-hi">In Progress</span></div>
+        <div class="req-row"><div><strong>Technical Office Engineer</strong><div class="meta">REQ-2026-00002</div></div><span class="badge b-me">Screening</span></div>
+        <div class="req-row" style="border:none"><div><strong>Document Controller</strong><div class="meta">REQ-2026-00003</div></div><span class="badge b-me">Waiting Hiring Manager</span></div>
+      </div>
+
+      <div class="card">
+        <h2 style="font-size:13px;margin-bottom:12px">Recent Updates</h2>
+        <div class="update"><span class="dot"></span><span><strong>Ahmed Hassan</strong> moved to HR Interview</span></div>
+        <div class="update"><span class="dot"></span><span><strong>Nadia</strong> commented on Senior Site Engineer</span></div>
+        <div class="update" style="border:none"><span class="dot"></span><span>Offer sent to <strong>Ahmed Hassan</strong></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 2: HIRING REQUESTS TABLE ====== -->
+<div class="page">
+  <div class="page-head"><span>2. Hiring Requests</span><span>Track every vacancy request as a ticket</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav active">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <div class="toolbar">
+        <input placeholder="Search requests..." />
+        <select><option>All Statuses</option></select>
+        <div style="flex:1"></div>
+        <span class="btn btn-red">+ New Hiring Request</span>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <table>
+          <thead><tr><th>Ticket</th><th>Position</th><th>Department</th><th>Location</th><th>Status</th><th>Priority</th><th>Candidates</th><th>Last Update</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>REQ-2026-00001</strong></td>
+              <td>Senior Site Engineer</td><td>Engineering</td><td>New Cairo</td>
+              <td><span class="badge b-hi">In Progress</span></td>
+              <td><span class="badge b-hi">High</span></td>
+              <td>4</td><td>Today</td>
+            </tr>
+            <tr>
+              <td><strong>REQ-2026-00002</strong></td>
+              <td>Technical Office Engineer</td><td>Technical Office</td><td>Aliva MV</td>
+              <td><span class="badge b-me">Screening</span></td>
+              <td><span class="badge b-me">Medium</span></td>
+              <td>2</td><td>Yesterday</td>
+            </tr>
+            <tr>
+              <td><strong>REQ-2026-00003</strong></td>
+              <td>Document Controller</td><td>Admin</td><td>Head Office</td>
+              <td><span class="badge b-cr">Waiting HM</span></td>
+              <td><span class="badge b-cr">Critical</span></td>
+              <td>0</td><td>Jul 14</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 3: REQUEST DETAIL ====== -->
+<div class="page">
+  <div class="page-head"><span>3. Hiring Request Detail</span><span>Each vacancy is a ticket with its own workspace</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav active">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb">← Back to Hiring Requests</div>
+
+      <div class="card ticket-head">
+        <div class="eyebrow">Hiring Request Ticket</div>
+        <h2>Senior Site Engineer — New Cairo</h2>
+        <div class="tno">REQ-2026-00001</div>
+        <div class="meta-grid">
+          <div><span>Status</span><span class="badge b-hi">In Progress</span></div>
+          <div><span>Priority</span>High</div>
+          <div><span>Hiring Manager</span>Nadia Fouad</div>
+          <div><span>Recruiter</span>Karim Adel</div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <span class="btn btn-red">+ Add Candidate</span>
+          <span class="btn btn-outline">Change Status</span>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <span class="tab active">Pipeline <strong>(4)</strong></span>
+        <span class="tab">Conversation</span>
+        <span class="tab">Details</span>
+        <span class="tab">Activity</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 4: CONVERSATION THREAD ====== -->
+<div class="page">
+  <div class="page-head"><span>4. Conversation Thread</span><span>Hiring team discussion inside each ticket</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav active">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb">← Back to Hiring Requests</div>
+
+      <div class="card ticket-head">
+        <div class="eyebrow">Hiring Request Ticket</div>
+        <h2>Senior Site Engineer — New Cairo</h2>
+        <div class="tno">REQ-2026-00001</div>
+        <div class="meta-grid">
+          <div><span>Status</span><span class="badge b-hi">In Progress</span></div>
+          <div><span>Priority</span>High</div>
+          <div><span>Hiring Manager</span>Nadia Fouad</div>
+          <div><span>Recruiter</span>Karim Adel</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <span class="tab">Pipeline</span>
+        <span class="tab active">Conversation</span>
+        <span class="tab">Details</span>
+        <span class="tab">Activity</span>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px">Conversation</div>
+
+        <div class="thread-msg">
+          <div><span class="author">Karim Adel</span> <span class="time">· Recruiter · Today, 10:30 AM</span></div>
+          <div class="body">We need someone with 7+ years in construction site management. The project is in New Cairo — candidate must be willing to relocate.</div>
+        </div>
+
+        <div class="thread-msg">
+          <div><span class="author">Nadia Fouad</span> <span class="time">· Hiring Manager · Today, 2:15 PM</span></div>
+          <div class="body">Agreed. Also need PMP certification for this role. Please schedule Ahmed Hassan for the HR interview.</div>
+        </div>
+
+        <div class="thread-msg system">
+          <div><span class="time">Today, 3:00 PM</span></div>
+          <div class="body">Ahmed Hassan moved from Screening → HR Interview</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <textarea placeholder="Write an update to the hiring team..." rows="2" style="flex:1;padding:10px;border:1px solid #d5d8dc;border-radius:6px;font-size:12px;resize:none;font-family:inherit" readonly></textarea>
+        <span class="btn btn-red" style="align-self:flex-end">Send</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 5: CANDIDATE PIPELINE KANBAN ====== -->
+<div class="page">
+  <div class="page-head"><span>5. Candidate Pipeline</span><span>Kanban board inside each ticket</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav active">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb">← REQ-2026-00001</div>
+
+      <div class="tabs" style="margin-bottom:16px">
+        <span class="tab active">Pipeline <strong>(4)</strong></span>
+        <span class="tab">Conversation</span>
+        <span class="tab">Details</span>
+        <span class="tab">Activity</span>
+      </div>
+
+      <div class="pipeline">
+        <!-- Sourced -->
+        <div class="p-col">
+          <h4>Sourced <span class="count">1</span></h4>
+          <div class="p-card">
+            <div class="name">Ahmed Hassan</div>
+            <div class="detail">Senior Site Engineer<br>Orascom · Cairo</div>
+            <div class="actions"><span>View</span><span>Move ▸</span></div>
+          </div>
+        </div>
+        <!-- Screening -->
+        <div class="p-col">
+          <h4>Screening <span class="count">1</span></h4>
+          <div class="p-card">
+            <div class="name">Mohamed Ibrahim</div>
+            <div class="detail">Site Manager<br>Hassan Allam · Giza</div>
+            <div class="actions"><span>View</span><span>Move ▸</span></div>
+          </div>
+        </div>
+        <!-- HR Interview -->
+        <div class="p-col">
+          <h4>HR Interview <span class="count">1</span></h4>
+          <div class="p-card">
+            <div class="name">Abdallah Montaser</div>
+            <div class="detail">Civil Site Engineer<br>Alexandria</div>
+            <div class="actions"><span>View</span><span>Move ▸</span></div>
+          </div>
+        </div>
+        <!-- Technical Interview -->
+        <div class="p-col">
+          <h4>Technical Interview <span class="count">1</span></h4>
+          <div class="p-card">
+            <div class="name">Ahmed Ragab</div>
+            <div class="detail">PMP® · Senior Tech Office<br>8y exp</div>
+            <div class="actions"><span>View</span><span>Move ▸</span></div>
+          </div>
+        </div>
+        <!-- Offer -->
+        <div class="p-col">
+          <h4>Offer <span class="count">0</span></h4>
+          <div style="text-align:center;padding:20px;color:#c0c4cc;font-size:11px;border:1px dashed #e0e2e6;border-radius:6px">No candidates</div>
+        </div>
+        <!-- Hired -->
+        <div class="p-col">
+          <h4>Hired <span class="count">0</span></h4>
+          <div style="text-align:center;padding:20px;color:#c0c4cc;font-size:11px;border:1px dashed #e0e2e6;border-radius:6px">No candidates</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 6: TALENT POOL ====== -->
+<div class="page">
+  <div class="page-head"><span>6. Talent Pool</span><span>Lightweight candidate directory</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav">Hiring Requests</div>
+      <div class="nav active">Talent Pool</div>
+      <div class="nav">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <div class="toolbar">
+        <input placeholder="Search candidates..." />
+        <div style="flex:1"></div>
+        <span class="btn btn-red">+ Add Candidate</span>
+      </div>
+      <div class="card" style="padding:0">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #f0f1f3">
+          <div style="width:34px;height:34px;border-radius:50%;background:#d2232a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">AH</div>
+          <div style="flex:1"><div style="font-weight:600;font-size:13px">Ahmed Hassan</div><div style="font-size:11px;color:#8a929c">Senior Site Engineer at Orascom</div></div>
+          <div style="font-size:11px;color:#8a929c;text-align:right">Cairo · 8y exp</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #f0f1f3">
+          <div style="width:34px;height:34px;border-radius:50%;background:#1b1f24;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">MI</div>
+          <div style="flex:1"><div style="font-weight:600;font-size:13px">Mohamed Ibrahim</div><div style="font-size:11px;color:#8a929c">Site Manager at Hassan Allam</div></div>
+          <div style="font-size:11px;color:#8a929c;text-align:right">Giza · 10y exp</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+          <div style="width:34px;height:34px;border-radius:50%;background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">AM</div>
+          <div style="flex:1"><div style="font-weight:600;font-size:13px">Abdallah Montaser</div><div style="font-size:11px;color:#8a929c">Civil Site Engineer</div></div>
+          <div style="font-size:11px;color:#8a929c;text-align:right">Alexandria · 5y exp</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 7: INTERVIEWS ====== -->
+<div class="page">
+  <div class="page-head"><span>7. Interviews</span><span>Simple interview tracking</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav active">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <h1 style="margin-bottom:4px">Interviews</h1>
+      <p class="sub">Scheduled interviews across all hiring requests</p>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <table>
+          <thead><tr><th>Candidate</th><th>Position</th><th>Type</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Ahmed Hassan</strong></td><td>Senior Site Engineer</td><td>HR Interview</td><td>Today, 11:00 AM</td>
+              <td><span class="badge b-hi">Scheduled</span></td>
+            </tr>
+            <tr>
+              <td><strong>Ahmed Ragab</strong></td><td>Senior Site Engineer</td><td>Technical Interview</td><td>Tomorrow, 2:00 PM</td>
+              <td><span class="badge b-hi">Scheduled</span></td>
+            </tr>
+            <tr>
+              <td><strong>Abdallah Montaser</strong></td><td>Senior Site Engineer</td><td>HR Interview</td><td>Jul 14, 10:00 AM</td>
+              <td><span class="badge b-gr">Completed</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 8: SCORECARD ====== -->
+<div class="page">
+  <div class="page-head"><span>8. Interview Scorecard</span><span>HR + Technical evaluation inside interview</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav active">Interviews</div>
+      <div class="nav">Offers</div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb">← Back to Interviews</div>
+      <h1>Ahmed Hassan — HR Interview</h1>
+      <p class="sub">Senior Site Engineer · REQ-2026-00001</p>
+
+      <div style="display:grid;grid-template-columns:200px 1fr 1fr;gap:12px">
+        <!-- CV Sidebar -->
+        <div class="card">
+          <h2 style="font-size:12px;margin-bottom:10px">Candidate</h2>
+          <div style="font-weight:700;font-size:13px">Ahmed Hassan</div>
+          <div style="font-size:11px;color:#8a929c;margin-bottom:8px">Senior Site Engineer<br>Orascom · 8y exp</div>
+          <div style="font-size:11px;color:#8a929c">ahmed.hassan@email.com<br>+20101234567<br>Cairo</div>
+        </div>
+
+        <!-- HR Scorecard -->
+        <div class="card">
+          <h2 style="font-size:12px;margin-bottom:10px">HR Assessment</h2>
+          <div class="score-row"><div class="label"><span>Communication</span><span>4/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg off"></span></div></div>
+          <div class="score-row"><div class="label"><span>Cultural Fit</span><span>5/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span></div></div>
+          <div class="score-row"><div class="label"><span>Leadership</span><span>3/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg off"></span><span class="seg off"></span></div></div>
+          <div class="score-row"><div class="label"><span>Teamwork</span><span>4/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg off"></span></div></div>
+          <div class="avg"><div class="num">4.0</div><div class="lab">HR Average</div></div>
+        </div>
+
+        <!-- Technical Scorecard -->
+        <div class="card">
+          <h2 style="font-size:12px;margin-bottom:10px">Technical Assessment</h2>
+          <div class="score-row"><div class="label"><span>Technical Knowledge</span><span>5/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span></div></div>
+          <div class="score-row"><div class="label"><span>Problem Solving</span><span>4/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg off"></span></div></div>
+          <div class="score-row"><div class="label"><span>Industry Experience</span><span>5/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span></div></div>
+          <div class="score-row"><div class="label"><span>Tools & Software</span><span>4/5</span></div><div class="bar"><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg off"></span></div></div>
+          <div class="avg"><div class="num">4.5</div><div class="lab">Technical Average</div></div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:12px 16px;border:1px solid #e7eaee;border-radius:8px">
+        <div><span style="font-size:12px;color:#8a929c">Overall Score: </span><span style="font-size:18px;font-weight:700">4.3</span></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px">Suggested: <strong style="color:#059669">Move to Technical Interview</strong></span>
+          <span class="btn btn-red">Submit & Advance</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE 9: OFFERS ====== -->
+<div class="page">
+  <div class="page-head"><span>9. Offers</span><span>Simple offer status tracking</span></div>
+  <div class="page-body">
+    <div class="sidebar">
+      <div class="logo"><span>Arabtec</span> Hub</div>
+      <div class="nav">Dashboard</div>
+      <div class="nav">Hiring Requests</div>
+      <div class="nav">Talent Pool</div>
+      <div class="nav">Interviews</div>
+      <div class="nav active">Offers</div>
+    </div>
+    <div class="main">
+      <h1 style="margin-bottom:4px">Offers</h1>
+      <p class="sub">Offer status across all hiring requests</p>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <table>
+          <thead><tr><th>Offer #</th><th>Candidate</th><th>Position</th><th>Salary</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>OFF-00001</strong></td><td>Ahmed Hassan</td><td>Senior Site Engineer</td><td>25,000 EGP</td>
+              <td><span class="badge b-hi">Sent</span></td>
+            </tr>
+            <tr>
+              <td><strong>OFF-00002</strong></td><td>Mohamed Ibrahim</td><td>Technical Office Engineer</td><td>22,000 EGP</td>
+              <td><span class="badge b-me">Draft</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
