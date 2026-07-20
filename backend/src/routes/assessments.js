@@ -1,18 +1,22 @@
-// Interview assessment (Arabtec form): HR + technical evaluations per application,
-// unlocked once the candidate reaches an interview stage; plus a shared final decision.
+// Arabtec Interview Assessment Form — Big Five (HR) + Role Competency (Technical)
+// Matches the official Arabtec assessment PDF: two evaluations per application,
+// critical flags, fit ratings, and a final recommendation.
 import { Router } from 'express';
 import { Assessments, Applications, Candidates, Requests, StageHistory } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { appNorm } from '../lib/stages.js';
+import {
+  HR_CRITERIA, TECHNICAL_CRITERIA, CRITICAL_FLAGS,
+  DECISIONS, FIT_LEVELS, SCORE_GUIDE,
+  averageScore, fitLevel, overallAverage, suggestStage,
+  assessmentHtml,
+} from '../lib/assessment.js';
 
 const router = Router();
 router.use(requireAuth);
 
-// Assessment unlocks once the candidate reaches interviewing and stays available downstream.
 const INTERVIEW_STAGES = ['interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
-const RECS = ['proceed', 'proceed_conditions', 'hold', 'cv_pool', 'reject'];
-const FITS = ['strong', 'acceptable', 'borderline', 'weak'];
 const FINAL = ['proceed', 'hold', 'reject', 'hired'];
 
 function parse(a) {
@@ -59,9 +63,11 @@ router.post('/application/:applicationId', requirePermission('interview.feedback
   const d = req.body || {};
   const type = d.evaluatorType;
   if (!['hr', 'technical'].includes(type)) return res.status(400).json({ error: 'evaluatorType must be hr or technical.' });
-  if (d.recommendation && !RECS.includes(d.recommendation)) return res.status(400).json({ error: 'Invalid recommendation.' });
-  if (d.behavioralFit && !FITS.includes(d.behavioralFit)) return res.status(400).json({ error: 'Invalid behavioral fit.' });
-  if (d.technicalFit && !FITS.includes(d.technicalFit)) return res.status(400).json({ error: 'Invalid technical fit.' });
+  const validRecs = DECISIONS.map(d => d.value);
+  const validFits = FIT_LEVELS.map(f => f.value);
+  if (d.recommendation && !validRecs.includes(d.recommendation)) return res.status(400).json({ error: 'Invalid recommendation.' });
+  if (d.behavioralFit && !validFits.includes(d.behavioralFit)) return res.status(400).json({ error: 'Invalid behavioral fit.' });
+  if (d.technicalFit && !validFits.includes(d.technicalFit)) return res.status(400).json({ error: 'Invalid technical fit.' });
 
   Assessments.upsert({ applicationId: app.id, evaluatorType: type, evaluatorId: req.user.id, evaluatorName: req.user.fullName, ...d });
   writeAudit(req, { action: 'assessment.submitted', entityType: 'application', entityId: app.id, newValue: { evaluatorType: type, recommendation: d.recommendation } });
@@ -82,38 +88,53 @@ router.post('/application/:applicationId/final', requirePermission('interview.fe
 /* Form metadata (criteria + option lists matching the PDF) */
 router.get('/meta', (req, res) => {
   res.json({
-    behavioralCriteria: [
-      { key: 'openness', label: 'Openness', hint: 'Adaptability, learning agility, response to new systems and processes.' },
-      { key: 'conscientiousness', label: 'Conscientiousness', hint: 'Reliability, follow-through, accountability, documentation discipline.' },
-      { key: 'extraversion', label: 'Extraversion', hint: 'Communication clarity, assertiveness, stakeholder coordination.' },
-      { key: 'agreeableness', label: 'Agreeableness', hint: 'Cooperation, respect, teamwork without passivity.' },
-      { key: 'emotional_stability', label: 'Emotional Stability', hint: 'Composure under pressure, stress tolerance, conflict response.' },
-    ],
-    technicalCriteria: [
-      { key: 'technical_knowledge', label: 'Technical Knowledge', hint: 'Role-specific expertise and depth of knowledge for the position.' },
-      { key: 'relevant_experience', label: 'Relevant Experience', hint: 'Years, project complexity and similarity to current scope.' },
-      { key: 'problem_solving', label: 'Problem-Solving', hint: 'Critical thinking, structured approach, sound decision-making.' },
-      { key: 'tools_software', label: 'Tools & Software', hint: 'Proficiency with role-required software, systems and tools.' },
-      { key: 'planning_organizing', label: 'Planning & Organizing', hint: 'Prioritization, scheduling, resource and risk management.' },
-    ],
-    criticalFlags: [
-      { key: 'blaming', label: 'Repeated blaming of others or no ownership' },
-      { key: 'no_examples', label: 'No specific examples or evidence provided' },
-      { key: 'cv_inconsistency', label: 'Inconsistencies between CV and stated experience' },
-    ],
-    recommendations: [
-      { value: 'proceed', label: 'Proceed' }, { value: 'proceed_conditions', label: 'Proceed with Conditions' },
-      { value: 'hold', label: 'Hold' }, { value: 'cv_pool', label: 'CV Pool' }, { value: 'reject', label: 'Reject' },
-    ],
-    fits: [
-      { value: 'strong', label: 'Strong (4.2+)' }, { value: 'acceptable', label: 'Acceptable (3.5–4.1)' },
-      { value: 'borderline', label: 'Borderline (3.0–3.4)' }, { value: 'weak', label: 'Weak (<3.0)' },
-    ],
-    finalDecisions: [
-      { value: 'proceed', label: 'Proceed' }, { value: 'hold', label: 'Hold' }, { value: 'reject', label: 'Reject' }, { value: 'hired', label: 'Hired' },
-    ],
-    scoreGuide: '5 Excellent · 4 Proficient · 3 Average · 2 Below Standard · 1 Unsuitable · N/A Not Applicable',
+    behavioralCriteria: HR_CRITERIA,
+    technicalCriteria: TECHNICAL_CRITERIA,
+    criticalFlags: CRITICAL_FLAGS,
+    decisions: DECISIONS,
+    fitLevels: FIT_LEVELS,
+    scoreGuide: SCORE_GUIDE,
   });
+});
+
+// Preview printable assessment form (HTML — open in browser, Ctrl+P to save as PDF)
+router.get('/application/:applicationId/preview', requirePermission('candidate.view'), (req, res) => {
+  const app = Applications.byId(Number(req.params.applicationId));
+  if (!app) return res.status(404).json({ error: 'Application not found.' });
+  const cand = Candidates.byId(app.candidate_id);
+  const reqObj = app.request_id ? Requests.byId(app.request_id) : null;
+  const ass = Assessments.forApplication(app.id);
+  const hrAss = ass?.hr;
+  const techAss = ass?.technical;
+
+  const html = assessmentHtml({
+    candidateName: cand?.full_name,
+    position: reqObj?.title || app.position_applied,
+    department: reqObj?.department_id ? 'Engineering' : null,
+    interviewDate: new Date().toISOString(),
+    education: cand?.university,
+    yearsExperience: cand?.years_experience,
+    currentEmployer: cand?.current_company,
+    noticePeriod: cand?.notice_period,
+    currentSalary: null,
+    expectedSalary: cand?.expected_salary,
+    hrScores: hrAss?.behavioral || hrAss?.ratings || {},
+    hrNotes: {},
+    techScores: techAss?.technical || techAss?.ratings || {},
+    techNotes: {},
+    criticalFlags: hrAss?.critical_flags || {},
+    hrFit: hrAss?.behavioral_fit || fitLevel(averageScore(hrAss?.behavioral || hrAss?.ratings))?.value,
+    techFit: techAss?.technical_fit || fitLevel(averageScore(techAss?.technical || techAss?.ratings))?.value,
+    hrJustification: hrAss?.behavioral_justification,
+    techJustification: techAss?.technical_justification,
+    decision: ass?.final?.decision,
+    hrInterviewer: req.user?.fullName,
+    techInterviewer: null,
+    finalDecider: null,
+  });
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
 });
 
 export default router;
