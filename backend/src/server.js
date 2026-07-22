@@ -10,6 +10,8 @@ import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
 import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
+import { securityHeaders, securityConfigSummary } from './lib/security-headers.js';
+import { validateConfigOrThrow } from './lib/config.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import roleRoutes from './routes/roles.js';
@@ -30,8 +32,28 @@ import notificationRoutes from './routes/notifications.js';
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Parse the TRUST_PROXY env into a value Express understands. Trusting exactly the
+// number of proxies in front of the app (not "all") stops clients from spoofing
+// X-Forwarded-For to forge req.ip and bypass the per-IP rate limiters.
+//   TRUST_PROXY="1"   → trust 1 hop (Render / Coolify / Nginx) — the production default
+//   TRUST_PROXY="0"   → do not trust any proxy
+//   TRUST_PROXY="true"/"false" → boolean passthrough (advanced/testing)
+function parseTrustProxy(raw, prod) {
+  if (raw === undefined || raw === '') return prod ? 1 : false; // safe defaults
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : (prod ? 1 : false);
+}
+
+const isProd = process.env.NODE_ENV === 'production';
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY, isProd));
+
+// Security headers (CSP, HSTS in prod, frameguard, nosniff, referrer-policy).
+// Applied to every response — static assets, API, and errors. See lib/security-headers.js.
+app.use(securityHeaders);
 
 // Schema/seed run AFTER the port is bound (see bottom) so the platform health
 // check never times out on a slow first DB connection. Until init finishes,
@@ -42,7 +64,6 @@ let APP_READY = false;
 // Same-origin requests (the app serves its own frontend) carry no Origin header
 // and are always allowed. Set CORS_ORIGINS to a comma-list for any cross-origin clients.
 const origins = (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-const isProd = process.env.NODE_ENV === 'production';
 app.use(cors({
   origin(origin, cb) {
     if (!origin) return cb(null, true);              // same-origin / curl / server-to-server
@@ -176,11 +197,19 @@ async function bootSeedIfEmpty() {
 }
 
 const PORT = process.env.PORT || 4000;
+
+// Validate configuration BEFORE binding the port. In production a missing REQUIRED
+// variable (DATABASE_URL / JWT_SECRET) throws here and the process exits — a
+// misconfigured deploy fails loudly instead of silently serving on the wrong DB.
+// (Validation is synchronous and instant, so it does not delay the health check.)
+validateConfigOrThrow();
+
 // Bind the port FIRST so the platform's health check sees an open port immediately
 // (Render fails a deploy if no port opens within ~60s). Schema + seed run in the
 // background; APP_READY flips true when done, opening the API gate.
 app.listen(PORT, () => {
   console.log(`\n🏗️  Arabtec Recruitment Hub listening on ${PORT} (initialising…)`);
+  console.log(JSON.stringify({ level: 'info', msg: 'security.headers', ...securityConfigSummary() }));
   (async () => {
     try {
       await initObservability(); // Sentry (no-op without SENTRY_DSN)

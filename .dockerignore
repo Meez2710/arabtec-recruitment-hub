@@ -1,0 +1,16 @@
+**/node_modules
+**/.git
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+**/prisma/*.db
+**/prisma/*.db-*
+backend/data
+backend/_*.mjs
+backend/dbg*.mjs
+**/.DS_Store
+**/*.fuse_hidden*
+*.bundle
+frontend-v2/node_modules
+frontend-v2/dist

@@ -8,7 +8,8 @@
     "node": ">=22.5.0 <23"
   },
   "scripts": {
-    "start": "node --experimental-sqlite src/server.js",
+    "start": "node src/server.js",
+    "start:sqlite": "node --experimental-sqlite src/server.js",
     "dev": "node --experimental-sqlite --watch src/server.js",
     "seed": "node --experimental-sqlite prisma/seed.js",
     "setup": "node --experimental-sqlite prisma/seed.js",

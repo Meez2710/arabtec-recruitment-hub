@@ -18,17 +18,22 @@ services:
     region: oregon
     rootDir: backend
     branch: main                 # prod tracks main
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      - key: NODE_OPTIONS
-        value: --experimental-sqlite
+      # NODE_OPTIONS=--experimental-sqlite removed: production uses PostgreSQL, so the
+      # SQLite engine (and its experimental flag) is never loaded. Local SQLite dev uses
+      # `npm run start:sqlite`. See docs/DEPLOYMENT.md.
       - key: NODE_VERSION
         value: "22.11.0"
       - key: NODE_ENV
         value: production
+      # Trust exactly one proxy hop (Render's load balancer) so req.ip is the real
+      # client IP and cannot be spoofed via X-Forwarded-For. See docs/SECURITY_HARDENING.md.
+      - key: TRUST_PROXY
+        value: "1"
       - key: DATABASE_URL
         fromDatabase:
           name: arabtec-db
@@ -44,6 +49,38 @@ services:
       # Absent = Sentry disabled (app runs normally).
       - key: SENTRY_DSN
         sync: false
+      # --- Feature secrets: set VALUES in the Render dashboard, never in this file. ---
+      # sync:false = "this key is required but its value is managed as a secret".
+      # Full reference and which features each enables: docs/ENVIRONMENT_VARIABLES.md
+      # Email (leave unset to keep email OFF):
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: MAIL_FROM_NAME
+        sync: false
+      # AI CV parsing (leave unset to fall back to the heuristic parser):
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_BASE_URL
+        sync: false
+      - key: DEEPSEEK_MODEL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Uploads / CV watcher (set a persistent path once on VPS/Coolify):
+      - key: UPLOAD_DIR
+        sync: false
+      - key: CV_INBOX
+        sync: false
+      - key: CV_WATCH_INTERVAL_MIN
+        sync: false
 
   # ---------------- STAGING ----------------
   # Mirrors prod but tracks the `staging` branch and uses its own DB. A push to
@@ -55,17 +92,22 @@ services:
     region: oregon
     rootDir: backend
     branch: staging
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      - key: NODE_OPTIONS
-        value: --experimental-sqlite
+      # NODE_OPTIONS=--experimental-sqlite removed: production uses PostgreSQL, so the
+      # SQLite engine (and its experimental flag) is never loaded. Local SQLite dev uses
+      # `npm run start:sqlite`. See docs/DEPLOYMENT.md.
       - key: NODE_VERSION
         value: "22.11.0"
       - key: NODE_ENV
         value: production
+      # Trust exactly one proxy hop (Render's load balancer) so req.ip is the real
+      # client IP and cannot be spoofed via X-Forwarded-For. See docs/SECURITY_HARDENING.md.
+      - key: TRUST_PROXY
+        value: "1"
       - key: DATABASE_URL
         fromDatabase:
           name: arabtec-db-staging
