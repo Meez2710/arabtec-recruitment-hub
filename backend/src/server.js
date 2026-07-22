@@ -160,11 +160,23 @@ app.use('/api/thread', threadRoutes);
 app.use('/api/admin-ui', adminUiRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-// Serve the frontend (single-page app) from ../../frontend/public
+// Serve the frontend (single-page app) from ../../frontend/public.
+// Cache policy: the HTML shell must ALWAYS revalidate so a version bump on
+// app.jsx?v=… / styles.css?v=… is picked up immediately (this is what caused the
+// app to appear "reverted" to an old build). Other assets may be cached for a
+// short time and are revalidated via ETag; versioned URLs bust themselves.
 const frontendDir = path.resolve(__dirname, '../../frontend/public');
-app.use(express.static(frontendDir));
+app.use(express.static(frontendDir, {
+  etag: true,
+  lastModified: true,
+  maxAge: '1h',
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
+  res.setHeader('Cache-Control', 'no-cache'); // SPA shell: always revalidate
   res.sendFile(path.join(frontendDir, 'index.html'));
 });
 
