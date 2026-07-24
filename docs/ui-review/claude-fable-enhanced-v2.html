@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arabtec ATS — Enhanced Design v2</title>
+<style>
+:root{
+  --red:#d2232a; --red-dark:#a81b21; --red-tint:#fdf0f0;
+  --ink:#171b21; --ink-2:#3d4450; --muted:#7a8290; --line:#e6e9ee; --line-soft:#f1f3f6;
+  --bg:#f4f5f7; --card:#fff;
+  --ok:#0f8a4d; --ok-bg:#e7f6ee; --warn:#b7791f; --warn-bg:#fdf3dc; --crit:#c0392b; --crit-bg:#fdeaea; --info:#2563eb; --info-bg:#e8effc;
+  --r:10px; --shadow:0 1px 3px rgba(23,27,33,.07),0 8px 24px rgba(23,27,33,.05);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,sans-serif;background:#e4e6ea;padding:24px;color:var(--ink);font-size:13px}
+.page{background:var(--card);border-radius:14px;margin:0 auto 36px;max-width:1180px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)}
+.page-head{background:var(--ink);color:#fff;padding:13px 18px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.page-head .tag{background:rgba(210,35,42,.25);color:#ffb3b6;padding:2px 10px;border-radius:99px;font-size:10px;font-weight:700;letter-spacing:.5px}
+.page-body{position:relative;min-height:300px}
+
+/* ===== App Shell: top bar + sidebar ===== */
+.topbar{height:52px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 18px}
+.topbar .brand{font-weight:800;font-size:15px}
+.topbar .brand em{color:var(--red);font-style:normal}
+.topbar .gsearch{flex:1;max-width:380px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 12px;color:var(--muted);font-size:12px}
+.topbar .spacer{flex:1}
+.icon-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;position:relative;background:#fff;font-size:14px}
+.icon-btn .dot{position:absolute;top:6px;right:7px;width:8px;height:8px;background:var(--red);border-radius:50%;border:2px solid #fff}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.shell{display:flex}
+.sidebar{width:210px;background:var(--ink);color:#fff;padding:14px 0;min-height:420px;flex-shrink:0}
+.nav{padding:9px 18px;font-size:12.5px;color:rgba(255,255,255,.6);border-left:3px solid transparent;display:flex;align-items:center;gap:10px;cursor:default}
+.nav .cnt{margin-left:auto;background:rgba(255,255,255,.12);padding:1px 7px;border-radius:99px;font-size:10px}
+.nav.active{color:#fff;border-left-color:var(--red);background:rgba(210,35,42,.14);font-weight:600}
+.nav-sec{padding:14px 18px 5px;font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,.3)}
+.main{flex:1;padding:22px 24px;min-width:0}
+
+h1{font-size:19px;font-weight:800;letter-spacing:-.2px}
+h2{font-size:14px;font-weight:700}
+.sub{font-size:12px;color:var(--muted);margin:3px 0 18px}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px;background:#fff}
+
+/* Buttons & badges */
+.btn{padding:8px 15px;border-radius:8px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;border:none;cursor:default}
+.btn-red{background:var(--red);color:#fff;box-shadow:0 2px 6px rgba(210,35,42,.28)}
+.btn-outline{border:1px solid var(--line);background:#fff;color:var(--ink)}
+.btn-ghost{background:transparent;color:var(--muted)}
+.btn-sm{padding:4px 10px;font-size:11px;border-radius:6px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:10.5px;font-weight:700}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.b-hi{background:var(--warn-bg);color:var(--warn)} .b-me{background:#eceef1;color:#5a6270}
+.b-cr{background:var(--crit-bg);color:var(--crit)} .b-gr{background:var(--ok-bg);color:var(--ok)} .b-bl{background:var(--info-bg);color:var(--info)}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:10px 14px;background:#f8f9fb;color:var(--muted);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--line)}
+td{padding:11px 14px;border-top:1px solid var(--line-soft);vertical-align:middle}
+tr.hover-row{background:#fdf6f6}
+
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.toolbar input,.toolbar select{padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#fff}
+.toolbar input{min-width:200px}
+.chip{padding:5px 11px;border:1px solid var(--line);border-radius:99px;font-size:11px;color:var(--ink-2);background:#fff}
+.chip.on{background:var(--red-tint);border-color:var(--red);color:var(--red);font-weight:700}
+.view-toggle{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:auto}
+.view-toggle span{padding:7px 11px;font-size:11px;color:var(--muted);border-right:1px solid var(--line)}
+.view-toggle span:last-child{border-right:none}
+.view-toggle span.on{background:var(--ink);color:#fff;font-weight:600}
+
+/* KPI */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi{border:1px solid var(--line);border-radius:var(--r);padding:15px;background:#fff;position:relative;overflow:hidden}
+.kpi::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--kc,var(--red))}
+.kpi .val{font-size:24px;font-weight:800}
+.kpi .lbl{font-size:11px;color:var(--muted);margin-top:2px}
+.kpi .trend{font-size:10px;font-weight:700;margin-top:5px}
+
+/* Charts */
+.grid-2{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}
+.funnel-row{display:flex;align-items:center;gap:10px;margin:7px 0}
+.funnel-row .fl{width:110px;font-size:11px;color:var(--ink-2)}
+.funnel-row .fb{height:20px;background:linear-gradient(90deg,var(--red),#e05a60);border-radius:4px}
+.funnel-row .fn{font-size:11px;font-weight:700;width:26px}
+.hbar{display:flex;align-items:center;gap:10px;margin:9px 0}
+.hbar .hl{width:90px;font-size:11px}
+.hbar .hb{height:12px;background:var(--ink-2);border-radius:99px;opacity:.85}
+.hbar .hn{font-size:11px;font-weight:700}
+
+/* Tasks widget */
+.task{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-soft);font-size:12px}
+.task:last-child{border:none}
+.task .tk-ic{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+
+/* Ticket */
+.ticket-head{border-left:4px solid var(--red);padding:18px}
+.eyebrow{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700}
+.meta-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;font-size:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.meta-grid div span:first-child{color:var(--muted);display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;font-weight:700}
+.sla{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:6px}
+.tabs{display:flex;gap:2px;margin-top:16px;border-bottom:1px solid var(--line)}
+.tab{padding:9px 15px;font-size:12px;color:var(--muted);border-bottom:2px solid transparent;font-weight:500}
+.tab.active{color:var(--red);border-bottom-color:var(--red);font-weight:700}
+
+/* Thread */
+.thread-msg{display:flex;gap:11px;padding:12px 0;border-bottom:1px solid var(--line-soft);font-size:12px}
+.thread-msg:last-child{border:none}
+.t-av{width:32px;height:32px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.thread-msg .body{margin-top:3px;line-height:1.55;color:var(--ink-2)}
+.attach{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;padding:6px 11px;margin-top:7px;font-size:11px;background:#fafbfc}
+.sysmsg{text-align:center;font-size:11px;color:var(--muted);padding:8px 0}
+.sysmsg span{background:var(--bg);padding:3px 12px;border-radius:99px}
+.mention{color:var(--red);font-weight:700}
+
+/* Kanban */
+.pipeline{display:flex;gap:10px;overflow-x:auto;padding:6px 0}
+.p-col{min-width:215px;background:#f7f8fa;border-radius:10px;padding:10px;border-top:3px solid var(--pc,#c8ccd3)}
+.p-col h4{font-size:10.5px;text-transform:uppercase;color:var(--muted);margin-bottom:9px;display:flex;justify-content:space-between;letter-spacing:.5px}
+.p-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:7px;font-size:12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.p-card.selected{border-color:var(--red);box-shadow:0 0 0 2px rgba(210,35,42,.15)}
+.p-card .top{display:flex;gap:8px;align-items:flex-start}
+.p-card input[type=checkbox]{margin-top:2px;accent-color:var(--red)}
+.p-card .name{font-weight:700}
+.p-card .detail{color:var(--muted);font-size:11px;margin-top:2px}
+.p-card .age{font-size:10px;font-weight:700;margin-top:6px}
+.p-card .actions{margin-top:7px;display:flex;gap:5px}
+.p-card .actions span{padding:3px 8px;border:1px solid var(--line);border-radius:6px;font-size:10px;color:var(--ink-2)}
+.bulkbar{background:var(--ink);color:#fff;border-radius:10px;padding:9px 15px;display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:12px}
+.bulkbar .btn-sm{background:var(--red);color:#fff;border:none}
+.empty-col{text-align:center;padding:22px 10px;color:#b6bcc6;font-size:11px;border:1.5px dashed var(--line);border-radius:8px}
+
+/* Assessment UI */
+.score-pills{display:flex;gap:5px}
+.score-pills span{width:30px;height:26px;border:1px solid var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted)}
+.score-pills span.sel{background:var(--red);color:#fff;border-color:var(--red)}
+.a-row{display:grid;grid-template-columns:1.1fr 1.6fr auto 1.4fr;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-soft);font-size:12px}
+.a-row .crit{font-weight:700}
+.a-row .hint{font-size:10.5px;color:var(--muted)}
+.a-row input{padding:6px 9px;border:1px solid var(--line);border-radius:6px;font-size:11px;width:100%}
+.steps{display:flex;gap:0;margin-bottom:18px}
+.step{flex:1;text-align:center;font-size:11px;color:var(--muted);position:relative;padding-top:26px}
+.step::before{content:attr(data-n);position:absolute;top:0;left:50%;transform:translateX(-50%);width:22px;height:22px;border-radius:50%;background:var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:10px}
+.step.done::before{background:var(--ok);color:#fff;content:'✓'}
+.step.cur::before{background:var(--red);color:#fff}
+.step.cur{color:var(--ink);font-weight:700}
+.flagrow{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12px}
+.flagrow input{accent-color:var(--crit)}
+
+/* Notification panel */
+.notif-panel{position:absolute;right:20px;top:56px;width:320px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.14);z-index:5;overflow:hidden}
+.notif-panel .nh{padding:12px 15px;border-bottom:1px solid var(--line);font-weight:700;font-size:12px;display:flex;justify-content:space-between}
+.notif{display:flex;gap:10px;padding:11px 15px;border-bottom:1px solid var(--line-soft);font-size:11.5px}
+.notif.unread{background:var(--red-tint)}
+.notif .nt{color:var(--muted);font-size:10px;margin-top:2px}
+
+/* Audit coverage note */
+.notes{background:#f0faf4;border:1px solid #bfe6cd;border-radius:0;padding:13px 18px;font-size:11.5px;line-height:1.75}
+.notes strong{color:var(--ok)}
+.notes .fix{color:var(--ok);font-weight:600}
+.notes .defer{color:var(--muted)}
+
+/* Login */
+.login-wrap{display:flex;min-height:460px}
+.login-brand{flex:1;background:linear-gradient(140deg,var(--ink) 30%,#3a1214);color:#fff;padding:44px;display:flex;flex-direction:column;justify-content:space-between}
+.login-brand .big{font-size:26px;font-weight:800;line-height:1.3;margin-top:24px}
+.login-form{width:420px;display:flex;align-items:center;justify-content:center;padding:32px}
+.fld label{font-size:11px;color:var(--ink-2);display:block;margin-bottom:5px;font-weight:600}
+.fld input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:13px}
+
+@media (max-width:760px){
+  .sidebar{display:none}
+  .kpi-row,.grid-2,.meta-grid{grid-template-columns:1fr 1fr}
+  .login-brand{display:none}
+  .a-row{grid-template-columns:1fr}
+}
+@media print{body{padding:0;background:#fff}.page{box-shadow:none;border:1px solid #999;break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<!-- ============ 1. LOGIN ============ -->
+<div class="page">
+  <div class="page-head"><span>1. Login — Split Layout + Password Recovery</span><span class="tag">P0 FIXED</span></div>
+  <div class="page-body login-wrap">
+    <div class="login-brand">
+      <div style="font-size:20px;font-weight:800"><span style="color:#ff6b70">Arabtec</span> Recruitment Hub</div>
+      <div>
+        <div class="big">Hire the right people.<br>Build what lasts.</div>
+        <p style="font-size:12px;opacity:.65;margin-top:12px;line-height:1.7">End-to-end recruitment tracking for construction hiring — requests, pipelines, interviews and offers in one place.</p>
+      </div>
+      <div style="font-size:10px;opacity:.4">© 2026 Arabtec Construction · Internal system</div>
+    </div>
+    <div class="login-form">
+      <div style="width:100%;max-width:320px">
+        <h2 style="font-size:18px">Sign in</h2>
+        <p class="sub">Use your Arabtec corporate account</p>
+        <div class="fld"><label>Work Email</label><input value="karim.adel@arabtec.com" readonly></div>
+        <div class="fld"><label>Password</label><input type="password" value="password" readonly></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;font-size:11.5px">
+          <label style="display:flex;gap:6px;align-items:center;color:var(--ink-2)"><input type="checkbox" checked style="accent-color:var(--red)"> Remember me</label>
+          <span style="color:var(--red);font-weight:700">Forgot password?</span>
+        </div>
+        <div class="btn btn-red" style="width:100%;justify-content:center">Sign in →</div>
+        <p style="font-size:10px;color:var(--muted);margin-top:14px;text-align:center">🔒 Protected by rate limiting · 20 attempts / 15 min</p>
+      </div>
+    </div>
+  </div>
+  <div class="notes"><strong>Audit coverage:</strong>
+    <span class="fix">✔ Forgot Password link added</span> → routes to reset-request screen (email token flow; backend placeholder already exists — wire it up).
+    <span class="fix">✔ Dynamic branding preserved</span> — left panel colors/logo pull from GET /api/settings/branding.
+    <span class="fix">✔ Rate limiting surfaced to user</span> as trust signal.
+  </div>
+</div>
+
+<!-- ============ 2. DASHBOARD ============ -->
+<div class="page">
+  <div class="page-head"><span>2. Dashboard — Charts + My Tasks + Notifications</span><span class="tag">P0 FIXED</span></div>
+  <div class="page-body">
+    <div class="topbar">
+      <span class="brand"><em>Arabtec</em> Hub</span>
+      <div class="gsearch">🔍 Search candidates, requests, offers… &nbsp;⌘K</div>
+      <div class="spacer"></div>
+      <div class="icon-btn">🔔<span class="dot"></span></div>
+      <div class="avatar">KA</div>
+    </div>
+    <div class="notif-panel">
+      <div class="nh">Notifications <span style="color:var(--red);font-size:10px">Mark all read</span></div>
+      <div class="notif unread"><div class="t-av" style="background:var(--red)">NF</div><div><strong>Nadia Fouad</strong> mentioned you on REQ-2026-00001<div class="nt">12 min ago</div></div></div>
+      <div class="notif unread"><div class="t-av" style="background:var(--info)">⏰</div><div>Interview with <strong>Ahmed Hassan</strong> starts in 45 min<div class="nt">Today, 11:00 AM</div></div></div>
+      <div class="notif"><div class="t-av" style="background:var(--ok)">✓</div><div>Offer OFF-00001 was <strong>sent</strong> to Ahmed Hassan<div class="nt">Yesterday</div></div></div>
+    </div>
+    <div class="shell">
+      <div class="sidebar">
+        <div class="nav-sec">Workspace</div>
+        <div class="nav active">📊 Dashboard</div>
+        <div class="nav">🎫 Hiring Requests <span class="cnt">12</span></div>
+        <div class="nav">👥 Talent Pool</div>
+        <div class="nav">🗓 Interviews <span class="cnt">3</span></div>
+        <div class="nav">📄 Offers <span class="cnt">2</span></div>
+        <div class="nav-sec">Admin</div>
+        <div class="nav">⚙️ Settings</div>
+        <div class="nav">🛡 Audit Log</div>
+      </div>
+      <div class="main">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px">
+          <div><div style="font-size:12px;color:var(--muted)">Sunday, Jul 20 · Recruiter view</div><h1>Good morning, Karim 👋</h1></div>
+          <span class="btn btn-red">+ New Hiring Request</span>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi" style="--kc:var(--red)"><div class="val">12</div><div class="lbl">Open Requests</div><div class="trend" style="color:var(--ok)">▲ 2 this week</div></div>
+          <div class="kpi" style="--kc:var(--ink-2)"><div class="val">34</div><div class="lbl">Active Candidates</div><div class="trend" style="color:var(--ok)">▲ 5 this week</div></div>
+          <div class="kpi" style="--kc:var(--info)"><div class="val">3</div><div class="lbl">Interviews Today</div><div class="trend" style="color:var(--muted)">Next: 11:00 AM</div></div>
+          <div class="kpi" style="--kc:var(--ok)"><div class="val">2</div><div class="lbl">Pending Offers</div><div class="trend" style="color:var(--warn)">1 expiring in 3 days</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <h2 style="margin-bottom:10px">Hiring Funnel · All active requests</h2>
+            <div class="funnel-row"><span class="fl">Sourced</span><div class="fb" style="width:100%"></div><span class="fn">34</span></div>
+            <div class="funnel-row"><span class="fl">Screening</span><div class="fb" style="width:64%"></div><span class="fn">22</span></div>
+            <div class="funnel-row"><span class="fl">HR Interview</span><div class="fb" style="width:38%"></div><span class="fn">13</span></div>
+            <div class="funnel-row"><span class="fl">Technical</span><div class="fb" style="width:21%"></div><span class="fn">7</span></div>
+            <div class="funnel-row"><span class="fl">Offer</span><div class="fb" style="width:9%"></div><span class="fn">3</span></div>
+            <div class="funnel-row"><span class="fl">Hired</span><div class="fb" style="width:6%;background:var(--ok)"></div><span class="fn">2</span></div>
+          </div>
+          <div class="card">
+            <h2 style="margin-bottom:6px">My Tasks <span class="badge b-cr" style="margin-left:6px">4 due</span></h2>
+            <div class="task"><div class="tk-ic" style="background:var(--crit-bg)">⚠️</div><div><strong>Submit HR assessment</strong> — Ahmed Hassan<div style="font-size:10px;color:var(--crit)">Overdue 1 day</div></div></div>
+            <div class="task"><div class="tk-ic" style="background:var(--info-bg)">🗓</div><div><strong>Interview at 11:00</strong> — Ahmed Hassan (HR)<div style="font-size:10px;color:var(--muted)">Today</div></div></div>
+            <div class="task"><div class="tk-ic" style="background:var(--warn-bg)">📄</div><div><strong>Send offer</strong> — Mohamed Ibrahim (draft)<div style="font-size:10px;color:var(--muted)">Due tomorrow</div></div></div>
+            <div class="task"><div class="tk-ic" style="background:var(--ok-bg)">👤</div><div><strong>Review 3 new CVs</strong> — cv_inbox scan<div style="font-size:10px;color:var(--muted)">This week</div></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2 style="margin-bottom:10px">Recruiter Load</h2>
+          <div class="hbar"><span class="hl">Karim Adel</span><div class="hb" style="width:70%;background:var(--red)"></div><span class="hn">14 candidates</span></div>
+          <div class="hbar"><span class="hl">Sara Naguib</span><div class="hb" style="width:50%"></div><span class="hn">10</span></div>
+          <div class="hbar"><span class="hl">Omar Farid</span><div class="hb" style="width:35%"></div><span class="hn">7</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="notes"><strong>Audit coverage:</strong>
+    <span class="fix">✔ Funnel + Recruiter Load charts now rendered</span> (data already served by GET /api/dashboard — pure CSS bars, no chart library needed for Phase 1).
+    <span class="fix">✔ Role-scoped "My Tasks" widget surfaced</span> with due/overdue urgency.
+    <span class="fix">✔ Notification bell + panel added</span> (interview reminders, offer events, mentions).
+    <span class="fix">✔ Global search (⌘K)</span> — one search across candidates/requests/offers.
+  </div>
+</div>
+
+<!-- ============ 3. HIRING REQUESTS ============ -->
+<div class="page">
+  <div class="page-head"><span>3. Hiring Requests — Filters, View Toggle & Aging</span><span class="tag">P1 FIXED</span></div>
+  <div class="page-body"><div class="shell">
+    <div class="sidebar">
+      <div class="nav-sec">Workspace</div>
+      <div class="nav">📊 Dashboard</div>
+      <div class="nav active">🎫 Hiring Requests <span class="cnt">12</span></div>
+      <div class="nav">👥 Talent Pool</div>
+      <div class="nav">🗓 Interviews</div>
+      <div class="nav">📄 Offers</div>
+    </div>
+    <div class="main">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div><h1>Hiring Requests</h1><div class="sub" style="margin-bottom:0">Track every vacancy as a ticket</div></div>
+        <span class="btn btn-red">+ New Hiring Request</span>
+      </div>
+      <div class="toolbar">
+        <input placeholder="🔍 Search requests…">
+        <span class="chip on">All (12)</span><span class="chip">Mine (5)</span><span class="chip">Waiting HM (2)</span><span class="chip">Critical (1)</span>
+        <div class="view-toggle"><span class="on">☰ Table</span><span>▦ Cards</span><span>≡ Compact</span></div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <table>
+          <thead><tr><th>Ticket</th><th>Position</th><th>Dept / Location</th><th>Status</th><th>Priority</th><th>Candidates</th><th>Age</th><th></th></tr></thead>
+          <tbody>
+            <tr class="hover-row"><td><strong>REQ-2026-00001</strong></td><td>Senior Site Engineer</td><td>Engineering · New Cairo</td><td><span class="badge b-hi">In Progress</span></td><td><span class="badge b-hi">High</span></td><td><strong>4</strong> active</td><td><span style="color:var(--ok);font-weight:700">6 d</span></td><td>›</td></tr>
+            <tr><td><strong>REQ-2026-00002</strong></td><td>Technical Office Engineer</td><td>Technical Office · Aliva MV</td><td><span class="badge b-me">Screening</span></td><td><span class="badge b-me">Medium</span></td><td><strong>2</strong> active</td><td><span style="color:var(--warn);font-weight:700">14 d</span></td><td>›</td></tr>
+            <tr><td><strong>REQ-2026-00003</strong></td><td>Document Controller</td><td>Admin · Head Office</td><td><span class="badge b-cr">Waiting HM</span></td><td><span class="badge b-cr">Critical</span></td><td><strong>0</strong> ⚠</td><td><span style="color:var(--crit);font-weight:700">21 d 🔥</span></td><td>›</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><strong>Audit coverage:</strong>
+    <span class="fix">✔ View toggle (Table/Cards/Compact) now visible</span> — was built but hidden.
+    <span class="fix">✔ Quick-filter chips</span> replace a single dropdown (All / Mine / Waiting HM / Critical).
+    <span class="fix">✔ Ticket "Age" column with SLA color coding</span> — surfaces stale requests instantly (green &lt;7d, amber &lt;15d, red 15d+).
+    <span class="defer">Bulk actions intentionally kept inside pipeline only — correct scoping for Phase 1.</span>
+  </div>
+</div>
+
+<!-- ============ 4. TICKET DETAIL ============ -->
+<div class="page">
+  <div class="page-head"><span>4. Request Detail — SLA, Owner Actions & Tabs</span><span class="tag">P1 FIXED</span></div>
+  <div class="page-body"><div class="shell">
+    <div class="sidebar">
+      <div class="nav-sec">Workspace</div>
+      <div class="nav">📊 Dashboard</div>
+      <div class="nav active">🎫 Hiring Requests</div>
+      <div class="nav">👥 Talent Pool</div>
+      <div class="nav">🗓 Interviews</div>
+      <div class="nav">📄 Offers</div>
+    </div>
+    <div class="main">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Hiring Requests › <strong style="color:var(--ink)">REQ-2026-00001</strong></div>
+      <div class="card ticket-head">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div class="eyebrow">Hiring Request Ticket</div>
+            <h2 style="font-size:17px;margin-top:4px">Senior Site Engineer — New Cairo</h2>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">REQ-2026-00001 · Opened Jul 14 by Nadia Fouad</div>
+          </div>
+          <span class="sla" style="background:var(--ok-bg);color:var(--ok)">⏱ 6 days open · on track</span>
+        </div>
+        <div class="meta-grid">
+          <div><span>Status</span><span class="badge b-hi">In Progress</span></div>
+          <div><span>Priority</span><span class="badge b-hi">High</span></div>
+          <div><span>Hiring Manager</span>Nadia Fouad</div>
+          <div><span>Recruiter</span>Karim Adel ✎</div>
+          <div><span>Target Start</span>Sep 1, 2026</div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <span class="btn btn-red">+ Add Candidate</span>
+          <span class="btn btn-outline">Change Status ▾</span>
+          <span class="btn btn-outline">Assign Recruiter</span>
+          <span class="btn btn-outline">Edit</span>
+          <span class="btn btn-ghost" style="margin-left:auto;color:var(--crit)">Close Ticket</span>
+        </div>
+      </div>
+      <div class="tabs">
+        <span class="tab active">Pipeline <strong>(4)</strong></span><span class="tab">Conversation <strong>(4)</strong></span><span class="tab">Details</span><span class="tab">Activity</span>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><strong>Audit coverage:</strong>
+    <span class="fix">✔ "Assign Recruiter" promoted to a visible button</span> (permission-gated to HR Manager) — was buried in Change Status.
+    <span class="fix">✔ SLA / time-open indicator added</span> to ticket header.
+    <span class="fix">✔ Destructive "Close" separated</span> to right edge (ghost/red) — corporate-standard danger placement.
+    <span class="fix">✔ Tab counts</span> added for Conversation & Pipeline.
+  </div>
+</div>
+
+<!-- ============ 5. CONVERSATION ============ -->
+<div class="page">
+  <div class="page-head"><span>5. Conversation — Attachments & Mentions</span><span class="tag">P1 FIXED</span></div>
+  <div class="page-body"><div class="shell">
+    <div class="sidebar">
+      <div class="nav-sec">Workspace</div>
+      <div class="nav">📊 Dashboard</div>
+      <div class="nav active">🎫 Hiring Requests</div>
+      <div class="nav">👥 Talent Pool</div>
+      <div class="nav">🗓 Interviews</div>
+      <div class="nav">📄 Offers</div>
+    </div>
+    <div class="main">
+      <div class="tabs" style="margin:0 0 16px"><span class="tab">Pipeline</span><span class="tab active">Conversation</span><span class="tab">Details</span><span class="tab">Activity</span></div>
+      <div class="card">
+        <div class="thread-msg">
+          <div class="t-av" style="background:var(--red)">KA</div>
+          <div><strong>Karim Adel</strong> <span style="color:var(--muted);font-size:10.5px">· Recruiter · 10:30 AM</span>
+            <div class="body">We need someone with 7+ years in construction site management. Candidate must be willing to relocate to New Cairo. <span class="mention">@Nadia Fouad</span> please confirm certification requirements.</div>
+          </div>
+        </div>
+        <div class="thread-msg">
+          <div class="t-av" style="background:var(--info)">NF</div>
+          <div><strong>Nadia Fouad</strong> <span style="color:var(--muted);font-size:10.5px">· Hiring Manager · 2:15 PM</span>
+            <div class="body">Agreed — PMP certification is required. Attaching the updated JD.</div>
+            <div class="attach">📎 <strong>JD_Senior_Site_Engineer_v2.pdf</strong> <span style="color:var(--muted)">· 240 KB</span></div>
+          </div>
+        </div>
+        <div class="sysmsg"><span>⚙ Ahmed Hassan moved: Screening → HR Interview · 3:00 PM</span></div>
+        <div class="thread-msg">
+          <div class="t-av" style="background:var(--ok)">MS</div>
+          <div><strong>Mona Sami</strong> <span style="color:var(--muted);font-size:10.5px">· Interviewer · 4:00 PM</span>
+            <div class="body">HR interview completed — strong on communication and cultural fit. Recommend technical round. Full scorecard attached to his profile.</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <div style="flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+          <div style="color:var(--muted);font-size:12px">Write an update… use @ to mention teammates</div>
+          <div style="display:flex;gap:10px;margin-top:8px;font-size:13px;color:var(--muted)">📎 &nbsp; @ &nbsp; 😊</div>
+        </div>
+        <span class="btn btn-red">Send ➤</span>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><strong>Audit coverage:</strong>
+    <span class="fix">✔ File attachments now rendered in thread</span> — backend already supported post type "file"; UI chip added.
+    <span class="fix">✔ @mentions designed</span> — Phase 1 = highlight + notification bell entry (no email fan-out yet, keeping it simple).
+    <span class="fix">✔ System events restyled</span> as centered chips — clearly separated from human messages.
+  </div>
+</div>
+
+<!-- ============ 6. KANBAN ============ -->
+<div class="page">
+  <div class="page-head"><span>6. Pipeline — Bulk Select, Stage Aging & Color-Coded Columns</span><span class="tag">P1 FIXED</span></div>
+  <div class="page-body"><div class="shell">
+    <div class="sidebar">
+      <div class="nav-sec">Workspace</div>
+      <div class="nav">📊 Dashboard</div>
+      <div class="nav active">🎫 Hiring Requests</div>
+      <div class="nav">👥 Talent Pool</div>
+      <div class="nav">🗓 Interviews</div>
+      <div class="nav">📄 Offers</div>
+    </div>
+    <div class="main">
+      <div class="bulkbar">✔ <strong>2 selected</strong><span class="btn btn-sm">Move to stage ▾</span><span class="btn btn-sm" style="background:transparent;border:1px solid rgba(255,255,255,.3)">Disqualify</span><span style="margin-left:auto;opacity:.6;font-size:11px">Esc to clear</span></div>
+      <div class="pipeline">
+        <div class="p-col" style="--pc:#9aa2ad"><h4>Sourced <span>1</span></h4>
+          <div class="p-card selected"><div class="top"><input type="checkbox" checked><div><div class="name">Ahmed Hassan</div><div class="detail">Orascom · Cairo · 8y exp</div></div></div><div class="age" style="color:var(--ok)">● 2 days in stage</div><div class="actions"><span>View</span><span>Move ▸</span><span style="color:var(--crit)">✕</span></div></div>
+        </div>
+        <div class="p-col" style="--pc:#c9a227"><h4>Screening <span>1</span></h4>
+          <div class="p-card selected"><div class="top"><input type="checkbox" checked><div><div class="name">Mohamed Ibrahim</div><div class="detail">Hassan Allam · Giza · 10y</div></div></div><div class="age" style="color:var(--crit)">● 9 days in stage ⚠</div><div class="actions"><span>View</span><span>Move ▸</span><span style="color:var(--crit)">✕</span></div></div>
+        </div>
+        <div class="p-col" style="--pc:var(--info)"><h4>HR Interview <span>1</span></h4>
+          <div class="p-card"><div class="top"><input type="checkbox"><div><div class="name">Abdallah Montaser</div><div class="detail">Alexandria · 5y exp</div></div></div><div class="age" style="color:var(--ok)">● 1 day in stage</div><div class="actions"><span>View</span><span>Move ▸</span><span style="color:var(--crit)">✕</span></div></div>
+        </div>
+        <div class="p-col" style="--pc:#7c3aed"><h4>Technical <span
