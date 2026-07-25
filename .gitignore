@@ -22,3 +22,6 @@ Thumbs.db
 backend/dbg*.mjs
 backend/_*.mjs
 backend/launch_check.mjs
+
+# Local static ATS review mockup; reference copy is stored under docs/ui-review/
+frontend/public/ats-full-review.html
