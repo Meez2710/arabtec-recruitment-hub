@@ -280,26 +280,35 @@ function Login({ branding, onLogin }) {
   const name = branding?.company_name || 'Arabtec Recruitment Hub';
   return (
     <div className="login-wrap">
+      {/* Left visual panel — artwork comes from /bgats.png via .login-brand in styles.css.
+          The wordmark is intentionally NOT repeated here (it already appears in the image);
+          a small platform label is used instead. */}
       <div className="login-brand">
-        <div style={{ marginBottom: 26 }}><Logo size={72} withText /></div>
-        <h1>Recruitment Hub</h1>
+        <span className="login-brand-label">ATS Platform</span>
+        <h1>Hiring, smarter than ever.</h1>
         <p>End-to-end recruitment tracking. Create requests, manage candidates, and move them through your hiring pipeline.</p>
       </div>
       <div className="login-form-side">
         <form className="login-card" onSubmit={submit}>
           <h2>Sign in</h2>
-          <p className="sub">Use your Arabtec corporate account.</p>
+          <p className="sub">Use your {name} account.</p>
           {err && <div className="error-banner">{err}</div>}
           {forgot && <div className="success-banner">{forgot}</div>}
-          <div className="field"><label>Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@arabtec.com" autoFocus required /></div>
+          <div className="field"><label>Work Email</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@arabtec.com" autoComplete="username" autoFocus required /></div>
           <div className="field"><label>Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required /></div>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required /></div>
           <div className="row-between" style={{ marginBottom: 20 }}>
             <label className="checkbox"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember me</label>
             <a href="#" onClick={(e) => { e.preventDefault(); doForgot(); }}>Forgot password?</a>
           </div>
-          <button className="btn btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Login'}</button>
+          <button className="btn btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+          <p className="login-note">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7z" />
+            </svg>
+            <span>Secure sign-in. Repeated failed attempts are rate-limited and the account is temporarily locked.</span>
+          </p>
         </form>
       </div>
     </div>
