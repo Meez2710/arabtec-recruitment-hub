@@ -183,6 +183,39 @@ const useApp = () => useContext(AppCtx);
 
 function can(user, perm) { return user?.permissions?.includes(perm); }
 
+/* ----------------------------- Display formatters -----------------------------
+   DISPLAY ONLY. These never touch stored values, API payloads, search params or
+   filters — the backend remains the source of truth for ticket_no and for the
+   separate project / site / location fields. */
+
+// Shorten a request code for display: REQ-2026-00001 → RQ-26-001
+// Also handles REQ-2026-0001 and REQ-2026-001 (all → RQ-26-001).
+// Any string that does not match PREFIX-YYYY-DIGITS is returned unchanged.
+function shortReqCode(code) {
+  if (!code || typeof code !== 'string') return code;
+  const m = code.trim().match(/^[A-Za-z]+-(\d{4})-(\d+)$/);
+  if (!m) return code;                                  // unknown format → leave as-is
+  const yy = m[1].slice(-2);                            // 2026 → 26
+  const seq = String(parseInt(m[2], 10));               // 00001 → "1"
+  return `RQ-${yy}-${seq.padStart(3, '0')}`;            // → RQ-26-001
+}
+
+// One compact place label for a request: Project · Site · Location.
+// Duplicates are removed and empty parts skipped; returns '—' when nothing is set.
+function placeLabel(r) {
+  if (!r) return '—';
+  const parts = [r.project?.name, r.site?.name, r.location]
+    .map((p) => (typeof p === 'string' ? p.trim() : p))
+    .filter(Boolean);
+  const seen = new Set();
+  const uniq = parts.filter((p) => {
+    const k = String(p).toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+  return uniq.length ? uniq.join(' · ') : '—';
+}
+
 /* ----------------------------- Toast ----------------------------- */
 const ToastCtx = createContext(() => {});
 function ToastProvider({ children }) {
@@ -1615,13 +1648,13 @@ function RequestTicketCard({ r, onOpen }) {
       <div style={{ height: 4, background: 'var(--ticket-accent)' }} />
       <div className="card-pad" style={{ flex: 1 }}>
         <div className="row-between" style={{ marginBottom: 6 }}>
-          <span style={{ fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, color: 'var(--ticket-accent)', fontWeight: 700 }}>{r.ticketNo}</span>
+          <span style={{ fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, color: 'var(--ticket-accent)', fontWeight: 700 }} title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span>
           <PriorityBadge p={r.priority} />
         </div>
         <div style={{ fontSize: 15.5, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{r.title}</div>
         <div className="muted" style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
           <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Dept</span>{r.department?.name || '—'}</span>
-          <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Location</span>{r.location || r.site?.name || '—'}</span>
+          <span><span style={{ display: 'inline-block', minWidth: 78, color: 'var(--muted)' }}>Project / Site</span>{placeLabel(r)}</span>
         </div>
         {r.pipeline && <div style={{ marginBottom: 12 }}><FunnelMini pipeline={r.pipeline} /></div>}
       </div>
@@ -1677,12 +1710,12 @@ function RequestsPage({ user }) {
         <div className="card"><Empty icon="🎫" text="No recruitment requests yet." /></div>
       ) : view === 'table' ? (
         <div className="card"><table>
-          <thead><tr><th>Ticket</th><th>Position</th><th>Department</th><th>Location</th><th>Priority</th></tr></thead>
+          <thead><tr><th>Request</th><th>Position</th><th>Project / Site</th><th>Priority</th></tr></thead>
           <tbody>{data.requests.map((r) => (
             <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(r.id)}>
-              <td><strong>{r.ticketNo}</strong></td><td>{r.title}</td>
-              <td className="muted">{r.department?.name || '—'}</td>
-              <td className="muted">{r.location || r.site?.name || '—'}</td>
+              <td><strong title={r.ticketNo}>{shortReqCode(r.ticketNo)}</strong></td>
+              <td>{r.title}<div className="muted" style={{ fontSize: 12 }}>{r.department?.name || '—'}</div></td>
+              <td className="muted">{placeLabel(r)}</td>
               <td><PriorityBadge p={r.priority} /></td>
             </tr>
           ))}</tbody>
@@ -1706,6 +1739,9 @@ function RequestForm({ user, onClose, onSaved }) {
   const customDefs = useCustomFields('request');
   const [customVals, setCustomVals] = useState({});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  // UI-only: Site + Location are optional for the API, so they start collapsed to
+  // reduce form density. Their values are still sent unchanged in the payload.
+  const [moreLoc, setMoreLoc] = useState(false);
   useEffect(() => { api.get('/requests/meta/form').then(setMeta); }, []);
   const sites = meta ? meta.sites.filter((s) => !f.projectId || s.projectId === Number(f.projectId)) : [];
 
@@ -1717,7 +1753,7 @@ function RequestForm({ user, onClose, onSaved }) {
       const r = await api.post('/requests', body);
       // Optional attachment upload (real file) after the request exists.
       if (file) { try { await api.upload(`/requests/${r.request.id}/attachment`, file); } catch (e) { toast('Request created, but attachment failed: ' + e.message, 'error'); } }
-      toast('Request created: ' + r.request.ticketNo);
+      toast('Request created: ' + shortReqCode(r.request.ticketNo));
       onSaved(r.request.id);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
@@ -1730,9 +1766,17 @@ function RequestForm({ user, onClose, onSaved }) {
         <div className="field full"><label>Position *</label><input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Site Engineer" /></div>
         <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
         <div className="field"><label>Department *</label><select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}><option value="">— Select —</option>{meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
-        <div className="field"><label>Project *</label><select value={f.projectId} onChange={(e) => set('projectId', e.target.value)}><option value="">— Select —</option>{meta.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-        <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-        <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>
+        {/* Project stays the single required control (the API validates projectId).
+            Site + Location are optional, so they live under "More location details"
+            to keep the form calm. Internal state and payload are unchanged. */}
+        <div className="field"><label>Project / Site *</label>
+          <select value={f.projectId} onChange={(e) => set('projectId', e.target.value)}><option value="">— Select —</option>{meta.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          <button type="button" className="linklike" style={{ marginTop: 6 }} onClick={() => setMoreLoc((v) => !v)}>
+            {moreLoc ? '▲ Hide location details' : '▼ More location details'}
+          </button>
+        </div>
+        {moreLoc && <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
+        {moreLoc && <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>}
         <div className="field"><label>Priority</label><select value={f.priority} onChange={(e) => set('priority', e.target.value)}>{Object.keys(PRIORITY).map((p) => <option key={p}>{p}</option>)}</select></div>
         <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>
         <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>
@@ -1791,7 +1835,7 @@ function RequestDetail({ id, user, btns, onBack }) {
         <button className="row-between" onClick={() => setDetailsOpen((o) => !o)}
           style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '12px 16px', textAlign: 'left' }}>
           <strong style={{ fontSize: 13.5 }}>Request details</strong>
-          <span className="muted" style={{ fontSize: 12 }}>{detailsOpen ? '▲ Hide' : '▼ Show'} · {req.department?.name || '—'} · {req.location || req.site?.name || '—'}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{detailsOpen ? '▲ Hide' : '▼ Show'} · {req.department?.name || '—'} · {placeLabel(req)}</span>
         </button>
         {detailsOpen && <div style={{ padding: '0 16px 16px' }}><OverviewTab req={req} onReload={load} btns={btns} embedded /></div>}
       </div>
@@ -2119,7 +2163,7 @@ function TicketHeader({ req, children }) {
           <div className="th-eyebrow">Recruitment Request</div>
           <h1 className="th-title">{req.title}</h1>
           <div className="th-meta">
-            <span className="th-ticketno">{req.ticketNo}</span>
+            <span className="th-ticketno" title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span>
             <span className="th-sep">·</span>
             <span>{req.department?.name || '—'}</span>
             {req.priority && <><span className="th-sep">·</span><span style={{ textTransform: 'capitalize' }}>{req.priority} priority</span></>}
@@ -2192,11 +2236,10 @@ function OverviewTab({ req, onReload, btns, embedded }) {
       <div className={embedded ? '' : 'card card-pad'}>
         {!embedded && <div className="section-title" style={{ marginTop: 0 }}>Ticket Details</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
-          <FieldChip label="Req ID">{req.ticketNo}</FieldChip>
+          <FieldChip label="Req ID"><span title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span></FieldChip>
           <FieldChip label="Position">{req.title}</FieldChip>
           <FieldChip label="Department">{req.department?.name}</FieldChip>
-          <FieldChip label="Project">{req.project?.name}</FieldChip>
-          <FieldChip label="Location">{req.location || req.site?.name}</FieldChip>
+          <FieldChip label="Project / Site">{placeLabel(req)}</FieldChip>
           <FieldChip label="Hiring Manager">{req.hiringManager?.name || '—'}</FieldChip>
           <FieldChip label="Priority"><span style={{ textTransform: 'capitalize' }}>{req.priority || '—'}</span></FieldChip>
           <FieldChip label="Recruiter">{req.owner?.name || 'Unassigned'}</FieldChip>
@@ -3159,7 +3202,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
           {(c.applications || []).length === 0 ? <Empty icon="🎫" text="Not linked to any request yet." /> : (
             <table><thead><tr><th>Application</th><th>Ticket</th><th>Position</th><th>Project</th><th>Status</th><th>Recruiter</th><th>Last Activity</th></tr></thead>
               <tbody>{c.applications.map((a) => (
-                <tr key={a.id}><td><strong>{a.applicationNo}</strong></td><td>{a.ticketNo}</td><td>{a.position}</td><td>{a.project?.name || '—'}</td>
+                <tr key={a.id}><td><strong>{a.applicationNo}</strong></td><td title={a.ticketNo}>{shortReqCode(a.ticketNo)}</td><td>{a.position}</td><td>{a.project?.name || '—'}</td>
                   <td><AppStatusBadge status={a.status} /></td><td className="muted">{a.recruiter?.name || '—'}</td><td className="muted">{fmtDateShort(a.lastActivityAt)}</td></tr>
               ))}</tbody></table>
           )}
@@ -3171,7 +3214,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
           {(c.interviews || []).length === 0 ? <Empty icon="📅" text="No interviews for this candidate (or none assigned to you)." /> : (
             <table><thead><tr><th>Interview</th><th>Request</th><th>Type / Mode</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Outcome</th></tr></thead>
               <tbody>{c.interviews.map((iv) => (
-                <tr key={iv.id}><td><strong>{iv.interviewNo}</strong></td><td>{iv.ticketNo}</td><td>{iv.interviewType} / {iv.mode}</td><td>{iv.round}</td>
+                <tr key={iv.id}><td><strong>{iv.interviewNo}</strong></td><td title={iv.ticketNo}>{shortReqCode(iv.ticketNo)}</td><td>{iv.interviewType} / {iv.mode}</td><td>{iv.round}</td>
                   <td className="muted">{fmtDate(iv.scheduledAt)}</td><td><IvStatusBadge status={iv.status} /></td>
                   <td>{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label}</Badge> : '—'}</td></tr>
               ))}</tbody></table>
@@ -3184,7 +3227,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
           {(c.offers || []).length === 0 ? <Empty icon="📑" text="No offers for this candidate." /> : (
             <table><thead><tr><th>Offer</th><th>Request</th><th>Position</th><th>Salary</th><th>Status</th><th>Joining</th></tr></thead>
               <tbody>{c.offers.map((o) => (
-                <tr key={o.id}><td><strong>{o.offerNo}</strong></td><td>{o.ticketNo}</td><td>{o.positionTitle}</td>
+                <tr key={o.id}><td><strong>{o.offerNo}</strong></td><td title={o.ticketNo}>{shortReqCode(o.ticketNo)}</td><td>{o.positionTitle}</td>
                   <td><SalaryCell visible={o.salaryVisible} value={o.salaryOffered} currency={o.currency} /></td>
                   <td><OfferStatusBadge status={o.status} /></td><td className="muted">{fmtDateShort(o.joiningDate)}</td></tr>
               ))}</tbody></table>
@@ -3362,7 +3405,7 @@ function InterviewsPage({ user }) {
               <tr key={iv.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(iv.id)}>
                 <td><strong>{iv.interviewNo}</strong><div className="muted">R{iv.round}</div></td>
                 <td>{iv.candidate?.fullName}<div className="muted">{iv.candidate?.currentPosition || ''}</div></td>
-                <td>{iv.request?.ticketNo}<div className="muted">{iv.request?.title}</div></td>
+                <td title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}<div className="muted">{iv.request?.title}</div></td>
                 <td>{iv.interviewType}<div className="muted">{iv.mode}</div></td>
                 <td className="muted">{fmtDate(iv.scheduledAt)}</td>
                 <td><IvStatusBadge status={iv.status} /></td>
@@ -3413,7 +3456,7 @@ function InterviewDetail({ id, user, onBack }) {
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Links</div>
           <Info label="Candidate">{iv.candidate?.fullName} ({iv.candidate?.candidateNo})</Info>
-          <Info label="Request">{iv.request?.ticketNo} — {iv.request?.title}</Info>
+          <Info label="Request"><span title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span> — {iv.request?.title}</Info>
           <Info label="Application">{iv.application?.applicationNo} · <strong>pipeline:</strong> {iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : '—'}</Info>
           <p className="muted">↑ The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
           <div className="section-title">Details</div>
@@ -3553,7 +3596,7 @@ function OffersPage({ user }) {
               <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(o.id)}>
                 <td><strong>{o.offerNo}</strong></td>
                 <td>{o.candidate?.fullName}</td>
-                <td>{o.request?.ticketNo}</td>
+                <td title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</td>
                 <td>{o.positionTitle}</td>
                 <td>{o.project?.name || '—'}</td>
                 <td><SalaryCell visible={o.salaryVisible} value={o.salaryOffered} currency={o.currency} /></td>
@@ -3589,7 +3632,7 @@ function OfferDetail({ id, user, onBack }) {
       <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Offers</a></div>
       <div className="page-head">
         <div><h1 className="page-title">Offer — {o.candidate?.fullName}</h1>
-          <p className="page-sub"><strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · {o.request?.ticketNo}</p></div>
+          <p className="page-sub"><strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · <span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></p></div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 520 }}>
           {btns.send_offer?.visible && ['draft','approved'].includes(s) && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
           {btns.accept_offer?.visible && s === 'sent' && <button className="btn" onClick={() => act('result', { result: 'accepted' }, 'Marked accepted')}>Mark Accepted</button>}
@@ -3603,7 +3646,7 @@ function OfferDetail({ id, user, onBack }) {
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Offer</div>
           <Info label="Candidate">{o.candidate?.fullName} ({o.candidate?.candidateNo})</Info>
-          <Info label="Request">{o.request?.ticketNo} — {o.request?.title}</Info>
+          <Info label="Request"><span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span> — {o.request?.title}</Info>
           <Info label="Application">{o.application?.applicationNo} · <strong>pipeline:</strong> {o.application?.status ? <AppStatusBadge status={o.application.status} /> : '—'}</Info>
           <Info label="Position">{o.positionTitle}</Info>
           <Info label="Project">{o.project?.name}</Info>
