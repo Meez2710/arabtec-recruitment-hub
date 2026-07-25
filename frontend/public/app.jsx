@@ -2397,6 +2397,9 @@ function RequestPipeline({ request, user, btns }) {
 
   const canMove = btns.move_stage?.visible;
   const canLink = btns.link_candidate?.visible;
+  // Import CVs mirrors Add Candidate visibility, and is additionally hidden for
+  // terminal requests (the backend refuses to link to those anyway).
+  const canImport = canLink && !['closed', 'cancelled', 'rejected', 'filled'].includes(request.status);
   const canBulk = user.permissions.includes('application.bulk_action');
 
   async function move(appId, status, reason) {
@@ -2416,6 +2419,7 @@ function RequestPipeline({ request, user, btns }) {
     } catch (e) { toast(e.message, 'error'); }
   }
   function toggleSel(id) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
+  const [importOpen, setImportOpen] = useState(false);
 
   if (!apps) return <Skeleton rows={6} />;
 
@@ -2444,7 +2448,8 @@ function RequestPipeline({ request, user, btns }) {
           <option value="last">Sort: Last updated</option><option value="name">Name</option><option value="match">Match score</option></select>
         <div className="spacer" />
         {apps && <span className="muted" style={{ fontSize: 12 }}>{visibleApps.length}/{apps.length}</span>}
-        {canLink && <button className="btn btn-sm" onClick={() => setLinkOpen(true)}>+ {btns.link_candidate.label}</button>}
+        {canImport && <button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button>}
+        {canLink && <button className="btn btn-sm" onClick={() => setLinkOpen(true)}>+ {btns.link_candidate.label === 'Link to Request' ? 'Add Candidate' : btns.link_candidate.label}</button>}
       </div>
 
       {canBulk && selected.size > 0 && (
@@ -2457,7 +2462,8 @@ function RequestPipeline({ request, user, btns }) {
         </div>
       )}
 
-      {apps.length === 0 ? <div className="card"><Empty icon="🧑‍💼" text="No candidates linked yet. Use 'Link to Request' to add candidates." /></div>
+      {apps.length === 0 ? <div className="card"><Empty icon="🧑‍💼" text="No candidates linked yet. Use 'Add Candidate' to add candidates." />
+          {canImport && <div style={{ textAlign: 'center', paddingBottom: 18 }}><button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button></div>}</div>
         : visibleApps.length === 0 ? <div className="card"><Empty icon="🔍" text="No candidates match the current filters." /></div>
         : view === 'kanban' ? (
           <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12 }}>
@@ -2507,6 +2513,7 @@ function RequestPipeline({ request, user, btns }) {
       {moveModal && <Confirm title="Provide a reason" message={`Set status to "${APP_STATUS[moveModal.toStatus].label}". This is recorded in the audit trail.`} requireReason danger
         onConfirm={(reason) => { const m = moveModal; setMoveModal(null); m.bulk ? bulkMove(m.toStatus, reason) : move(m.appIds[0], m.toStatus, reason); }} onClose={() => setMoveModal(null)} />}
       {linkOpen && <LinkCandidateModal requestId={request.id} user={user} onClose={() => setLinkOpen(false)} onLinked={() => { setLinkOpen(false); load(); }} />}
+      {importOpen && <ImportCvsModal request={request} onClose={() => setImportOpen(false)} onDone={load} />}
       {scheduleApp && <ScheduleInterviewModal application={scheduleApp} onClose={() => setScheduleApp(null)} onScheduled={() => { setScheduleApp(null); load(); }} />}
       {offerApp && <CreateOfferModal application={offerApp} onClose={() => setOfferApp(null)} onCreated={() => { setOfferApp(null); load(); }} />}
     </div>
@@ -2798,6 +2805,92 @@ function AssignModal({ recruiters, onClose, onAssign }) {
 }
 
 /* ----------------------------- Link candidate to request ----------------------------- */
+/* Bulk CV import scoped to one request. FRONTEND-ONLY: it reuses the existing
+   POST /candidates/parse-cv endpoint, which already accepts a `requestId` field and
+   (when provided) creates the candidate, the application, stage history, activity
+   and audit entries, with duplicate detection. Files are sent one at a time so a
+   single bad file can never abort the batch. */
+function ImportCvsModal({ request, onClose, onDone }) {
+  const toast = useToast();
+  const [rows, setRows] = useState([]);      // [{ name, state, msg }]
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  function pick(files) {
+    setRows(Array.from(files || []).map((f) => ({ file: f, name: f.name, state: 'pending', msg: '' })));
+    setDone(false);
+  }
+
+  async function run() {
+    if (!rows.length || busy) return;
+    setBusy(true);
+    let created = 0, dup = 0, failed = 0;
+    for (let i = 0; i < rows.length; i++) {
+      setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'importing' } : x)));
+      try {
+        // requestId is what makes the backend link the candidate to THIS request.
+        const res = await api.uploadTo('/candidates/parse-cv', rows[i].file, { requestId: request.id });
+        const c = res?.candidate;
+        if (c?.duplicate) {
+          dup++;
+          setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'duplicate', msg: c.fullName ? `Existing: ${c.fullName} (${c.candidateNo})` : 'Already in talent pool' } : x)));
+        } else if (c) {
+          created++;
+          setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'created', msg: `${c.fullName || 'Candidate'} · ${c.candidateNo}${res.application ? '' : ' (not linked)'}` } : x)));
+        } else {
+          failed++;
+          setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'failed', msg: 'No text could be extracted' } : x)));
+        }
+      } catch (e) {
+        failed++;
+        setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'failed', msg: e.message || 'Import failed' } : x)));
+      }
+    }
+    setBusy(false); setDone(true);
+    toast(`Import finished — ${created} added, ${dup} duplicate, ${failed} failed`, failed && !created ? 'error' : 'success');
+    onDone();   // refresh the pipeline behind the modal; modal stays open with results
+  }
+
+  const LABEL = { pending: 'Pending', importing: 'Importing…', created: 'Created', duplicate: 'Duplicate', failed: 'Failed' };
+  const TONE = { created: 'var(--success)', duplicate: 'var(--warning)', failed: 'var(--critical)' };
+
+  return (
+    <Modal title="Import CVs to this Request" onClose={onClose} wide
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
+        <button className="btn" onClick={run} disabled={busy || !rows.length || done}>
+          {busy ? 'Importing…' : `Import ${rows.length || ''}`.trim()}
+        </button>
+      </>}>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
+        <strong>{shortReqCode(request.ticketNo)}</strong>{request.title ? ` · ${request.title}` : ''}
+      </p>
+      <div className="field">
+        <label>CV files</label>
+        <input type="file" multiple accept=".pdf,.doc,.docx,.txt" disabled={busy}
+          onChange={(e) => pick(e.target.files)} />
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          Each CV will be parsed and added to this request as a candidate.
+        </div>
+      </div>
+      {rows.length > 0 && (
+        <table className="table" style={{ marginTop: 6 }}>
+          <thead><tr><th>File</th><th style={{ width: 110 }}>Status</th><th>Details</th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ wordBreak: 'break-all' }}>{r.name}</td>
+                <td style={{ color: TONE[r.state] || 'var(--muted)', fontWeight: 600 }}>{LABEL[r.state]}</td>
+                <td className="muted">{r.msg || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Modal>
+  );
+}
+
 function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
   const toast = useToast();
   const [mode, setMode] = useState('existing'); // existing | new
