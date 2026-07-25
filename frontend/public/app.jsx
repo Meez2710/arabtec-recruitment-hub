@@ -200,6 +200,20 @@ function shortReqCode(code) {
   return `RQ-${yy}-${seq.padStart(3, '0')}`;            // → RQ-26-001
 }
 
+// Inverse of shortReqCode for SEARCH INPUT ONLY: expand a displayed short code back
+// to the stored form so the existing server-side `q` (which matches ticket_no) can
+// find it.  RQ-26-001 → REQ-2026-00001
+// Anything that is not an unambiguous short code is returned untouched, so ordinary
+// text searches ("Site Engineer") and full stored codes are unaffected.
+// Assumes the default 'REQ' prefix and 5-digit zero padding (see Requests.nextTicketNo).
+function expandReqCode(input) {
+  if (!input || typeof input !== 'string') return input;
+  const m = input.trim().match(/^rq-(\d{2}|\d{4})-(\d{1,5})$/i);
+  if (!m) return input;                                   // not a short code → unchanged
+  const yr = m[1].length === 2 ? `20${m[1]}` : m[1];      // 26 → 2026 (4-digit passes through)
+  return `REQ-${yr}-${m[2].padStart(5, '0')}`;            // → REQ-2026-00001
+}
+
 // One compact place label for a request: Project · Site · Location.
 // Duplicates are removed and empty parts skipped; returns '—' when nothing is set.
 function placeLabel(r) {
@@ -1674,7 +1688,9 @@ function RequestsPage({ user }) {
   const load = useCallback(async () => {
     setData(null);
     const params = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
+    // Only the outgoing `q` is normalized (RQ-26-001 → REQ-2026-00001) so the stored
+    // ticket_no can be matched; the text the user typed is left as-is in the input.
+    Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, k === 'q' ? expandReqCode(v) : v); });
     setData(await api.get('/requests?' + params.toString()));
   }, [filters]);
   useEffect(() => { load(); }, [load]);
