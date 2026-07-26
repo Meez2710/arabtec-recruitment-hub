@@ -103,11 +103,13 @@ function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }
   if (HAS_CUSTOM_LOGO) {
     return <img src={customLogoUrl()} alt="Logo" style={{ height: withText ? size * 1.0 : size, maxWidth: size * 3.2, objectFit: 'contain', display: 'block' }} onError={(e) => { e.target.style.display = 'none'; }} />;
   }
+  // Built-in mark = /logo-transparent.png, a transparent derivative of the approved
+  // /logo.png (the original had an opaque checkerboard background baked in). Artwork
+  // pixels are unchanged; only the background was keyed to alpha. See docs note.
+  // The `color` prop does not apply to a raster mark and is intentionally unused here.
   const mark = (
-    <svg width={size} height={size * (320 / 463)} viewBox="0 0 463 320" aria-label="Arabtec" role="img" style={{ display: 'block' }}>
-      <path fill={color} d="M150 0 L223 0 L223 118 L73 263 L73 320 L0 320 L0 205 Z" />
-      <path fill={color} d="M313 0 L240 0 L240 118 L390 263 L390 320 L463 320 L463 205 Z" />
-    </svg>
+    <img src="/logo-transparent.png" alt="Arabtec"
+      style={{ width: size, maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
   );
   if (!withText) return mark;
   return (
@@ -291,7 +293,7 @@ function Confirm({ title, message, requireReason, confirmLabel = 'Confirm', dang
     </Modal>
   );
 }
-function Empty({ icon, text }) {
+function Empty({ icon, text, title, action }) {
   return (
     <div className="empty">
       <div className="ico" aria-hidden="true">
@@ -299,7 +301,9 @@ function Empty({ icon, text }) {
           <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M3 12l9 4 9-4" />
         </svg>
       </div>
+      {title && <h4 className="empty-title">{title}</h4>}
       <p>{text}</p>
+      {action && <div className="empty-action">{action}</div>}
     </div>
   );
 }
@@ -469,7 +473,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
 
   const Page = {
-    dashboard: <Dashboard user={user} />,
+    dashboard: <Dashboard user={user} onNavigate={setRoute} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} />,
     candidates: <CandidatesPage user={user} />,
@@ -486,7 +490,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     workflow: <WorkflowPage user={user} />,
     system: <SystemPage user={user} />,
     audit: <AuditPage user={user} />,
-  }[route] || <Dashboard user={user} />;
+  }[route] || <Dashboard user={user} onNavigate={setRoute} />;
 
   return (
     <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '240px' }}>
@@ -643,77 +647,249 @@ function FunnelMini({ pipeline }) {
   );
 }
 
-function Dashboard({ user }) {
+// ---- Dashboard visual building blocks -------------------------------------
+// Presentation only. Every number rendered here comes from the existing
+// GET /dashboard response; nothing is fabricated or extrapolated.
+const APP_STAGE_COLORS = {
+  sourced: '#9AA3AD', screening: '#2160A6', interview_hr: '#00A3E0',
+  interview_technical: '#1976D2', offer: '#B7791F', hired: '#1D6E3E',
+  rejected: '#C0392B', offer_declined: '#A93B34',
+};
+
+function DashKpi({ label, value, unit, hint, icon, tone }) {
+  return (
+    <div className="dash-kpi" style={{ '--kc': tone }}>
+      <div className="dash-kpi-top">
+        <span className="dash-kpi-label">{label}</span>
+        <span className="dash-ico"><Icon name={icon} size={15} /></span>
+      </div>
+      <div className="dash-kpi-val">{value}{unit ? <small>{unit}</small> : null}</div>
+      <div className="dash-kpi-hint">{hint}</div>
+    </div>
+  );
+}
+
+function DashBars({ rows, empty, icon = '📊' }) {
+  if (!rows || !rows.length) return <Empty icon={icon} text={empty} />;
+  const max = Math.max(...rows.map((r) => r.count), 1);
+  return (
+    <div className="dash-bars">
+      {rows.map((r, i) => (
+        <div className="dash-bar" key={i}>
+          <span className="dash-bar-l" title={r.label}>{r.label}</span>
+          <span className="dash-bar-track">
+            <span className="dash-bar-fill" style={{ width: `${(r.count / max) * 100}%`, background: r.color || 'var(--action-primary)' }} />
+          </span>
+          <strong className="dash-bar-n">{r.count}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DashFunnel({ data }) {
+  const order = ['sourced', 'screening', 'interview_hr', 'interview_technical', 'offer', 'hired'];
+  const map = Object.fromEntries((data || []).map((d) => [d.status, d.count]));
+  const rows = order.map((s) => ({ status: s, count: map[s] || 0 }));
+  const closed = (map.rejected || 0) + (map.offer_declined || 0);
+  const live = rows.reduce((s, r) => s + r.count, 0);
+  if (!live && !closed) return <Empty icon="🔻" text="No candidates in the pipeline yet. Import CVs against a hiring request to get started." />;
+  const top = Math.max(...rows.map((r) => r.count), 1);
+  const entered = rows[0].count || live;
+  return (
+    <div>
+      {rows.map((r) => (
+        <div className="dash-frow" key={r.status}>
+          <span className="dash-fl"><i style={{ background: APP_STAGE_COLORS[r.status] }} />{(APP_STATUS[r.status] || {}).label || r.status}</span>
+          <span className="dash-ftrack">
+            <span className="dash-fbar" style={{ width: `${(r.count / top) * 100}%`, background: APP_STAGE_COLORS[r.status] }} />
+          </span>
+          <strong className="dash-fn">{r.count}</strong>
+          <span className="dash-fp">{entered ? Math.round((r.count / entered) * 100) + '%' : '—'}</span>
+        </div>
+      ))}
+      {closed > 0 && (
+        <div className="dash-frow dash-frow-muted">
+          <span className="dash-fl"><i style={{ background: APP_STAGE_COLORS.rejected }} />Rejected / Declined</span>
+          <span className="dash-ftrack"><span className="dash-fbar" style={{ width: `${(closed / top) * 100}%`, background: APP_STAGE_COLORS.rejected, opacity: .55 }} /></span>
+          <strong className="dash-fn">{closed}</strong>
+          <span className="dash-fp" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashListRow({ tone, icon, title, meta, right }) {
+  return (
+    <div className="dash-lrow">
+      <span className={'dash-ico dash-ico-' + tone}><Icon name={icon} size={15} /></span>
+      <div className="dash-lmain"><strong>{title}</strong><div className="dash-lmeta">{meta}</div></div>
+      {right != null && <span className="dash-lright">{right}</span>}
+    </div>
+  );
+}
+
+function Dashboard({ user, onNavigate }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => {
-    if (!can(user, 'dashboard.view')) { setErr('You do not have dashboard access.'); return; }
+    if (!can(user, 'dashboard.view')) { setErr('You do not have access to the dashboard.'); return; }
     api.get('/dashboard').then(setD).catch((e) => setErr(e.message));
   }, []);
 
-  if (err) return <div><PageHead crumb="Home / Dashboard" title={`Welcome, ${user.fullName.split(' ')[0]}`} /><div className="card"><div className="error-banner" style={{ margin: 20 }}>{err}</div></div></div>;
-  if (!d) return <div><PageHead crumb="Home / Dashboard" title={`Welcome, ${user.fullName.split(' ')[0]}`} /><Skeleton rows={8} /></div>;
+  const firstName = (user.fullName || '').split(' ')[0];
+  const now = new Date();
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
+  const dateLine = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  function Head({ sub, actions }) {
+    return (
+      <div className="dash-head">
+        <div>
+          <div className="dash-eyebrow">{dateLine} · Recruitment workspace</div>
+          <h1 className="page-title">{greeting}, {firstName}</h1>
+          <p className="page-sub">{sub}</p>
+        </div>
+        <div className="dash-actions">{actions}</div>
+      </div>
+    );
+  }
+
+  if (err) return (
+    <div>
+      <Head sub="Organisation-wide recruitment analytics · Read-only · No salary data." />
+      <div className="card"><div className="dash-state">
+        <div className="dash-state-ico"><Icon name="shield" size={26} /></div>
+        <h3>Dashboard unavailable</h3>
+        <p>{err}</p>
+      </div></div>
+    </div>
+  );
+
+  if (!d) return (
+    <div>
+      <Head sub="Loading your recruitment overview…" />
+      <div className="dash-kpi-row">{[0, 1, 2, 3].map((i) => <div className="dash-kpi dash-kpi-skel" key={i}><div className="skeleton" style={{ width: '52%' }} /><div className="skeleton" style={{ width: '34%', height: 26, margin: '12px 0 8px' }} /><div className="skeleton" style={{ width: '66%' }} /></div>)}</div>
+      <div className="dash-grid-2">
+        <div className="card"><Skeleton rows={7} /></div>
+        <div className="card"><Skeleton rows={7} /></div>
+      </div>
+    </div>
+  );
 
   const k = d.kpis;
-  const kpiCards = [
-    { label: 'Open Requests', value: k.openRequests, hint: 'active tickets' },
-    { label: 'Fill Rate', value: k.fillRate + '%', hint: `${k.headcountFilled}/${k.headcountTotal} seats` },
-    { label: 'Candidates in Pipeline', value: k.totalApplications, hint: 'applications' },
-    { label: 'Upcoming Interviews', value: k.upcomingInterviews, hint: 'scheduled' },
-    { label: 'Offers', value: k.totalOffers, hint: 'all offers' },
-    { label: 'Offer Acceptance', value: k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate + '%', hint: 'accepted / decided' },
-    { label: 'Joined', value: k.joined, hint: 'hires' },
-    { label: 'Avg Time-to-Fill', value: k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd', hint: 'filled requests' },
-  ];
-  const agingData = Object.entries(d.aging).map(([status, count]) => ({ status, count }));
+  const orgWide = d.scope === 'all';
+  const openReq = k.openRequests || 0;
+  const seats = `${k.headcountFilled} of ${k.headcountTotal} seats filled`;
+
+  // SLA health is derived from the aging buckets the API already returns.
+  const onTrack = d.aging['0-30'] || 0;
+  const atRisk = d.aging['31-60'] || 0;
+  const overdue = (d.aging['61-90'] || 0) + (d.aging['90+'] || 0);
+  const agingTotal = onTrack + atRisk + overdue;
+  const pct = (n) => (agingTotal ? (n / agingTotal) * 100 : 0);
+  const donut = agingTotal
+    ? `conic-gradient(var(--action-success) 0 ${pct(onTrack)}%, var(--warning) ${pct(onTrack)}% ${pct(onTrack) + pct(atRisk)}%, var(--danger) ${pct(onTrack) + pct(atRisk)}% 100%)`
+    : 'conic-gradient(var(--border) 0 100%)';
+
+  const reqRows = (d.requestsByStatus || [])
+    .map((r, i) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status, count: r.count, color: CHART_COLORS[i % CHART_COLORS.length] }))
+    .sort((a, b) => b.count - a.count);
+  const offerRows = (d.offersByStatus || [])
+    .map((r, i) => ({ label: (OFFER_STATUS[r.status] || {}).label || r.status, count: r.count, color: CHART_COLORS[i % CHART_COLORS.length] }))
+    .sort((a, b) => b.count - a.count);
+  const loadMax = Math.max(...(d.recruiterLoad || []).map((r) => r.c), 1);
+
+  const summary = orgWide
+    ? `${openReq} open ${openReq === 1 ? 'request' : 'requests'} · ${k.totalApplications} ${k.totalApplications === 1 ? 'candidate' : 'candidates'} in pipeline · ${k.upcomingInterviews} upcoming ${k.upcomingInterviews === 1 ? 'interview' : 'interviews'}`
+    : `Your scoped view · ${d.myWork.myOpenRequests} open ${d.myWork.myOpenRequests === 1 ? 'request' : 'requests'} · ${d.myWork.myInterviews} upcoming ${d.myWork.myInterviews === 1 ? 'interview' : 'interviews'}`;
 
   return (
     <div>
-      <div className="page-head"><div>
-        <div className="breadcrumb">Home / Dashboard</div>
-        <h1 className="page-title">Welcome, {user.fullName.split(' ')[0]}</h1>
-        <p className="page-sub">{d.scope === 'all' ? 'Organization-wide recruitment analytics.' : 'Your scoped recruitment analytics (your own requests).'} · Read-only · No salary data.</p>
-      </div><Badge variant="info">{d.scope === 'all' ? 'Org-wide' : 'My scope'}</Badge></div>
+      <Head
+        sub={<>{summary} <span className="dash-sub-note">· Read-only · No salary data</span></>}
+        actions={<>
+          <Badge variant="info">{orgWide ? 'Org-wide' : 'My scope'}</Badge>
+          {onNavigate && <button className="btn btn-secondary" onClick={() => onNavigate('requests')}><Icon name="ticket" size={15} /> Hiring Requests</button>}
+          {onNavigate && can(user, 'request.create') && <button className="btn" onClick={() => onNavigate('requests')}>New Hiring Request</button>}
+        </>}
+      />
 
-      <div className="grid-kpi">
-        {kpiCards.map((c, i) => <div className="kpi" key={i}><div className="label">{c.label}</div><div className="value">{c.value}</div><div className="hint">{c.hint}</div></div>)}
+      <div className="dash-kpi-row">
+        <DashKpi label="Open Requests" value={openReq} hint={`${k.totalRequests} total · ${k.filledRequests} filled`} icon="ticket" tone="var(--brand-primary)" />
+        <DashKpi label="Candidates in Pipeline" value={k.totalApplications} hint="active applications" icon="users" tone="var(--action-primary)" />
+        <DashKpi label="Upcoming Interviews" value={k.upcomingInterviews} hint="scheduled ahead" icon="calendar" tone="#00A3E0" />
+        <DashKpi label="Offers" value={k.totalOffers} hint="all offer records" icon="doc" tone="var(--warning-ink)" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div className="card"><div className="card-head"><h3>Requests by Status</h3></div><div className="card-pad">
-          <BarChart data={d.requestsByStatus.map((r) => ({ ...r, label: r.status }))} />
-          <ChartLegend data={d.requestsByStatus} labeler={(s) => (REQ_STATUS[s] || {}).label || s} />
-        </div></div>
-        <div className="card"><div className="card-head"><h3>Requisition Aging (open)</h3></div><div className="card-pad">
-          <BarChart data={agingData} />
-          <ChartLegend data={agingData} labeler={(s) => s + ' days'} />
-        </div></div>
+      <div className="dash-kpi-row">
+        <DashKpi label="Fill Rate" value={k.fillRate} unit="%" hint={seats} icon="dashboard" tone="var(--action-success)" />
+        <DashKpi label="Joined" value={k.joined} hint="candidates hired" icon="user" tone="var(--action-success)" />
+        <DashKpi label="Avg Time-to-Fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays} unit={k.timeToFillDays == null ? null : ' days'} hint={k.timeToFillDays == null ? 'no filled requests yet' : 'across filled requests'} icon="scroll" tone="var(--brand-primary)" />
+        <DashKpi label="Offer Acceptance" value={k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate} unit={k.offerAcceptanceRate == null ? null : '%'} hint={k.offerAcceptanceRate == null ? 'no decided offers yet' : 'accepted of decided'} icon="shield" tone="var(--action-success)" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div className="card"><div className="card-head"><h3>Pipeline Funnel</h3></div><div className="card-pad"><Funnel data={d.applicationsByStatus} /></div></div>
-        <div className="card"><div className="card-head"><h3>Offer Outcomes</h3></div><div className="card-pad">
-          <BarChart data={d.offersByStatus} />
-          <ChartLegend data={d.offersByStatus} labeler={(s) => (OFFER_STATUS[s] || {}).label || s} />
-        </div></div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: d.scope === 'all' ? '1fr 1fr' : '1fr', gap: 16 }}>
-        <div className="card"><div className="card-head"><h3>My Work</h3></div><div className="card-pad">
-          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-            <div><div className="value" style={{ fontSize: 24, fontWeight: 700, color: 'var(--primary)' }}>{d.myWork.myOpenRequests}</div><div className="muted">my open requests</div></div>
-            <div><div className="value" style={{ fontSize: 24, fontWeight: 700, color: 'var(--primary)' }}>{d.myWork.myInterviews}</div><div className="muted">my upcoming interviews</div></div>
-          </div>
-        </div></div>
-        {d.scope === 'all' && (
-          <div className="card"><div className="card-head"><h3>Recruiter Load (open requests)</h3></div><div className="card-pad">
-            {d.recruiterLoad.length === 0 ? <Empty icon="👥" text="No assigned recruiters yet." /> : (
-              <table><tbody>{d.recruiterLoad.map((r, i) => (
-                <tr key={i}><td>{r.name}</td><td style={{ width: '60%' }}><span style={{ display: 'inline-block', height: 10, borderRadius: 3, background: CHART_COLORS[i % CHART_COLORS.length], width: `${(r.c / Math.max(...d.recruiterLoad.map((x) => x.c))) * 100}%`, minWidth: 6 }} /></td><td style={{ textAlign: 'right' }}><strong>{r.c}</strong></td></tr>
-              ))}</tbody></table>
+      <div className="dash-grid-2">
+        <div className="card">
+          <div className="card-head"><h3>Hiring Funnel</h3><span className="dash-headnote">{orgWide ? 'All active requests' : 'Your requests'}</span></div>
+          <div className="card-pad"><DashFunnel data={d.applicationsByStatus} /></div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Request SLA Health</h3><span className="dash-headnote">by age</span></div>
+          <div className="card-pad">
+            {agingTotal === 0 ? <Empty icon="🗓" text="No open requests to track." /> : (
+              <div className="dash-sla">
+                <div className="dash-donut" style={{ background: donut }}><span>{agingTotal}</span></div>
+                <div className="dash-sla-rows">
+                  <div className="dash-kv"><span><i style={{ background: 'var(--action-success)' }} />On track <em>0–30 days</em></span><strong>{onTrack}</strong></div>
+                  <div className="dash-kv"><span><i style={{ background: 'var(--warning)' }} />At risk <em>31–60 days</em></span><strong>{atRisk}</strong></div>
+                  <div className="dash-kv"><span><i style={{ background: 'var(--danger)' }} />Overdue <em>60+ days</em></span><strong>{overdue}</strong></div>
+                </div>
+              </div>
             )}
-          </div></div>
-        )}
+          </div>
+        </div>
+      </div>
+
+      <div className="dash-grid-2">
+        <div className="card">
+          <div className="card-head"><h3>Requests by Status</h3></div>
+          <div className="card-pad"><DashBars rows={reqRows} empty="No hiring requests yet." icon="🗂" /></div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Offer Outcomes</h3></div>
+          <div className="card-pad"><DashBars rows={offerRows} empty="No offers raised yet." icon="📄" /></div>
+        </div>
+      </div>
+
+      <div className="dash-grid-2">
+        <div className="card">
+          <div className="card-head"><h3>My Work</h3><span className="dash-headnote">assigned to you</span></div>
+          <div className="dash-listpad">
+            <DashListRow tone="navy" icon="ticket" title={`${d.myWork.myOpenRequests} open ${d.myWork.myOpenRequests === 1 ? 'request' : 'requests'}`} meta="Requests you own or raised" right={onNavigate ? <button className="dash-link" onClick={() => onNavigate('requests')}>Open</button> : null} />
+            <DashListRow tone="blue" icon="calendar" title={`${d.myWork.myInterviews} upcoming ${d.myWork.myInterviews === 1 ? 'interview' : 'interviews'}`} meta="Interviews where you are a panellist" right={onNavigate ? <button className="dash-link" onClick={() => onNavigate('interviews')}>Open</button> : null} />
+            <DashListRow tone={d.myWork.myPendingOfferApprovals ? 'amber' : 'grey'} icon="doc" title={`${d.myWork.myPendingOfferApprovals || 0} offer ${d.myWork.myPendingOfferApprovals === 1 ? 'approval' : 'approvals'} pending`} meta="Waiting on your decision" right={onNavigate ? <button className="dash-link" onClick={() => onNavigate('offers')}>Open</button> : null} />
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Recruiter Load</h3><span className="dash-headnote">open requests</span></div>
+          <div className="card-pad">
+            {!orgWide ? <Empty icon="👥" text="Recruiter load is visible to users with organisation-wide access." />
+              : !(d.recruiterLoad || []).length ? <Empty icon="👥" text="No requests are assigned to a recruiter yet." />
+              : (
+                <div className="dash-bars">
+                  {d.recruiterLoad.map((r, i) => (
+                    <div className="dash-bar" key={i}>
+                      <span className="dash-bar-l" title={r.name}>{r.name}</span>
+                      <span className="dash-bar-track"><span className="dash-bar-fill" style={{ width: `${(r.c / loadMax) * 100}%`, background: 'var(--brand-primary)' }} /></span>
+                      <strong className="dash-bar-n">{r.c}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -780,8 +956,22 @@ function ReportsPage({ user }) {
     toast('Report exported');
   }
 
-  if (err) return <div><PageHead crumb="Overview / Reports" title="Reports" /><div className="card"><div className="error-banner" style={{ margin: 20 }}>{err}</div></div></div>;
-  if (!d) return <div><PageHead crumb="Overview / Reports" title="Reports" /><Skeleton rows={8} /></div>;
+  if (err) return (
+    <div>
+      <PageHead crumb="Overview / Reports" title="Recruitment Reports" sub="Read-only analytics · No salary data." />
+      <div className="card"><div className="dash-state">
+        <div className="dash-state-ico"><Icon name="shield" size={26} /></div>
+        <h3>Reports unavailable</h3><p>{err}</p>
+      </div></div>
+    </div>
+  );
+  if (!d) return (
+    <div>
+      <PageHead crumb="Overview / Reports" title="Recruitment Reports" sub="Loading analytics…" />
+      <div className="dash-kpi-row">{[0, 1, 2, 3].map((i) => <div className="dash-kpi dash-kpi-skel" key={i}><div className="skeleton" style={{ width: '52%' }} /><div className="skeleton" style={{ width: '34%', height: 26, margin: '12px 0 8px' }} /><div className="skeleton" style={{ width: '66%' }} /></div>)}</div>
+      <div className="report-grid"><div className="card"><Skeleton rows={6} /></div><div className="card"><Skeleton rows={6} /></div></div>
+    </div>
+  );
   const k = d.kpis;
   const agingData = Object.entries(d.aging).map(([status, count]) => ({ status, count }));
 
@@ -789,31 +979,48 @@ function ReportsPage({ user }) {
     <div>
       <PageHead crumb="Overview / Reports" title="Recruitment Reports"
         sub={(d.scope === 'all' ? 'Organization-wide' : 'Your scope') + ' · Hiring funnel, time-to-fill, sources and outcomes. Read-only · No salary data.'}
-        actions={<button className="btn btn-secondary" onClick={exportCsv}>↓ Export CSV</button>} />
+        actions={<>
+          <Badge variant="info">{d.scope === 'all' ? 'Org-wide' : 'My scope'}</Badge>
+          <button className="btn btn-secondary" onClick={exportCsv}>Export CSV</button>
+        </>} />
 
-      <div className="grid-kpi">
-        {[
-          { label: 'Time-to-Fill', value: k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd', hint: 'avg, filled requests' },
-          { label: 'Fill Rate', value: k.fillRate + '%', hint: `${k.headcountFilled}/${k.headcountTotal} seats` },
-          { label: 'Offer Acceptance', value: k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate + '%', hint: 'accepted / decided' },
-          { label: 'Joined', value: k.joined, hint: 'total hires' },
-        ].map((c, i) => <div className="kpi" key={i}><div className="label">{c.label}</div><div className="value">{c.value}</div><div className="hint">{c.hint}</div></div>)}
+      <div className="dash-kpi-row">
+        <DashKpi label="Avg Time-to-Fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays} unit={k.timeToFillDays == null ? null : ' days'} hint={k.timeToFillDays == null ? 'no filled requests yet' : 'across filled requests'} icon="scroll" tone="var(--brand-primary)" />
+        <DashKpi label="Fill Rate" value={k.fillRate} unit="%" hint={`${k.headcountFilled} of ${k.headcountTotal} seats filled`} icon="dashboard" tone="var(--action-success)" />
+        <DashKpi label="Offer Acceptance" value={k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate} unit={k.offerAcceptanceRate == null ? null : '%'} hint={k.offerAcceptanceRate == null ? 'no decided offers yet' : 'accepted of decided'} icon="shield" tone="var(--action-success)" />
+        <DashKpi label="Joined" value={k.joined} hint="candidates hired" icon="user" tone="var(--action-primary)" />
       </div>
 
       <div className="report-grid">
-        <div className="card"><div className="card-head"><h3>Hiring Funnel</h3></div><div className="card-pad"><ReportFunnel data={d.applicationsByStatus} /></div></div>
-        <div className="card"><div className="card-head"><h3>Requests by Status</h3></div><div className="card-pad">
-          <MetricBar rows={d.requestsByStatus} labeler={(s) => (REQ_STATUS[s] || {}).label || s} /></div></div>
-        <div className="card"><div className="card-head"><h3>Requisition Aging (open)</h3></div><div className="card-pad">
-          <MetricBar rows={agingData} labeler={(s) => s + ' days'} /></div></div>
-        <div className="card"><div className="card-head"><h3>Offer Outcomes</h3></div><div className="card-pad">
-          <MetricBar rows={d.offersByStatus} labeler={(s) => (OFFER_STATUS[s] || {}).label || s} /></div></div>
+        <div className="card">
+          <div className="card-head"><h3>Hiring Funnel</h3><span className="dash-headnote">{d.scope === 'all' ? 'All requests' : 'Your requests'}</span></div>
+          <div className="card-pad"><DashFunnel data={d.applicationsByStatus} /></div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Requests by Status</h3></div>
+          <div className="card-pad"><DashBars
+            rows={(d.requestsByStatus || []).map((r, i) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status, count: r.count, color: CHART_COLORS[i % CHART_COLORS.length] })).sort((a, b) => b.count - a.count)}
+            empty="No hiring requests yet." /></div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Requisition Aging</h3><span className="dash-headnote">open requests</span></div>
+          <div className="card-pad"><DashBars
+            rows={agingData.map((r) => ({ label: r.status + ' days', count: r.count, color: r.status === '0-30' ? 'var(--action-success)' : r.status === '31-60' ? 'var(--warning)' : 'var(--danger)' }))}
+            empty="No open requests to age." /></div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Offer Outcomes</h3></div>
+          <div className="card-pad"><DashBars
+            rows={(d.offersByStatus || []).map((r, i) => ({ label: (OFFER_STATUS[r.status] || {}).label || r.status, count: r.count, color: CHART_COLORS[i % CHART_COLORS.length] })).sort((a, b) => b.count - a.count)}
+            empty="No offers raised yet." /></div>
+        </div>
         {d.scope === 'all' && (
-          <div className="card full"><div className="card-head"><h3>Recruiter Load (open requests)</h3></div><div className="card-pad">
-            {d.recruiterLoad.length === 0 ? <Empty icon="👥" text="No assigned recruiters yet." /> : (
-              <MetricBar rows={d.recruiterLoad.map((r) => ({ status: r.name, count: r.c }))} labeler={(s) => s} />
-            )}
-          </div></div>
+          <div className="card full">
+            <div className="card-head"><h3>Recruiter Load</h3><span className="dash-headnote">open requests per recruiter</span></div>
+            <div className="card-pad"><DashBars
+              rows={(d.recruiterLoad || []).map((r) => ({ label: r.name, count: r.c, color: 'var(--brand-primary)' }))}
+              empty="No requests are assigned to a recruiter yet." /></div>
+          </div>
         )}
       </div>
     </div>
@@ -824,9 +1031,47 @@ function ReportsPage({ user }) {
 function PageHead({ crumb, title, sub, actions }) {
   return (
     <div className="page-head">
-      <div><div className="breadcrumb">{crumb}</div><h1 className="page-title">{title}</h1>{sub && <p className="page-sub">{sub}</p>}</div>
-      <div style={{ display: 'flex', gap: 10 }}>{actions}</div>
+      <div className="page-head-main">
+        {crumb && <div className="breadcrumb">{crumb}</div>}
+        <h1 className="page-title">{title}</h1>
+        {sub && <p className="page-sub">{sub}</p>}
+      </div>
+      {actions && <div className="page-head-actions">{actions}</div>}
     </div>
+  );
+}
+
+// Segmented view switcher shared by the list pages (Cards / Table, Board / Table).
+function ViewToggle({ value, onChange, options }) {
+  return (
+    <div className="view-toggle" role="tablist">
+      {options.map(([k, label]) => (
+        <button key={k} role="tab" aria-selected={value === k}
+          className={'view-toggle-btn' + (value === k ? ' active' : '')}
+          onClick={() => onChange(k)}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+// Compact "N results" pill used at the right edge of every filter bar.
+function CountPill({ n, total, noun }) {
+  if (n == null) return null;
+  const label = total != null && total !== n ? `${n} of ${total}` : `${n}`;
+  return <span className="count-pill">{label} <em>{n === 1 ? noun : noun + 's'}</em></span>;
+}
+
+// SLA / aging indicator for a hiring request. Reads the `health` object the
+// requests API already returns ({ level, label, daysOpen }); renders nothing
+// when the API did not supply it.
+function ReqHealth({ health, compact }) {
+  if (!health || !health.level) return <span className="muted">—</span>;
+  const tone = health.level === 'red' ? 'red' : health.level === 'amber' ? 'amber' : 'green';
+  return (
+    <span className={'sla sla-' + tone} title={health.label}>
+      <i />{compact ? '' : health.label}
+      {health.daysOpen != null && <em>{health.daysOpen}d</em>}
+    </span>
   );
 }
 
@@ -1663,6 +1908,38 @@ const PRIORITY = {
   high: { label: 'High', variant: 'warning' }, critical: { label: 'Critical', variant: 'critical' },
 };
 function PriorityBadge({ p }) { const x = PRIORITY[p] || { label: p, variant: 'soft' }; return <Badge variant={x.variant}>{x.label}</Badge>; }
+// Request status badge — reuses the existing REQ_STATUS label/variant vocabulary.
+function ReqStatusBadge({ status, displayStatus }) {
+  const x = REQ_STATUS[status];
+  if (!x && !displayStatus) return <span className="muted">—</span>;
+  return <Badge variant={(x || {}).variant || 'soft'}>{(x || {}).label || displayStatus}</Badge>;
+}
+// Table-shaped loading placeholder, so list pages do not flash a bare card.
+// Two-line date cell: weekday+date on top, time below. Falls back cleanly to
+// an em-dash when the API returned no timestamp.
+function DateCell({ value, dateOnly }) {
+  if (!value) return <span className="muted">—</span>;
+  const dt = new Date(value);
+  if (isNaN(dt)) return <span className="muted">—</span>;
+  const d = dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const t = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return <span className="datecell"><span className="cell-strong">{d}</span>{!dateOnly && <span className="cell-sub">{t}</span>}</span>;
+}
+function ListSkeleton({ rows = 6 }) {
+  return (
+    <div className="card flush list-skel">
+      <div className="list-skel-head" />
+      {Array.from({ length: rows }).map((_, i) => (
+        <div className="list-skel-row" key={i}>
+          <div className="skeleton" style={{ width: 70 }} />
+          <div className="skeleton" style={{ flex: 1, maxWidth: 260 }} />
+          <div className="skeleton" style={{ width: 110 }} />
+          <div className="skeleton" style={{ width: 76 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Resolve admin-controlled buttons for current user from the server.
 function useResolvedButtons() {
@@ -1671,22 +1948,41 @@ function useResolvedButtons() {
   return map;
 }
 
-// Compact ticket card for the kanban-style requests board — key info only.
+// Ticket card for the Hiring Requests board.
+//
+// Layout contract (why this is structured rather than free-flowing): every card is
+// a flex column of FIXED rows — rail, head, title, meta, pipeline, footer — so the
+// same element lands at the same vertical position on every card in the grid. The
+// title is clamped to two lines and each meta value to one, which is what keeps the
+// rows aligned when content lengths differ. The footer is pushed down with
+// margin-top:auto so status/SLA sit on a common baseline. Grid stretch does the
+// rest. No data or actions were changed.
 function RequestTicketCard({ r, onOpen }) {
+  const place = placeLabel(r);
+  const dept = r.department?.name || '—';
   return (
-    <div className="card ticket-card" onClick={onOpen} style={{ cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ height: 4, background: 'var(--ticket-accent)' }} />
-      <div className="card-pad" style={{ flex: 1 }}>
-        <div className="row-between" style={{ marginBottom: 6 }}>
-          <span style={{ fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, color: 'var(--ticket-accent)', fontWeight: 700 }} title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span>
+    <div className="card ticket-card rq-card" onClick={onOpen}>
+      <span className="rq-rail" aria-hidden="true" />
+      <div className="rq-body">
+        <div className="rq-head">
+          <span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span>
           <PriorityBadge p={r.priority} />
         </div>
-        <div style={{ fontSize: 15.5, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{r.title}</div>
-        <div className="muted" style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
-          <span><span style={{ display: 'inline-block', minWidth: 64, color: 'var(--muted)' }}>Dept</span>{r.department?.name || '—'}</span>
-          <span><span style={{ display: 'inline-block', minWidth: 78, color: 'var(--muted)' }}>Project / Site</span>{placeLabel(r)}</span>
+
+        <h3 className="rq-title" title={r.title}>{r.title}</h3>
+
+        <dl className="rq-meta">
+          <div><dt>Dept</dt><dd title={dept}>{dept}</dd></div>
+          <div><dt>Project / Site</dt><dd title={place}>{place}</dd></div>
+          {r.headcount != null && <div><dt>Headcount</dt><dd>{r.headcountFilled ?? 0} of {r.headcount}</dd></div>}
+        </dl>
+
+        <div className="rq-pipe">{r.pipeline ? <FunnelMini pipeline={r.pipeline} /> : null}</div>
+
+        <div className="rq-foot">
+          <ReqStatusBadge status={r.status} displayStatus={r.displayStatus} />
+          {r.health && <ReqHealth health={r.health} />}
         </div>
-        {r.pipeline && <div style={{ marginBottom: 12 }}><FunnelMini pipeline={r.pipeline} /></div>}
       </div>
     </div>
   );
@@ -1716,13 +2012,11 @@ function RequestsPage({ user }) {
   const canCreate = btns.create_request?.visible;
   return (
     <div>
-      <PageHead crumb="Recruitment / Requests" title="Recruitment Requests" sub="Every hiring need is a controlled ticket with approvals, ownership, SLA and audit."
+      <PageHead crumb="Recruitment / Requests" title="Hiring Requests"
+        sub="Every hiring need is a controlled ticket with approvals, ownership, SLA and audit trail."
         actions={<>
-          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-            <button className={'btn btn-sm ' + (view === 'table' ? '' : 'btn-secondary')} style={{ borderRadius: 0 }} onClick={() => setView('table')}>Table</button>
-            <button className={'btn btn-sm ' + (view === 'cards' ? '' : 'btn-secondary')} style={{ borderRadius: 0 }} onClick={() => setView('cards')}>Cards</button>
-          </div>
-          {canCreate && <button className="btn" onClick={() => setCreating(true)}>+ {btns.create_request.label}</button>}
+          <ViewToggle value={view} onChange={setView} options={[['cards', 'Cards'], ['table', 'Table']]} />
+          {canCreate && <button className="btn" onClick={() => setCreating(true)}>{btns.create_request.label}</button>}
         </>} />
 
       <div className="toolbar">
@@ -1735,25 +2029,32 @@ function RequestsPage({ user }) {
           <option value="created">Sort: Created</option><option value="priority">Priority</option><option value="title">Title</option><option value="status">Status</option><option value="ticket">Ticket No</option></select>
         <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}>{filters.dir === 'desc' ? '↓ Desc' : '↑ Asc'}</button>
         <div className="spacer" />
-        {data && <span className="muted">{data.requests.length} requests</span>}
+        <CountPill n={data ? data.requests.length : null} noun="request" />
       </div>
 
-      {!data ? <Skeleton rows={6} /> : data.requests.length === 0 ? (
-        <div className="card"><Empty icon="🎫" text="No recruitment requests yet." /></div>
+      {!data ? <ListSkeleton rows={6} /> : data.requests.length === 0 ? (
+        <div className="card"><Empty icon="🎫"
+          title={filters.q || filters.status || filters.priority ? 'No requests match these filters' : 'No hiring requests yet'}
+          text={filters.q || filters.status || filters.priority
+            ? 'Try clearing the search box or widening the status and priority filters.'
+            : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
-        <div className="card"><table>
-          <thead><tr><th>Request</th><th>Position</th><th>Project / Site</th><th>Priority</th></tr></thead>
+        <div className="card flush"><table className="table">
+          <thead><tr><th>Request</th><th>Position</th><th>Project / Site</th><th>Pipeline</th><th>Priority</th><th>Status</th><th>SLA</th></tr></thead>
           <tbody>{data.requests.map((r) => (
-            <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(r.id)}>
-              <td><strong title={r.ticketNo}>{shortReqCode(r.ticketNo)}</strong></td>
-              <td>{r.title}<div className="muted" style={{ fontSize: 12 }}>{r.department?.name || '—'}</div></td>
-              <td className="muted">{placeLabel(r)}</td>
+            <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
+              <td><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
+              <td><span className="cell-strong">{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
+              <td className="cell-sub-only">{placeLabel(r)}</td>
+              <td>{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
               <td><PriorityBadge p={r.priority} /></td>
+              <td><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
+              <td><ReqHealth health={r.health} /></td>
             </tr>
           ))}</tbody>
         </table></div>
       ) : (
-        <div className="grid-kpi" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))' }}>
+        <div className="ats-card-grid">
           {data.requests.map((r) => <RequestTicketCard key={r.id} r={r} onOpen={() => setSelectedId(r.id)} />)}
         </div>
       )}
@@ -1852,7 +2153,7 @@ function RequestDetail({ id, user, btns, onBack }) {
 
   return (
     <div>
-      <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Recruitment Requests</a></div>
+      <div className="detail-back"><button className="back-link" onClick={onBack}>← Hiring Requests</button></div>
 
       <TicketHeader req={req}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 560 }}>
@@ -1863,18 +2164,20 @@ function RequestDetail({ id, user, btns, onBack }) {
       </TicketHeader>
 
       {/* Collapsible request "subject" details, pinned above the conversation */}
-      <div className="card" style={{ marginBottom: 14 }}>
-        <button className="row-between" onClick={() => setDetailsOpen((o) => !o)}
-          style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '12px 16px', textAlign: 'left' }}>
-          <strong style={{ fontSize: 13.5 }}>Request details</strong>
-          <span className="muted" style={{ fontSize: 12 }}>{detailsOpen ? '▲ Hide' : '▼ Show'} · {req.department?.name || '—'} · {placeLabel(req)}</span>
+      <div className="card detail-disclosure">
+        <button className="disclosure-btn" onClick={() => setDetailsOpen((o) => !o)} aria-expanded={detailsOpen}>
+          <span className="disclosure-label">Request details</span>
+          <span className="disclosure-hint">{req.department?.name || '—'} · {placeLabel(req)}</span>
+          <span className="disclosure-caret">{detailsOpen ? 'Hide ▴' : 'Show ▾'}</span>
         </button>
-        {detailsOpen && <div style={{ padding: '0 16px 16px' }}><OverviewTab req={req} onReload={load} btns={btns} embedded /></div>}
+        {detailsOpen && <div className="disclosure-body"><OverviewTab req={req} onReload={load} btns={btns} embedded /></div>}
       </div>
 
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 18 }}>
+      <div className="tabbar" role="tablist">
         {TABS.map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--ticket-accent)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--ticket-accent)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>
+          <button key={k} role="tab" aria-selected={tab === k}
+            className={'tabbar-btn' + (tab === k ? ' active' : '')}
+            onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
 
@@ -2187,21 +2490,29 @@ function statusChipClass(status) {
 }
 
 function TicketHeader({ req, children }) {
+  // The brand logo block was removed here: the sidebar already carries the mark,
+  // and the red-outlined box fought with the new Shell. Identity now comes from
+  // the ticket code pill. The left accent rail is navy, not red — red is reserved
+  // for destructive actions and critical states.
   return (
     <div className="ticket-header-card">
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <div className="th-logo"><Logo size={24} color="var(--ink)" /></div>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <div className="th-eyebrow">Recruitment Request</div>
+      <div className="th-row">
+        <div className="th-main">
+          <div className="th-eyebrow">Hiring Request</div>
           <h1 className="th-title">{req.title}</h1>
           <div className="th-meta">
-            <span className="th-ticketno" title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span>
-            <span className="th-sep">·</span>
-            <span>{req.department?.name || '—'}</span>
-            {req.priority && <><span className="th-sep">·</span><span style={{ textTransform: 'capitalize' }}>{req.priority} priority</span></>}
+            <span className="code-pill" title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span>
+            <ReqStatusBadge status={req.status} displayStatus={req.displayStatus} />
+            {req.priority && <PriorityBadge p={req.priority} />}
+            {req.health && <ReqHealth health={req.health} />}
+          </div>
+          <div className="th-sub">
+            <span><em>Department</em>{req.department?.name || '—'}</span>
+            <span><em>Project / Site</em>{placeLabel(req)}</span>
+            {req.headcount != null && <span><em>Headcount</em>{req.headcountFilled ?? 0} of {req.headcount}</span>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', flex: '0 0 auto' }}>{children}</div>
+        <div className="th-actions">{children}</div>
       </div>
     </div>
   );
@@ -2468,9 +2779,7 @@ function RequestPipeline({ request, user, btns }) {
         </div>
       )}
       <div className="toolbar">
-        <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-          {['kanban', 'list', 'compact'].map((v) => <button key={v} className={'btn btn-sm ' + (view === v ? '' : 'btn-secondary')} style={{ borderRadius: 0, textTransform: 'capitalize' }} onClick={() => setView(v)}>{v}</button>)}
-        </div>
+        <ViewToggle value={view} onChange={setView} options={[['kanban', 'Board'], ['list', 'List'], ['compact', 'Table']]} />
         <input placeholder="Search name / employer…" value={pf.q} onChange={(e) => setPf((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 180 }} />
         <select value={pf.stage} onChange={(e) => setPf((f) => ({ ...f, stage: e.target.value }))}>
           <option value="">All stages</option>{APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
@@ -2479,9 +2788,9 @@ function RequestPipeline({ request, user, btns }) {
         <select value={pf.sort} onChange={(e) => setPf((f) => ({ ...f, sort: e.target.value }))}>
           <option value="last">Sort: Last updated</option><option value="name">Name</option><option value="match">Match score</option></select>
         <div className="spacer" />
-        {apps && <span className="muted" style={{ fontSize: 12 }}>{visibleApps.length}/{apps.length}</span>}
+        <CountPill n={apps ? visibleApps.length : null} total={apps ? apps.length : null} noun="candidate" />
         {canImport && <button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button>}
-        {canLink && <button className="btn btn-sm" onClick={() => setLinkOpen(true)}>+ {btns.link_candidate.label === 'Link to Request' ? 'Add Candidate' : btns.link_candidate.label}</button>}
+        {canLink && <button className="btn btn-sm" onClick={() => setLinkOpen(true)}>{btns.link_candidate.label === 'Link to Request' ? 'Add Candidate' : btns.link_candidate.label}</button>}
       </div>
 
       {canBulk && selected.size > 0 && (
@@ -2498,22 +2807,30 @@ function RequestPipeline({ request, user, btns }) {
           {canImport && <div style={{ textAlign: 'center', paddingBottom: 18 }}><button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button></div>}</div>
         : visibleApps.length === 0 ? <div className="card"><Empty icon="🔍" text="No candidates match the current filters." /></div>
         : view === 'kanban' ? (
-          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12 }}>
+          <div className="kanban">
             {cols.map((st) => {
               const items = visibleApps.filter((a) => {
                 const canonical = pipelineStage(a.status);
                 return canonical === st && !isDisqualified(a.status);
               });
               return (
-                <div key={st} style={{ minWidth: 250, flex: '0 0 250px' }}>
-                  <div className="row-between" style={{ marginBottom: 8 }}><strong style={{ fontSize: 13 }}>{APP_STATUS[st].label}</strong><span className="chip">{items.length}</span></div>
-                  {items.map((a) => <PipelineCard key={a.id} app={a} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+                <div key={st} className="kan-col">
+                  <div className="kan-head">
+                    <span className="kan-dot" style={{ background: APP_STAGE_COLORS[st] || 'var(--muted)' }} />
+                    <span className="kan-title">{APP_STATUS[st].label}</span>
+                    <span className="kan-count">{items.length}</span>
+                  </div>
+                  <div className="kan-body">
+                    {items.length === 0
+                      ? <div className="kan-empty">No candidates at this stage</div>
+                      : items.map((a) => <PipelineCard key={a.id} app={a} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+                  </div>
                 </div>
               );
             })}
           </div>
         ) : view === 'list' ? (
-          <div style={{ display: 'grid', gap: 10 }}>
+          <div className="pipe-list">
             {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
           </div>
         ) : (
@@ -2580,28 +2897,35 @@ function PipelineCard({ app, wide, canMove, canBulk, selected, onSelect, onView,
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
   return (
-    <div className="card card-pad" style={{ marginBottom: 10, padding: 12, position: 'relative' }}>
-      <div className="row-between" style={{ marginBottom: 6 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {canBulk && <input type="checkbox" checked={selected} onChange={onSelect} onClick={(e) => e.stopPropagation()} />}
-          <strong style={{ fontSize: 13.5 }}>{cand.fullName}</strong>
+    <div className={'pcard' + (wide ? ' pcard-wide' : '') + (selected ? ' selected' : '')}>
+      <div className="pcard-top">
+        {canBulk && <input className="pcard-check" type="checkbox" checked={selected} onChange={onSelect} onClick={(e) => e.stopPropagation()} />}
+        <span className="pcard-av">{initials(cand.fullName || '?')}</span>
+        <div className="pcard-id">
+          <span className="pcard-name" title={cand.fullName}>{cand.fullName}</span>
+          <span className="pcard-role" title={(cand.currentPosition || '') + (cand.currentCompany ? ' · ' + cand.currentCompany : '')}>
+            {cand.currentPosition || '—'}{cand.currentCompany ? ' · ' + cand.currentCompany : ''}
+          </span>
         </div>
         <MatchScore score={app.matchScore} />
       </div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{cand.currentPosition || '—'}{cand.currentCompany ? ' · ' + cand.currentCompany : ''}</div>
-      <div style={{ fontSize: 11.5, color: 'var(--text-gray)', marginBottom: 8 }}>
-        {cand.yearsExperience != null && <span>{cand.yearsExperience}y exp · </span>}
-        {cand.location && <span>{cand.location} · </span>}
-        {cand.noticePeriod && <span>{cand.noticePeriod}</span>}
-        {cand.salaryVisible && cand.expectedSalary != null && <span> · Exp. salary {cand.expectedSalary}</span>}
+
+      {/* Facts. Salary is deliberately not rendered on the board. */}
+      <div className="pcard-facts">
+        {cand.yearsExperience != null && <span className="fact">{cand.yearsExperience}y exp</span>}
+        {cand.location && <span className="fact">{cand.location}</span>}
+        {cand.noticePeriod && <span className="fact">{cand.noticePeriod}</span>}
       </div>
-      <div className="row-between">
-        <AppStatusBadge status={app.status} />
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button className="btn btn-ghost btn-sm" onClick={onView}>View</button>
-          {canMove && !isDisqualified(app.status) && app.status !== 'hired' && <button className="btn btn-secondary btn-sm" onClick={() => setMenu((m) => !m)}>Move ▾</button>}
-          {canMove && !isDisqualified(app.status) && <button className="btn btn-sm" style={{ color: 'var(--critical)', borderColor: 'var(--critical)' }} onClick={() => onMove('rejected')}>Disqualify</button>}
-        </div>
+
+      <div className="pcard-status"><AppStatusBadge status={app.status} /></div>
+
+      <div className="pcard-actions">
+        <button className="btn btn-secondary btn-sm" onClick={onView}>View</button>
+        {canMove && !isDisqualified(app.status) && app.status !== 'hired' && <button className="btn btn-secondary btn-sm" onClick={() => setMenu((m) => !m)}>Move ▾</button>}
+        {/* Destructive action: use the danger variant (red text on a light plate).
+            Previously this was `btn btn-sm` (solid blue primary) with only the text
+            colour overridden inline, producing unreadable red-on-blue. */}
+        {canMove && !isDisqualified(app.status) && <button className="btn btn-danger btn-sm" onClick={() => onMove('rejected')}>Disqualify</button>}
       </div>
       {menu && (
         <div className="menu" style={{ right: 12, top: 'auto' }} onMouseLeave={() => setMenu(false)}>
@@ -2981,7 +3305,6 @@ function CandidatesPage({ user }) {
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState('board'); // board | table
-  const [srcTab, setSrcTab] = useState('all'); // source-attribution filter
   const [screenTab, setScreenTab] = useState('all'); // Database fitness-screen filter
   const btns = useResolvedButtons();
 
@@ -2995,18 +3318,14 @@ function CandidatesPage({ user }) {
 
   if (selectedId) return <CandidateProfile id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
 
-  // Source-attribution tabs with live counts (Workable pattern).
-  const SRC_TABS = [
-    ['all', 'All'], ['src-linkedin', 'LinkedIn'], ['src-careers', 'Careers'],
-    ['src-referral', 'Referral'], ['src-agency', 'Agency'], ['src-direct', 'Direct'],
-  ];
-  const srcCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => sourceClass(c.source) === key).length;
   // Database fitness-screen tabs (target flow: new → screening → fit | unfit).
+  // NOTE: the source-attribution tab row (LinkedIn / Careers / Referral / Agency /
+  // Direct) was removed — it duplicated the per-row Source chip and made the page
+  // read as noise. Source is still shown on every candidate row and card.
   const SCREEN_TABS = [['all', 'All'], ['new', 'New'], ['screening', 'Screening'], ['fit', 'Fit'], ['unfit', 'Unfit']];
   const scOf = (c) => c.screeningStatus || 'new';
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
   const shown = !candidates ? [] : candidates
-    .filter((c) => srcTab === 'all' || sourceClass(c.source) === srcTab)
     .filter((c) => screenTab === 'all' || scOf(c) === screenTab);
 
   async function setScreening(id, status, reason) {
@@ -3024,13 +3343,11 @@ function CandidatesPage({ user }) {
 
   return (
     <div>
-      <PageHead crumb="Recruitment / Talent Pool" title="Candidate Database" sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
+      <PageHead crumb="Recruitment / Talent Pool" title="Talent Pool"
+        sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
         actions={<>
-          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-            <button className={'btn btn-sm ' + (view === 'board' ? '' : 'btn-secondary')} style={{ borderRadius: 0 }} onClick={() => setView('board')}>Board</button>
-            <button className={'btn btn-sm ' + (view === 'table' ? '' : 'btn-secondary')} style={{ borderRadius: 0 }} onClick={() => setView('table')}>Table</button>
-          </div>
-          {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>+ {btns.add_candidate.label}</button>}
+          <ViewToggle value={view} onChange={setView} options={[['board', 'Cards'], ['table', 'Table']]} />
+          {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>{btns.add_candidate.label}</button>}
           {btns.import_candidates?.visible && <button className="btn btn-secondary" onClick={async () => {
             const busy = toast;
             try { const r = await api.post('/candidates/inbox-scan', {}); toast(`Imported ${r.imported} CVs from inbox.${r.skipped ? ' Skipped ' + r.skipped + '.' : ''}`); load(); } catch (e) { toast('Scan failed: ' + e.message, 'error'); }
@@ -3044,7 +3361,7 @@ function CandidatesPage({ user }) {
         <input placeholder="Max exp" type="number" value={filters.maxExp} onChange={(e) => setFilters((f) => ({ ...f, maxExp: e.target.value }))} style={{ width: 80 }} />
         <input placeholder="Tag" value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))} style={{ width: 100 }} />
         <div className="spacer" />
-        {candidates && <span className="muted">{shown.length} of {candidates.length} candidates</span>}
+        <CountPill n={candidates ? shown.length : null} total={candidates ? candidates.length : null} noun="candidate" />
       </div>
 
       {/* Database fitness-screen tabs (new → screening → fit | unfit) */}
@@ -3056,35 +3373,36 @@ function CandidatesPage({ user }) {
         ))}
       </div>
 
-      {/* Source-attribution segmented tabs with live counts */}
-      <div className="seg-tabs">
-        {SRC_TABS.map(([k, label]) => (
-          <button key={k} className={'seg-tab' + (srcTab === k ? ' active' : '')} onClick={() => setSrcTab(k)}>
-            {label}<span className="seg-count">{srcCount(k)}</span>
-          </button>
-        ))}
-      </div>
-
-      {!candidates ? <Skeleton /> : shown.length === 0 ? (
-        <div className="card"><Empty icon="👤" text="No candidates in this view." /></div>
+      {!candidates ? <ListSkeleton rows={7} /> : shown.length === 0 ? (
+        <div className="card"><Empty icon="👤"
+          title={screenTab !== 'all' || filters.q ? 'No candidates in this view' : 'The talent pool is empty'}
+          text={screenTab !== 'all' || filters.q
+            ? 'Try the All tab, or clear the search and filter fields above.'
+            : 'Add a candidate manually, or import CVs against a hiring request to populate the pool.'} /></div>
       ) : view === 'table' ? (
-        <div className="card">
-          <table>
-            <thead><tr><th>ID</th><th>Name</th><th>Position / Company</th><th>Exp</th><th>Location</th><th>Notice</th>{user.permissions.includes('salary.view') && <th>Expected</th>}<th>Screening</th><th>Source</th><th>Owner</th><th>Apps</th><th></th></tr></thead>
+        <div className="card flush">
+          <table className="table">
+            <thead><tr><th>Candidate</th><th>Position / Company</th><th>Experience</th><th>Location</th><th>Notice</th><th>Screening</th><th>Source</th><th>Owner</th><th>Apps</th></tr></thead>
             <tbody>{shown.map((c) => (
-              <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(c.id)}>
-                <td><strong>{c.candidateNo}</strong></td>
-                <td>{c.fullName}{c.tags?.length ? <div>{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}</td>
-                <td>{c.currentPosition || '—'}<div className="muted">{c.currentCompany}</div></td>
-                <td>{c.yearsExperience ?? '—'}y</td>
-                <td>{c.location || '—'}</td>
-                <td>{c.noticePeriod || '—'}</td>
-                {user.permissions.includes('salary.view') && <td>{c.expectedSalary ?? '—'}</td>}
+              <tr key={c.id} className="row-link" onClick={() => setSelectedId(c.id)}>
+                <td>
+                  <div className="idcell">
+                    <span className="idcell-av">{initials(c.fullName)}</span>
+                    <span className="idcell-txt">
+                      <span className="cell-strong">{c.fullName}</span>
+                      <span className="cell-sub">{c.candidateNo}</span>
+                    </span>
+                  </div>
+                  {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
+                </td>
+                <td><span className="cell-strong">{c.currentPosition || '—'}</span><div className="cell-sub">{c.currentCompany || '—'}</div></td>
+                <td className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
+                <td className="cell-sub-only">{c.location || '—'}</td>
+                <td className="cell-sub-only">{c.noticePeriod || '—'}</td>
                 <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td><SourceChip source={c.source} /></td>
-                <td className="muted">{c.ownerRecruiter?.name || '—'}</td>
-                <td><span className="chip">{c.applicationCount}</span></td>
-                <td><button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setSelectedId(c.id); }}>Open</button></td>
+                <td className="cell-sub-only">{c.ownerRecruiter?.name || '—'}</td>
+                <td><span className="pipe-count">{c.applicationCount}<em>app{c.applicationCount === 1 ? '' : 's'}</em></span></td>
               </tr>
             ))}</tbody>
           </table>
@@ -3514,33 +3832,48 @@ function InterviewsPage({ user }) {
   return (
     <div>
       <PageHead crumb="Recruitment / Interviews" title={data?.scoped ? 'My Interviews' : 'Interviews'}
-        sub={data?.scoped ? 'You see only interviews where you are on the panel.' : 'All interviews. Each links to an application, candidate and request; interview status is separate from application status.'} />
+        sub={data?.scoped ? 'Interviews where you are on the panel.' : 'Every interview links to an application, candidate and request. Interview status is tracked separately from application status.'}
+        actions={data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>} />
       <div className="toolbar">
         <input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 220 }} />
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(IV_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <div className="spacer" />
-        {data && <span className="muted">{data.interviews.length} interviews</span>}
+        <CountPill n={data ? data.interviews.length : null} noun="interview" />
       </div>
-      <div className="card">
-        {!data ? <Skeleton /> : data.interviews.length === 0 ? <Empty icon="📅" text="No interviews." /> : (
-          <table>
-            <thead><tr><th>Interview</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th>Scheduled</th><th>Status</th><th>Outcome</th><th>App Status</th></tr></thead>
+      {!data ? <ListSkeleton rows={6} /> : data.interviews.length === 0 ? (
+        <div className="card"><Empty icon="📅"
+          title={filter.q || filter.status ? 'No interviews match these filters' : 'No interviews scheduled'}
+          text={filter.q || filter.status
+            ? 'Try clearing the search box or selecting All statuses.'
+            : 'Interviews scheduled from a candidate\u2019s application will appear here with date, panel and outcome.'} /></div>
+      ) : (
+        <div className="card flush">
+          <table className="table">
+            <thead><tr><th>Scheduled</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th>Interview</th><th>Status</th><th>Outcome</th><th>Application</th></tr></thead>
             <tbody>{data.interviews.map((iv) => (
-              <tr key={iv.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(iv.id)}>
-                <td><strong>{iv.interviewNo}</strong><div className="muted">R{iv.round}</div></td>
-                <td>{iv.candidate?.fullName}<div className="muted">{iv.candidate?.currentPosition || ''}</div></td>
-                <td title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}<div className="muted">{iv.request?.title}</div></td>
-                <td>{iv.interviewType}<div className="muted">{iv.mode}</div></td>
-                <td className="muted">{fmtDate(iv.scheduledAt)}</td>
+              <tr key={iv.id} className="row-link" onClick={() => setSelected(iv.id)}>
+                <td><DateCell value={iv.scheduledAt} /></td>
+                <td>
+                  <div className="idcell">
+                    <span className="idcell-av">{initials(iv.candidate?.fullName || '?')}</span>
+                    <span className="idcell-txt">
+                      <span className="cell-strong">{iv.candidate?.fullName || '—'}</span>
+                      <span className="cell-sub">{iv.candidate?.currentPosition || '—'}</span>
+                    </span>
+                  </div>
+                </td>
+                <td><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub">{iv.request?.title || '—'}</div></td>
+                <td><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
+                <td><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
                 <td><IvStatusBadge status={iv.status} /></td>
                 <td>{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
-                <td><span className="muted" title="Application pipeline status (separate)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : '—'}</span></td>
+                <td title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
               </tr>
             ))}</tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3704,36 +4037,48 @@ function OffersPage({ user }) {
   if (selected) return <OfferDetail id={selected} user={user} onBack={() => { setSelected(null); load(); }} />;
   return (
     <div>
-      <PageHead crumb="Recruitment / Offers" title="Offers" sub="Offer preparation, approval, result tracking and joining. Salary is shown only to authorized roles." />
+      <PageHead crumb="Recruitment / Offers" title="Offers"
+        sub="Offer preparation, approval, result tracking and joining date. Compensation is not shown in this list."
+        actions={<Badge variant="info">Read-only list</Badge>} />
       <div className="toolbar">
         <input placeholder="Search offer no / position…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 220 }} />
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(OFFER_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <label className="muted" style={{ fontSize: 12 }}>Joining from <input type="date" value={filter.joiningFrom} onChange={(e) => setFilter((f) => ({ ...f, joiningFrom: e.target.value }))} /></label>
         <div className="spacer" />
-        {offers && <span className="muted">{offers.length} offers</span>}
+        <CountPill n={offers ? offers.length : null} noun="offer" />
       </div>
-      <div className="card">
-        {!offers ? <Skeleton /> : offers.length === 0 ? <Empty icon="📑" text="No offers." /> : (
-          <table>
-            <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th>Project</th><th>Salary</th><th>Status</th><th>Prepared By</th><th>Approved By</th><th>Joining</th></tr></thead>
+      {!offers ? <ListSkeleton rows={5} /> : offers.length === 0 ? (
+        <div className="card"><Empty icon="📑"
+          title={filter.q || filter.status || filter.joiningFrom ? 'No offers match these filters' : 'No offers raised yet'}
+          text={filter.q || filter.status || filter.joiningFrom
+            ? 'Try clearing the search box, status filter or joining-date range.'
+            : 'Offers raised from a candidate\u2019s application will appear here with approval state and joining date.'} /></div>
+      ) : (
+        <div className="card flush">
+          <table className="table">
+            <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th>Project</th><th>Status</th><th>Prepared by</th><th>Approved by</th><th>Joining</th></tr></thead>
             <tbody>{offers.map((o) => (
-              <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(o.id)}>
-                <td><strong>{o.offerNo}</strong></td>
-                <td>{o.candidate?.fullName}</td>
-                <td title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</td>
-                <td>{o.positionTitle}</td>
-                <td>{o.project?.name || '—'}</td>
-                <td><SalaryCell visible={o.salaryVisible} value={o.salaryOffered} currency={o.currency} /></td>
+              <tr key={o.id} className="row-link" onClick={() => setSelected(o.id)}>
+                <td><span className="code-pill">{o.offerNo}</span></td>
+                <td>
+                  <div className="idcell">
+                    <span className="idcell-av">{initials(o.candidate?.fullName || '?')}</span>
+                    <span className="idcell-txt"><span className="cell-strong">{o.candidate?.fullName || '—'}</span></span>
+                  </div>
+                </td>
+                <td><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
+                <td><span className="cell-strong">{o.positionTitle || '—'}</span></td>
+                <td className="cell-sub-only">{o.project?.name || '—'}</td>
                 <td><OfferStatusBadge status={o.status} /></td>
-                <td className="muted">{o.preparedBy?.name || '—'}</td>
-                <td className="muted">{o.approvedBy?.name || '—'}</td>
-                <td className="muted">{fmtDateShort(o.joiningDate)}</td>
+                <td className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
+                <td className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
+                <td><DateCell value={o.joiningDate} dateOnly /></td>
               </tr>
             ))}</tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

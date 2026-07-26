@@ -252,7 +252,9 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .sidebar.collapsed { --sidebar-w: 66px; }
 .sidebar-head { padding: 14px 16px; display: flex; align-items: center; gap: 11px; border-bottom: 1px solid rgba(255,255,255,.08); }
 /* White plate behind the logo mark so the artwork stays legible on dark chrome. */
-.side-mark { width: 34px; height: 34px; border-radius: 8px; background: #fff; display: grid; place-items: center; flex: 0 0 auto; }
+/* No white plate behind the mark — the transparent logo sits directly on the sidebar.
+   Sizing/alignment intentionally unchanged. */
+.side-mark { width: 34px; height: 34px; border-radius: 8px; background: transparent; display: grid; place-items: center; flex: 0 0 auto; }
 .side-txt { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
 .side-txt strong { font-size: 13.5px; color: #fff; font-weight: 700; }
 .side-txt span { font-size: 10.5px; color: rgba(255,255,255,.55); }
@@ -562,3 +564,315 @@ table.table tbody tr:hover, .table tbody tr:hover { background: var(--action-pri
 .swatch-success        { background: var(--action-success); }
 .swatch-warning        { background: var(--warning); }
 .swatch-danger         { background: var(--danger); }
+
+/* ==========================================================================
+   Dashboard (Stage 3B) — reference-first visual rebuild.
+   All selectors are .dash-* scoped so no other page is affected.
+   ========================================================================== */
+.dash-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 22px; flex-wrap: wrap; }
+.dash-eyebrow { font-size: 11.5px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+.dash-head .page-title { font-size: 25px; letter-spacing: -0.02em; }
+.dash-head .page-sub { margin-top: 6px; font-size: 13.5px; }
+.dash-sub-note { color: var(--muted); }
+.dash-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding-top: 20px; }
+.dash-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
+
+/* KPI cards ------------------------------------------------------------- */
+.dash-kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.dash-kpi { position: relative; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 17px 18px 16px; box-shadow: var(--shadow-card); overflow: hidden; }
+.dash-kpi::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--kc, var(--brand-primary)); }
+.dash-kpi-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.dash-kpi-label { font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); line-height: 1.4; }
+.dash-kpi .dash-ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto; color: var(--kc, var(--brand-primary)); background: color-mix(in srgb, var(--kc, var(--brand-primary)) 11%, #fff); }
+.dash-kpi-val { font-size: 30px; font-weight: 700; line-height: 1.1; margin: 12px 0 5px; color: var(--text-strong); letter-spacing: -0.02em; }
+.dash-kpi-val small { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 2px; letter-spacing: 0; }
+.dash-kpi-hint { font-size: 11.5px; color: var(--muted); }
+.dash-kpi-skel { padding-top: 20px; }
+.dash-kpi-skel::before { background: var(--border); }
+
+/* Panels ---------------------------------------------------------------- */
+.dash-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.dash-grid-2 > .card { display: flex; flex-direction: column; min-width: 0; }
+.dash-grid-2 > .card > .card-pad, .dash-grid-2 > .card > .dash-listpad { flex: 1; }
+.dash-headnote { font-size: 11.5px; color: var(--muted); }
+
+/* Funnel ---------------------------------------------------------------- */
+.dash-frow { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.dash-fl { width: 168px; flex: 0 0 168px; font-size: 12.5px; color: var(--text); display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-fl i { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.dash-ftrack { flex: 1; min-width: 0; height: 20px; background: var(--neutral-tint, #f1f3f6); border-radius: 5px; overflow: hidden; }
+.dash-fbar { display: block; height: 100%; border-radius: 5px; min-width: 3px; transition: width .35s ease; }
+.dash-fn { width: 34px; text-align: right; font-size: 13px; color: var(--text-strong); }
+.dash-fp { width: 38px; text-align: right; font-size: 11.5px; color: var(--muted); }
+.dash-frow-muted { margin-top: 8px; padding-top: 11px; border-top: 1px dashed var(--border); }
+.dash-frow-muted .dash-fl, .dash-frow-muted .dash-fn { color: var(--muted); }
+
+/* Horizontal bar lists --------------------------------------------------- */
+.dash-bars { display: flex; flex-direction: column; gap: 11px; }
+.dash-bar { display: flex; align-items: center; gap: 12px; }
+.dash-bar-l { width: 150px; flex: 0 0 150px; font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-bar-track { flex: 1; min-width: 0; height: 9px; background: var(--neutral-tint, #f1f3f6); border-radius: 5px; overflow: hidden; }
+.dash-bar-fill { display: block; height: 100%; border-radius: 5px; min-width: 3px; transition: width .35s ease; }
+.dash-bar-n { width: 32px; text-align: right; font-size: 13px; color: var(--text-strong); }
+
+/* SLA health ------------------------------------------------------------- */
+.dash-sla { display: flex; align-items: center; gap: 22px; }
+.dash-donut { width: 104px; height: 104px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center; }
+.dash-donut span { width: 68px; height: 68px; border-radius: 50%; background: var(--card-bg); display: grid; place-items: center; font-size: 21px; font-weight: 700; color: var(--text-strong); }
+.dash-sla-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.dash-kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.dash-kv span { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.dash-kv i { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.dash-kv em { font-style: normal; color: var(--muted); font-size: 11.5px; }
+.dash-kv strong { font-size: 14px; color: var(--text-strong); }
+
+/* List rows -------------------------------------------------------------- */
+.dash-listpad { padding: 6px 10px 10px; }
+.dash-lrow { display: flex; align-items: center; gap: 12px; padding: 12px 10px; border-radius: 8px; }
+.dash-lrow + .dash-lrow { border-top: 1px solid var(--border-soft, var(--border)); }
+.dash-lmain { flex: 1; min-width: 0; }
+.dash-lmain strong { display: block; font-size: 13.5px; font-weight: 600; color: var(--text-strong); }
+.dash-lmeta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.dash-lright { flex: 0 0 auto; }
+.dash-ico { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto; }
+.dash-ico-navy { color: var(--brand-primary); background: var(--brand-primary-tint); }
+.dash-ico-blue { color: var(--action-primary); background: var(--action-primary-tint); }
+.dash-ico-amber { color: var(--warning-ink); background: var(--warning-tint); }
+.dash-ico-green { color: var(--action-success); background: var(--action-success-tint); }
+.dash-ico-grey  { color: var(--muted); background: var(--neutral-tint, #f1f3f6); }
+.dash-link { background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 12px; font-weight: 600; color: var(--action-primary); cursor: pointer; border-radius: 6px; }
+.dash-link:hover { background: var(--action-primary-tint); }
+
+/* Non-blocking state panel ---------------------------------------------- */
+.dash-state { padding: 54px 24px; text-align: center; }
+.dash-state-ico { width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 14px; display: grid; place-items: center; color: var(--muted); background: var(--neutral-tint, #f1f3f6); }
+.dash-state h3 { margin: 0 0 6px; font-size: 15.5px; color: var(--text-strong); }
+.dash-state p { margin: 0; font-size: 13px; color: var(--muted); }
+
+@media (max-width: 1180px) {
+  .dash-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .dash-grid-2 { grid-template-columns: 1fr; }
+  .dash-sla { flex-direction: column; align-items: flex-start; }
+  .dash-actions { padding-top: 0; }
+}
+@media (max-width: 560px) {
+  .dash-kpi-row { grid-template-columns: 1fr; }
+  .dash-fl, .dash-bar-l { width: 120px; flex-basis: 120px; }
+}
+
+/* ==========================================================================
+   Stage 3C — Core ATS pages visual pass.
+   Shared page-level chrome (header, filter bar, tables, empty/loading states)
+   so Hiring Requests / Talent Pool / Interviews / Offers / Reports read as one
+   product alongside the Stage 3B Dashboard.
+   ========================================================================== */
+
+/* Page header ------------------------------------------------------------ */
+.page-head { align-items: flex-start; margin-bottom: 20px; }
+.page-head-main { min-width: 0; }
+.page-head .breadcrumb { font-size: 11.5px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+.page-head .page-title { font-size: 25px; letter-spacing: -0.02em; color: var(--text-strong); }
+.page-head .page-sub { margin-top: 6px; font-size: 13.5px; max-width: 720px; }
+.page-head-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap; padding-top: 20px; }
+
+/* Segmented view toggle --------------------------------------------------- */
+.view-toggle { display: inline-flex; background: var(--neutral-tint); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px; }
+.view-toggle-btn { border: 0; background: none; padding: 5px 13px; border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; transition: background .12s, color .12s; }
+.view-toggle-btn:hover { color: var(--text-strong); }
+.view-toggle-btn.active { background: var(--card-bg); color: var(--action-primary); box-shadow: var(--shadow-sm); }
+
+/* Filter bar -------------------------------------------------------------- */
+.toolbar { gap: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--card-radius); box-shadow: var(--shadow-sm); }
+.toolbar input, .toolbar select { padding: 7px 11px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; background: var(--card-bg); color: var(--text); transition: border-color .12s, box-shadow .12s; }
+.toolbar input:focus, .toolbar select:focus { outline: none; border-color: var(--action-primary); box-shadow: var(--ring-action); }
+.toolbar input::placeholder { color: var(--muted); }
+.count-pill { display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 11px; border-radius: var(--pill-radius); background: var(--neutral-tint); font-size: 12px; font-weight: 700; color: var(--text-strong); white-space: nowrap; }
+.count-pill em { font-style: normal; font-weight: 500; color: var(--muted); }
+
+/* Tables ------------------------------------------------------------------ */
+.card.flush { overflow: hidden; }
+.card.flush > table { border-radius: inherit; }
+table.table thead th { position: sticky; top: 0; z-index: 1; background: var(--neutral-tint); border-bottom: 1px solid var(--border); font-size: 10.5px; letter-spacing: .6px; padding: 11px 16px; white-space: nowrap; }
+table.table tbody td { padding: 13px 16px; vertical-align: middle; }
+table.table tbody tr { transition: background .1s; }
+tr.row-link { cursor: pointer; }
+table.table tbody tr.row-link:hover { background: var(--action-primary-tint); }
+.cell-strong { font-size: 13.5px; font-weight: 600; color: var(--text-strong); display: block; line-height: 1.35; }
+.cell-sub { font-size: 11.5px; color: var(--muted); display: block; margin-top: 2px; line-height: 1.35; }
+.cell-sub-only { font-size: 12.5px; color: var(--muted); }
+.code-pill { display: inline-block; padding: 3px 9px; border-radius: 6px; background: var(--brand-primary-tint); color: var(--brand-primary); font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
+.pipe-count { display: inline-flex; align-items: baseline; gap: 4px; font-size: 13.5px; font-weight: 700; color: var(--text-strong); }
+.pipe-count em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--muted); }
+.datecell { display: block; white-space: nowrap; }
+
+/* Identity cell (avatar + name) ------------------------------------------ */
+.idcell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.idcell-av { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center; background: var(--slate); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .3px; }
+.idcell-txt { min-width: 0; }
+.idcell-tags { margin-top: 5px; margin-left: 40px; }
+
+/* SLA / health indicator -------------------------------------------------- */
+.sla { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.sla i { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.sla em { font-style: normal; font-weight: 500; color: var(--muted); font-size: 11.5px; }
+.sla-green { color: var(--action-success); } .sla-green i { background: var(--action-success); }
+.sla-amber { color: var(--warning-ink); }    .sla-amber i { background: var(--warning); }
+.sla-red   { color: var(--danger); }         .sla-red i   { background: var(--danger); }
+
+/* Request card grid ------------------------------------------------------- */
+.ats-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+.ats-card-grid .ticket-card { transition: box-shadow .14s, transform .14s, border-color .14s; }
+.ats-card-grid .ticket-card:hover { box-shadow: var(--shadow-pop); transform: translateY(-1px); border-color: var(--border); }
+
+/* Empty states ------------------------------------------------------------ */
+.empty { padding: 58px 28px; }
+.empty .ico { display: grid; place-items: center; width: 58px; height: 58px; margin: 0 auto 14px; border-radius: 16px; background: var(--neutral-tint); color: var(--muted); font-size: 0; }
+.empty-title { margin: 0 0 6px; font-size: 15.5px; font-weight: 600; color: var(--text-strong); }
+.empty p { margin: 0 auto; font-size: 13px; color: var(--muted); max-width: 400px; line-height: 1.6; }
+.empty-action { margin-top: 16px; }
+
+/* List loading placeholder ------------------------------------------------ */
+.list-skel { overflow: hidden; }
+.list-skel-head { height: 38px; background: var(--neutral-tint); border-bottom: 1px solid var(--border); }
+.list-skel-row { display: flex; align-items: center; gap: 16px; padding: 15px 16px; border-bottom: 1px solid var(--border-soft); }
+.list-skel-row:last-child { border-bottom: none; }
+.list-skel-row .skeleton { margin: 0; }
+
+/* Screening tabs ---------------------------------------------------------- */
+.seg-tabs { background: var(--card-bg); border-color: var(--border); box-shadow: var(--shadow-sm); }
+.seg-tab.active { background: var(--action-primary-tint); color: var(--action-primary); box-shadow: none; }
+
+/* Reports grid ------------------------------------------------------------ */
+.report-grid { gap: 16px; }
+.report-grid > .card { display: flex; flex-direction: column; min-width: 0; }
+
+@media (max-width: 1100px) {
+  .report-grid { grid-template-columns: 1fr; }
+  .page-head-actions { padding-top: 0; }
+}
+
+/* ==========================================================================
+   Stage 3D — Request Detail / Candidate Board.
+   Scoped to the detail view; no list-page or Shell selectors are redefined.
+   ========================================================================== */
+
+/* Back link + header card ------------------------------------------------ */
+.detail-back { margin-bottom: 12px; }
+.back-link { border: 0; background: none; padding: 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--action-primary); cursor: pointer; }
+.back-link:hover { text-decoration: underline; }
+
+.ticket-header-card { padding: 20px 24px; margin-bottom: 14px; border-color: var(--border); }
+/* Accent rail softened from red to brand navy — red is reserved for danger. */
+.ticket-header-card::before { width: 3px; background: var(--brand-primary); }
+.ticket-header-card .th-row { display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+.ticket-header-card .th-main { flex: 1; min-width: 260px; }
+.ticket-header-card .th-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+.ticket-header-card .th-title { margin: 5px 0 11px; font-size: 23px; font-weight: 700; color: var(--text-strong); letter-spacing: -.02em; line-height: 1.2; }
+.ticket-header-card .th-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 13px; }
+.ticket-header-card .th-sub { display: flex; flex-wrap: wrap; gap: 8px 26px; font-size: 12.5px; color: var(--text); }
+.ticket-header-card .th-sub span { display: inline-flex; align-items: baseline; gap: 7px; }
+.ticket-header-card .th-sub em { font-style: normal; font-size: 10.5px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+.ticket-header-card .th-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex: 0 0 auto; padding-top: 4px; }
+
+/* Collapsible details ----------------------------------------------------- */
+.detail-disclosure { margin-bottom: 14px; overflow: hidden; }
+.disclosure-btn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 18px; background: none; border: 0; text-align: left; cursor: pointer; font: inherit; }
+.disclosure-btn:hover { background: var(--neutral-tint); }
+.disclosure-label { font-size: 13.5px; font-weight: 600; color: var(--text-strong); flex: 0 0 auto; }
+.disclosure-hint { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disclosure-caret { font-size: 11.5px; font-weight: 600; color: var(--action-primary); flex: 0 0 auto; }
+.disclosure-body { padding: 4px 18px 18px; border-top: 1px solid var(--border-soft); }
+
+/* Tab bar ----------------------------------------------------------------- */
+.tabbar { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+.tabbar-btn { border: 0; background: none; padding: 11px 16px; margin-bottom: -1px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: color .12s, border-color .12s; }
+.tabbar-btn:hover { color: var(--text-strong); }
+.tabbar-btn.active { color: var(--action-primary); border-bottom-color: var(--action-primary); }
+
+/* Kanban ------------------------------------------------------------------ */
+.kanban { display: flex; gap: 14px; overflow-x: auto; padding: 2px 2px 16px; align-items: flex-start; }
+.kan-col { flex: 0 0 300px; width: 300px; background: var(--neutral-tint); border: 1px solid var(--border); border-radius: var(--card-radius); display: flex; flex-direction: column; max-height: 72vh; }
+.kan-head { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.kan-dot { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
+.kan-title { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kan-count { flex: 0 0 auto; min-width: 22px; height: 20px; padding: 0 7px; border-radius: var(--pill-radius); background: var(--card-bg); border: 1px solid var(--border); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--text-strong); }
+.kan-body { padding: 12px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1; }
+.kan-empty { padding: 26px 12px; text-align: center; font-size: 11.5px; color: var(--muted); border: 1px dashed var(--border); border-radius: 9px; background: rgba(255,255,255,.5); }
+
+/* Candidate card ---------------------------------------------------------- */
+.pcard { position: relative; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-sm); padding: 13px 14px; display: flex; flex-direction: column; gap: 10px; transition: box-shadow .14s, border-color .14s; }
+.pcard:hover { box-shadow: var(--shadow-card); border-color: var(--border); }
+.pcard.selected { border-color: var(--action-primary); box-shadow: var(--ring-action); }
+.pcard-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pcard-check { flex: 0 0 auto; margin: 0; }
+.pcard-av { width: 32px; height: 32px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center; background: var(--slate); color: #fff; font-size: 11px; font-weight: 700; }
+.pcard-id { flex: 1; min-width: 0; }
+.pcard-name { display: block; font-size: 13.5px; font-weight: 600; color: var(--text-strong); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pcard-role { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.pcard-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.pcard-facts:empty { display: none; }
+.pcard-facts .fact { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; background: var(--neutral-tint); font-size: 11px; color: var(--text); white-space: nowrap; }
+.pcard-status { display: flex; }
+.pcard-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+.pcard-actions .btn { min-height: 28px; padding: 0 10px; font-size: 12px; }
+.pcard-wide { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 16px; padding: 15px 18px; }
+.pcard-wide .pcard-top { flex: 1 1 260px; }
+.pcard-wide .pcard-facts { flex: 0 1 auto; }
+.pcard-wide .pcard-actions { border-top: none; padding-top: 0; margin-left: auto; }
+.pipe-list { display: grid; gap: 12px; }
+
+@media (max-width: 900px) {
+  .kan-col { flex-basis: 268px; width: 268px; }
+  .ticket-header-card .th-actions { padding-top: 0; }
+}
+
+/* ==========================================================================
+   Hiring Requests — equal-height ticket cards.
+   The grid stretches every card to the tallest in its row; the card is a flex
+   column with a pushed-down footer, so head / title / meta / pipeline / footer
+   line up horizontally across the row regardless of content length.
+   ========================================================================== */
+.ats-card-grid { align-items: stretch; }          /* was `start` — that caused ragged heights */
+.ats-card-grid > * { min-width: 0; }
+
+.rq-card { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 236px; overflow: hidden; cursor: pointer; }
+/* Brand navy, deliberately NOT var(--ticket-accent): red is reserved for
+   destructive/critical states, and --ticket-accent is overridden at runtime by
+   Control Center branding, which would drift this rail away from the navy
+   code-pill and the Request Detail header rail. */
+.rq-rail { display: block; height: 4px; flex: 0 0 auto; background: var(--brand-primary); }
+.rq-body { flex: 1; display: flex; flex-direction: column; padding: 16px 18px 15px; min-width: 0; }
+
+/* Row 1 — ticket code + priority */
+.rq-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex: 0 0 auto; }
+
+/* Row 2 — title, clamped to two lines so cards with long titles stay aligned */
+.rq-title {
+  margin: 0 0 12px; font-size: 15.5px; font-weight: 600; line-height: 1.32;
+  color: var(--text-strong); letter-spacing: -.01em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; min-height: calc(15.5px * 1.32 * 2); flex: 0 0 auto;
+}
+
+/* Row 3 — label/value meta, one line per value */
+.rq-meta { margin: 0 0 12px; display: flex; flex-direction: column; gap: 5px; flex: 0 0 auto; }
+.rq-meta > div { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.rq-meta dt { flex: 0 0 84px; font-size: 10.5px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+.rq-meta dd { margin: 0; flex: 1; min-width: 0; font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Row 4 — pipeline mini-funnel. Reserves its slot even when absent, so cards
+   with and without pipeline data keep the footer on the same line. */
+.rq-pipe { flex: 1 1 auto; min-height: 26px; display: flex; align-items: flex-start; margin-bottom: 12px; }
+.rq-pipe > * { width: 100%; }
+
+/* Row 5 — footer pinned to the bottom of every card */
+.rq-foot { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--border-soft); }
+
+.rq-card:hover { box-shadow: var(--shadow-card); transform: translateY(-1px); border-color: var(--border); }
+
+@media (max-width: 560px) {
+  .rq-card { min-height: 0; }
+  .rq-meta dt { flex-basis: 74px; }
+}
