@@ -876,3 +876,37 @@ table.table tbody tr.row-link:hover { background: var(--action-primary-tint); }
   .rq-card { min-height: 0; }
   .rq-meta dt { flex-basis: 74px; }
 }
+
+/* ==========================================================================
+   Candidate pipeline movement — pending / busy states.
+   Applies only while a stage move is in flight; nothing here affects the
+   resting appearance of the board.
+   ========================================================================== */
+.pcard { transition: box-shadow .14s, border-color .14s, opacity .16s; }
+.pcard-pending { opacity: .62; border-color: var(--action-primary); pointer-events: none; }
+.pcard-pending .pcard-actions { opacity: .7; }
+.pcard-busy {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: var(--pill-radius);
+  background: var(--action-primary-tint); color: var(--action-primary);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .3px; white-space: nowrap;
+}
+.spin {
+  width: 10px; height: 10px; flex: 0 0 auto; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Table view equivalent */
+tr.row-pending { opacity: .6; }
+tr.row-pending td { pointer-events: none; }
+
+/* Disabled controls inside a card stay legible rather than washing out */
+.pcard-actions .btn:disabled { opacity: .55; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; border-top-color: currentColor; opacity: .6; }
+  .pcard { transition: none; }
+}

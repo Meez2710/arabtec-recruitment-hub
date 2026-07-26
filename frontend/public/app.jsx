@@ -688,8 +688,15 @@ function DashBars({ rows, empty, icon = '📊' }) {
 }
 
 function DashFunnel({ data }) {
-  const order = ['sourced', 'screening', 'interview_hr', 'interview_technical', 'offer', 'hired'];
-  const map = Object.fromEntries((data || []).map((d) => [d.status, d.count]));
+  const order = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
+  // /dashboard returns the API's canonical statuses (matched, interviewing,
+  // issuing_offer, joined…). Fold them onto board columns via pipelineStage,
+  // otherwise everything except Sourced reads 0.
+  const map = {};
+  for (const d of data || []) {
+    const key = pipelineStage(d.status);
+    map[key] = (map[key] || 0) + d.count;
+  }
   const rows = order.map((s) => ({ status: s, count: map[s] || 0 }));
   const closed = (map.rejected || 0) + (map.offer_declined || 0);
   const live = rows.reduce((s, r) => s + r.count, 0);
@@ -2660,9 +2667,33 @@ const APP_STATUS = {
   joined:      { label: 'Hired', variant: 'success', column: 6 },
 };
 // Ordered stage columns for the pipeline (canonical list only).
-const APP_ORDER = ['sourced', 'screening', 'interview_hr', 'interview_technical', 'offer', 'hired'];
+// Board columns. `interview_technical` was removed: the API models a single
+// `interviewing` stage, so that column could never be reached and any move to it
+// was rejected with 400.
+const APP_ORDER = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
+
+// WRITE-DIRECTION map: board column -> the status the API actually accepts.
+// APP_STATUS above is the read direction (API status -> display column); this is
+// its mirror. Without it the board posted display keys such as 'screening', which
+// the API rejects as Invalid status — five of six moves silently failed.
+// Targets verified against the API's own transition table:
+//   sourced -> matched -> interviewing -> issuing_offer -> offer_sent -> joined
+const APP_WRITE = {
+  sourced: 'sourced',
+  screening: 'matched',
+  interview_hr: 'interviewing',
+  offer: 'issuing_offer',
+  hired: 'joined',
+  rejected: 'rejected',
+  offer_declined: 'offer_declined',
+  on_hold: 'on_hold',
+};
+// Board key -> API status. Unmapped values pass through unchanged so canonical
+// statuses coming from elsewhere in the app keep working.
+const toApiStatus = (s) => APP_WRITE[s] || s;
 const REASON_STATUSES = ['rejected', 'offer_declined', 'on_hold'];
-const TERMINAL_APP = ['hired', 'rejected', 'offer_declined'];
+// Canonical + display spellings: the API stores `joined`, the board labels it Hired.
+const TERMINAL_APP = ['hired', 'joined', 'rejected', 'offer_declined'];
 
 function pipelineStage(status) {
   const s = APP_STATUS[status];
@@ -2670,8 +2701,10 @@ function pipelineStage(status) {
   if (DISQUALIFIED_STAGES.includes(status)) return status;
   if (s.column === 1) return 'sourced';
   if (s.column === 2) return 'screening';
-  if (s.column === 3) return 'interview_hr';
-  if (s.column === 4) return 'interview_technical';
+  // Columns 3 and 4 both fold into the single interview column: the API has one
+  // `interviewing` stage, so a card must never land in a column that no longer
+  // exists in APP_ORDER (it would vanish from the board).
+  if (s.column === 3 || s.column === 4) return 'interview_hr';
   if (s.column === 5) return 'offer';
   if (s.column === 6) return 'hired';
   return status;
@@ -2715,6 +2748,8 @@ function RequestPipeline({ request, user, btns }) {
   const [offerApp, setOfferApp] = useState(null); // application to generate an offer for
   const [pf, setPf] = useState({ q: '', stage: '', recruiter: '', sort: 'last' }); // candidate search/filter/sort
   const [noteApp, setNoteApp] = useState(null); // application to set next-action on
+  const [pending, setPending] = useState(new Set()); // application ids with an in-flight move
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = useCallback(async () => { setApps((await api.get('/applications/request/' + request.id)).applications); }, [request.id]);
   useEffect(() => { load(); }, [load]);
@@ -2745,21 +2780,52 @@ function RequestPipeline({ request, user, btns }) {
   const canImport = canLink && !['closed', 'cancelled', 'rejected', 'filled'].includes(request.status);
   const canBulk = user.permissions.includes('application.bulk_action');
 
+  // ---- Stage movement -------------------------------------------------
+  // POST /applications/:id/move returns the updated application, so a move needs
+  // no refetch: we apply an optimistic status change (the card lands in the new
+  // column immediately, no flicker), then splice the server's authoritative record
+  // over it. On failure the previous list is restored exactly and the server's
+  // message is surfaced. `pending` guards against double-submit and drives the
+  // per-card busy state.
   async function move(appId, status, reason) {
-    try { await api.post(`/applications/${appId}/move`, { status, reason }); toast('Stage updated'); load(); }
-    catch (e) { toast(e.message, 'error'); }
+    if (pending.has(appId)) return;                       // double-submit guard
+    const snapshot = apps;                                // for rollback
+    setPending((p) => new Set(p).add(appId));
+    setApps((list) => (list || []).map((a) => (a.id === appId ? { ...a, status: toApiStatus(status) } : a)));
+    try {
+      const r = await api.post(`/applications/${appId}/move`, { status: toApiStatus(status), reason });
+      if (r && r.application) {
+        setApps((list) => (list || []).map((a) => (a.id === appId ? r.application : a)));
+      }
+      toast(`Moved to ${(APP_STATUS[status] || {}).label || status}`);
+    } catch (e) {
+      setApps(snapshot);                                  // restore previous stage
+      toast(moveErrorText(e), 'error');
+    } finally {
+      setPending((p) => { const nx = new Set(p); nx.delete(appId); return nx; });
+    }
   }
   function requestMove(appId, status) {
+    if (pending.has(appId)) return;
     if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
     else move(appId, status);
   }
   async function bulkMove(status, reason) {
+    if (bulkBusy) return;
+    const ids = [...selected];
+    setBulkBusy(true);
+    setPending((p) => { const nx = new Set(p); ids.forEach((i) => nx.add(i)); return nx; });
     try {
-      const r = await api.post('/applications/bulk', { ids: [...selected], action: 'move', status, reason });
+      const r = await api.post('/applications/bulk', { ids, action: 'move', status: toApiStatus(status), reason });
       const skipped = (r.skipped || []).length;
-      toast(`${r.affected} updated${skipped ? `, ${skipped} skipped` : ''}`, skipped ? 'error' : 'success');
-      setSelected(new Set()); load();
-    } catch (e) { toast(e.message, 'error'); }
+      toast(`${r.affected} moved to ${(APP_STATUS[status] || {}).label || status}${skipped ? `, ${skipped} skipped` : ''}`, skipped ? 'error' : 'success');
+      setSelected(new Set());
+      await load();                                       // bulk can skip rows; refetch is the safe reconcile
+    } catch (e) { toast(moveErrorText(e), 'error'); }
+    finally {
+      setBulkBusy(false);
+      setPending((p) => { const nx = new Set(p); ids.forEach((i) => nx.delete(i)); return nx; });
+    }
   }
   function toggleSel(id) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   const [importOpen, setImportOpen] = useState(false);
@@ -2798,8 +2864,8 @@ function RequestPipeline({ request, user, btns }) {
           <strong>{selected.size} selected</strong>
           <select id="bulkStatus" className="" style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
             {cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
-          <button className="btn btn-sm" onClick={() => { const st = document.getElementById('bulkStatus').value; if (REASON_STATUSES.includes(st)) setMoveModal({ appIds: [...selected], toStatus: st, reason: true, bulk: true }); else bulkMove(st); }}>Apply Bulk Move</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
+          <button className="btn btn-sm" disabled={bulkBusy} onClick={() => { const st = document.getElementById('bulkStatus').value; if (REASON_STATUSES.includes(st)) setMoveModal({ appIds: [...selected], toStatus: st, reason: true, bulk: true }); else bulkMove(st); }}>{bulkBusy ? 'Moving…' : 'Apply Bulk Move'}</button>
+          <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => setSelected(new Set())}>Clear</button>
         </div>
       )}
 
@@ -2823,7 +2889,7 @@ function RequestPipeline({ request, user, btns }) {
                   <div className="kan-body">
                     {items.length === 0
                       ? <div className="kan-empty">No candidates at this stage</div>
-                      : items.map((a) => <PipelineCard key={a.id} app={a} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
                   </div>
                 </div>
               );
@@ -2831,14 +2897,14 @@ function RequestPipeline({ request, user, btns }) {
           </div>
         ) : view === 'list' ? (
           <div className="pipe-list">
-            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
           </div>
         ) : (
           <div className="card" style={{ overflowX: 'auto' }}><table>
             <thead><tr>{canBulk && <th></th>}<th>Candidate</th><th>Employer / Project</th><th>Exp</th><th>Education</th><th>Match</th><th>Stage</th><th>Recruiter</th><th>Next Action</th><th>Last Update</th><th></th></tr></thead>
             <tbody>{visibleApps.map((a) => (
-              <tr key={a.id}>
-                {canBulk && <td><input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSel(a.id)} /></td>}
+              <tr key={a.id} className={pending.has(a.id) ? 'row-pending' : ''} aria-busy={pending.has(a.id)}>
+                {canBulk && <td><input type="checkbox" checked={selected.has(a.id)} disabled={pending.has(a.id)} onChange={() => toggleSel(a.id)} /></td>}
                 <td><strong>{a.candidate?.fullName}</strong><div className="muted">{a.candidate?.candidateNo}</div></td>
                 <td>{a.candidate?.employer || a.candidate?.currentCompany || '—'}<div className="muted">{a.candidate?.currentProject || ''}</div></td>
                 <td>{a.candidate?.yearsExperience ?? '—'}y</td>
@@ -2849,8 +2915,8 @@ function RequestPipeline({ request, user, btns }) {
                 <td style={{ fontSize: 12 }}>{a.nextAction || <span className="muted">—</span>}{a.nextActionDate ? <div className="muted">{fmtDateShort(a.nextActionDate)}</div> : null}</td>
                 <td className="muted">{fmtDateShort(a.lastActivityAt)}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>
-                  {canMove && !TERMINAL_APP.includes(a.status) && <StageSelect value={a.status} onChange={(s) => requestMove(a.id, s)} />}
-                  {canMove && <button className="btn btn-ghost btn-sm" title="Set next action" aria-label="Set next action" onClick={() => setNoteApp(a)}>Note</button>}
+                  {canMove && !TERMINAL_APP.includes(a.status) && <StageSelect value={a.status} disabled={pending.has(a.id)} onChange={(s) => requestMove(a.id, s)} />}
+                  {canMove && <button className="btn btn-ghost btn-sm" disabled={pending.has(a.id)} title="Set next action" aria-label="Set next action" onClick={() => setNoteApp(a)}>Note</button>}
                 </td>
               </tr>
             ))}</tbody>
@@ -2869,9 +2935,19 @@ function RequestPipeline({ request, user, btns }) {
   );
 }
 
-function StageSelect({ value, onChange }) {
-  return <select value={value} onChange={(e) => onChange(e.target.value)} style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}>
+function StageSelect({ value, onChange, disabled }) {
+  return <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
+    style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}>
     {APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>;
+}
+
+// Turn a failed move into a sentence a recruiter can act on. The API already
+// returns human-readable reasons ("Cannot move from Sourced to Offer."); this only
+// guards against an empty or non-textual error leaking into the UI.
+function moveErrorText(e) {
+  const m = (e && e.message ? String(e.message) : '').trim();
+  if (!m || /^\s*[{[<]/.test(m)) return 'Could not move this candidate. Please try again.';
+  return m;
 }
 
 function NextActionModal({ app, onClose, onSaved }) {
@@ -2893,13 +2969,17 @@ function NextActionModal({ app, onClose, onSaved }) {
   );
 }
 
-function PipelineCard({ app, wide, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns }) {
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
+  // While a stage move is in flight the card dims, shows a "Moving…" chip and
+  // every control that could fire a second request is disabled.
+  useEffect(() => { if (pending) setMenu(false); }, [pending]);
   return (
-    <div className={'pcard' + (wide ? ' pcard-wide' : '') + (selected ? ' selected' : '')}>
+    <div className={'pcard' + (wide ? ' pcard-wide' : '') + (selected ? ' selected' : '') + (pending ? ' pcard-pending' : '')} aria-busy={pending || undefined}>
+      {pending && <span className="pcard-busy"><i className="spin" />Moving…</span>}
       <div className="pcard-top">
-        {canBulk && <input className="pcard-check" type="checkbox" checked={selected} onChange={onSelect} onClick={(e) => e.stopPropagation()} />}
+        {canBulk && <input className="pcard-check" type="checkbox" checked={selected} disabled={pending} onChange={onSelect} onClick={(e) => e.stopPropagation()} />}
         <span className="pcard-av">{initials(cand.fullName || '?')}</span>
         <div className="pcard-id">
           <span className="pcard-name" title={cand.fullName}>{cand.fullName}</span>
@@ -2920,12 +3000,12 @@ function PipelineCard({ app, wide, canMove, canBulk, selected, onSelect, onView,
       <div className="pcard-status"><AppStatusBadge status={app.status} /></div>
 
       <div className="pcard-actions">
-        <button className="btn btn-secondary btn-sm" onClick={onView}>View</button>
-        {canMove && !isDisqualified(app.status) && app.status !== 'hired' && <button className="btn btn-secondary btn-sm" onClick={() => setMenu((m) => !m)}>Move ▾</button>}
+        <button className="btn btn-secondary btn-sm" disabled={pending} onClick={onView}>View</button>
+        {canMove && !isDisqualified(app.status) && app.status !== 'hired' && <button className="btn btn-secondary btn-sm" disabled={pending} aria-expanded={menu} onClick={() => setMenu((m) => !m)}>Move ▾</button>}
         {/* Destructive action: use the danger variant (red text on a light plate).
             Previously this was `btn btn-sm` (solid blue primary) with only the text
             colour overridden inline, producing unreadable red-on-blue. */}
-        {canMove && !isDisqualified(app.status) && <button className="btn btn-danger btn-sm" onClick={() => onMove('rejected')}>Disqualify</button>}
+        {canMove && !isDisqualified(app.status) && <button className="btn btn-danger btn-sm" disabled={pending} onClick={() => onMove('rejected')}>Disqualify</button>}
       </div>
       {menu && (
         <div className="menu" style={{ right: 12, top: 'auto' }} onMouseLeave={() => setMenu(false)}>
