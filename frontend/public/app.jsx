@@ -70,6 +70,7 @@ const ICON_PATHS = {
   button: 'M3 9a3 3 0 013-3h12a3 3 0 013 3v6a3 3 0 01-3 3H6a3 3 0 01-3-3zM9 12h6',
   flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6M17 16v-2',
   gear: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V19a2 2 0 11-4 0v-.1A1.6 1.6 0 007 17.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00-1.1-2.7H1a2 2 0 110-4h.1A1.6 1.6 0 002.6 7a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H7a1.6 1.6 0 001-1.5V1a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V7a1.6 1.6 0 001.5 1H23a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z',
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.2-4.2',
   scroll: 'M5 4h11a2 2 0 012 2v12a2 2 0 002 2H8a2 2 0 01-2-2V6a2 2 0 00-2-2zM9 8h6M9 12h6',
 };
 function Icon({ name, size = 17 }) {
@@ -364,28 +365,27 @@ function Login({ branding, onLogin }) {
 
 /* ----------------------------- Navigation config ----------------------------- */
 const NAV = [
-  { section: 'Overview' },
+  /* Order follows the approved internal UI reference (§02): Workspace first,
+     Administration second. Route keys and permissions are unchanged. */
+  { section: 'Workspace' },
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view' },
-  { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
-  { section: 'Recruitment' },
-  { key: 'requests', label: 'Recruitment Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
+  { key: 'requests', label: 'Hiring Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
   { key: 'candidates', label: 'Talent Pool', icon: 'user', perm: 'candidate.view' },
   { key: 'interviews', label: 'Interviews', icon: 'calendar', anyPerm: ['interview.view_all', 'interview.view_assigned'] },
   { key: 'offers', label: 'Offers', icon: 'doc', perm: 'offer.view' },
+  { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
   { section: 'Administration' },
-  { key: 'users', label: 'Users', icon: 'users', perm: 'user.manage' },
-  { key: 'roles', label: 'Roles & Permissions', icon: 'shield', perm: 'role.manage' },
   { key: 'projects', label: 'Projects', icon: 'hardhat', perm: null },
   { key: 'sites', label: 'Sites', icon: 'pin', perm: null },
   { key: 'departments', label: 'Departments', icon: 'building', perm: null },
-  { section: 'Configuration' },
+  { key: 'users', label: 'Users', icon: 'users', perm: 'user.manage' },
+  { key: 'roles', label: 'Roles & Permissions', icon: 'shield', perm: 'role.manage' },
   { key: 'control', label: 'Control Center', icon: 'gear', perm: 'app.manage_ui' },
   { key: 'branding', label: 'Branding Settings', icon: 'palette', perm: 'branding.manage' },
   { key: 'buttons', label: 'Button Settings', icon: 'button', perm: 'button.manage' },
   { key: 'workflow', label: 'Workflow Settings', icon: 'flow', perm: 'workflow.manage' },
   { key: 'system', label: 'System Settings', icon: 'gear', perm: 'system.manage' },
-  { section: 'Governance' },
-  { key: 'audit', label: 'Audit Logs', icon: 'scroll', perm: 'audit.view' },
+  { key: 'audit', label: 'Audit Log', icon: 'scroll', perm: 'audit.view' },
 ];
 
 /* ----------------------------- Shell ----------------------------- */
@@ -491,10 +491,14 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   return (
     <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '240px' }}>
       <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
-        <div className="sidebar-head" style={{ justifyContent: 'center' }}>
-          {collapsed
-            ? <Logo size={26} />
-            : <Logo size={40} withText />}
+        <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
+          <span className="side-mark"><Logo size={22} /></span>
+          {!collapsed && (
+            <span className="side-txt">
+              <strong>{branding?.app_name || 'Arabtec Hub'}</strong>
+              <span>{branding?.company_name || 'Recruitment'}</span>
+            </span>
+          )}
         </div>
         <nav className="nav">
           {visibleNav.map((n, i) => n.section
@@ -512,6 +516,18 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
           <button className="icon-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
           </button>
+          <div className="tb-brand">
+            <span className="bn">
+              <strong>Recruitment Hub</strong>
+              <span>{branding?.company_name || 'Arabtec Construction'}</span>
+            </span>
+          </div>
+          {/* Global search — SHELL PLACEHOLDER ONLY. No backend endpoint exists yet,
+              so it is intentionally non-interactive rather than a fake input. */}
+          <div className="gsearch" role="presentation" title="Global search — not yet implemented">
+            <Icon name="search" size={14} /> Search requests, candidates, interviews, offers
+            <span className="kbd">Ctrl K</span>
+          </div>
           <div className="spacer" />
           <NotificationBell onNavigate={setRoute} />
           <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
