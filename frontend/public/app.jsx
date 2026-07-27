@@ -3515,6 +3515,73 @@ function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
 }
 
 /* ----------------------------- Candidates page ----------------------------- */
+// The resume endpoint requires an Authorization header, so a plain <a href> will
+// not work — fetch the blob, then hand it to the browser.
+async function downloadResume(candidate, toast) {
+  try {
+    const res = await fetch(`/api/candidates/${candidate.id}/resume`, {
+      headers: api.token ? { Authorization: 'Bearer ' + api.token } : {},
+    });
+    if (!res.ok) {
+      const msg = res.status === 404 ? 'No CV stored for this candidate.' : 'Could not download the CV.';
+      toast(msg, 'error'); return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = candidate.resumeName || `${candidate.candidateNo || 'candidate'}-cv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch { toast('Could not download the CV.', 'error'); }
+}
+
+// Sortable column header. Clicking toggles asc/desc; the active column shows the
+// direction so the current sort is never ambiguous.
+function SortTh({ label, col, sort, onSort, align }) {
+  const active = sort.by === col;
+  return (
+    <th className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
+      onClick={() => onSort(col)} title={`Sort by ${label}`}
+      role="columnheader" aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <span>{label}</span><i className="sort-caret">{active ? (sort.dir === 'asc' ? '▲' : '▼') : ''}</i>
+    </th>
+  );
+}
+
+// Parse quality, read-only. Colour tracks confidence so a recruiter can see at a
+// glance which records came from a weak parse and may need checking.
+function ParseQuality({ status, confidence }) {
+  if (!status) return <span className="muted">—</span>;
+  const tone = status === 'done' ? 'green' : status === 'review' ? 'amber' : status === 'failed' ? 'red' : 'grey';
+  const pct = confidence == null ? null : Math.round(confidence * 100);
+  return (
+    <span className={'pq pq-' + tone} title={`Parse status: ${status}${pct != null ? ` · confidence ${pct}%` : ''}`}>
+      <i />{status}{pct != null && <em>{pct}%</em>}
+    </span>
+  );
+}
+
+function Pager({ page, pageSize, total, totalPages, onPage, onPageSize }) {
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <div className="pager">
+      <span className="pager-info">{from}–{to} of {total}</span>
+      <div className="pager-controls">
+        <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(1)}>First</button>
+        <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>Prev</button>
+        <span className="pager-page">Page {page} of {totalPages}</span>
+        <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>Next</button>
+        <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(totalPages)}>Last</button>
+        <select value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))} aria-label="Rows per page">
+          {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / page</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function CandidatesPage({ user }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
@@ -3523,15 +3590,37 @@ function CandidatesPage({ user }) {
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState('board'); // board | table
   const [screenTab, setScreenTab] = useState('all'); // Database fitness-screen filter
+  // Server-side paging/sorting. The API returns a `pagination` envelope; the UI no
+  // longer fetches the whole table and slices it in the browser.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [sort, setSort] = useState({ by: 'created', dir: 'desc' });
+  const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1, hasMore: false });
+  const [loadError, setLoadError] = useState(null);
   const btns = useResolvedButtons();
 
   const load = useCallback(async () => {
-    setCandidates(null);
+    setCandidates(null); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
-    setCandidates((await api.get('/candidates?' + params.toString())).candidates);
-  }, [filters]);
+    if (screenTab !== 'all') params.set('screeningStatus', screenTab);
+    params.set('page', String(page));
+    params.set('pageSize', String(pageSize));
+    params.set('sort', sort.by);
+    params.set('dir', sort.dir);
+    try {
+      const r = await api.get('/candidates?' + params.toString());
+      setCandidates(r.candidates);
+      setPageInfo(r.pagination || { total: r.candidates.length, totalPages: 1, hasMore: false });
+    } catch (e) {
+      setCandidates([]);
+      setLoadError(e.message || 'Could not load candidates.');
+    }
+  }, [filters, screenTab, page, pageSize, sort]);
   useEffect(() => { load(); }, [load]);
+  // Any change to the query must return to page 1, otherwise the user can land on
+  // an out-of-range page and see an empty table.
+  useEffect(() => { setPage(1); }, [filters, screenTab, pageSize, sort]);
 
   if (selectedId) return <CandidateProfile id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
 
@@ -3541,9 +3630,22 @@ function CandidatesPage({ user }) {
   // read as noise. Source is still shown on every candidate row and card.
   const SCREEN_TABS = [['all', 'All'], ['new', 'New'], ['screening', 'Screening'], ['fit', 'Fit'], ['unfit', 'Unfit']];
   const scOf = (c) => c.screeningStatus || 'new';
+  const toggleSort = (col) => setSort((s) => ({ by: col, dir: s.by === col && s.dir === 'asc' ? 'desc' : 'asc' }));
+  const FILTER_LABELS = {
+    q: 'Search', location: 'Location', currentCompany: 'Company',
+    minExp: 'Min exp', maxExp: 'Max exp', tag: 'Tag',
+  };
+  const activeFilters = Object.entries(filters)
+    .filter(([k, v]) => v && FILTER_LABELS[k])
+    .map(([k, v]) => [k, `${FILTER_LABELS[k]}: ${v}`]);
+  const clearFilter = (k) => setFilters((f) => ({ ...f, [k]: '' }));
+  const clearAllFilters = () => {
+    setFilters((f) => Object.fromEntries(Object.keys(f).map((k) => [k, ''])));
+    setScreenTab('all');
+  };
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
-  const shown = !candidates ? [] : candidates
-    .filter((c) => screenTab === 'all' || scOf(c) === screenTab);
+  // Filtering happens server-side; `shown` is simply the current page.
+  const shown = candidates || [];
 
   async function setScreening(id, status, reason) {
     try {
@@ -3590,7 +3692,22 @@ function CandidatesPage({ user }) {
         ))}
       </div>
 
-      {!candidates ? <ListSkeleton rows={7} /> : shown.length === 0 ? (
+      {activeFilters.length > 0 && (
+        <div className="filter-chips">
+          {activeFilters.map(([k, label]) => (
+            <span key={k} className="chip-filter">
+              {label}
+              <button aria-label={`Remove ${label} filter`} onClick={() => clearFilter(k)}>✕</button>
+            </span>
+          ))}
+          <button className="btn btn-ghost btn-sm" onClick={clearAllFilters}>Clear all</button>
+        </div>
+      )}
+
+      {loadError ? (
+        <div className="card"><Empty icon="⚠" title="Could not load candidates" text={loadError}
+          action={<button className="btn" onClick={load}>Retry</button>} /></div>
+      ) : !candidates ? <ListSkeleton rows={7} /> : shown.length === 0 ? (
         <div className="card"><Empty icon="👤"
           title={screenTab !== 'all' || filters.q ? 'No candidates in this view' : 'The talent pool is empty'}
           text={screenTab !== 'all' || filters.q
@@ -3599,7 +3716,18 @@ function CandidatesPage({ user }) {
       ) : view === 'table' ? (
         <div className="card flush">
           <table className="table">
-            <thead><tr><th>Candidate</th><th>Position / Company</th><th>Experience</th><th>Location</th><th>Notice</th><th>Screening</th><th>Source</th><th>Owner</th><th>Apps</th></tr></thead>
+            <thead><tr>
+              <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
+              <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
+              <SortTh label="Company" col="company" sort={sort} onSort={toggleSort} />
+              <SortTh label="Exp" col="experience" sort={sort} onSort={toggleSort} />
+              <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
+              <th>Parse Quality</th>
+              <th>Stage</th>
+              <SortTh label="Recruiter" col="created" sort={sort} onSort={toggleSort} />
+              <SortTh label="Added" col="created" sort={sort} onSort={toggleSort} />
+              <th>CV</th>
+            </tr></thead>
             <tbody>{shown.map((c) => (
               <tr key={c.id} className="row-link" onClick={() => setSelectedId(c.id)}>
                 <td>
@@ -3612,14 +3740,20 @@ function CandidatesPage({ user }) {
                   </div>
                   {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
                 </td>
-                <td><span className="cell-strong">{c.currentPosition || '—'}</span><div className="cell-sub">{c.currentCompany || '—'}</div></td>
+                <td><span className="cell-strong">{c.currentPosition || '—'}</span></td>
+                <td className="cell-sub-only">{c.currentCompany || '—'}</td>
                 <td className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
                 <td className="cell-sub-only">{c.location || '—'}</td>
-                <td className="cell-sub-only">{c.noticePeriod || '—'}</td>
+                <td><ParseQuality status={c.parseStatus} confidence={c.parseConfidence} /></td>
                 <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
-                <td><SourceChip source={c.source} /></td>
                 <td className="cell-sub-only">{c.ownerRecruiter?.name || '—'}</td>
-                <td><span className="pipe-count">{c.applicationCount}<em>app{c.applicationCount === 1 ? '' : 's'}</em></span></td>
+                <td className="cell-sub-only">{fmtDateShort(c.createdAt)}</td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  {c.hasResume
+                    ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Download CV'}
+                        onClick={() => downloadResume(c, toast)}>Download</button>
+                    : <span className="muted">—</span>}
+                </td>
               </tr>
             ))}</tbody>
           </table>
@@ -3650,11 +3784,16 @@ function CandidatesPage({ user }) {
               )}
               <div className="cc-meta" style={{ justifyContent: 'space-between' }}>
                 <span className="muted" style={{ fontSize: 11.5 }}>{c.candidateNo}</span>
+                {c.hasResume && <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); downloadResume(c, toast); }}>CV</button>}
                 <span className="meta-chip" title="Applications">{c.applicationCount} app{c.applicationCount === 1 ? '' : 's'}</span>
               </div>
             </div>
           ))}
         </div>
+      )}
+      {candidates && shown.length > 0 && (
+        <Pager page={page} pageSize={pageSize} total={pageInfo.total}
+          totalPages={pageInfo.totalPages} onPage={setPage} onPageSize={setPageSize} />
       )}
       {creating && <CandidateForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
     </div>

@@ -25,7 +25,7 @@ function resolveUploadDir() {
 const UPLOAD_DIR = resolveUploadDir();
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const MAX_BYTES = 15 * 1024 * 1024; // 15 MB cap
+const MAX_BYTES = 20 * 1024 * 1024; // 20 MB cap (approved for CV uploads)
 const ALLOWED = new Set(['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt']);
 
 // Express middleware: parses multipart body, writes the file to disk, sets

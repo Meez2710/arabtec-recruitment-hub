@@ -9,7 +9,8 @@ import { multipart, streamFile, uploadPath } from '../lib/upload.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
-import { parseHeuristic as parseCV } from '../lib/cv-parser.js';
+import { parseHeuristic as parseCV, parseEntitiesFromFile } from '../lib/cv-parser.js';
+import { toCandidatePayload, toParseMetadata, fileHash, toImportReport } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,6 +42,8 @@ function serialize(c, user, { withDetail = false } = {}) {
     graduationYear: c.graduation_year, university: c.university, major: c.major,
     resumeName: c.resume_name, hasResume: !!c.resume_path,
     tags: c.tags ? JSON.parse(c.tags) : [], candidateState: c.candidate_state,
+    parseStatus: c.parse_status || null, parseConfidence: c.parse_confidence ?? null,
+    parsedAt: c.parsed_at || null,
     screeningStatus: c.screening_status || 'new',
     // GDPR/PDPL status (shown on the candidate profile)
     consentStatus: c.consent_status || 'unknown', consentAt: c.consent_at,
@@ -104,16 +107,31 @@ function serialize(c, user, { withDetail = false } = {}) {
 
 /* ---------------- LIST ---------------- */
 router.get('/', requirePermission('candidate.view'), (req, res) => {
-  const rows = Candidates.list({
-    q: req.query.q, source: req.query.source, location: req.query.location,
-    currentCompany: req.query.currentCompany, noticePeriod: req.query.noticePeriod,
-    ownerRecruiterId: req.query.ownerRecruiterId, minExp: req.query.minExp, maxExp: req.query.maxExp, tag: req.query.tag,
-    screeningStatus: req.query.screeningStatus,
+  const q = req.query;
+  // Server-side pagination. Previously the whole table was returned and the UI
+  // paginated in the browser, which does not scale past a few thousand rows.
+  const pageSize = Math.min(Math.max(parseInt(q.pageSize, 10) || 50, 1), 200);
+  const page = Math.max(parseInt(q.page, 10) || 1, 1);
+  const filters = {
+    q: q.q, source: q.source, location: q.location, currentCompany: q.currentCompany,
+    currentPosition: q.currentPosition, university: q.university, graduationYear: q.graduationYear,
+    noticePeriod: q.noticePeriod, ownerRecruiterId: q.ownerRecruiterId,
+    minExp: q.minExp, maxExp: q.maxExp, tag: q.tag,
+    screeningStatus: q.screeningStatus, parseStatus: q.parseStatus,
+    sort: q.sort, dir: q.dir,
+  };
+  const total = Candidates.count(filters);
+  const rows = Candidates.list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
+  res.json({
+    candidates: rows.map((c) => serialize(c, req.user)),   // unchanged key for compatibility
+    pagination: {
+      page, pageSize, total,
+      totalPages: Math.max(Math.ceil(total / pageSize), 1),
+      hasMore: page * pageSize < total,
+    },
   });
-  res.json({ candidates: rows.map((c) => serialize(c, req.user)), screeningCounts: Candidates.screeningCounts() });
 });
 
-/* ---------------- DETAIL ---------------- */
 router.get('/:id', requirePermission('candidate.view'), (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
@@ -199,7 +217,13 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
   if (!req.uploadedFile) return res.status(400).json({ error: 'CV file is required.' });
   try {
     const filePath = uploadPath(req.uploadedFile.storedName);
+    // Legacy shape kept for the existing response contract; the structured entity
+    // parse is what actually populates the candidate record.
     const parsed = await parseCV(filePath);
+    const entities = await parseEntitiesFromFile(filePath);
+    const { payload: parsedFields, persisted, skipped } = toCandidatePayload(entities);
+    const meta = toParseMetadata(entities);
+    const hash = fileHash(filePath);
 
     // Auto-create the candidate in the talent pool if we got text
     let candidate = null;
@@ -215,20 +239,32 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
         const candidateNo = Candidates.nextNo();
         candidate = Candidates.create({
           candidateNo,
-          fullName: parsed.full_name,
-          email: parsed.email,
-          phone: parsed.phone,
-          yearsExperience: parsed.years_experience,
+          // Structured fields from the entity parser. Only values validated
+          // `verified`/`likely` are present; `uncertain` ones are reported but
+          // not written, so the Talent Pool is not filled with doubtful data.
+          ...parsedFields,
+          // Legacy fallbacks so behaviour never regresses if a field was skipped.
+          fullName: parsedFields.fullName || parsed.full_name,
+          email: parsedFields.email || parsed.email,
+          phone: parsedFields.phone || parsed.phone,
+          yearsExperience: parsedFields.yearsExperience ?? parsed.years_experience,
           source: 'folder_drop',
           ownerRecruiterId: req.user.id,
           createdBy: req.user.id,
-          resumeName: req.uploadedFile.originalName,
-          resumePath: filePath,
         });
+        // Candidates.create does not persist resume columns, and streamFile()
+        // expects the STORED name (not an absolute path) — POST /:id/resume already
+        // stores it that way. Without this the CV was unreachable for every
+        // candidate created by CV import.
+        dbRun('UPDATE candidate SET resume_path=?, resume_name=?, updated_at=? WHERE id=?',
+          [req.uploadedFile.storedName, req.uploadedFile.originalName, new Date().toISOString(), candidate.id]);
+        candidate = Candidates.byId(candidate.id);
+        // Parse-quality metadata (never the CV text itself).
+        Candidates.setParseMeta?.(candidate.id, meta);
         CandidateDocuments.add({
           candidateId: candidate.id, docType: 'cv',
           fileName: req.uploadedFile.originalName,
-          fileHash: null, uploadedBy: req.user.id,
+          fileHash: hash, uploadedBy: req.user.id,   // primary duplicate key
         });
         CandidateActivity.add({
           candidateId: candidate.id, actorId: req.user.id,
@@ -256,6 +292,12 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
     }
     res.json({ parsed, file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
       candidate: candidate ? { id: candidate.id, candidateNo: candidate.candidate_no, fullName: candidate.full_name, duplicate } : null,
+      // Structured parse report — field-level outcome, no CV text.
+      report: toImportReport(entities, {
+        fileName: req.uploadedFile.originalName,
+        candidateNo: candidate ? candidate.candidate_no : null,
+        duplicateOf: duplicate && candidate ? candidate.candidate_no : null,
+      }),
       application: application ? { id: application.id, applicationNo: application.application_no } : null,
     });
   } catch (e) {
