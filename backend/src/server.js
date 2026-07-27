@@ -1,7 +1,11 @@
+// Load .env BEFORE any other import evaluates. ES modules evaluate the whole
+// import graph before the body of this file runs, so a dotenv.config() call
+// further down executes AFTER db.js has already read process.env.DATABASE_URL.
+// Side-effect import placed first is the only ordering that is safe.
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,7 +33,6 @@ import threadRoutes from './routes/thread.js';
 import adminUiRoutes from './routes/admin-ui.js';
 import notificationRoutes from './routes/notifications.js';
 
-dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
