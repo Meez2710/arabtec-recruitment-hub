@@ -14,6 +14,27 @@ const PWD_MIN = 8;
 // Strong random temp password that satisfies the policy (upper+lower+digit+symbol).
 function genTempPassword() { return 'Arb-' + randomBytes(9).toString('base64url') + '!7'; }
 
+// ---- Last-administrator protection -----------------------------------------
+// The platform must always retain at least one ACTIVE system_admin, otherwise
+// nobody can manage users, roles or branding ever again — an unrecoverable state
+// short of direct database surgery.
+const ADMIN_ROLE = 'system_admin';
+
+function activeAdminIds() {
+  // Permission-based, not role-name-based: withPermission() already filters to
+  // status='active' and resolves through role_permission, so this keeps working if
+  // the role is renamed or if user.manage is granted through some other role.
+  // The question we actually care about is "will anyone still be able to manage
+  // users after this change?".
+  return (Users.withPermission('user.manage') || []).map((u) => u.id);
+}
+
+// True when `userId` is the only active administrator left.
+function isLastActiveAdmin(userId) {
+  const ids = activeAdminIds();
+  return ids.length === 1 && ids[0] === Number(userId);
+}
+
 function serializeUser(u) {
   if (!u) return null;
   const roles = UserRoles.forUser(u.id);
@@ -74,7 +95,7 @@ router.post('/', requirePermission('user.manage'), async (req, res) => {
   const generated = !password;
   const initialPassword = password || genTempPassword();
   if (password) {
-    const policy = validatePassword(password, { minLength: PWD_MIN });
+    const policy = validatePassword(password, { minLength: PWD_MIN, fullName, email });
     if (!policy.ok) return res.status(400).json({ error: policy.error });
   }
 
@@ -106,6 +127,15 @@ router.put('/:id', requirePermission('user.manage'), (req, res) => {
   if (email && email.toLowerCase().trim() !== before.email) {
     if (Users.byEmail(email.toLowerCase().trim())) return res.status(409).json({ error: 'Email already in use.' });
   }
+  // Demotion guard: refuse an update that would strip system_admin from the only
+  // remaining active administrator. `roleCodes === undefined` means "roles untouched".
+  if (Array.isArray(roleCodes) && !roleCodes.includes(ADMIN_ROLE) && isLastActiveAdmin(id)) {
+    return res.status(409).json({
+      error: 'This is the last active System Admin. Assign the System Admin role to another active user first.',
+      code: 'LAST_ADMIN_PROTECTED',
+    });
+  }
+
   const beforeOut = serializeUser(before);
   Users.update(id, {
     fullName, email: email ? email.toLowerCase().trim() : undefined, phone, jobTitle, employeeNo,
@@ -128,6 +158,12 @@ router.post('/:id/activate', requirePermission('user.manage'), (req, res) => {
 router.post('/:id/deactivate', requirePermission('user.manage'), (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.id) return res.status(400).json({ error: 'You cannot deactivate your own account.' });
+  if (isLastActiveAdmin(id)) {
+    return res.status(409).json({
+      error: 'This is the last active System Admin. Promote another administrator before deactivating this account.',
+      code: 'LAST_ADMIN_PROTECTED',
+    });
+  }
   Users.setStatus(id, 'inactive');
   Sessions.revokeForUser(id); // revoke active sessions on deactivation
   writeAudit(req, { action: 'user.deactivated', entityType: 'user', entityId: id });
@@ -142,7 +178,8 @@ router.post('/:id/reset-password', requirePermission('user.manage'), async (req,
   const generated = !provided;
   const pwd = provided || genTempPassword();
   if (provided) {
-    const policy = validatePassword(provided, { minLength: PWD_MIN });
+    const target = Users.byId(id);
+    const policy = validatePassword(provided, { minLength: PWD_MIN, fullName: target?.full_name, email: target?.email });
     if (!policy.ok) return res.status(400).json({ error: policy.error });
   }
   const rounds = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);

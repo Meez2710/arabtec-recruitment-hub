@@ -321,8 +321,10 @@ function Login({ branding, onLogin }) {
   async function submit(e) {
     e.preventDefault(); setErr(null); setBusy(true);
     try {
-      const { token, user } = await api.post('/auth/login', { email, password, remember });
-      api.setToken(token); onLogin(user);
+      const { token, user, mustChangePassword } = await api.post('/auth/login', { email, password, remember });
+      // Keep the flag on the object the app renders from, so the forced-rotation
+      // screen engages immediately rather than after the next /auth/me.
+      api.setToken(token); onLogin({ ...user, mustChangePassword: !!mustChangePassword });
     } catch (e) { setErr(e.message || 'Login failed'); } finally { setBusy(false); }
   }
   async function doForgot() {
@@ -465,6 +467,8 @@ function NotificationBell({ onNavigate }) {
 }
 
 function Shell({ user, branding, onLogout, refreshBranding }) {
+  // Self-service password change, reachable from the user menu.
+  const [pwdOpen, setPwdOpen] = useState(false);
   const [route, setRoute] = useState('dashboard');
   const [collapsed, setCollapsed] = useState(branding?.sidebar_mode === 'collapsed');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -479,7 +483,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     candidates: <CandidatesPage user={user} />,
     interviews: <InterviewsPage user={user} />,
     offers: <OffersPage user={user} />,
-    users: <UsersPage user={user} />,
+    users: can(user, 'user.manage')
+      ? <UsersPage user={user} />
+      : <Forbidden what="User Management" need="System Admin" />,
     roles: <RolesPage user={user} />,
     projects: <ProjectsPage user={user} />,
     sites: <SitesPage user={user} />,
@@ -546,6 +552,10 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
                   <strong>{user.fullName}</strong><span className="muted">{user.email}</span>
                 </div>
                 <div style={{ borderTop: '1px solid var(--border)' }} />
+                <div className="menu-item" onClick={() => { setMenuOpen(false); setPwdOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon name="shield" size={15} /> Change Password
+                </div>
+                <div style={{ borderTop: '1px solid var(--border)' }} />
                 <div className="menu-item" onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
                   Logout
@@ -555,6 +565,12 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
           </div>
         </header>
         <main className={'content density-' + density}>{Page}</main>
+
+        {pwdOpen && (
+          <Modal title="Change password" onClose={() => setPwdOpen(false)}>
+            <ChangePasswordForm onDone={() => setPwdOpen(false)} onCancel={() => setPwdOpen(false)} />
+          </Modal>
+        )}
       </div>
     </div>
   );
@@ -1079,6 +1095,131 @@ function ReqHealth({ health, compact }) {
       <i />{compact ? '' : health.label}
       {health.daysOpen != null && <em>{health.daysOpen}d</em>}
     </span>
+  );
+}
+
+// Mirrors backend src/lib/passwords.js so the browser shows the same rules. The
+// server remains the authority — this is guidance, never the gate.
+const PASSWORD_MIN = 12;
+const PASSWORD_RULES = [
+  { label: `At least ${PASSWORD_MIN} characters`, test: (v) => v.length >= PASSWORD_MIN },
+  { label: 'An uppercase letter', test: (v) => /[A-Z]/.test(v) },
+  { label: 'A lowercase letter', test: (v) => /[a-z]/.test(v) },
+  { label: 'A number', test: (v) => /[0-9]/.test(v) },
+  { label: 'A symbol', test: (v) => /[^A-Za-z0-9]/.test(v) },
+];
+function passwordChecklist(v) { return PASSWORD_RULES.map((r) => ({ label: r.label, ok: r.test(v || '') })); }
+
+function PasswordRules({ value }) {
+  return (
+    <ul className="pw-rules">
+      {passwordChecklist(value).map((r, i) => (
+        <li key={i} className={r.ok ? 'ok' : ''}><span>{r.ok ? '✓' : '○'}</span>{r.label}</li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Change-password form. Used both for self-service (from the user menu) and for
+ * the forced rotation screen. Nothing is logged, stored or toasted.
+ */
+function ChangePasswordForm({ forced, onDone, onCancel }) {
+  const toast = useToast();
+  const [cur, setCur] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const allOk = passwordChecklist(next).every((r) => r.ok);
+  const matches = next.length > 0 && next === confirm;
+
+  function clear() { setCur(''); setNext(''); setConfirm(''); setErr(null); }
+
+  async function submit(e) {
+    if (e) e.preventDefault();
+    setErr(null);
+    if (!allOk) { setErr('New password does not meet the requirements below.'); return; }
+    if (!matches) { setErr('New password and confirmation do not match.'); return; }
+    setBusy(true);
+    try {
+      await api.post('/auth/change-password', { currentPassword: cur, newPassword: next });
+      clear();
+      toast('Password changed');
+      onDone();
+    } catch (e2) { setErr(e2.message || 'Could not change the password.'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <form onSubmit={submit} autoComplete="off">
+      {err && <div className="error-banner" style={{ marginBottom: 14 }}>{err}</div>}
+      <div className="field">
+        <label>{forced ? 'Temporary password' : 'Current password'}</label>
+        <div className="pw-input">
+          <input type={show ? 'text' : 'password'} value={cur} autoComplete="current-password"
+            onChange={(e) => setCur(e.target.value)} required />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShow((v) => !v)}>{show ? 'Hide' : 'Show'}</button>
+        </div>
+      </div>
+      <div className="field">
+        <label>New password</label>
+        <input type={show ? 'text' : 'password'} value={next} autoComplete="new-password"
+          onChange={(e) => setNext(e.target.value)} required />
+      </div>
+      <div className="field">
+        <label>Confirm new password</label>
+        <input type={show ? 'text' : 'password'} value={confirm} autoComplete="new-password"
+          onChange={(e) => setConfirm(e.target.value)} required />
+        {confirm.length > 0 && !matches && <p className="field-hint" style={{ color: 'var(--danger)' }}>Passwords do not match.</p>}
+      </div>
+      <PasswordRules value={next} />
+      <div className="row" style={{ gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+        {onCancel && <button type="button" className="btn btn-ghost" onClick={() => { clear(); onCancel(); }}>Cancel</button>}
+        <button type="submit" className="btn" disabled={busy || !allOk || !matches}>{busy ? 'Saving…' : 'Change password'}</button>
+      </div>
+    </form>
+  );
+}
+
+// Full-screen gate. Rendered INSTEAD of the app shell while the account carries
+// must_change_password, so no page, route or API call is reachable until the
+// password is rotated. The server enforces the same rule independently.
+function ForcedPasswordChange({ user, onDone, onLogout }) {
+  return (
+    <div className="forced-pw-wrap">
+      <div className="forced-pw-card card">
+        <div className="forced-pw-head">
+          <h1>Choose a new password</h1>
+          <p>
+            Your account uses a temporary password. For security you must set your own
+            password before using {'\u00A0'}the Recruitment Hub.
+          </p>
+          <p className="muted" style={{ fontSize: 12.5 }}>Signed in as <strong>{user.email}</strong></p>
+        </div>
+        <ChangePasswordForm forced onDone={onDone} />
+        <div className="forced-pw-foot">
+          <button className="btn btn-ghost btn-sm" onClick={onLogout}>Sign out instead</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Shown when a route is reached without the permission that owns it. The nav item
+// is already filtered, but a direct route change must not fall through to the page.
+function Forbidden({ what, need }) {
+  return (
+    <div>
+      <PageHead crumb="Access" title="Not authorised" />
+      <div className="card"><div className="dash-state">
+        <div className="dash-state-ico"><Icon name="shield" size={26} /></div>
+        <h3>{what} is restricted</h3>
+        <p>Your account does not have permission to open this page. {need ? `It is limited to ${need}.` : ''}</p>
+      </div></div>
+    </div>
   );
 }
 
@@ -4383,6 +4524,20 @@ function App() {
 
   if (booting) return <div className="boot-loading">Loading Arabtec Recruitment Hub…</div>;
   if (!user) return <Login branding={branding} onLogin={onLogin} />;
+  // Forced rotation: the shell is not rendered at all, so no route, page or
+  // background fetch can run. Mirrors the server-side gate in requireAuth.
+  if (user.mustChangePassword) {
+    return (
+      <ForcedPasswordChange
+        user={user}
+        onLogout={onLogout}
+        onDone={async () => {
+          try { const { user: fresh } = await api.get('/auth/me'); setUser(fresh); }
+          catch { setUser((u) => ({ ...u, mustChangePassword: false })); }
+        }}
+      />
+    );
+  }
   return (
     <AppCtx.Provider value={{ user }}>
       <Shell user={user} branding={branding} onLogout={onLogout} refreshBranding={loadBranding} />
