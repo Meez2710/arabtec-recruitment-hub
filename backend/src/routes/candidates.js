@@ -10,7 +10,7 @@ import { run as dbRun, get as dbGet } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
 import { parseHeuristic as parseCV, parseEntitiesFromFile } from '../lib/cv-parser.js';
-import { toCandidatePayload, toParseMetadata, fileHash, toImportReport } from '../lib/cv-mapper.js';
+import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -550,15 +550,89 @@ router.post('/:id/documents', requirePermission('candidate.edit'), (req, res) =>
 });
 
 /* ---------------- RESUME upload / download (real file) ---------------- */
-router.post('/:id/resume', requirePermission('candidate.edit'), multipart, (req, res) => {
+
+// D-01/D-02 fix. Parsing used to live only in POST /parse-cv, so a CV attached to
+// an existing candidate (Add/Edit Candidate form, profile attach) stored the file
+// and extracted nothing. This runs the SAME pipeline parse-cv uses — the parser
+// itself is untouched.
+//
+// Only columns that are currently empty are written: a recruiter's manual
+// correction must never be overwritten by a later upload. Parse metadata is
+// always refreshed so the quality badge reflects the newest file.
+async function parseAndFill(candidateId, storedName, req, { overwrite = false } = {}) {
+  const filePath = uploadPath(storedName);
+  const entities = await parseEntitiesFromFile(filePath);
+  const { payload } = toCandidatePayload(entities);
+  const meta = toParseMetadata(entities);
+
+  const current = Candidates.byId(candidateId);
+  const sets = []; const vals = []; const filled = []; const kept = [];
+  for (const [column, key] of Object.entries(FIELD_MAP)) {
+    const incoming = payload[key];
+    if (incoming === undefined || incoming === null || incoming === '') continue;
+    const existing = current ? current[column] : null;
+    const isEmpty = existing === null || existing === undefined || String(existing).trim() === '';
+    if (isEmpty || overwrite) { sets.push(`${column}=?`); vals.push(incoming); filled.push(column); }
+    else { kept.push(column); }
+  }
+  if (sets.length) {
+    vals.push(new Date().toISOString(), candidateId);
+    dbRun(`UPDATE candidate SET ${sets.join(', ')}, updated_at=? WHERE id=?`, vals);
+  }
+  Candidates.setParseMeta?.(candidateId, meta);
+  return { filled, kept, meta, entities };
+}
+
+
+router.post('/:id/resume', requirePermission('candidate.edit'), multipart, async (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
   if (!req.uploadedFile) return res.status(400).json({ error: 'No file uploaded.' });
   dbRun('UPDATE candidate SET resume_path=?, resume_name=?, updated_at=? WHERE id=?',
     [req.uploadedFile.storedName, req.uploadedFile.originalName, new Date().toISOString(), c.id]);
+
+  // Parse the newly attached CV (D-01). A parser failure must never fail the
+  // upload — the file is already stored and is the source of truth.
+  let report = null;
+  try {
+    const r = await parseAndFill(c.id, req.uploadedFile.storedName, req);
+    report = toImportReport(r.entities, { fileName: req.uploadedFile.originalName, candidateNo: c.candidate_no });
+    CandidateDocuments.add({
+      candidateId: c.id, docType: 'cv', fileName: req.uploadedFile.originalName,
+      fileHash: fileHash(uploadPath(req.uploadedFile.storedName)), uploadedBy: req.user.id,
+    });
+  } catch (e) {
+    Candidates.setParseMeta?.(c.id, { parseStatus: 'failed', parseConfidence: 0, parsedAt: new Date().toISOString() });
+  }
+
   CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName, type: 'resume_uploaded', note: req.uploadedFile.originalName });
   writeAudit(req, { action: 'candidate.resume_uploaded', entityType: 'candidate', entityId: c.id, newValue: { fileName: req.uploadedFile.originalName } });
-  res.status(201).json({ candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }) });
+  res.status(201).json({ candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }), report });
+});
+
+// D-02: re-run the parser against the resume already on file. Reads the stored
+// file (the designated source of truth) — no upload, no schema change.
+// ?overwrite=true replaces existing values; default fills only empty ones.
+router.post('/:id/reparse', requirePermission('candidate.edit'), async (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  if (!c.resume_path) return res.status(400).json({ error: 'No resume on file to parse.' });
+  const overwrite = String(req.query.overwrite || '') === 'true';
+  try {
+    const r = await parseAndFill(c.id, c.resume_path, req, { overwrite });
+    CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName,
+      type: 'resume_reparsed', note: `${r.filled.length} field(s) updated` });
+    writeAudit(req, { action: 'candidate.resume_reparsed', entityType: 'candidate', entityId: c.id,
+      newValue: { filled: r.filled, kept: r.kept } });
+    res.json({
+      candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }),
+      filled: r.filled, kept: r.kept,
+      report: toImportReport(r.entities, { fileName: c.resume_name || c.resume_path, candidateNo: c.candidate_no }),
+    });
+  } catch (e) {
+    Candidates.setParseMeta?.(c.id, { parseStatus: 'failed', parseConfidence: 0, parsedAt: new Date().toISOString() });
+    res.status(422).json({ error: 'Could not parse the resume on file.' });
+  }
 });
 
 router.get('/:id/resume', requirePermission('candidate.view'), (req, res) => {

@@ -3310,6 +3310,16 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   const canFeedback = user?.permissions?.includes('interview.feedback');
 
   async function viewResume() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
+  // D-02: re-run the parser against the résumé already on file.
+  async function reparseResume() {
+    setResumeBusy(true);
+    try {
+      const r = await api.post(`/candidates/${c.id}/reparse`, {});
+      const n = (r.filled || []).length;
+      toast(n ? `Re-parsed — ${n} field${n === 1 ? '' : 's'} filled` : 'Re-parsed — nothing new found');
+      onChanged && onChanged();
+    } catch (err) { toast(err.message, 'error'); } finally { setResumeBusy(false); }
+  }
   async function uploadResume(e) {
     const file = e.target.files?.[0]; if (!file) return;
     setResumeBusy(true);
@@ -3342,6 +3352,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>View / Download</button>}
+                  {cand.hasResume && canEditCand && <button className="btn btn-sm btn-ghost" onClick={reparseResume} disabled={resumeBusy} title="Re-run the CV parser on the file already attached">{resumeBusy ? 'Working…' : 'Re-parse'}</button>}
                   {canEditCand && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{resumeBusy ? 'Uploading…' : (cand.hasResume ? 'Replace' : '+ Upload')}<input type="file" style={{ display: 'none' }} onChange={uploadResume} disabled={resumeBusy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
                 </div>
               </div>
@@ -4051,6 +4062,15 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
   const [busy, setBusy] = useState(false);
   const canEdit = btns?.edit_candidate?.visible || user.permissions.includes('candidate.edit');
   async function view() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
+  async function reparse() {
+    setBusy(true);
+    try {
+      const r = await api.post(`/candidates/${c.id}/reparse`, {});
+      const n = (r.filled || []).length;
+      toast(n ? `Re-parsed — ${n} field${n === 1 ? '' : 's'} filled` : 'Re-parsed — nothing new found');
+      onChanged && onChanged();
+    } catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
+  }
   async function upload(e) {
     const file = e.target.files?.[0]; if (!file) return;
     setBusy(true);
@@ -4065,6 +4085,7 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
           <div style={{ fontWeight: 600 }}>{c.hasResume ? (c.resumeName || 'Attached résumé') : <span className="muted">No résumé on file</span>}</div>
         </div>
         {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>View / Download</button>}
+        {c.hasResume && canEdit && <button className="btn btn-sm btn-ghost" onClick={reparse} disabled={busy} title="Re-run the CV parser on the file already attached">{busy ? 'Working…' : 'Re-parse'}</button>}
         {canEdit && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (c.hasResume ? 'Replace' : '+ Upload CV')}<input type="file" style={{ display: 'none' }} onChange={upload} disabled={busy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
       </div>
       {(c.documents || []).length > 0 && (

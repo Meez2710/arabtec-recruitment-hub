@@ -313,6 +313,78 @@ s, r = call('POST', '/api/candidates', token=ADMIN_T, body={})
 check('18-validation', 'Error Handling', 'Create candidate with empty body is rejected, not a 500',
       '400', '%s %s' % (s, str(r)[:120]), s == 400)
 
+
+section('10. PHASE 2 FIX VERIFICATION')
+s, r = call('POST', '/api/candidates', token=ADMIN_T,
+            body={'fullName': 'Fix Verify Candidate', 'email': 'fix.verify@example.com'})
+c2 = (r.get('candidate') or r).get('id') if isinstance(r, dict) else None
+if c2:
+    body, ct = multipart('ahmed_cv.txt', CV)
+    s, r = call('POST', '/api/candidates/%s/resume' % c2, token=ADMIN_T, raw=body, ctype=ct)
+    check('D01.1', 'D-01 fix', 'Upload to /:id/resume still returns 201', '201', s, s == 201)
+    s, r = call('GET', '/api/candidates/%s' % c2, token=ADMIN_T)
+    c = (r.get('candidate') or r) if isinstance(r, dict) else {}
+    check('D01.2', 'D-01 fix', 'Attaching a CV now populates parsed fields',
+          'phone/company/university filled',
+          {k: c.get(k) for k in ('phone', 'currentCompany', 'currentPosition', 'university', 'yearsExperience')},
+          bool(c.get('phone') and c.get('currentCompany') and c.get('university')))
+    check('D01.3', 'D-01 fix', 'Parse metadata now written', 'parseStatus + confidence + parsedAt',
+          {k: c.get(k) for k in ('parseStatus', 'parseConfidence', 'parsedAt')},
+          c.get('parseStatus') is not None and c.get('parsedAt') is not None)
+    check('D01.4', 'D-01 fix', 'Phone extracted correctly', 'contains 20', repr(c.get('phone')),
+          bool(c.get('phone')) and '20' in str(c.get('phone')))
+    check('D01.5', 'D-01 fix', 'Manually-set email NOT overwritten by the parse',
+          'fix.verify@example.com preserved', c.get('email'), c.get('email') == 'fix.verify@example.com',
+          'CV contains a different email; fill-empty-only must win')
+    check('D01.6', 'D-01 fix', 'resume_path still persisted', 'resumeName present', c.get('resumeName'), bool(c.get('resumeName')))
+
+    # D-02 re-parse
+    s, r = call('POST', '/api/candidates/%s/reparse' % c2, token=ADMIN_T)
+    check('D02.1', 'D-02 fix', 'Re-parse endpoint works on the stored file', '200', '%s %s' % (s, str(r)[:100]), s == 200)
+    check('D02.2', 'D-02 fix', 'Second re-parse is idempotent (nothing left to fill)',
+          'filled == []', r.get('filled') if isinstance(r, dict) else r,
+          isinstance(r, dict) and r.get('filled') == [])
+    s, r = call('POST', '/api/candidates/%s/reparse?overwrite=true' % c2, token=ADMIN_T)
+    check('D02.3', 'D-02 fix', 'overwrite=true re-fills fields', 'filled non-empty',
+          r.get('filled') if isinstance(r, dict) else r, isinstance(r, dict) and len(r.get('filled') or []) > 0)
+
+s, r = call('POST', '/api/candidates', token=ADMIN_T, body={'fullName': 'No Resume', 'email': 'nores@example.com'})
+c3 = (r.get('candidate') or r).get('id') if isinstance(r, dict) else None
+if c3:
+    s, r = call('POST', '/api/candidates/%s/reparse' % c3, token=ADMIN_T)
+    check('D02.4', 'D-02 fix', 'Re-parse with no resume on file returns a clear 400', '400', '%s %s' % (s, r), s == 400)
+s, r = call('POST', '/api/candidates/999999/reparse', token=ADMIN_T)
+check('D02.5', 'D-02 fix', 'Re-parse on a missing candidate returns 404', '404', s, s == 404)
+
+if HR_T:
+    s, r = call('GET', '/api/roles', token=HR_T)
+    roles = r.get('roles') if isinstance(r, dict) else []
+    has_perms = any('permissions' in x for x in (roles or []))
+    check('D04.1', 'D-04 fix', 'Non-admin no longer receives the permission matrix',
+          'no permissions key', 'permissions present' if has_perms else 'omitted', not has_perms)
+    check('D04.2', 'D-04 fix', 'Role names still returned (User Management dropdown keeps working)',
+          'roles list non-empty with names', len(roles or []), bool(roles) and all(x.get('name') for x in roles))
+    s, _ = call('GET', '/api/roles/permissions', token=HR_T)
+    check('D04.3', 'D-04 fix', 'Permission catalogue now forbidden for non-admins', '403', s, s == 403)
+s, r = call('GET', '/api/roles', token=ADMIN_T)
+roles = r.get('roles') if isinstance(r, dict) else []
+check('D04.4', 'D-04 fix', 'Admin STILL receives the permission matrix (no regression)',
+      'permissions present', 'present' if any('permissions' in x for x in (roles or [])) else 'MISSING',
+      any('permissions' in x for x in (roles or [])))
+s, _ = call('GET', '/api/roles/permissions', token=ADMIN_T)
+check('D04.5', 'D-04 fix', 'Admin can still read the permission catalogue', '200', s, s == 200)
+
+s, r = call('POST', '/api/users', token=ADMIN_T,
+            body={'email': 'noroles.%s@arabtec.com' % uuid.uuid4().hex[:5], 'fullName': 'No Roles'})
+check('D05.1', 'D-05 fix', 'Creating a user with no roles is rejected', '400', '%s %s' % (s, r), s == 400)
+s, r = call('POST', '/api/users', token=ADMIN_T,
+            body={'email': 'emptyroles.%s@arabtec.com' % uuid.uuid4().hex[:5], 'fullName': 'Empty', 'roleCodes': []})
+check('D05.2', 'D-05 fix', 'Empty roleCodes array is rejected', '400', '%s %s' % (s, r), s == 400)
+
+s, r = call('GET', '/api/audit', token=HR_T) if HR_T else (0, None)
+check('D03.1', 'D-03 retracted', 'HR Manager reading audit is CORRECT (holds audit.view)',
+      '200 by design', s, s == 200, 'False positive: router-level guard exists')
+
 print('\n\n===== SUMMARY =====')
 p = sum(1 for x in RESULTS if x['status'] == 'PASS'); f = len(RESULTS) - p
 print('TOTAL %d   PASS %d   FAIL %d' % (len(RESULTS), p, f))

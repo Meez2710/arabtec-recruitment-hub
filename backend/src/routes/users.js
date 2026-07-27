@@ -88,6 +88,11 @@ router.post('/', requirePermission('user.manage'), async (req, res) => {
   if (!fullName || !email) return res.status(400).json({ error: 'Full name and email are required.' });
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Invalid email format.' });
   if (Users.byEmail(email.toLowerCase().trim())) return res.status(409).json({ error: 'A user with this email already exists.' });
+  // D-05: a user with no role can log in, rotate their password, then get 403 on
+  // every page — the app looks broken to them. Require at least one role up front.
+  if (!Array.isArray(roleCodes) || roleCodes.filter(Boolean).length === 0) {
+    return res.status(400).json({ error: 'At least one role must be assigned.' });
+  }
 
   // No hardcoded default credential. If the admin supplies a password it must pass
   // policy; otherwise we generate a strong temporary one and return it ONCE so the

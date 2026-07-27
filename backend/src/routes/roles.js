@@ -6,17 +6,29 @@ import { writeAudit } from '../lib/audit.js';
 const router = Router();
 router.use(requireAuth);
 
-// GET /api/roles — roles with their permission codes
+// D-04: the full permission matrix used to be readable by ANY authenticated user.
+// Role names are still open because the User Management dropdown needs them; the
+// permission assignments are only included for callers who administer roles or
+// users. Both UI consumers (User Management, Role Matrix) hold one of these.
+function canSeeMatrix(req) {
+  const perms = (req.user && req.user.permissions) || [];
+  return perms.includes('role.manage') || perms.includes('user.manage');
+}
+
+// GET /api/roles — roles; permission codes only for role/user administrators
 router.get('/', (req, res) => {
+  const detailed = canSeeMatrix(req);
   const roles = Roles.all().map((r) => ({
     id: r.id, code: r.code, name: r.name, description: r.description,
-    isSystem: r.is_system === 1, permissions: Roles.permissionsForRole(r.id),
+    isSystem: r.is_system === 1,
+    ...(detailed ? { permissions: Roles.permissionsForRole(r.id) } : {}),
   }));
   res.json({ roles });
 });
 
 // GET /api/roles/permissions — full permission catalog
 router.get('/permissions', (req, res) => {
+  if (!canSeeMatrix(req)) return res.status(403).json({ error: 'Forbidden.' });
   res.json({ permissions: Permissions.all() });
 });
 
