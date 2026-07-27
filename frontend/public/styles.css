@@ -1001,3 +1001,49 @@ tr.row-pending td { pointer-events: none; }
 .forced-pw-head h1 { margin: 0 0 10px; font-size: 22px; font-weight: 700; letter-spacing: -.02em; color: var(--text-strong); }
 .forced-pw-head p { margin: 0 0 8px; font-size: 13.5px; color: var(--text); line-height: 1.6; }
 .forced-pw-foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-soft); text-align: center; }
+
+/* ==========================================================================
+   Talent Pool — sortable sticky table, parse quality, filter chips, pager.
+   ========================================================================== */
+/* Sticky header so column meaning survives long scrolls. */
+.card.flush > table.table thead th { position: sticky; top: 0; z-index: 2; }
+
+.sort-th { cursor: pointer; user-select: none; white-space: nowrap; transition: color .12s; }
+.sort-th:hover { color: var(--action-primary); }
+.sort-th.active { color: var(--action-primary); }
+.sort-th .sort-caret { font-style: normal; font-size: 9px; margin-left: 5px; opacity: .9; }
+.sort-th:focus-visible { outline: 2px solid var(--action-primary); outline-offset: -2px; }
+
+/* Parse quality — read-only indicator. */
+.pq { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: var(--pill-radius);
+      font-size: 11px; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+.pq i { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
+.pq em { font-style: normal; font-weight: 500; opacity: .75; }
+.pq-green { color: var(--chip-green-tx); background: var(--chip-green-bg); border-color: var(--chip-green-bd); }
+.pq-amber { color: var(--chip-amber-tx); background: var(--chip-amber-bg); border-color: var(--chip-amber-bd); }
+.pq-red   { color: var(--chip-red-tx);   background: var(--chip-red-bg);   border-color: var(--chip-red-bd); }
+.pq-grey  { color: var(--chip-grey-tx);  background: var(--chip-grey-bg);  border-color: var(--chip-grey-bd); }
+
+/* Active filter chips — filters are never hidden from the recruiter. */
+.filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+.chip-filter { display: inline-flex; align-items: center; gap: 7px; padding: 4px 6px 4px 11px; border-radius: var(--pill-radius);
+               background: var(--action-primary-tint); color: var(--action-primary); border: 1px solid var(--action-tint-bd);
+               font-size: 12px; font-weight: 600; }
+.chip-filter button { border: 0; background: none; cursor: pointer; color: inherit; font-size: 12px; line-height: 1;
+                      padding: 2px 4px; border-radius: 4px; }
+.chip-filter button:hover { background: rgba(0,0,0,.08); }
+
+/* Pager */
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+         margin-top: 14px; padding: 12px 14px; background: var(--card-bg); border: 1px solid var(--border);
+         border-radius: var(--card-radius); box-shadow: var(--shadow-sm); }
+.pager-info { font-size: 12.5px; color: var(--muted); }
+.pager-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pager-page { font-size: 12.5px; color: var(--text); padding: 0 6px; white-space: nowrap; }
+.pager-controls select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px;
+                         font-size: 12.5px; background: var(--card-bg); color: var(--text); }
+
+@media (max-width: 700px) {
+  .pager { flex-direction: column; align-items: stretch; }
+  .pager-controls { justify-content: space-between; }
+}

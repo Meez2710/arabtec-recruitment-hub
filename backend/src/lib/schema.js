@@ -558,7 +558,26 @@ export function ensureSchema() {
   // candidate_state (contactability) and from application status (pipeline stage).
   //   new → screening → fit | unfit
   addColumnIfMissing('candidate', 'screening_status', "TEXT NOT NULL DEFAULT 'new'");
-  // candidate — HR-leadership-requested fields
+
+  // Parse-quality metadata. Deliberately NO resume_text column: the uploaded file
+  // is the single source of truth and is re-read whenever a re-parse is needed.
+  addColumnIfMissing('candidate', 'parse_status', "TEXT");
+  addColumnIfMissing('candidate', 'parse_confidence', 'REAL');
+  addColumnIfMissing('candidate', 'parsed_at', 'TEXT');
+
+  // Indexes supporting server-side pagination, sorting and filtering on the
+  // Talent Pool. Created idempotently; harmless if they already exist.
+  for (const stmt of [
+    'CREATE INDEX IF NOT EXISTS idx_candidate_created_at ON candidate(created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_full_name ON candidate(full_name)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_company ON candidate(current_company)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_university ON candidate(university)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_grad_year ON candidate(graduation_year)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_years_exp ON candidate(years_experience)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_screening ON candidate(screening_status)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_parse_status ON candidate(parse_status)',
+    'CREATE INDEX IF NOT EXISTS idx_candidate_state ON candidate(candidate_state)',
+  ]) { try { run(stmt); } catch {} }  // candidate — HR-leadership-requested fields
   addColumnIfMissing('candidate', 'employer', 'TEXT');
   addColumnIfMissing('candidate', 'current_project', 'TEXT');
   addColumnIfMissing('candidate', 'graduation_year', 'INTEGER');

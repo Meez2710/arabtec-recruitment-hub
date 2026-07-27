@@ -557,6 +557,12 @@ const normPhone = (p) => (p || '').replace(/[^0-9]/g, '') || null;
 const normLinkedin = (l) => (l || '').toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\/(www\.)?/, '') || null;
 
 export const Candidates = {
+  /** Parse-quality metadata. Never stores CV text — the file is the source of truth. */
+  setParseMeta(id, { parseStatus, parseConfidence, parsedAt } = {}) {
+    run('UPDATE candidate SET parse_status=?, parse_confidence=?, parsed_at=?, updated_at=? WHERE id=?',
+      [parseStatus || null, parseConfidence ?? null, parsedAt || nowISO(), nowISO(), Number(id)]);
+    return this.byId(id);
+  },
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='candidate_prefix'")?.value || 'CAN';
     const cur = parseInt(get("SELECT value FROM system_setting WHERE key='candidate_counter'")?.value || '0', 10) + 1;
@@ -663,21 +669,52 @@ export const Candidates = {
     if (excludeId) { sql += ' AND id != ?'; p.push(excludeId); }
     return all(sql, p);
   },
-  list(f = {}) {
-    let sql = 'SELECT * FROM candidate WHERE candidate_state != \'merged\'';
+  /** Shared WHERE builder so list() and count() can never diverge. */
+  _where(f = {}) {
+    let sql = " WHERE candidate_state != 'merged'";
     const p = [];
-    if (f.q) { sql += ' AND (full_name LIKE ? OR candidate_no LIKE ? OR current_company LIKE ? OR email LIKE ?)'; const l = `%${f.q}%`; p.push(l, l, l, l); }
+    if (f.q) { sql += ' AND (full_name LIKE ? OR candidate_no LIKE ? OR current_company LIKE ? OR email LIKE ? OR current_position LIKE ? OR university LIKE ?)'; const l = `%${f.q}%`; p.push(l, l, l, l, l, l); }
     if (f.source) { sql += ' AND source=?'; p.push(f.source); }
     if (f.location) { sql += ' AND location LIKE ?'; p.push(`%${f.location}%`); }
     if (f.currentCompany) { sql += ' AND current_company LIKE ?'; p.push(`%${f.currentCompany}%`); }
+    if (f.currentPosition) { sql += ' AND current_position LIKE ?'; p.push(`%${f.currentPosition}%`); }
+    if (f.university) { sql += ' AND university LIKE ?'; p.push(`%${f.university}%`); }
+    if (f.graduationYear) { sql += ' AND graduation_year=?'; p.push(Number(f.graduationYear)); }
     if (f.noticePeriod) { sql += ' AND notice_period=?'; p.push(f.noticePeriod); }
     if (f.ownerRecruiterId) { sql += ' AND owner_recruiter_id=?'; p.push(Number(f.ownerRecruiterId)); }
     if (f.minExp) { sql += ' AND years_experience >= ?'; p.push(Number(f.minExp)); }
     if (f.maxExp) { sql += ' AND years_experience <= ?'; p.push(Number(f.maxExp)); }
     if (f.tag) { sql += ' AND tags LIKE ?'; p.push(`%"${f.tag}"%`); }
     if (f.screeningStatus) { sql += ' AND screening_status=?'; p.push(f.screeningStatus); }
-    sql += ' ORDER BY created_at DESC, id DESC';
-    return all(sql, p);
+    if (f.parseStatus) { sql += ' AND parse_status=?'; p.push(f.parseStatus); }
+    return { sql, p };
+  },
+
+  /** Whitelisted sort columns — user input is never interpolated into SQL. */
+  _orderBy(sort, dir) {
+    const COLS = {
+      created: 'created_at', name: 'full_name', company: 'current_company',
+      position: 'current_position', university: 'university',
+      graduation: 'graduation_year', experience: 'years_experience',
+      location: 'location', updated: 'updated_at', confidence: 'parse_confidence',
+    };
+    const col = COLS[sort] || 'created_at';
+    const d = String(dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    return ` ORDER BY ${col} ${d}, id ${d}`;
+  },
+
+  count(f = {}) {
+    const { sql, p } = this._where(f);
+    return get('SELECT COUNT(*) AS c FROM candidate' + sql, p)?.c ?? 0;
+  },
+
+  list(f = {}) {
+    const { sql, p } = this._where(f);
+    let q = 'SELECT * FROM candidate' + sql + this._orderBy(f.sort, f.dir);
+    // Omitting `limit` returns everything, preserving the previous contract for
+    // callers that have not been migrated to pagination.
+    if (f.limit != null) { q += ' LIMIT ? OFFSET ?'; p.push(Number(f.limit), Number(f.offset || 0)); }
+    return all(q, p);
   },
   // Screening gate: move a candidate through the Database fitness screen.
   setScreening(id, status) {
