@@ -26,11 +26,37 @@ export function requireAuth(req, res, next) {
     }
     req.user = ctx;
     req.sessionToken = token;
+
+    // Forced-rotation gate. Placed here so it covers EVERY authenticated route
+    // with no per-router wiring to forget. `code` lets the client show the
+    // change-password screen instead of a generic error.
+    if (passwordRotationBlocked(req)) {
+      return res.status(403).json({
+        error: 'Password change required',
+        code: 'PASSWORD_CHANGE_REQUIRED',
+      });
+    }
     next();
   } catch (e) {
     console.error('Auth error:', e);
     res.status(500).json({ error: 'Authentication failure.' });
   }
+}
+
+// While a user carries must_change_password only these absolute routes stay
+// reachable: read own identity, rotate the password, sign out. Matched against
+// req.originalUrl so it does not depend on where a router is mounted — a newly
+// added router cannot accidentally escape the gate.
+const PASSWORD_ROTATION_ALLOWLIST = new Set([
+  'GET /api/auth/me',
+  'POST /api/auth/change-password',
+  'POST /api/auth/logout',
+]);
+
+function passwordRotationBlocked(req) {
+  if (!req.user || !req.user.mustChangePassword) return false;
+  const path = String(req.originalUrl || '').split('?')[0].replace(/\/+$/, '') || '/';
+  return !PASSWORD_ROTATION_ALLOWLIST.has(`${req.method} ${path}`);
 }
 
 export function requirePermission(...required) {

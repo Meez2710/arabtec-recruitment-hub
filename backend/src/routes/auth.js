@@ -80,7 +80,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Current and new password are required.' });
   }
   const minLen = Number(SystemSettings?.get?.('password_min_length') || 8) || 8;
-  const policy = validatePassword(newPassword, { minLength: minLen });
+  const policy = validatePassword(newPassword, { minLength: minLen, fullName: req.user.fullName, email: req.user.email });
   if (!policy.ok) return res.status(400).json({ error: policy.error });
   if (newPassword === currentPassword) {
     return res.status(400).json({ error: 'New password must be different from the current one.' });

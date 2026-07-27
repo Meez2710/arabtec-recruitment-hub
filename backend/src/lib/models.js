@@ -184,6 +184,9 @@ export function userContext(userId) {
     phone: u.phone, jobTitle: u.job_title, status: u.status,
     department: dept ? { id: dept.id, name: dept.name } : null,
     lastLoginAt: u.last_login_at,
+    // Surfaced so requirePasswordCurrent (middleware/auth.js) and GET /auth/me can
+    // both see it without a second query. Never includes password_hash.
+    mustChangePassword: !!u.must_change_password,
     roles: roleCodes,
     permissions: [...permSet],
     scopes: UserScopes.forUser(userId),

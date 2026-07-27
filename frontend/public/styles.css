@@ -490,7 +490,6 @@ tbody tr:hover { background: var(--surface-2); }
   .login-wrap { grid-template-columns: 1fr; }
   .login-brand { display: none; }
   .form-grid { grid-template-columns: 1fr; }
-  .shell { grid-template-columns: 1fr; }
   .report-grid { grid-template-columns: 1fr; }
 }
 
@@ -692,7 +691,11 @@ table.table tbody tr:hover, .table tbody tr:hover { background: var(--action-pri
 .count-pill em { font-style: normal; font-weight: 500; color: var(--muted); }
 
 /* Tables ------------------------------------------------------------------ */
-.card.flush { overflow: hidden; }
+/* Wide tables must SCROLL, not be clipped. `overflow: hidden` was added here for
+   corner rounding, but it silently cut off columns on narrow viewports (worst on
+   the 11-column candidate board). overflow-y stays hidden so the radius still
+   clips vertically. */
+.card.flush { overflow-x: auto; overflow-y: hidden; }
 .card.flush > table { border-radius: inherit; }
 table.table thead th { position: sticky; top: 0; z-index: 1; background: var(--neutral-tint); border-bottom: 1px solid var(--border); font-size: 10.5px; letter-spacing: .6px; padding: 11px 16px; white-space: nowrap; }
 table.table tbody td { padding: 13px 16px; vertical-align: middle; }
@@ -932,3 +935,69 @@ tr.row-pending td { pointer-events: none; }
 .otp-meta strong { font-size: 13.5px; color: var(--text-strong); }
 .otp-box { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 9px; background: var(--neutral-tint); }
 .otp-value { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 700; letter-spacing: .04em; color: var(--text-strong); word-break: break-all; user-select: all; }
+
+/* ==========================================================================
+   Responsive — tablet / narrow-desktop.
+   CSS only: no JSX changes. The sidebar collapse control already exists in the
+   topbar, so this simply makes the rail the default below 1180px, where a
+   240px sidebar leaves too little room for the content.
+   ========================================================================== */
+@media (max-width: 1180px) {
+  /* .shell sets `grid-template-columns: var(--sidebar-w) 1fr`, and --sidebar-w is
+     an inline style, so override the resolved columns rather than the variable. */
+  .shell { grid-template-columns: 66px 1fr; }
+
+  /* Hide the text so the rail shows icons only. Labels stay in the DOM (React
+     renders them), so they remain available to screen readers via title/aria. */
+  .sidebar .side-txt,
+  .sidebar .nav-section,
+  .sidebar .nav-item > span:not(.nav-icon) { display: none; }
+
+  .sidebar .nav-item { justify-content: center; padding-left: 0; padding-right: 0; }
+  .sidebar-head { justify-content: center; padding-left: 8px; padding-right: 8px; }
+  .nav { padding: 10px 6px; }
+
+  /* Reclaim horizontal room in the topbar at the same breakpoint. */
+  .topbar { padding: 0 14px; gap: 10px; }
+  .topbar .search { max-width: 260px; }
+}
+
+/* Tablet and below — stop long headers and toolbars forcing the page wider. */
+@media (max-width: 900px) {
+  .topbar { padding: 0 12px; }
+  .topbar .search { display: none; }        /* placeholder-only control; no loss */
+  .tb-brand .bn span { display: none; }     /* keep the title, drop the subtitle */
+  .page-head { flex-direction: column; align-items: stretch; }
+  .page-head-actions { padding-top: 4px; }
+  .page-head .page-title { font-size: 21px; word-break: break-word; }
+  .toolbar { padding: 10px 12px; }
+  .toolbar input, .toolbar select { flex: 1 1 160px; min-width: 0; }
+}
+
+/* Phones — single column everywhere, nothing fixed-width. */
+@media (max-width: 560px) {
+  .shell { grid-template-columns: 56px 1fr; }
+  .ats-card-grid, .cand-grid { grid-template-columns: 1fr; }
+  .page-head .page-title { font-size: 19px; }
+  .modal { max-width: 100%; margin: 0 8px; }
+  .otp-box { flex-direction: column; align-items: stretch; gap: 8px; }
+  .otp-value { font-size: 13.5px; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar input, .toolbar select { width: 100%; flex: 1 1 auto; }
+  .count-pill { align-self: flex-start; }
+}
+
+/* ==========================================================================
+   Password policy UI + forced rotation gate.
+   ========================================================================== */
+.pw-rules { list-style: none; margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--neutral-tint); display: grid; gap: 6px; }
+.pw-rules li { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--muted); }
+.pw-rules li span { width: 14px; text-align: center; font-weight: 700; flex: 0 0 auto; }
+.pw-rules li.ok { color: var(--action-success); }
+
+.forced-pw-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--app-bg); }
+.forced-pw-card { width: 100%; max-width: 460px; padding: 30px 32px; }
+.forced-pw-head { margin-bottom: 22px; }
+.forced-pw-head h1 { margin: 0 0 10px; font-size: 22px; font-weight: 700; letter-spacing: -.02em; color: var(--text-strong); }
+.forced-pw-head p { margin: 0 0 8px; font-size: 13.5px; color: var(--text); line-height: 1.6; }
+.forced-pw-foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-soft); text-align: center; }
