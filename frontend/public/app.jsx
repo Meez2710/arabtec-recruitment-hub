@@ -1092,6 +1092,8 @@ function UsersPage({ user }) {
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState(null);
   const [activity, setActivity] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);   // user whose password is being reset
+  const [otp, setOtp] = useState(null);                   // { title, email, roleNames, password }
   const canManage = can(user, 'user.manage');
 
   const load = useCallback(async () => {
@@ -1109,10 +1111,9 @@ function UsersPage({ user }) {
     try { await api.post(`/users/${u.id}/${action}`); toast(`User ${action}d`); load(); }
     catch (e) { toast(e.message, 'error'); }
   }
-  async function resetPwd(u) {
-    try { const r = await api.post(`/users/${u.id}/reset-password`, {}); toast('Password reset to default'); }
-    catch (e) { toast(e.message, 'error'); }
-  }
+  // Opens the reset dialog. The old implementation posted immediately, discarded the
+  // returned temporaryPassword and reported "reset to default" — there is no default.
+  function resetPwd(u) { setResetTarget(u); }
   async function showActivity(u) {
     const r = await api.get(`/users/${u.id}/activity`); setActivity({ user: u, logs: r.activity });
   }
@@ -1141,7 +1142,7 @@ function UsersPage({ user }) {
                     {canManage && <>
                       <button className="btn btn-secondary btn-sm" onClick={() => setEditing(u)}>Edit</button>{' '}
                       <button className="btn btn-ghost btn-sm" onClick={() => showActivity(u)}>Activity</button>{' '}
-                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset PW</button>{' '}
+                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset Password</button>{' '}
                       <button className={'btn btn-sm ' + (u.status === 'active' ? 'btn-danger' : '')} onClick={() => toggleStatus(u)} disabled={u.id === user.id}>
                         {u.status === 'active' ? 'Deactivate' : 'Activate'}</button>
                     </>}
@@ -1153,7 +1154,34 @@ function UsersPage({ user }) {
         )}
       </div>
       {editing && <UserModal user={editing} roles={roles} depts={depts} projects={projects} sites={sites}
-        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+        onClose={() => setEditing(null)}
+        onSaved={(res) => {
+          setEditing(null); load();
+          // Only present when the server generated the password (admin left it blank).
+          if (res && res.temporaryPassword) {
+            setOtp({
+              title: 'User created — temporary password',
+              email: (res.user && res.user.email) || '',
+              roleNames: ((res.user && res.user.roles) || []).map((r) => r.name).join(', '),
+              password: res.temporaryPassword,
+            });
+          }
+        }} />}
+
+      {resetTarget && <ResetPasswordModal target={resetTarget}
+        onClose={() => setResetTarget(null)}
+        onGenerated={(pwd) => {
+          const t = resetTarget; setResetTarget(null); load();
+          setOtp({
+            title: 'Temporary password generated',
+            email: t.email,
+            roleNames: (t.roles || []).map((r) => r.name).join(', '),
+            password: pwd,
+          });
+        }}
+        onSet={() => { setResetTarget(null); load(); toast('Password reset'); }} />}
+
+      {otp && <OneTimePasswordDialog {...otp} onClose={() => setOtp(null)} />}
       {activity && <Modal title={`Activity — ${activity.user.fullName}`} onClose={() => setActivity(null)} wide
         footer={<button className="btn btn-ghost" onClick={() => setActivity(null)}>Close</button>}>
         {activity.logs.length === 0 ? <Empty text="No activity recorded." /> : (
@@ -1162,6 +1190,95 @@ function UsersPage({ user }) {
         )}
       </Modal>}
     </div>
+  );
+}
+
+// Shows a server-generated temporary password EXACTLY once. The value lives only in
+// this component's props for the lifetime of the dialog: it is never logged, never put
+// in a toast, and never written to localStorage/sessionStorage.
+function OneTimePasswordDialog({ title, email, roleNames, password, onClose }) {
+  const toast = useToast();
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch { toast('Could not copy — select the password and copy manually.', 'error'); }
+  }
+  return (
+    <Modal title={title} onClose={onClose}
+      footer={<button className="btn" onClick={onClose}>Done</button>}>
+      <div className="otp-warn">
+        <strong>This password is shown once.</strong> Copy it now — it cannot be retrieved
+        later. Share it with the user through a separate channel.
+      </div>
+      <div className="otp-meta">
+        <div><span>User</span><strong>{email}</strong></div>
+        {roleNames ? <div><span>Role</span><strong>{roleNames}</strong></div> : null}
+      </div>
+      <div className="otp-box">
+        <code className="otp-value">{password}</code>
+        <button className="btn btn-secondary btn-sm" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+      <p className="muted" style={{ marginTop: 12, fontSize: 12.5 }}>
+        The user must set their own password at first login.
+      </p>
+    </Modal>
+  );
+}
+
+// Reset flow: the admin either lets the server generate a temporary password, or sets
+// one themselves. Replaces the old "reset to default" call, which was misleading —
+// there is no default password.
+function ResetPasswordModal({ target, onClose, onGenerated, onSet }) {
+  const toast = useToast();
+  const [mode, setMode] = useState('generate');   // generate | choose
+  const [pwd, setPwd] = useState('');
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (mode === 'choose' && !pwd.trim()) { toast('Enter a password or switch to Generate.', 'error'); return; }
+    setBusy(true);
+    try {
+      const body = mode === 'choose' ? { newPassword: pwd } : {};
+      const r = await api.post(`/users/${target.id}/reset-password`, body);
+      setPwd('');                                  // clear from component state immediately
+      if (r && r.temporaryPassword) onGenerated(r.temporaryPassword);
+      else onSet();
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Modal title={`Reset password — ${target.fullName}`} onClose={() => { setPwd(''); onClose(); }}
+      footer={<>
+        <button className="btn btn-ghost" onClick={() => { setPwd(''); onClose(); }}>Cancel</button>
+        <button className="btn" onClick={submit} disabled={busy}>{busy ? 'Resetting…' : 'Reset password'}</button>
+      </>}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        This signs {target.fullName} out of all sessions and forces them to choose a new
+        password at next login.
+      </p>
+      <label className="radio-row">
+        <input type="radio" name="pwmode" checked={mode === 'generate'} onChange={() => { setMode('generate'); setPwd(''); }} />
+        <span><strong>Generate a temporary password</strong><em>Shown once, on the next screen.</em></span>
+      </label>
+      <label className="radio-row">
+        <input type="radio" name="pwmode" checked={mode === 'choose'} onChange={() => setMode('choose')} />
+        <span><strong>Set a temporary password myself</strong><em>Minimum 8 characters, using at least three of: lowercase, uppercase, number, symbol.</em></span>
+      </label>
+      {mode === 'choose' && (
+        <div className="field" style={{ marginTop: 12 }}>
+          <label>New temporary password</label>
+          <div className="pw-input">
+            <input type={show ? 'text' : 'password'} value={pwd} autoComplete="new-password"
+              onChange={(e) => setPwd(e.target.value)} placeholder="Enter a temporary password" />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShow((v) => !v)}>{show ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -1175,6 +1292,9 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
     globalScope: user.isGlobalScope || false,
     projectIds: user.projectScopes || [], siteIds: user.siteScopes || [],
   });
+  // Held only until submit, then cleared. Never logged, stored or echoed back.
+  const [initialPassword, setInitialPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const toggleArr = (k, v) => setF((s) => ({ ...s, [k]: s[k].includes(v) ? s[k].filter((x) => x !== v) : [...s[k], v] }));
@@ -1183,14 +1303,20 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
     setBusy(true);
     try {
       const payload = { ...f, departmentId: f.departmentId || null };
-      if (isNew) await api.post('/users', payload);
+      // Only send `password` when the admin actually typed one; blank means
+      // "let the server generate a temporary password and return it once".
+      if (isNew && initialPassword.trim()) payload.password = initialPassword;
+      let res = null;
+      if (isNew) res = await api.post('/users', payload);
       else await api.put('/users/' + user.id, payload);
-      toast(isNew ? 'User created' : 'User updated'); onSaved();
+      setInitialPassword('');                       // clear before anything else
+      toast(isNew ? 'User created' : 'User updated');
+      onSaved(res);                                 // parent surfaces temporaryPassword
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
   return (
-    <Modal title={isNew ? 'Create User' : 'Edit User'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button></>}>
+    <Modal title={isNew ? 'Create User' : 'Edit User'} onClose={() => { setInitialPassword(''); onClose(); }} wide
+      footer={<><button className="btn btn-ghost" onClick={() => { setInitialPassword(''); onClose(); }}>Cancel</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button></>}>
       <div className="form-grid">
         <div className="field"><label>Full Name *</label><input value={f.fullName} onChange={(e) => set('fullName', e.target.value)} /></div>
         <div className="field"><label>Email *</label><input type="email" value={f.email} onChange={(e) => set('email', e.target.value)} /></div>
@@ -1211,7 +1337,18 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
         <div className="muted" style={{ marginBottom: 6 }}>Sites</div>
         <div>{sites.map((s) => <span key={s.id} className={'tag-toggle' + (f.siteIds.includes(s.id) ? ' on' : '')} onClick={() => toggleArr('siteIds', s.id)}>{s.name}</span>)}</div>
       </>}
-      {isNew && <p className="muted" style={{ marginTop: 18 }}>Default password <strong>Arabtec@123</strong> will be set (user can be reset later).</p>}
+      {isNew && <>
+        <div className="section-title">Initial password</div>
+        <div className="field" style={{ maxWidth: 440 }}>
+          <label>Initial password</label>
+          <div className="pw-input">
+            <input type={showPwd ? 'text' : 'password'} value={initialPassword} autoComplete="new-password"
+              onChange={(e) => setInitialPassword(e.target.value)} placeholder="Leave blank to generate one" />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPwd((v) => !v)}>{showPwd ? 'Hide' : 'Show'}</button>
+          </div>
+          <p className="field-hint">Optional. Leave blank to generate a temporary password — it is shown once, immediately after the user is created. Either way the user must set their own password at first login.</p>
+        </div>
+      </>}
     </Modal>
   );
 }

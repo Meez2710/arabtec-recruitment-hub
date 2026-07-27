@@ -910,3 +910,25 @@ tr.row-pending td { pointer-events: none; }
   .spin { animation: none; border-top-color: currentColor; opacity: .6; }
   .pcard { transition: none; }
 }
+
+/* ==========================================================================
+   User password create / reset dialogs.
+   ========================================================================== */
+.pw-input { display: flex; align-items: center; gap: 8px; }
+.pw-input input { flex: 1; min-width: 0; }
+.field-hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+.radio-row { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 9px; margin-bottom: 9px; cursor: pointer; transition: border-color .12s, background .12s; }
+.radio-row:hover { border-color: var(--action-primary); background: var(--action-primary-tint); }
+.radio-row input { margin-top: 2px; flex: 0 0 auto; }
+.radio-row span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.radio-row strong { font-size: 13.5px; font-weight: 600; color: var(--text-strong); }
+.radio-row em { font-style: normal; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+
+.otp-warn { padding: 12px 14px; border-radius: 9px; background: var(--warning-tint); border: 1px solid #f4e3bd; color: var(--warning-ink); font-size: 12.5px; line-height: 1.55; margin-bottom: 16px; }
+.otp-meta { display: flex; flex-wrap: wrap; gap: 8px 32px; margin-bottom: 14px; }
+.otp-meta div { display: flex; flex-direction: column; gap: 2px; }
+.otp-meta span { font-size: 10.5px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+.otp-meta strong { font-size: 13.5px; color: var(--text-strong); }
+.otp-box { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 9px; background: var(--neutral-tint); }
+.otp-value { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 700; letter-spacing: .04em; color: var(--text-strong); word-break: break-all; user-select: all; }
