@@ -15,8 +15,11 @@ here** and will be added after the browser pass.
 | D-05 | User Management | **S4** | ✅ **Resolved** | at least one role now required |
 | D-06 | Security | **S4** | 📋 **Closed — no action** | correct behaviour, informational only |
 | D-07 | API Authorization | **S3** | 🔻 **Downgraded, deferred** | count was overstated; needs its own audit |
+| **D-08** | Resume Upload | **S3** | 🔴 **Open** | 20 MB cap applied to request, not file |
+| **D-09** | **Resume Parsing (PDF)** | **S2** | 🔴 **OPEN — BLOCKS RELEASE** | `@napi-rs/canvas` native binding missing; failure silently swallowed |
 
-**Resolved: 4 of 5 actionable. 1 retracted. 1 closed no-action. 1 deferred.**
+**Phase 2: resolved 4, retracted 1, closed 1, deferred 1.**
+**Phase E: 2 NEW defects found by measurement — D-09 (S2) blocks release.**
 
 Pre-existing items tracked in the Technical Debt Register (TD-01 error boundary,
 TD-02 unguarded `api()` calls, TD-03 native `prompt()`) are **not** duplicated
