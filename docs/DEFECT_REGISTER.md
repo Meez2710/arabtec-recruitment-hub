@@ -16,10 +16,11 @@ here** and will be added after the browser pass.
 | D-06 | Security | **S4** | 📋 **Closed — no action** | correct behaviour, informational only |
 | D-07 | API Authorization | **S3** | 🔻 **Downgraded, deferred** | count was overstated; needs its own audit |
 | **D-08** | Resume Upload | **S3** | 🔴 **Open** | 20 MB cap applied to request, not file |
-| **D-09** | **Resume Parsing (PDF)** | **S2** | 🔴 **OPEN — BLOCKS RELEASE** | `@napi-rs/canvas` native binding missing; failure silently swallowed |
+| **D-09** | **Resume Parsing (PDF)** | **S2** | ✅ **RESOLVED** | replaced pdf-parse@2 with direct pdfjs-dist + DOMMatrix polyfill; failures now logged |
 
 **Phase 2: resolved 4, retracted 1, closed 1, deferred 1.**
-**Phase E: 2 NEW defects found by measurement — D-09 (S2) blocks release.**
+**Phase E: 2 new defects found by measurement.**
+**Phase F (implementation): D-09 RESOLVED and verified. No open S1 or S2 defects.**
 
 Pre-existing items tracked in the Technical Debt Register (TD-01 error boundary,
 TD-02 unguarded `api()` calls, TD-03 native `prompt()`) are **not** duplicated
@@ -441,3 +442,49 @@ system. This needs a route-by-route table of
 
 **Recommendation:** schedule as its own Phase 1 task with an impact assessment,
 starting with `thread.js` and `settings.js` (both mutate state).
+
+
+---
+
+## D-09 — RESOLVED (Phase F)
+
+**Root cause.** `pdf-parse@2.4.5` depends on `@napi-rs/canvas@0.1.80`, which ships
+a platform-specific native binding. `node_modules` was installed on macOS
+(`canvas-darwin-arm64`), so on Linux the binding fails to load, `pdfjs-dist` has
+no `DOMMatrix`, and `getText()` throws `ReferenceError: DOMMatrix is not defined`.
+`extractor.js` wrapped it in `catch { return '' }`, making a total library
+failure indistinguishable from an empty CV. Undetected for four phases because
+every prior test used a `.txt` fixture.
+
+**Fix.** `backend/src/lib/cv/extractor.js` now calls `pdfjs-dist/legacy/build/pdf.mjs`
+directly with a ~20-line `DOMMatrix` polyfill installed only when the global is
+absent. Text extraction does not require a canvas — canvas is only needed for
+rendering, which this application never does. `pdfjs-dist` was already a
+transitive dependency, so no new package and nothing extra to install on Render.
+
+Both PDF and DOCX extraction failures are now logged as structured JSON
+(`pdf.extract_failed` / `docx.extract_failed`) carrying only the basename and
+the error message — never CV content.
+
+**Evidence (same fixtures, before vs after):**
+
+| Fixture | Before | After |
+|---|---|---|
+| PDF 1-page | 0 chars | **283 chars**, email + phone extracted, 146 ms |
+| PDF 2-page | 0 chars | **234 chars**, email + phone extracted, 16 ms |
+| PDF short | 0 chars | **120 chars**, email + phone extracted, 9 ms |
+| PDF corrupt | 0 chars, silent | 0 chars **+ logged** `Invalid PDF structure` |
+| DOCX | 290 chars | **290 chars** — no regression |
+
+**Regression:** 94 automated checks, 93 pass. The single FAIL is check 16.6,
+retained deliberately — it documents that the self-deactivation guard fires
+before the last-admin guard, which is correct behaviour (see D-06).
+
+**Regression risk: Low.** One file changed; the public extractor API
+(`extractText`, `extractTextAsync`) is unchanged; every caller is untouched.
+
+**Residual:** `current_company` was not extracted from these synthetic fixtures.
+That is parser *accuracy*, not extraction, and the parser remains frozen.
+Measure it against ~30 real resumes before drawing conclusions.
+
+**Commit:** `7ff5ea1`
