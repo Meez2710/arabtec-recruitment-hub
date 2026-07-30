@@ -53,6 +53,54 @@ function ensureDomMatrix() {
   globalThis.DOMMatrix = DOMMatrix;
 }
 
+// pdfjs returns positioned text fragments, not lines. Joining them all with
+// spaces flattens a CV into one line per page, which destroys the line structure
+// the section detector and name detector depend on — the name detector then falls
+// back to the filename (a UUID). pdf-parse used to emit newlines; pdfjs does not.
+//
+// Group fragments by baseline Y (transform[5]), emit one line per baseline, and
+// insert a space only where there is a real horizontal gap. EPS absorbs sub-pixel
+// jitter so a single visual line is not split in two.
+const LINE_EPS = 2.0;      // points of Y jitter still counted as the same line
+const GAP_RATIO = 0.28;    // gap > this * fontHeight becomes a space
+
+function itemsToLines(items) {
+  const lines = [];
+  for (const it of items || []) {
+    const str = it.str || '';
+    if (!str) continue;
+    const tr = it.transform || [];
+    const y = typeof tr[5] === 'number' ? tr[5] : 0;
+    const x = typeof tr[4] === 'number' ? tr[4] : 0;
+    const h = Math.abs(typeof tr[3] === 'number' ? tr[3] : 10) || 10;
+    let bucket = null;
+    for (const L of lines) { if (Math.abs(L.y - y) <= LINE_EPS) { bucket = L; break; } }
+    if (!bucket) { bucket = { y, parts: [] }; lines.push(bucket); }
+    bucket.parts.push({ x, w: it.width || 0, h, str });
+    // pdfjs sets hasEOL on an explicit end-of-line marker; honour it.
+    if (it.hasEOL) bucket.eol = true;
+  }
+  // Top-down (PDF Y grows upward), then left-to-right within each line.
+  lines.sort((a, b) => b.y - a.y);
+  return lines.map((L) => {
+    L.parts.sort((a, b) => a.x - b.x);
+    let text = '';
+    let prevEnd = null;
+    let prevH = 10;
+    for (const p of L.parts) {
+      if (prevEnd !== null) {
+        const gap = p.x - prevEnd;
+        const needsSpace = gap > GAP_RATIO * Math.max(prevH, p.h);
+        if (needsSpace && !/\s$/.test(text) && !/^\s/.test(p.str)) text += ' ';
+      }
+      text += p.str;
+      prevEnd = p.x + (p.w || 0);
+      prevH = p.h;
+    }
+    return text.replace(/[ \t]+/g, ' ').trim();
+  }).filter(Boolean).join('\n');
+}
+
 let _pdfjs = null;
 async function loadPdfjs() {
   if (_pdfjs) return _pdfjs;
@@ -75,7 +123,7 @@ async function pdfText(filePath) {
     for (let i = 1; i <= doc.numPages; i += 1) {
       const page = await doc.getPage(i);
       const tc = await page.getTextContent();
-      out += tc.items.map((it) => it.str || '').join(' ') + '\n';
+      out += itemsToLines(tc.items) + '\n';
       page.cleanup();
     }
     await doc.destroy();
