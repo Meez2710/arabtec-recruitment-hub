@@ -284,11 +284,26 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .tb-brand .bn { display: flex; flex-direction: column; line-height: 1.2; }
 .tb-brand .bn strong { font-size: 13px; color: var(--text-strong); font-weight: 700; }
 .tb-brand .bn span { font-size: 10.5px; color: var(--muted); }
+/* Global search trigger.
+   OVERLAP FIX: the topbar is a flex row, and .gsearch had `flex: 1` with no
+   `min-width: 0`. A flex item's default min-width is `auto`, so it refused to
+   shrink below its content width and pushed into / under the brand and profile
+   blocks at intermediate widths. `min-width: 0` lets it shrink; the brand and
+   right-hand cluster are pinned with `flex-shrink: 0` so text truncates inside
+   the search pill instead of colliding. */
 .gsearch {
-  flex: 1; max-width: 460px; display: flex; align-items: center; gap: 8px;
+  flex: 1 1 auto; min-width: 0; max-width: 460px;
+  display: flex; align-items: center; gap: 8px;
   padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--neutral-tint); color: var(--muted); font-size: 12.5px;
+  text-align: left; font: inherit; font-size: 12.5px; cursor: pointer;
+  transition: border-color .12s, background .12s;
 }
+.gsearch:hover { border-color: var(--line-strong); background: var(--card-bg); }
+.gsearch:focus-visible { outline: 2px solid var(--action-primary); outline-offset: 1px; }
+.gsearch-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.topbar .tb-brand, .topbar .profile, .topbar .notif { flex-shrink: 0; }
+.gsearch .kbd { flex-shrink: 0; }
 .gsearch .kbd { margin-left: auto; font-size: 10px; border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; background: var(--card-bg); }
 .topbar .search { flex: 1; max-width: 420px; }
 .topbar .search input { width: 100%; padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); font-size: 13px; outline: none; }
@@ -1047,3 +1062,65 @@ tr.row-pending td { pointer-events: none; }
   .pager { flex-direction: column; align-items: stretch; }
   .pager-controls { justify-content: space-between; }
 }
+
+
+/* ==========================================================================
+   Ctrl/Cmd+K command palette (plain React — no build step in this project).
+   ========================================================================== */
+.cmdk-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(23, 27, 33, .38); backdrop-filter: blur(2px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 12vh 16px 16px;
+}
+.cmdk {
+  width: 100%; max-width: 620px; background: var(--card-bg);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .22); overflow: hidden;
+}
+.cmdk-input { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); color: var(--muted); }
+.cmdk-input input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: 15px; color: var(--text-strong); }
+.cmdk-input input::placeholder { color: var(--muted); }
+.cmdk-list { max-height: min(52vh, 420px); overflow-y: auto; padding: 6px; }
+.cmdk-hint { padding: 22px 14px; text-align: center; font-size: 13px; color: var(--muted); }
+.cmdk-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 9px; cursor: pointer;
+}
+.cmdk-row.is-active { background: var(--neutral-tint); }
+.cmdk-av {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 11.5px; font-weight: 700;
+  background: var(--brand-secondary); color: #fff;
+}
+.cmdk-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmdk-name { font-size: 13.5px; font-weight: 600; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Candidate cards — more breathing room, calmer face.
+   Screening state and source were removed from the card in app.jsx; the extra
+   space goes to whitespace and a clearer name/headline hierarchy. */
+.cand-card { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+.cand-card .cc-top { gap: 13px; align-items: center; }
+.cand-card .cc-name { font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; line-height: 1.3; }
+.cand-card .cc-headline { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
+.cand-card .cc-meta { gap: 6px; row-gap: 6px; }
+.cand-card .cc-meta:empty { display: none; }
+.field-hint { margin-top: 6px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+
+/* Card action row + footer.
+   These previously reused .cc-meta (a wrapping chip row), so the buttons wrapped
+   raggedly and every card ended up a different height. They now have their own
+   layout, and the footer is pinned to the bottom with `margin-top: auto` so all
+   cards in a row align on the same baseline regardless of content. */
+.cand-card { min-height: 172px; }
+.cand-card .cc-actions {
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+}
+.cand-card .cc-actions .btn { flex: 0 1 auto; white-space: nowrap; min-width: 0; }
+.cand-card .cc-foot {
+  margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border-soft, var(--border));
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.cand-card .cc-no { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
+.cand-card .cc-foot-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }

@@ -2,7 +2,7 @@
    Single-file app: API client, auth, shell, dashboard, and admin modules.
    Permissions/buttons are resolved from the server; UI also hides what the
    user can't use, but the server is the source of truth (RBAC in logic). */
-const { useState, useEffect, useCallback, useMemo, createContext, useContext } = React;
+const { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } = React;
 
 /* ----------------------------- API client ----------------------------- */
 const TOKEN_KEY = 'arabtec_token';
@@ -466,13 +466,106 @@ function NotificationBell({ onNavigate }) {
   );
 }
 
+// Ctrl/Cmd+K command palette. Plain React on purpose: this frontend has no build
+// step (app.jsx is compiled in-browser by Babel), so an npm package like `cmdk`
+// cannot be used. Same interaction model: overlay, live search, arrow keys, Enter.
+// Replaces a decorative "Ctrl K" badge that previously did nothing.
+function CommandPalette({ open, onClose, onPick }) {
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [active, setActive] = useState(0);
+  const inputRef = useRef(null);
+  const reqRef = useRef(0);
+
+  useEffect(() => { if (open) { setQ(''); setRows([]); setActive(0); setTimeout(() => inputRef.current && inputRef.current.focus(), 20); } }, [open]);
+
+  // Debounced search. A stale response can never overwrite a newer one.
+  useEffect(() => {
+    if (!open) return;
+    const term = q.trim();
+    if (!term) { setRows([]); setBusy(false); return; }
+    setBusy(true);
+    const myReq = ++reqRef.current;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.get('/candidates?q=' + encodeURIComponent(term) + '&pageSize=8');
+        if (myReq !== reqRef.current) return;
+        setRows(r.candidates || []);
+        setActive(0);
+      } catch { if (myReq === reqRef.current) setRows([]); }
+      finally { if (myReq === reqRef.current) setBusy(false); }
+    }, 180);
+    return () => clearTimeout(t);
+  }, [q, open]);
+
+  if (!open) return null;
+
+  function keyDown(e) {
+    if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, Math.max(rows.length - 1, 0))); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); return; }
+    if (e.key === 'Enter' && rows[active]) { e.preventDefault(); onPick(rows[active]); }
+  }
+
+  return (
+    <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="cmdk" role="dialog" aria-modal="true" aria-label="Search candidates">
+        <div className="cmdk-input">
+          <Icon name="search" size={15} />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={keyDown}
+            autoFocus
+            placeholder="Search candidates by name, email, phone, company…" aria-label="Search candidates" />
+          <span className="kbd">Esc</span>
+        </div>
+        <div className="cmdk-list">
+          {!q.trim() && <div className="cmdk-hint">Type to search the Talent Pool. ↑↓ to move, Enter to open.</div>}
+          {q.trim() && busy && <div className="cmdk-hint">Searching…</div>}
+          {q.trim() && !busy && rows.length === 0 && <div className="cmdk-hint">No candidates match “{q.trim()}”.</div>}
+          {rows.map((c, i) => (
+            <div key={c.id} className={'cmdk-row' + (i === active ? ' is-active' : '')}
+              onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); onPick(c); }}>
+              <span className="cmdk-av">{initials(c.fullName)}</span>
+              <span className="cmdk-txt">
+                <span className="cmdk-name">{c.fullName}</span>
+                <span className="cmdk-sub">
+                  {c.candidateNo}
+                  {c.currentPosition ? ' · ' + c.currentPosition : ''}
+                  {c.currentCompany ? ' · ' + c.currentCompany : ''}
+                </span>
+              </span>
+              <ParseQuality status={c.parseStatus} confidence={c.parseConfidence} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Shell({ user, branding, onLogout, refreshBranding }) {
   // Self-service password change, reachable from the user menu.
   const [pwdOpen, setPwdOpen] = useState(false);
   const [route, setRoute] = useState('dashboard');
   const [collapsed, setCollapsed] = useState(branding?.sidebar_mode === 'collapsed');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const density = branding?.table_density || 'comfortable';
+
+  // Ctrl/Cmd+K from anywhere. Ignored while typing in a field so it never steals
+  // a keystroke from a form the recruiter is filling in.
+  useEffect(() => {
+    function onKey(e) {
+      if (!((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K'))) return;
+      const t = e.target;
+      const tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      e.preventDefault();
+      setPaletteOpen(true);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
 
@@ -532,12 +625,13 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
               <span>{branding?.company_name || 'Arabtec Construction'}</span>
             </span>
           </div>
-          {/* Global search — SHELL PLACEHOLDER ONLY. No backend endpoint exists yet,
-              so it is intentionally non-interactive rather than a fake input. */}
-          <div className="gsearch" role="presentation" title="Global search — not yet implemented">
-            <Icon name="search" size={14} /> Search requests, candidates, interviews, offers
+          {/* Global search. Opens the Ctrl+K palette — no longer a dead placeholder. */}
+          <button type="button" className="gsearch" onClick={() => setPaletteOpen(true)}
+            title="Search candidates (Ctrl K)">
+            <Icon name="search" size={14} />
+            <span className="gsearch-label">Search candidates</span>
             <span className="kbd">Ctrl K</span>
-          </div>
+          </button>
           <div className="spacer" />
           <NotificationBell onNavigate={setRoute} />
           <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
@@ -571,6 +665,19 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             <ChangePasswordForm onDone={() => setPwdOpen(false)} onCancel={() => setPwdOpen(false)} />
           </Modal>
         )}
+
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          onPick={(c) => {
+            // Hand the id to the Talent Pool, then navigate. CandidatesPage picks
+            // this up on mount (pending id) or live (event) if already mounted.
+            window.__atsPendingCandidateId = c.id;
+            setPaletteOpen(false);
+            setRoute('candidates');
+            window.dispatchEvent(new CustomEvent('ats:open-candidate', { detail: { id: c.id } }));
+          }}
+        />
       </div>
     </div>
   );
@@ -3741,6 +3848,18 @@ function CandidatesPage({ user }) {
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState('board'); // board | table
+
+  // Opened from the Ctrl+K palette. Covers both cases: page already mounted
+  // (custom event) and page mounting fresh after navigation (pending id).
+  useEffect(() => {
+    if (window.__atsPendingCandidateId) {
+      setSelectedId(window.__atsPendingCandidateId);
+      window.__atsPendingCandidateId = null;
+    }
+    function onOpen(e) { if (e.detail && e.detail.id) setSelectedId(e.detail.id); }
+    window.addEventListener('ats:open-candidate', onOpen);
+    return () => window.removeEventListener('ats:open-candidate', onOpen);
+  }, []);
   const [screenTab, setScreenTab] = useState('all'); // Database fitness-screen filter
   // Server-side paging/sorting. The API returns a `pagination` envelope; the UI no
   // longer fetches the whole table and slices it in the browser.
@@ -3921,23 +4040,25 @@ function CandidatesPage({ user }) {
                   <div className="cc-headline">{c.currentPosition || '—'}{c.currentCompany ? ' · ' + c.currentCompany : ''}</div>
                 </div>
               </div>
+              {/* Card face stays deliberately quiet: screening state and source live in
+                  the detail drawer, not on the card. Only durable facts appear here. */}
               <div className="cc-meta">
-                <span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]} title="Database fitness screen">{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span>
-                <SourceChip source={c.source} />
                 {c.yearsExperience != null && <span className="meta-chip">{c.yearsExperience}y exp</span>}
                 {c.location && <span className="meta-chip">{c.location}</span>}
               </div>
               {canScreen && scOf(c) !== 'fit' && scOf(c) !== 'unfit' && (
-                <div className="cc-meta" style={{ gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                  {scOf(c) === 'new' && <button className="btn btn-ghost btn-sm" onClick={() => setScreening(c.id, 'screening')}>Start screening</button>}
+                <div className="cc-actions" onClick={(e) => e.stopPropagation()}>
+                  {scOf(c) === 'new' && <button className="btn btn-ghost btn-sm" onClick={() => setScreening(c.id, 'screening')}>Screen</button>}
                   <button className="btn btn-sm" onClick={() => setScreening(c.id, 'fit')}>Mark fit</button>
                   <button className="btn btn-danger btn-sm" onClick={() => { const r = prompt('Reason this candidate is unfit:'); if (r) setScreening(c.id, 'unfit', r); }}>Unfit</button>
                 </div>
               )}
-              <div className="cc-meta" style={{ justifyContent: 'space-between' }}>
-                <span className="muted" style={{ fontSize: 11.5 }}>{c.candidateNo}</span>
-                {c.hasResume && <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); downloadResume(c, toast); }}>CV</button>}
-                <span className="meta-chip" title="Applications">{c.applicationCount} app{c.applicationCount === 1 ? '' : 's'}</span>
+              <div className="cc-foot">
+                <span className="cc-no">{c.candidateNo}</span>
+                <span className="cc-foot-right">
+                  {c.hasResume && <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); downloadResume(c, toast); }}>CV</button>}
+                  <span className="meta-chip" title="Applications">{c.applicationCount} app{c.applicationCount === 1 ? '' : 's'}</span>
+                </span>
               </div>
             </div>
           ))}
@@ -4324,7 +4445,14 @@ function ScheduleInterviewModal({ application, onClose, onScheduled }) {
         <div className="field"><label>Date &amp; Time *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
         <div className="field"><label>Duration (min)</label><input type="number" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
         <div className="field"><label>Round</label><input type="number" min="1" value={f.round} onChange={(e) => set('round', e.target.value)} /></div>
-        <div className="field"><label>Location / Link</label><input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} placeholder="Meet link or room" /></div>
+        <div className="field">
+          <label>{f.mode === 'video' ? 'Google Meet link' : f.mode === 'phone' ? 'Phone number' : 'Location'}</label>
+          <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
+            placeholder={f.mode === 'video' ? 'https://meet.google.com/abc-defg-hij' : f.mode === 'phone' ? '+20 100 000 0000' : 'Meeting room / site address'} />
+          {f.mode === 'video' && (
+            <div className="field-hint">Google Meet is the standard for video interviews. Paste the link from Google Calendar — it is sent verbatim in the candidate's invite email.</div>
+          )}
+        </div>
       </div>
       <div className="section-title">Panel (interviewers) *</div>
       <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
