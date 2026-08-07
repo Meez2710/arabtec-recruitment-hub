@@ -1,0 +1,94 @@
+# Local AI runtime — UNVERIFIED.
+#
+# NOT RUN. Docker is not installed on the authoring machine. This file records
+# the intended topology so it can be reviewed and then validated on the accepted
+# Stage 2 host (see docs/STAGE2_RUNTIME_REQUIREMENTS.md).
+#
+# TOPOLOGY
+#   app  ──HTTP──▶ docling   (document intelligence)
+#        ──HTTP──▶ ollama    (inference)
+#
+# OFFLINE BY CONSTRUCTION
+#   Neither service publishes a port to the host, and neither is reachable from
+#   outside the compose network. Model weights are baked into the Docling image
+#   at build time and pre-pulled into the Ollama volume during provisioning, so
+#   no runtime download is required or possible.
+
+name: arabtec-local-ai
+
+services:
+  docling:
+    build:
+      context: ./docling-sidecar
+    image: arabtec/docling-sidecar:UNVERIFIED
+    environment:
+      DOCLING_ARTIFACTS_PATH: /opt/docling-models
+      # Belt and braces: even if a model were missing, the libraries may not
+      # reach out for it.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      SIDECAR_MAX_BYTES: "26214400"
+      SIDECAR_TIMEOUT_S: "120"
+      SIDECAR_PIPELINE_VERSION: docling-2.55.1-tesseract-ara
+    networks: [ai]
+    # No `ports:` — reachable only from the app container.
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # Provisional. Replace with measured peak RSS from the smoke benchmark.
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-X", "POST", "http://127.0.0.1:8089/v1/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+  ollama:
+    image: ollama/ollama:0.12.12
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      # One model resident, one request at a time. Concurrency is what turns a
+      # tight-memory host into a swapping host.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: "30m"
+    volumes:
+      # Weights are pulled ONCE during provisioning into this volume. Losing it
+      # means re-provisioning with network access, not a silent runtime download.
+      - ollama-models:/root/.ollama
+    networks: [ai]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # Provisional. Depends on the model finally accepted.
+          memory: 12G
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      # Provider selection lives in the composition root; these only tell the
+      # adapters where the local services are.
+      CV_PARSER_PROVIDER: legacy       # switched only after the benchmark gate
+      DOCLING_BASE_URL: http://docling:8089
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ""                 # must be pinned explicitly; no default
+    depends_on:
+      docling:
+        condition: service_healthy
+    networks: [ai, default]
+    restart: unless-stopped
+
+networks:
+  ai:
+    # Internal: containers on this network have no route off the host, which is
+    # what makes "no CV content leaves the machine" a property rather than a
+    # promise. Set to false only if a service genuinely needs egress.
+    internal: true
+
+volumes:
+  ollama-models:

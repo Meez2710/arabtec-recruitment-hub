@@ -1,0 +1,23 @@
+# Docling sidecar dependencies — UNVERIFIED PINS.
+#
+# These have NOT been resolved or installed. Docker is unavailable on the
+# authoring machine, so the versions below are intentions. On the first
+# successful build, regenerate this file with `pip freeze` and commit the
+# fully-resolved set — an unpinned transitive dependency is enough to change
+# extraction output between deployments.
+#
+# CPU-only torch on purpose: the deployment target is not yet chosen, and the
+# CUDA wheels are several gigabytes. Revisit if the accepted Stage 2 machine has
+# a GPU (see docs/STAGE2_RUNTIME_REQUIREMENTS.md).
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+docling==2.55.1
+docling-core==2.51.0
+torch==2.9.1+cpu
+torchvision==0.24.1+cpu
+
+fastapi==0.121.2
+uvicorn[standard]==0.42.0
+pydantic==2.13.1
+python-multipart==0.0.20
