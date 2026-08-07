@@ -9,7 +9,9 @@ import { multipart, streamFile, uploadPath } from '../lib/upload.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
-import { parseHeuristic as parseCV, parseEntitiesFromFile } from '../lib/cv-parser.js';
+// Resolved per request through the parsing registry, never imported directly.
+// One provider serves a request; there is no fallback chain and no fan-out.
+import { getParser } from '../lib/parsing/registry.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
 import fs from 'node:fs';
@@ -219,8 +221,8 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
     const filePath = uploadPath(req.uploadedFile.storedName);
     // Legacy shape kept for the existing response contract; the structured entity
     // parse is what actually populates the candidate record.
-    const parsed = await parseCV(filePath);
-    const entities = await parseEntitiesFromFile(filePath);
+    const parsed = await getParser().parseLegacy(filePath);
+    const entities = await getParser().parseEntities(filePath);
     const { payload: parsedFields, persisted, skipped } = toCandidatePayload(entities);
     const meta = toParseMetadata(entities);
     const hash = fileHash(filePath);
@@ -324,7 +326,7 @@ router.post('/inbox-scan', requirePermission('candidate.add'), async (req, res) 
   for (const file of files) {
     const filePath = path.join(inboxDir, file);
     try {
-      const parsed = await parseCV(filePath);
+      const parsed = await getParser().parseLegacy(filePath);
       if (parsed.extraction_status === 'failed') {
         skipped.push({ file, reason: 'Could not extract text' });
         continue;
@@ -561,7 +563,7 @@ router.post('/:id/documents', requirePermission('candidate.edit'), (req, res) =>
 // always refreshed so the quality badge reflects the newest file.
 async function parseAndFill(candidateId, storedName, req, { overwrite = false } = {}) {
   const filePath = uploadPath(storedName);
-  const entities = await parseEntitiesFromFile(filePath);
+  const entities = await getParser().parseEntities(filePath);
   const { payload } = toCandidatePayload(entities);
   const meta = toParseMetadata(entities);
 

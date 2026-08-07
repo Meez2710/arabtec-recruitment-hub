@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureSchema } from './lib/schema.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
+import { configureParsing } from './lib/parsing/composition.js';
 import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import { securityHeaders, securityConfigSummary } from './lib/security-headers.js';
@@ -51,6 +52,13 @@ function parseTrustProxy(raw, prod) {
 }
 
 const isProd = process.env.NODE_ENV === 'production';
+
+// Select the CV parsing provider. Module scope on purpose: the route resolves
+// the provider lazily per request, so registration must complete before the
+// first request rather than inside the async post-listen boot block.
+// Default is `legacy` — this seam changes wiring, not behaviour.
+configureParsing();
+
 const app = express();
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY, isProd));
 
