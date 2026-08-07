@@ -150,8 +150,24 @@ number, not a criterion.
 
 ## 9. Current status
 
-**No criterion has been evaluated.** Blocked on human ground-truth labels and on an accepted
-runtime host.
+**No criterion has been evaluated.**
+
+### What blocks what — corrected
+
+An earlier note implied Stage 2 hardware gates everything. It does not:
+
+| Step | Blocked by | **Not** blocked by |
+| --- | --- | --- |
+| Legacy parser baseline | **Reconciled human labels** | Stage 2 — the legacy parser runs locally today |
+| Five-CV calibration check | Reconciled labels for those five | Stage 2 |
+| Live Docling / Ollama execution | **Stage 2 host** | labels |
+| New-pipeline benchmark | Stage 2 host **and** labels | — |
+| Final acceptance run | An acceptance corpus that does not yet exist | — |
+
+The five-CV result is **annotation-schema and scorer calibration only**. It is not an
+acceptance result and no threshold in §7 may be judged from it. Once those five labels are
+independently completed and reconciled, the legacy scorer may be run locally on them as a
+calibration check — not before.
 
 ### The 40-CV sample is NOT an acceptance benchmark
 
