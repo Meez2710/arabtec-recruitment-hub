@@ -42,7 +42,7 @@ const PORT = 55433;
 const DIR = `/tmp/arabtec_pgtx_${process.pid}`;
 const USER = 'txtest';
 const PASS = 'txtest';
-const DB = 'txtest';
+const DB = 'arabtec_test';
 
 let pass = 0; let fail = 0;
 const c = (n, ok, x = '') => { console.log((ok ? '  ✅ ' : '  ❌ ') + n + (x ? ` ${x}` : '')); ok ? pass++ : fail++; };
