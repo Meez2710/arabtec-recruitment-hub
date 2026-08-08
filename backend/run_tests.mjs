@@ -29,6 +29,7 @@ const SUITES = [
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
   'parser_seam_test.mjs',     // CV parser injection seam + legacy compatibility
+  'fixture_probe_test.mjs',    // fixture determinism, before anything relies on it
   'reconciliation_test.mjs',   // BL-21/BL-23 seat reconciliation helper
   'route_manifest_test.mjs',   // structural guard: requests router manifest
   'bl03_test.mjs',            // BL-03 application creation entry stages
