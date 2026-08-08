@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test:domain": "vitest run",
     "test:pg": "node pg_tx_test.mjs",
-    "test:pg:required": "node pg_tx_test.mjs --required && node pg_appnumber_race_test.mjs",
+    "test:pg:required": "node pg_tx_test.mjs --required && node pg_appnumber_race_test.mjs && node pg_sequence_test.mjs",
     "test:cluster": "node pg_cluster_test.mjs --own"
   },
   "dependencies": {
