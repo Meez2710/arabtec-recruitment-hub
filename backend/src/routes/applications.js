@@ -3,6 +3,7 @@ import {
   Applications, Candidates, Requests, Seats, StageHistory, CandidateActivity, RequestActivity,
   Users, Projects, SystemSettings, RejectReasons, Posts,
 } from '../lib/models.js';
+import { tx } from '../lib/db.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { hasOpenSeat, fillSeatAndCount } from '../lib/vacancy.js';
@@ -113,20 +114,49 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
     }
   }
   const initialStatus = d.initialStatus ? appNorm(d.initialStatus) : APP_ENTRY_DEFAULT;
-  const appNo = Applications.nextNo();
-  const created = Applications.create({
-    applicationNo: appNo, candidateId, requestId,
-    positionApplied: d.positionApplied || request.title,
-    status: initialStatus, matchScore: d.matchScore != null ? Number(d.matchScore) : null,
-    recruiterId: d.recruiterId ? Number(d.recruiterId) : (request.owner_id || req.user.id),
-    source: d.source || candidate.source, createdBy: req.user.id,
+  // F-01. Creating an application is EIGHT writes, not one. They previously ran
+  // unwrapped, so a failure part-way left an application with no stage history,
+  // no activity and no audit record — invisible corruption that reads as a
+  // successful create.
+  //
+  // The eighth is easy to miss: Applications.nextNo() UPDATEs the shared
+  // counter, so a failure used to burn an application number and leave a
+  // permanent gap in the sequence. It is inside the transaction now.
+  //
+  // The audit write is STRICT here (see the BL-34 note in lib/audit.js): inside
+  // a transaction a swallowed audit failure would commit the operation without
+  // its audit record.
+  const created = tx(() => {
+    const appNo = Applications.nextNo();                            // 1. counter
+    const app = Applications.create({                               // 2. application
+      applicationNo: appNo, candidateId, requestId,
+      positionApplied: d.positionApplied || request.title,
+      status: initialStatus, matchScore: d.matchScore != null ? Number(d.matchScore) : null,
+      recruiterId: d.recruiterId ? Number(d.recruiterId) : (request.owner_id || req.user.id),
+      source: d.source || candidate.source, createdBy: req.user.id,
+    });
+    StageHistory.add(app.id, null, initialStatus, req.user, 'Application created'); // 3. history
+    Requests.stampLifecycle(requestId, 'first_candidate_at');        // 4. lifecycle
+    if (initialStatus === APP.SHORTLISTED) {
+      Requests.stampLifecycle(requestId, 'first_shortlist_at');      // 5. conditional lifecycle
+    }
+    CandidateActivity.add({                                         // 6. candidate timeline
+      candidateId, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName,
+      type: 'application_created', note: `${appNo} → ${request.ticket_no}`,
+    });
+    RequestActivity.add(requestId, req.user, 'candidate_linked', {   // 7. request timeline
+      note: `${candidate.full_name} linked (${appNo})`,
+    });
+    writeAudit(req, {                                               // 8. audit
+      action: 'application.created', entityType: 'application', entityId: app.id,
+      newValue: { applicationNo: appNo, candidateId, requestId, status: initialStatus },
+    }, { strict: true });
+    // Failure-injection point for the F-01 suite. Never set in production.
+    if (process.env.FAIL_INJECT_APP_CREATE) {
+      throw new Error(`injected failure: ${process.env.FAIL_INJECT_APP_CREATE}`);
+    }
+    return app;
   });
-  StageHistory.add(created.id, null, initialStatus, req.user, 'Application created');
-  Requests.stampLifecycle(requestId, 'first_candidate_at'); // lifecycle: first candidate added
-  if (initialStatus === APP.SHORTLISTED) Requests.stampLifecycle(requestId, 'first_shortlist_at');
-  CandidateActivity.add({ candidateId, applicationId: created.id, actorId: req.user.id, actorName: req.user.fullName, type: 'application_created', note: `${appNo} → ${request.ticket_no}` });
-  RequestActivity.add(requestId, req.user, 'candidate_linked', { note: `${candidate.full_name} linked (${appNo})` });
-  writeAudit(req, { action: 'application.created', entityType: 'application', entityId: created.id, newValue: { applicationNo: appNo, candidateId, requestId, status: initialStatus } });
   res.status(201).json({ application: appOut(created, req.user) });
 });
 
