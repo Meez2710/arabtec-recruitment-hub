@@ -245,15 +245,55 @@ export function exec(sql) { return impl.exec(sql, activeTx()); }
  * outermost `tx()` settles. That is the behaviour callers actually want: an
  * inner helper must not durably commit half of an outer operation.
  */
+/**
+ * THE CALLBACK MUST BE SYNCHRONOUS. Enforced, not merely documented.
+ *
+ * `txStack` is a module-global, which is only safe because the whole database
+ * surface is synchronous: every statement blocks the main thread in
+ * `Atomics.wait`, so no other JS can run between BEGIN and COMMIT and no second
+ * caller can observe or mutate the stack mid-transaction.
+ *
+ * An async callback breaks that guarantee completely. `fn()` would return a
+ * pending Promise, this function would commit immediately, the stack would
+ * unwind, and the awaited work would then run OUTSIDE the transaction — on
+ * pooled connections, autocommitting, with no rollback. Worse, control would
+ * yield to the event loop while `txStack` still had an entry, so an unrelated
+ * request could adopt this transaction's id.
+ *
+ * That failure is silent and would look like success, so a thenable result is
+ * treated as a bug: roll back and throw. Converting `tx()` to support async
+ * callbacks is possible but requires AsyncLocalStorage-based context instead of
+ * a stack, which is the F-02 conversion and explicitly out of scope here.
+ */
+const isThenable = (v) => v !== null && (typeof v === 'object' || typeof v === 'function')
+  && typeof v.then === 'function';
+
+const ASYNC_MSG = 'tx() requires a SYNCHRONOUS callback. It returned a Promise/thenable, '
+  + 'which would commit before the work ran and leak transaction context across requests. '
+  + 'The transaction was rolled back.';
+
 export function tx(fn) {
-  if (txStack.length > 0) return fn(); // join the outer transaction
+  // Joining an outer transaction: still enforce the contract, because an async
+  // inner callback would yield with the OUTER transaction open.
+  if (txStack.length > 0) {
+    const r = fn();
+    if (isThenable(r)) throw new Error(ASYNC_MSG);
+    return r;
+  }
 
   if (impl.kind === 'sqlite') {
     // Single connection: affinity is inherent, so BEGIN/COMMIT on the handle is
-    // already correct. Preserved exactly as it was.
+    // already correct. Preserved exactly as it was, plus the same contract check.
     exec('BEGIN');
-    try { const r = fn(); exec('COMMIT'); return r; }
+    let result;
+    try { result = fn(); }
     catch (e) { try { exec('ROLLBACK'); } catch { /* already unwound */ } throw e; }
+    if (isThenable(result)) {
+      try { exec('ROLLBACK'); } catch { /* already unwound */ }
+      throw new Error(ASYNC_MSG);
+    }
+    try { exec('COMMIT'); } catch (e) { try { exec('ROLLBACK'); } catch { /* gone */ } throw e; }
+    return result;
   }
 
   const txId = impl.txBegin();
@@ -261,13 +301,20 @@ export function tx(fn) {
   let ok = false;
   try {
     const r = fn();
+    if (isThenable(r)) {
+      // Roll back BEFORE the stack unwinds, so nothing is committed and no
+      // context survives.
+      txStack.pop();
+      try { impl.txRollback(txId); } catch { /* worker already settled it */ }
+      throw new Error(ASYNC_MSG);
+    }
     ok = true;
     // Pop BEFORE settling so COMMIT is not itself routed into the transaction.
     txStack.pop();
     impl.txCommit(txId);
     return r;
   } catch (e) {
-    if (!ok) {
+    if (!ok && txStack[txStack.length - 1] === txId) {
       txStack.pop();
       // Roll back on every failure path — callback throw, query failure, or a
       // failed commit. The worker releases the client exactly once regardless.

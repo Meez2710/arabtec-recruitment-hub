@@ -215,6 +215,53 @@ try {
   c('an outer failure rolls back the inner writes too', nestedRolled && all('SELECT v FROM t').length === 0);
   c('no transaction is left open on the process', inTransaction() === false);
 
+  /* ------------------ 7c. GATE 2: public tx() context safety ------------ */
+  console.log('\n— 7c. tx() enforces a synchronous callback —');
+  exec('DELETE FROM t');
+
+  // An async callback would commit before its work ran and would yield to the
+  // event loop with the transaction context still on the stack.
+  let asyncRejected = false;
+  try { tx(async () => { run('INSERT INTO t (v) VALUES ($1)', ['async-cb']); }); }
+  catch (e) { asyncRejected = /SYNCHRONOUS callback/.test(e.message); }
+  c('an async callback is rejected', asyncRejected);
+  c('and its write was rolled back', all("SELECT v FROM t WHERE v='async-cb'").length === 0);
+  c('no transaction context survives the rejection', inTransaction() === false);
+
+  let thenableRejected = false;
+  try { tx(() => ({ then: (r) => r(1) })); }
+  catch (e) { thenableRejected = /SYNCHRONOUS callback/.test(e.message); }
+  c('a bare thenable is rejected too', thenableRejected);
+  c('no context survives that either', inTransaction() === false);
+
+  let nestedAsyncRejected = false;
+  try { tx(() => { run('INSERT INTO t (v) VALUES ($1)', ['outer-sync']); tx(async () => {}); }); }
+  catch (e) { nestedAsyncRejected = /SYNCHRONOUS callback/.test(e.message); }
+  c('an async callback nested in a sync tx is rejected', nestedAsyncRejected);
+  c('and the outer transaction rolled back', all("SELECT v FROM t WHERE v='outer-sync'").length === 0);
+  c('no context survives the nested rejection', inTransaction() === false);
+
+  console.log('\n— 7d. non-transactional queries never join an open transaction —');
+  const idOpen = P.begin();
+  P.run('INSERT INTO t (v) VALUES ($1)', ['inside-open-tx'], idOpen);
+  // A plain get() carries no txId, so it must take a pooled connection and see
+  // nothing of the uncommitted row.
+  c('a plain read does not see the open transaction row',
+    get("SELECT count(*) AS n FROM t WHERE v='inside-open-tx'").n === 0);
+  c('inTransaction() is false — the raw primitive did not touch the public stack',
+    inTransaction() === false);
+  P.rollback(idOpen);
+  c('after rollback the row is still absent', all("SELECT v FROM t WHERE v='inside-open-tx'").length === 0);
+
+  console.log('\n— 7e. context is clean after every settle path —');
+  tx(() => { run('INSERT INTO t (v) VALUES ($1)', ['clean-commit']); });
+  c('clean after commit', inTransaction() === false);
+  try { tx(() => { throw new Error('boom'); }); } catch { /* expected */ }
+  c('clean after callback failure', inTransaction() === false);
+  try { tx(() => { run('INSERT INTO nope2 (v) VALUES ($1)', ['x']); }); } catch { /* expected */ }
+  c('clean after query failure', inTransaction() === false);
+  c('a later transaction still works', (() => { tx(() => run('INSERT INTO t (v) VALUES ($1)', ['after-all'])); return all("SELECT v FROM t WHERE v='after-all'").length === 1; })());
+
   /* ------------------- 8. abandoned transaction timeout ----------------- */
   console.log('\n— 8. an abandoned transaction is reclaimed —');
   const orphanId = P.begin();
