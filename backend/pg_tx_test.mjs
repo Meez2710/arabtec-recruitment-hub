@@ -1,6 +1,8 @@
 // PostgreSQL transaction affinity — REAL PostgreSQL only.
 //
-//   npm i --no-save embedded-postgres && node pg_tx_test.mjs
+//   npm run test:pg:required     ← the RELEASE GATE. Never skips. Fails if no
+//                                  real PostgreSQL is reachable.
+//   npm run test:pg              ← local convenience. May skip, loudly.
 //
 // WHY THIS CANNOT RUN ON SQLITE OR PGLITE
 //
@@ -9,20 +11,32 @@
 // SQLite has one connection. PGlite has one connection. Neither can exhibit the
 // bug, so neither can prove it fixed. Only a real Postgres with a real pool can.
 //
-// Skips cleanly (exit 0) when embedded-postgres is not installed, so it never
-// breaks a normal checkout — but a skip is printed loudly and is NOT a pass.
+// TWO WAYS TO GET A DATABASE, in priority order:
+//   1. PG_TEST_URL — an existing disposable PostgreSQL. This is what CI uses
+//      (a pinned postgres service container), and it is the release gate.
+//   2. embedded-postgres — a local convenience if it happens to be installed.
+//      NOT a dependency: its platform binary is ~144 MB and the package has no
+//      stable release, so forcing it on every `npm ci` is not worth it.
+//
+// REQUIRED MODE (--required, or PG_TEST_REQUIRED=1) exits NON-ZERO when neither
+// is available. A skip must never be able to produce a green required result.
 
 import net from 'node:net';
 
-let EmbeddedPostgres;
-try {
-  ({ default: EmbeddedPostgres } = await import('embedded-postgres'));
-} catch {
-  console.log('\n⊘ SKIPPED — embedded-postgres not installed.');
-  console.log('  Real PostgreSQL is required; SQLite and PGlite cannot prove this.');
-  console.log('  Run: npm i --no-save embedded-postgres\n');
+const REQUIRED = process.argv.includes('--required') || process.env.PG_TEST_REQUIRED === '1';
+const EXTERNAL_URL = process.env.PG_TEST_URL || '';
+
+const bail = (msg) => {
+  if (REQUIRED) {
+    console.error(`\n✗ REQUIRED PostgreSQL gate FAILED — ${msg}`);
+    console.error('  Provide PG_TEST_URL pointing at a disposable PostgreSQL,');
+    console.error('  or install embedded-postgres locally. SQLite and PGlite are not accepted.\n');
+    process.exit(1);
+  }
+  console.log(`\n⊘ SKIPPED — ${msg}`);
+  console.log('  This is NOT a pass. Run `npm run test:pg:required` to make it a gate.\n');
   process.exit(0);
-}
+};
 
 const PORT = 55433;
 const DIR = `/tmp/arabtec_pgtx_${process.pid}`;
@@ -33,34 +47,52 @@ const DB = 'txtest';
 let pass = 0; let fail = 0;
 const c = (n, ok, x = '') => { console.log((ok ? '  ✅ ' : '  ❌ ') + n + (x ? ` ${x}` : '')); ok ? pass++ : fail++; };
 
-const free = (port) => new Promise((res) => {
-  const s = net.createServer().once('error', () => res(false)).once('listening', () => s.close(() => res(true))).listen(port);
-});
-if (!(await free(PORT))) { console.error(`port ${PORT} is busy`); process.exit(2); }
+let pgServer = null;
+let dsn = EXTERNAL_URL;
 
-console.log('\nStarting a disposable local PostgreSQL (not production, no real data)…');
-const pgServer = new EmbeddedPostgres({
-  databaseDir: DIR, user: USER, password: PASS, port: PORT, persistent: false,
-});
-await pgServer.initialise();
-await pgServer.start();
-await pgServer.createDatabase(DB);
+if (dsn) {
+  console.log('\nUsing PG_TEST_URL (external disposable PostgreSQL).');
+} else {
+  let EmbeddedPostgres;
+  try {
+    ({ default: EmbeddedPostgres } = await import('embedded-postgres'));
+  } catch {
+    bail('no PG_TEST_URL set and embedded-postgres is not installed');
+  }
+  const free = (port) => new Promise((res) => {
+    const srv = net.createServer()
+      .once('error', () => res(false))
+      .once('listening', () => srv.close(() => res(true)))
+      .listen(port);
+  });
+  if (!(await free(PORT))) bail(`port ${PORT} is already in use`);
 
-// Point the app's own db.js at it. `?sslmode=disable` keeps sslFor() off.
-process.env.DATABASE_URL = `postgres://${USER}:${PASS}@127.0.0.1:${PORT}/${DB}?sslmode=disable`;
+  console.log('\nStarting a disposable local PostgreSQL (not production, no real data)…');
+  pgServer = new EmbeddedPostgres({
+    databaseDir: DIR, user: USER, password: PASS, port: PORT, persistent: false,
+  });
+  await pgServer.initialise();
+  await pgServer.start();
+  await pgServer.createDatabase(DB);
+  dsn = `postgres://${USER}:${PASS}@127.0.0.1:${PORT}/${DB}?sslmode=disable`;
+}
+
+// Point the app's own db.js at it. `sslmode=disable` keeps sslFor() off.
+process.env.DATABASE_URL = dsn;
 process.env.PG_NO_SSL = 'true';
 process.env.PG_TX_TIMEOUT_MS = '2500'; // short, so the abandoned-tx test is quick
 
 const db = await import('./src/lib/db.js');
 const { run, get, all, exec, tx, driverKind, inTransaction } = db;
 
-const cleanup = async () => { try { await pgServer.stop(); } catch {} };
-process.on('exit', () => { try { pgServer.stop(); } catch {} });
+const DBNAME = new URL(dsn.replace(/^postgres(ql)?:/, 'http:')).pathname.slice(1) || DB;
+const cleanup = async () => { if (pgServer) { try { await pgServer.stop(); } catch {} } };
+process.on('exit', () => { if (pgServer) { try { pgServer.stop(); } catch {} } });
 
 try {
   c('driver is postgres (not sqlite, not pglite)', driverKind() === 'postgres', driverKind());
-  exec('CREATE TABLE t (id SERIAL PRIMARY KEY, v TEXT NOT NULL)');
-  exec('CREATE TABLE conn_probe (id SERIAL PRIMARY KEY, phase TEXT, pid INT)');
+  exec('DROP TABLE IF EXISTS t'); exec('CREATE TABLE t (id SERIAL PRIMARY KEY, v TEXT NOT NULL)');
+  exec('DROP TABLE IF EXISTS conn_probe'); exec('CREATE TABLE conn_probe (id SERIAL PRIMARY KEY, phase TEXT, pid INT)');
 
   /* ------------------------------ 1. commit ----------------------------- */
   console.log('\n— 1. commit: multiple writes persist together —');
@@ -169,7 +201,7 @@ try {
   c('a query failure inside a transaction propagates', sqlThrew);
   c('and rolls the whole thing back', all("SELECT v FROM t WHERE v='x'").length === 0);
   c('still no idle-in-transaction backend',
-    get("SELECT count(*) AS n FROM pg_stat_activity WHERE state='idle in transaction' AND datname=?", [DB]).n === 0);
+    get("SELECT count(*) AS n FROM pg_stat_activity WHERE state='idle in transaction' AND datname=?", [DBNAME]).n === 0);
   c('the pool still works afterwards', get('SELECT 1 AS ok').ok === 1);
 
   console.log('\n— 7b. nesting, and use after settle —');
@@ -188,11 +220,11 @@ try {
   const orphanId = P.begin();
   P.run('INSERT INTO t (v) VALUES ($1)', ['orphan'], orphanId);
   c('orphan transaction is open and holding a connection',
-    get("SELECT count(*) AS n FROM pg_stat_activity WHERE state='idle in transaction' AND datname=$1", [DB]).n >= 1);
+    get("SELECT count(*) AS n FROM pg_stat_activity WHERE state='idle in transaction' AND datname=$1", [DBNAME]).n >= 1);
   // Deliberately never settled. The worker must reclaim it.
   await new Promise((r) => setTimeout(r, 3400));
   c('reclaimed: no idle-in-transaction backend remains',
-    get("SELECT count(*) AS n FROM pg_stat_activity WHERE state='idle in transaction' AND datname=$1", [DB]).n === 0);
+    get("SELECT count(*) AS n FROM pg_stat_activity WHERE state='idle in transaction' AND datname=$1", [DBNAME]).n === 0);
   c('its uncommitted write was rolled back', all("SELECT v FROM t WHERE v='orphan'").length === 0);
   let orphanGone = false;
   try { P.commit(orphanId); } catch (e) { orphanGone = /Unknown transaction/.test(e.message); }

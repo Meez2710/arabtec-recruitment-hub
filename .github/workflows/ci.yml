@@ -65,3 +65,46 @@ jobs:
           SEED_DEMO_DATA: 'true'
           RUN_LEGACY: '1'
           JWT_SECRET: ci-test-secret-not-used-in-prod
+
+  postgres-transactions:
+    name: PostgreSQL transaction gate (blocking)
+    # F-01. The transaction affinity fix cannot be proven on SQLite or PGlite —
+    # both are single-connection and structurally cannot exhibit the pooled
+    # connection bug. This job therefore runs against a REAL, pinned PostgreSQL
+    # and is a merge gate. A skip here is a failure, not a pass.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16.4-alpine   # pinned; disposable; test-only credentials
+        env:
+          POSTGRES_USER: txtest
+          POSTGRES_PASSWORD: txtest
+          POSTGRES_DB: txtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U txtest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the required PostgreSQL transaction gate
+        run: npm run test:pg:required
+        env:
+          # Disposable CI database. Never a production DSN.
+          PG_TEST_URL: postgres://txtest:txtest@127.0.0.1:5432/txtest?sslmode=disable
+          PG_NO_SSL: 'true'
