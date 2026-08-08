@@ -144,3 +144,30 @@ tracked as a release blocker rather than forgotten.
 
 The decision is the owner's because it turns on a deployment fact, not an engineering one:
 **will the internal HR pilot run on SQLite or on Render Postgres?**
+
+---
+
+## 6. OWNER DECISION — Option A
+
+**PostgreSQL is in scope for the restricted internal pilot, because production runs on
+PostgreSQL.**
+
+SQLite remains supported for local development, unit tests, and synthetic demonstrations.
+**SQLite is not an acceptance environment** for transaction correctness or pilot approval,
+and Option B is therefore withdrawn.
+
+Operations must not be wrapped in the current `tx()` while PostgreSQL connection affinity
+remains unsound. The prerequisite in §2 is required before F-01, BL-04, BL-21, BL-23 or
+BL-27 may be implemented.
+
+### Verification environment rule
+
+All PostgreSQL transaction verification uses a **dedicated disposable non-production
+PostgreSQL database**. Never production PostgreSQL, never production candidate data, never
+the real local SQLite database.
+
+**PGlite may supplement but can never substitute.** It is a single in-process connection
+([`pg-worker.mjs:20`](backend/src/lib/pg-worker.mjs:20)), so it cannot exhibit the pooled
+connection bug and would report success while production still corrupts.
+
+BL-03 is independent of this prerequisite and proceeds separately.
