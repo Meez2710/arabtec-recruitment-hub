@@ -6,9 +6,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `stabilize/**` added so the stabilization branch runs the SAME required
+    # checks before it is ever proposed for merge. Required checks on main are
+    # unchanged.
+    branches: [main, 'stabilize/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read

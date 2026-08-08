@@ -1,26 +1,43 @@
 // Seat reconciliation helper — unit-level, no routes involved.
 //
-//   node --experimental-sqlite reconciliation_test.mjs
+//   node --experimental-sqlite reconciliation_test.mjs     (disposable SQLite)
+//   PG_TEST_URL=… node reconciliation_test.mjs             (real PostgreSQL)
 //
 // Rules are exercised directly against seat rows so they are pinned independently
 // of PUT /:id. Route integration is tested separately.
 //
-// Boots through server.js like every other green suite: importing prisma/seed.js
-// alone does NOT produce a usable database, because ensureSchema() and
-// bootSeedIfEmpty() run from the server bootstrap. An earlier version seeded
-// directly and failed on a foreign key, then on an empty users table.
+// TWO ENGINES, ONE BOOTSTRAP. PostgreSQL mode reuses assertDisposable from the
+// existing harness rather than adding a third bootstrap, so the same safety
+// guard that protects pg_tx_test and the race suites protects this one. There is
+// no embedded-postgres fallback: in PG mode an unreachable PG_TEST_URL fails.
+
+import fs from 'node:fs';
+
+const PG_URL = process.env.PG_TEST_URL || '';
+const PG_MODE = PG_URL !== '';
+const SQLITE_FILE = '/tmp/arabtec_recon.db';
 
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'file:/tmp/arabtec_recon.db';
+if (PG_MODE) {
+  const { assertDisposable } = await import('./test-harness/pg-cluster.mjs');
+  assertDisposable(PG_URL); // refuses production-like names; throws, never skips
+  process.env.DATABASE_URL = PG_URL;
+  process.env.PG_NO_SSL = 'true';
+} else {
+  process.env.DATABASE_URL = `file:${SQLITE_FILE}`;
+  for (const f of [SQLITE_FILE, `${SQLITE_FILE}-journal`]) { try { fs.rmSync(f); } catch {} }
+}
 process.env.PORT = '4134';
-import fs from 'node:fs';
-for (const f of ['/tmp/arabtec_recon.db', '/tmp/arabtec_recon.db-journal']) { try { fs.rmSync(f); } catch {} }
+
+// Boot through server.js like every other green suite: importing prisma/seed.js
+// alone does NOT produce a usable database, because ensureSchema() and
+// bootSeedIfEmpty() run from the server bootstrap.
 await import('./prisma/seed.js');
 await import('./src/server.js');
 
 // Readiness, not liveness: /api/health answers as soon as the port is open, but
 // the API gate 503s until schema and seed finish.
-const READY_DEADLINE = Date.now() + 30000;
+const READY_DEADLINE = Date.now() + 60000;
 for (;;) {
   try {
     const r = await fetch('http://127.0.0.1:4134/api/auth/login', {
@@ -37,6 +54,8 @@ const { get, all, run, tx } = await import('./src/lib/db.js');
 const {
   reconcileSeatsForHeadcount, reconciliationIssues, ISSUE, ReconcileConflict, MAX_HEADCOUNT,
 } = await import('./src/lib/seat-reconciliation.js');
+
+console.log(`\nEngine: ${PG_MODE ? 'real PostgreSQL (PG_TEST_URL)' : 'disposable SQLite'}`);
 
 let pass = 0; let fail = 0;
 const c = (n, ok, x = '') => { console.log((ok ? '  ✅ ' : '  ❌ ') + n + (x ? ` ${x}` : '')); ok ? pass++ : fail++; };
@@ -224,6 +243,11 @@ try {
 } catch { /* expected */ }
 c('a rolled-back reconciliation leaves seats untouched', JSON.stringify(rows(w)) === beforeTx);
 
-try { fs.rmSync('/tmp/arabtec_recon.db'); fs.rmSync('/tmp/arabtec_recon.db-journal'); } catch { /* already gone */ }
+// Clean up only what this suite created; a shared CI database must survive.
+try {
+  run("DELETE FROM requisition_seat WHERE request_id IN (SELECT id FROM recruitment_request WHERE ticket_no LIKE 'REQ-T-%')");
+  run("DELETE FROM recruitment_request WHERE ticket_no LIKE 'REQ-T-%'");
+} catch { /* best effort */ }
+if (!PG_MODE) { try { fs.rmSync(SQLITE_FILE); fs.rmSync(`${SQLITE_FILE}-journal`); } catch { /* gone */ } }
 console.log(`\n${fail === 0 ? '✓' : '✗'} reconciliation: ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);
