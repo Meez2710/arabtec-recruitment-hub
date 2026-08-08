@@ -75,36 +75,43 @@ function makePostgres() {
   try { call({ type: 'ping' }, 8000); }
   catch (e) { console.warn('  • DB not ready at import (will connect on first query):', e.message); }
 
-  const q = (sql, params) => call({ type: 'query', sql: translate(sql), params: normParams(params) });
+  // `txId` travels with every statement so the worker can route it to the
+  // connection that ran BEGIN. It is threaded explicitly rather than kept as
+  // ambient worker state, so two transactions can never see each other.
+  const q = (sql, params, txId) =>
+    call({ type: 'query', sql: translate(sql), params: normParams(params), txId });
 
   return {
     kind: engine === 'pglite' ? 'pglite' : 'postgres',
-    run(sql, params = []) {
+    run(sql, params = [], txId) {
       const t = translate(sql);
       const p = normParams(params);
       // Capture the new id for INSERTs (parity with SQLite lastInsertRowid). Tables
       // with a composite PK have no `id` column — fall back to a plain INSERT then.
       if (/^\s*insert\s/i.test(t) && !/returning/i.test(t)) {
         try {
-          const r = call({ type: 'query', sql: t.replace(/;?\s*$/, ' RETURNING id'), params: p });
+          const r = call({ type: 'query', sql: t.replace(/;?\s*$/, ' RETURNING id'), params: p, txId });
           return { lastInsertRowid: r.rows?.[0]?.id ?? null, changes: r.affected ?? 0 };
         } catch (e) {
           if (!/column "id" does not exist/i.test(e.message)) throw e;
-          const r = call({ type: 'query', sql: t, params: p });
+          const r = call({ type: 'query', sql: t, params: p, txId });
           return { lastInsertRowid: null, changes: r.affected ?? 0 };
         }
       }
-      const r = call({ type: 'query', sql: t, params: p });
+      const r = call({ type: 'query', sql: t, params: p, txId });
       return { lastInsertRowid: null, changes: r.affected ?? 0 };
     },
-    get(sql, params = []) { const r = q(sql, params).rows[0]; return r ? unmarshalRow(r) : r; },
-    all(sql, params = []) { return q(sql, params).rows.map(unmarshalRow); },
-    exec(sql) {
+    get(sql, params = [], txId) { const r = q(sql, params, txId).rows[0]; return r ? unmarshalRow(r) : r; },
+    all(sql, params = [], txId) { return q(sql, params, txId).rows.map(unmarshalRow); },
+    exec(sql, txId) {
       // exec may contain multiple statements (schema DDL). Split and run sequentially.
       for (const stmt of splitStatements(translate(sql))) {
-        if (stmt.trim()) call({ type: 'query', sql: stmt, params: [] });
+        if (stmt.trim()) call({ type: 'query', sql: stmt, params: [], txId });
       }
     },
+    txBegin() { return call({ type: 'txBegin' }).txId; },
+    txCommit(txId) { call({ type: 'txCommit', txId }); },
+    txRollback(txId) { call({ type: 'txRollback', txId }); },
   };
 }
 
@@ -207,14 +214,90 @@ function makeSqlite() {
 // =====================================================================
 const impl = IS_PG ? makePostgres() : makeSqlite();
 
-export function run(sql, params = []) { return impl.run(sql, params); }
-export function get(sql, params = []) { return impl.get(sql, params); }
-export function all(sql, params = []) { return impl.all(sql, params); }
-export function exec(sql) { return impl.exec(sql); }
+/* ----------------------------- transactions -------------------------------
+   The call surface below is unchanged for all 255 existing call sites: they
+   keep calling run/get/all/exec with no idea a transaction is open.
+
+   A STACK, not a single "current transaction". Every statement issued while a
+   transaction is open carries that transaction's id to the worker, which routes
+   it to the connection that ran BEGIN. The stack exists so a nested tx() joins
+   the outer one instead of issuing a second BEGIN, which Postgres would warn
+   about and SQLite would reject outright.
+
+   Safe under concurrency by construction: the whole surface is synchronous —
+   the main thread blocks in Atomics.wait for every statement — so no other JS
+   can run between BEGIN and COMMIT. The id is still threaded explicitly rather
+   than read from worker state, so nothing depends on that timing detail.
+   -------------------------------------------------------------------------- */
+
+const txStack = [];
+const activeTx = () => (txStack.length ? txStack[txStack.length - 1] : undefined);
+
+export function run(sql, params = []) { return impl.run(sql, params, activeTx()); }
+export function get(sql, params = []) { return impl.get(sql, params, activeTx()); }
+export function all(sql, params = []) { return impl.all(sql, params, activeTx()); }
+export function exec(sql) { return impl.exec(sql, activeTx()); }
+
+/**
+ * Run `fn` inside a transaction. All writes commit together or none do.
+ *
+ * Nested calls JOIN the outer transaction and do not commit early — only the
+ * outermost `tx()` settles. That is the behaviour callers actually want: an
+ * inner helper must not durably commit half of an outer operation.
+ */
 export function tx(fn) {
-  exec('BEGIN');
-  try { const r = fn(); exec('COMMIT'); return r; }
-  catch (e) { try { exec('ROLLBACK'); } catch {} throw e; }
+  if (txStack.length > 0) return fn(); // join the outer transaction
+
+  if (impl.kind === 'sqlite') {
+    // Single connection: affinity is inherent, so BEGIN/COMMIT on the handle is
+    // already correct. Preserved exactly as it was.
+    exec('BEGIN');
+    try { const r = fn(); exec('COMMIT'); return r; }
+    catch (e) { try { exec('ROLLBACK'); } catch { /* already unwound */ } throw e; }
+  }
+
+  const txId = impl.txBegin();
+  txStack.push(txId);
+  let ok = false;
+  try {
+    const r = fn();
+    ok = true;
+    // Pop BEFORE settling so COMMIT is not itself routed into the transaction.
+    txStack.pop();
+    impl.txCommit(txId);
+    return r;
+  } catch (e) {
+    if (!ok) {
+      txStack.pop();
+      // Roll back on every failure path — callback throw, query failure, or a
+      // failed commit. The worker releases the client exactly once regardless.
+      try { impl.txRollback(txId); } catch { /* worker already settled it */ }
+    }
+    throw e;
+  }
 }
+
 export function driverKind() { return impl.kind; }
-export default { run, get, all, exec, tx, driverKind };
+/** Test-only: is a transaction open on this process right now? */
+export function inTransaction() { return txStack.length > 0; }
+
+/**
+ * TEST-ONLY. The raw transaction primitives, so a test can hold TWO
+ * transactions open at once and prove they cannot see each other.
+ *
+ * `tx()` deliberately cannot do this — it is strictly scoped — which is exactly
+ * why the isolation property needs a lower-level handle to demonstrate. Not for
+ * production use: nothing outside a test may settle a transaction by hand.
+ */
+export function __txPrimitivesForTest() {
+  if (impl.kind === 'sqlite') return null; // one connection; nothing to interleave
+  return {
+    begin: () => impl.txBegin(),
+    commit: (id) => impl.txCommit(id),
+    rollback: (id) => impl.txRollback(id),
+    run: (sql, params, id) => impl.run(sql, params, id),
+    get: (sql, params, id) => impl.get(sql, params, id),
+  };
+}
+
+export default { run, get, all, exec, tx, driverKind, inTransaction };
