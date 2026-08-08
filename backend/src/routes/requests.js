@@ -5,11 +5,21 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { all } from '../lib/db.js';
+import { all, tx } from '../lib/db.js';
 import { multipart, streamFile } from '../lib/upload.js';
 import { REQ, reqNorm, REQ_LABELS } from '../lib/stages.js';
 import { notifyUser, notifyByPermission } from '../lib/notify.js';
 import fs from 'node:fs';
+
+/**
+ * Deterministic failure injection for the BL-04 suite. Inert in production:
+ * FAIL_INJECT is never set there.
+ */
+function boundary(op, n) {
+  if (process.env.FAIL_INJECT === `${op}:${n}`) {
+    throw new Error(`injected failure after ${op} write ${n}`);
+  }
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -409,16 +419,93 @@ router.post('/:id/close', requirePermission('request.close'), (req, res) => {
 });
 
 /* ===================== REOPEN ===================== */
+/**
+ * BL-04 — reopen a requisition AND restore its usable capacity.
+ *
+ * Closing calls Seats.cancelOpen, which sets every open/reserved/reopened seat
+ * to `cancelled`. Reopen previously flipped only the requisition status, so the
+ * requisition came back with zero seats counted as capacity by hasOpenSeat() —
+ * reopened, but unable to accept a single join. Filled seats were never lost;
+ * the requisition was simply dead.
+ *
+ * Capacity arithmetic, using the existing rules and no new statuses:
+ *   target    = headcount - filled commitments
+ *   current   = seats already counted as capacity (open|reopened|reserved)
+ *   missing   = target - current
+ * Restore reusable cancelled seats first, create only the remainder.
+ *
+ * WRITE BOUNDARIES (all inside one transaction):
+ *   1. conditional requisition transition (status, closed_at, close_reason)
+ *   2. restore eligible cancelled seats
+ *   3. append new seats for any remaining shortfall
+ *   4. request activity
+ *   5. audit (STRICT — a lost audit record must abort the reopen)
+ */
 router.post('/:id/reopen', requirePermission('request.reopen'), (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
   const reason = (req.body || {}).reason;
   if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required to reopen.' });
-  if (![STATUS.CLOSED, STATUS.FILLED, STATUS.CANCELLED].includes(r.status)) return res.status(409).json({ error: 'Only closed/filled/cancelled requests can be reopened.' });
-  Requests.setStatus(r.id, STATUS.REOPENED, { closed_at: null, close_reason: null });
-  RequestActivity.add(r.id, req.user, 'reopened', { fromStatus: r.status, toStatus: STATUS.REOPENED, note: reason });
-  writeAudit(req, { action: 'request.reopened', entityType: 'recruitment_request', entityId: r.id, comments: reason });
-  res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
+  if (![STATUS.CLOSED, STATUS.FILLED, STATUS.CANCELLED].includes(r.status)) {
+    return res.status(409).json({ error: 'Only closed/filled/cancelled requests can be reopened.' });
+  }
+
+  // Refuse to reopen into a functionally dead state. Every seat is already
+  // committed, so reopening would produce a requisition that can never accept a
+  // candidate. HR must raise headcount first (BL-21).
+  const filled = Seats.filledCount(r.id);
+  const target = Number(r.headcount) - filled;
+  if (target <= 0) {
+    return res.status(409).json({
+      error: `All ${r.headcount} approved position(s) are already filled. `
+        + 'Increase the headcount before reopening.',
+    });
+  }
+
+  try {
+    const result = tx(() => {
+      // 1. Conditional transition: the concurrency control. Two processes racing
+      //    here cannot both match, so exactly one proceeds.
+      if (!Requests.reopenIfStatus(r.id, r.status)) {
+        throw Object.assign(new Error('This request was already reopened by someone else.'), { code: 'CONFLICT' });
+      }
+      boundary('reopen', 1);
+
+      const current = Seats.availableCount(r.id);
+      let missing = target - current;
+
+      // 2. Restore reusable seats first — identity, seat_no and history preserved.
+      const reusable = missing > 0 ? Seats.reusableCancelled(r.id).slice(0, missing) : [];
+      if (reusable.length) Seats.restore(reusable.map((x) => x.id));
+      boundary('reopen', 2);
+
+      // 3. Only the genuine shortfall becomes new seats.
+      missing -= reusable.length;
+      if (missing > 0) Seats.appendSeats(r.id, missing, r.site_id ?? null);
+      boundary('reopen', 3);
+
+      RequestActivity.add(r.id, req.user, 'reopened', {
+        fromStatus: r.status, toStatus: STATUS.REOPENED, note: reason,
+      });
+      boundary('reopen', 4);
+
+      writeAudit(req, {
+        action: 'request.reopened', entityType: 'recruitment_request', entityId: r.id,
+        oldValue: { status: r.status }, newValue: { status: STATUS.REOPENED },
+        comments: reason,
+      }, { strict: true });
+      boundary('reopen', 5);
+
+      return { restored: reusable.length, created: Math.max(missing, 0) };
+    });
+    return res.json({
+      request: serialize(Requests.byId(r.id), req.user, { withDetail: true }),
+      seats: result,
+    });
+  } catch (e) {
+    if (e && e.code === 'CONFLICT') return res.status(409).json({ error: e.message });
+    throw e;
+  }
 });
 
 /* ===================== Form metadata (selectors) ===================== */

@@ -458,6 +458,18 @@ export const Audit = {
 
 // ---------------- Phase 2: Recruitment Requests ----------------
 export const Requests = {
+  /**
+   * BL-04 concurrency control. A read-then-write status check cannot serialise
+   * two backend processes; this UPDATE is conditional on the status the caller
+   * observed, so exactly one concurrent reopen can match and the losers see
+   * `changes === 0`. Portable: no FOR UPDATE, no advisory lock.
+   */
+  reopenIfStatus(id, expectedStatus) {
+    const r = run("UPDATE recruitment_request SET status='reopened', closed_at=NULL, close_reason=NULL, updated_at=? WHERE id=? AND status=?",
+      [new Date().toISOString(), Number(id), expectedStatus]);
+    return (r?.changes ?? 0) > 0;
+  },
+
   nextTicketNo() {
     const prefix = (get("SELECT value FROM system_setting WHERE key='ticket_prefix'")?.value) || 'REQ';
     const cur = nextSequence('request_counter');
@@ -543,6 +555,43 @@ export const Seats = {
     for (let i = 1; i <= count; i++) run('INSERT INTO requisition_seat (request_id,seat_no,site_id) VALUES (?,?,?)', [reqId, i, siteId]);
   },
   filledCount(reqId) { return get("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status='filled'", [reqId]).c; },
+  /**
+   * Seats that currently COUNT AS CAPACITY, per the existing capacity rule in
+   * vacancy.js. Kept in one place so reopen and hasOpenSeat cannot drift.
+   */
+  availableCount(reqId) {
+    return get("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status IN ('open','reopened','reserved')", [reqId]).c;
+  },
+  /**
+   * Cancelled seats that are provably UNOCCUPIED and therefore reusable.
+   *
+   * `filled_by_application_id IS NULL` is the real evidence, not the status:
+   * a seat is linked to an application the moment it is filled, and that link is
+   * never cleared. Restoring on status alone could resurrect a seat that carries
+   * a commitment.
+   */
+  reusableCancelled(reqId) {
+    return all(`SELECT * FROM requisition_seat
+                 WHERE request_id=? AND status='cancelled' AND filled_by_application_id IS NULL
+                 ORDER BY seat_no`, [reqId]);
+  },
+  /** Restore specific seats by id. Identity and seat_no are preserved. */
+  restore(ids) {
+    for (const id of ids) {
+      run("UPDATE requisition_seat SET status='reopened', cancel_reason=NULL WHERE id=? AND status='cancelled' AND filled_by_application_id IS NULL", [id]);
+    }
+  },
+  /** Highest seat_no ever used, so new seats never reuse a retired identity. */
+  maxSeatNo(reqId) {
+    return get('SELECT COALESCE(MAX(seat_no),0) n FROM requisition_seat WHERE request_id=?', [reqId]).n;
+  },
+  /** Append `count` new seats after the highest existing seat_no. */
+  appendSeats(reqId, count, siteId = null) {
+    const start = get('SELECT COALESCE(MAX(seat_no),0) n FROM requisition_seat WHERE request_id=?', [reqId]).n;
+    for (let i = 1; i <= count; i += 1) {
+      run('INSERT INTO requisition_seat (request_id,seat_no,site_id,status) VALUES (?,?,?,?)', [reqId, start + i, siteId, 'reopened']);
+    }
+  },
   cancelOpen(reqId, reason) {
     run("UPDATE requisition_seat SET status='cancelled', cancel_reason=? WHERE request_id=? AND status IN ('open','reserved','reopened')", [reason, reqId]);
   },
