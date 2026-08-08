@@ -29,6 +29,7 @@ const SUITES = [
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
   'parser_seam_test.mjs',     // CV parser injection seam + legacy compatibility
+  'route_manifest_test.mjs',   // structural guard: requests router manifest
   'bl03_test.mjs',            // BL-03 application creation entry stages
   'f01_test.mjs',             // F-01 atomic application creation
   'bl04_test.mjs',            // BL-04 reopen restores seat capacity atomically
