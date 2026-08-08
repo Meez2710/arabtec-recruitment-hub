@@ -13,6 +13,20 @@ import {
   APP_ENTRY, APP_ENTRY_DEFAULT, appIsEntry,
 } from '../lib/stages.js';
 
+/**
+ * Deterministic failure injection for the F-01 atomicity suite.
+ *
+ * Boundaries are numbered to match the eight writes in application creation, so
+ * a test can fail immediately AFTER any one of them and assert that nothing
+ * survives. Inert unless FAIL_INJECT_APP_CREATE is set, which never happens in
+ * production; the check is a single env read per write.
+ */
+function boundary(n) {
+  if (process.env.FAIL_INJECT_APP_CREATE === String(n)) {
+    throw new Error(`injected failure after write ${n}`);
+  }
+}
+
 const router = Router();
 router.use(requireAuth);
 
@@ -128,6 +142,7 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
   // its audit record.
   const created = tx(() => {
     const appNo = Applications.nextNo();                            // 1. counter
+    boundary(1);
     const app = Applications.create({                               // 2. application
       applicationNo: appNo, candidateId, requestId,
       positionApplied: d.positionApplied || request.title,
@@ -135,26 +150,29 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
       recruiterId: d.recruiterId ? Number(d.recruiterId) : (request.owner_id || req.user.id),
       source: d.source || candidate.source, createdBy: req.user.id,
     });
+    boundary(2);
     StageHistory.add(app.id, null, initialStatus, req.user, 'Application created'); // 3. history
+    boundary(3);
     Requests.stampLifecycle(requestId, 'first_candidate_at');        // 4. lifecycle
+    boundary(4);
     if (initialStatus === APP.SHORTLISTED) {
       Requests.stampLifecycle(requestId, 'first_shortlist_at');      // 5. conditional lifecycle
     }
+    boundary(5);
     CandidateActivity.add({                                         // 6. candidate timeline
       candidateId, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName,
       type: 'application_created', note: `${appNo} → ${request.ticket_no}`,
     });
+    boundary(6);
     RequestActivity.add(requestId, req.user, 'candidate_linked', {   // 7. request timeline
       note: `${candidate.full_name} linked (${appNo})`,
     });
+    boundary(7);
     writeAudit(req, {                                               // 8. audit
       action: 'application.created', entityType: 'application', entityId: app.id,
       newValue: { applicationNo: appNo, candidateId, requestId, status: initialStatus },
     }, { strict: true });
-    // Failure-injection point for the F-01 suite. Never set in production.
-    if (process.env.FAIL_INJECT_APP_CREATE) {
-      throw new Error(`injected failure: ${process.env.FAIL_INJECT_APP_CREATE}`);
-    }
+    boundary(8);
     return app;
   });
   res.status(201).json({ application: appOut(created, req.user) });

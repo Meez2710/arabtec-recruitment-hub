@@ -38,7 +38,7 @@ const login = async (e, p = 'Arabtec@123') =>
   (await api('/api/auth/login', { method: 'POST', body: { email: e, password: p } })).json.token;
 
 // Direct reads, so the assertions see PERSISTED state rather than a response body.
-const { get, all } = await import('./src/lib/db.js');
+const { get, all, exec } = await import('./src/lib/db.js');
 const counts = (candidateId) => ({
   apps: get('SELECT COUNT(*) c FROM application WHERE candidate_id=?', [candidateId]).c,
   history: get(
@@ -93,42 +93,75 @@ const counts = (candidateId) => ({
   const reqAfterOk = get('SELECT first_candidate_at FROM recruitment_request WHERE id=?', [reqId]);
   c('requisition lifecycle stamped', !!reqAfterOk.first_candidate_at);
 
-  /* --------------------------- failure injection -------------------------- */
-  console.log('\n— an injected failure after all eight writes persists NOTHING —');
-  const beforeAudit = get("SELECT COUNT(*) c FROM audit_log WHERE action='application.created'").c;
-  const beforeCounter = get("SELECT value FROM system_setting WHERE key='application_counter'")?.value;
-  const failCand = await makeCandidate();
+  /* ------------------ failure injection at EVERY boundary ----------------- */
+  // The eight writes, in order:
+  //   1 counter  2 application  3 stage history  4 first_candidate_at
+  //   5 first_shortlist_at (conditional)  6 candidate activity
+  //   7 request activity  8 audit
+  console.log('\n— failure after each of the eight writes persists NOTHING —');
 
-  process.env.FAIL_INJECT_APP_CREATE = 'after-all-writes';
-  const failed = await create(failCand);
-  delete process.env.FAIL_INJECT_APP_CREATE;
+  const settings = () => Object.fromEntries(
+    all('SELECT key, value FROM system_setting').map((r) => [r.key, r.value]),
+  );
 
-  c('the request failed rather than reporting success', failed.status >= 500 || failed.status >= 400,
-    `got ${failed.status}`);
+  for (let b = 1; b <= 8; b += 1) {
+    const beforeAudit = get("SELECT COUNT(*) c FROM audit_log WHERE action='application.created'").c;
+    const beforeSeats = get("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status='filled'", [reqId]).c;
+    const beforeHead = get('SELECT headcount_filled h FROM recruitment_request WHERE id=?', [reqId]).h;
+    const beforeApps = get('SELECT COUNT(*) c FROM application').c;
+    const cand = await makeCandidate();
+    // Snapshot AFTER creating the candidate: makeCandidate legitimately advances
+    // candidate_counter, and including that would make this assert the wrong thing.
+    const beforeSettings = settings();
 
-  const afterFail = counts(failCand);
-  c('no application row survives', afterFail.apps === 0, `apps=${afterFail.apps}`);
-  c('no stage history survives', afterFail.history === 0, `history=${afterFail.history}`);
-  c('no orphan candidate activity survives', afterFail.activity === 0, `activity=${afterFail.activity}`);
-  c('no partial audit record survives', afterFail.audit === beforeAudit, `${beforeAudit} -> ${afterFail.audit}`);
-  c('the shared number counter was not burned',
-    afterFail.counter === beforeCounter, `${beforeCounter} -> ${afterFail.counter}`);
-  c('no seat was consumed',
-    get("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status='filled'", [reqId]).c === 0);
-  c('headcount_filled unchanged',
-    get('SELECT headcount_filled h FROM recruitment_request WHERE id=?', [reqId]).h === 0);
+    process.env.FAIL_INJECT_APP_CREATE = String(b);
+    // Boundary 5 only executes for a shortlisted create, so drive that one there.
+    const res = await create(cand, b === 5 ? { initialStatus: 'shortlisted' } : {});
+    delete process.env.FAIL_INJECT_APP_CREATE;
 
-  /* ------------------------------- retry ---------------------------------- */
-  console.log('\n— retry after the failure produces exactly one valid application —');
-  const retry = await create(failCand);
-  c('retry succeeds (201)', retry.status === 201, `got ${retry.status}`);
-  const afterRetry = counts(failCand);
-  c('exactly one application exists', afterRetry.apps === 1, `apps=${afterRetry.apps}`);
-  c('exactly one stage history row', afterRetry.history === 1, `history=${afterRetry.history}`);
-  c('exactly one activity row', afterRetry.activity === 1, `activity=${afterRetry.activity}`);
-  c('audit grew by exactly one', afterRetry.audit === beforeAudit + 1, `${beforeAudit} -> ${afterRetry.audit}`);
-  const nos = all('SELECT application_no FROM application ORDER BY id').map((r) => r.application_no);
-  c('application numbers have no duplicates', new Set(nos).size === nos.length, nos.join(','));
+    const a = counts(cand);
+    const ok = res.status >= 400
+      && a.apps === 0 && a.history === 0 && a.activity === 0
+      && a.audit === beforeAudit
+      && get('SELECT COUNT(*) c FROM application').c === beforeApps
+      && JSON.stringify(settings()) === JSON.stringify(beforeSettings)
+      && get("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status='filled'", [reqId]).c === beforeSeats
+      && get('SELECT headcount_filled h FROM recruitment_request WHERE id=?', [reqId]).h === beforeHead;
+    c(`boundary ${b}: nothing persisted`, ok,
+      `status=${res.status} apps=${a.apps} hist=${a.history} act=${a.activity} audit=${a.audit}/${beforeAudit}`);
+
+    // Retry the SAME operation and prove it yields exactly one of everything.
+    const retry = await create(cand, b === 5 ? { initialStatus: 'shortlisted' } : {});
+    const r = counts(cand);
+    c(`boundary ${b}: retry creates exactly one`,
+      retry.status === 201 && r.apps === 1 && r.history === 1 && r.activity === 1
+      && r.audit === beforeAudit + 1,
+      `status=${retry.status} apps=${r.apps} hist=${r.history} act=${r.activity}`);
+  }
+
+  const allNos = all('SELECT application_no FROM application').map((r) => r.application_no);
+  c('no duplicate application numbers across every rollback and retry',
+    new Set(allNos).size === allNos.length, `${allNos.length} rows, ${new Set(allNos).size} distinct`);
+
+  /* ------------------ strict audit failure rolls everything back ---------- */
+  console.log('\n— a failing audit write in strict mode aborts the whole create —');
+  const auditCand = await makeCandidate();
+  const beforeStrictApps = get('SELECT COUNT(*) c FROM application').c;
+  const beforeStrictSettings = settings(); // after makeCandidate, same reason
+  // Break the audit table for real — no production test hook involved.
+  exec('ALTER TABLE audit_log RENAME TO audit_log_hidden');
+  const auditRes = await create(auditCand);
+  exec('ALTER TABLE audit_log_hidden RENAME TO audit_log');
+
+  c('the create failed rather than committing without an audit record',
+    auditRes.status >= 400, `got ${auditRes.status}`);
+  c('no application survived the audit failure',
+    counts(auditCand).apps === 0 && get('SELECT COUNT(*) c FROM application').c === beforeStrictApps);
+  c('the application number was not burned by the audit failure',
+    JSON.stringify(settings()) === JSON.stringify(beforeStrictSettings));
+  const afterAuditFix = await create(auditCand);
+  c('and the operation succeeds once auditing works again', afterAuditFix.status === 201,
+    `got ${afterAuditFix.status}`);
 
   /* ------------------- strict audit inside the transaction ---------------- */
   console.log('\n— the audit write is part of the atom (BL-34, scoped) —');
