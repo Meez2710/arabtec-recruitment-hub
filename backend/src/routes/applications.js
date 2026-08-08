@@ -9,6 +9,7 @@ import { hasOpenSeat, fillSeatAndCount } from '../lib/vacancy.js';
 import {
   APP, APP_STATUSES as STAGES, APP_REASON_REQUIRED, APP_TERMINAL,
   appNorm, appCanMove, APP_LABELS,
+  APP_ENTRY, APP_ENTRY_DEFAULT, appIsEntry,
 } from '../lib/stages.js';
 
 const router = Router();
@@ -92,7 +93,26 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
     }
   }
 
-  const initialStatus = APP_STATUSES.includes(appNorm(d.initialStatus)) ? appNorm(d.initialStatus) : APP.SOURCED;
+  // BL-03. Previously this validated against APP_STATUSES — every status an
+  // application may ever hold — and silently fell back to `sourced` on a miss.
+  // That accepted `joined`, `offer_sent` and `rejected`, so a single request
+  // could create an application already at a terminal stage, skipping the
+  // interview record, the offer flow and seat accounting. It also swallowed
+  // typos, so a caller asking for a stage it could not have never found out.
+  //
+  // Now: absent means the default; present means it must be a legal ENTRY
+  // stage, and anything else is rejected before a single row is written.
+  if (d.initialStatus !== undefined && d.initialStatus !== null && d.initialStatus !== '') {
+    if (!appIsEntry(d.initialStatus)) {
+      return res.status(400).json({
+        error: `An application cannot be created at "${appNorm(d.initialStatus)}". `
+          + `Applications start at one of: ${APP_ENTRY.join(', ')}. `
+          + 'Later stages must be reached by moving the application.',
+        allowed: APP_ENTRY,
+      });
+    }
+  }
+  const initialStatus = d.initialStatus ? appNorm(d.initialStatus) : APP_ENTRY_DEFAULT;
   const appNo = Applications.nextNo();
   const created = Applications.create({
     applicationNo: appNo, candidateId, requestId,

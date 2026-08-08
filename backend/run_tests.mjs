@@ -29,6 +29,7 @@ const SUITES = [
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
   'parser_seam_test.mjs',     // CV parser injection seam + legacy compatibility
+  'bl03_test.mjs',            // BL-03 application creation entry stages
 ];
 
 // LEGACY suites — written before the Phase-0 workflow stage rename; they assert
