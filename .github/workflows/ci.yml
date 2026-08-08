@@ -78,7 +78,28 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:16.4-alpine   # pinned; disposable; test-only credentials
+        # PINNED BY IMMUTABLE DIGEST, not just the tag: `16.4-alpine` is mutable
+        # and can be repointed at new content, so what the merge gate actually
+        # tested could change with no commit.
+        #
+        # VERSION ALIGNMENT IS UNVERIFIED. render.yaml declares no
+        # `postgresMajorVersion` for either database, so production's major
+        # version is whatever Render defaulted to at provisioning time and is
+        # not recorded in this repository. 16 is the working assumption; confirm
+        # it with `SELECT version()` against the live instance and, if it
+        # differs, change this digest and render.yaml in one commit.
+        #
+        # CONTROLLED UPDATE PROCEDURE
+        #   1. Pick the tag; it must match production's major version.
+        #   2. Resolve its digest:
+        #        TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/postgres:pull" | jq -r .token)
+        #        curl -sI -H "Authorization: Bearer $TOKEN" \
+        #          -H "Accept: application/vnd.oci.image.index.v1+json" \
+        #          https://registry-1.docker.io/v2/library/postgres/manifests/<TAG> \
+        #          | grep -i docker-content-digest
+        #   3. Update the digest in its own commit, quoting the source tag.
+        #   4. Confirm the required gate passes before merging.
+        image: postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
         env:
           POSTGRES_USER: txtest
           POSTGRES_PASSWORD: txtest
