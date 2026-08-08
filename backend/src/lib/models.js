@@ -3,6 +3,31 @@
 // is done here so route code stays clean.
 import { get, all, run } from './db.js';
 
+/**
+ * Atomically consume the next value of a sequence counter.
+ *
+ * F-01 concurrency. Every caller previously did SELECT-then-UPDATE, which is the
+ * textbook lost update: two transactions in DIFFERENT processes read the same
+ * value at READ COMMITTED, both write value+1, and both mint the same business
+ * number. The unique index then rejects one of them with a 500 — proven by the
+ * multi-process race test, where 16 of 24 legitimate creates failed.
+ *
+ * The increment now happens inside the UPDATE, so the row lock the UPDATE
+ * already takes also covers the read. Concurrent callers serialise on that lock
+ * and each receives a distinct value.
+ *
+ * Portable on purpose: CAST(... AS TEXT) rather than a Postgres `::text`, so the
+ * same statement runs on SQLite (one connection, already safe) and PostgreSQL.
+ */
+export function nextSequence(key) {
+  const row = get(
+    'UPDATE system_setting SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key=? RETURNING value',
+    [key],
+  );
+  if (!row) throw new Error(`Sequence counter "${key}" is missing from system_setting.`);
+  return parseInt(row.value, 10);
+}
+
 const nowISO = () => new Date().toISOString();
 const b = (v) => (v ? 1 : 0);          // bool -> int
 const ub = (v) => v === 1 || v === true; // int -> bool
@@ -435,8 +460,7 @@ export const Audit = {
 export const Requests = {
   nextTicketNo() {
     const prefix = (get("SELECT value FROM system_setting WHERE key='ticket_prefix'")?.value) || 'REQ';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='request_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='request_counter'", [String(cur)]);
+    const cur = nextSequence('request_counter');
     const year = new Date().getFullYear();
     return `${prefix}-${year}-${String(cur).padStart(5, '0')}`;
   },
@@ -565,8 +589,7 @@ export const Candidates = {
   },
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='candidate_prefix'")?.value || 'CAN';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='candidate_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='candidate_counter'", [String(cur)]);
+    const cur = nextSequence('candidate_counter');
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM candidate WHERE id=?', [id]); },
@@ -743,8 +766,7 @@ export const CandidateDocuments = {
 export const Applications = {
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='application_prefix'")?.value || 'APP';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='application_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='application_counter'", [String(cur)]);
+    const cur = nextSequence('application_counter');
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM application WHERE id=?', [id]); },
@@ -883,8 +905,7 @@ export const Posts = {
 export const Interviews = {
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='interview_prefix'")?.value || 'INT';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='interview_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='interview_counter'", [String(cur)]);
+    const cur = nextSequence('interview_counter');
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM interview WHERE id=?', [id]); },
@@ -973,8 +994,7 @@ export const InterviewActivity = {
 export const Offers = {
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='offer_prefix'")?.value || 'OFR';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='offer_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='offer_counter'", [String(cur)]);
+    const cur = nextSequence('offer_counter');
     const year = new Date().getFullYear();
     return `${prefix}-${year}-${String(cur).padStart(5, '0')}`;
   },
