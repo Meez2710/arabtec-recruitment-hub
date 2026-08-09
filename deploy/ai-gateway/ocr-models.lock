@@ -9,8 +9,6 @@
 #
 # Empty below == not yet recorded. The image build fails closed in that state.
 
-hf/.agent_harnesses.json  df4bb03bf41e4ce850db5e7d20a9430e7bbdff173aa0941e39f0be5e8ade0906
-hf/hub/CACHEDIR.TAG  f6572428f6d5e1575e73a1502895a8731f10757dfbb634909c6e154b849af91d
 hf/hub/models--docling-project--docling-layout-heron/blobs/00333a43451945aaf89db8ca9c0a17e75d1537c17db60fdb91aa95f4c7929e0c  00333a43451945aaf89db8ca9c0a17e75d1537c17db60fdb91aa95f4c7929e0c
 hf/hub/models--docling-project--docling-layout-heron/blobs/2c5b32c47fb9789ed49606988f58bc4741a731ab  175700839bc7808eac6af1d0c23e4f483606ab2276fe01122f4093e61a1a65b6
 hf/hub/models--docling-project--docling-layout-heron/blobs/98434d37ace2399b824d685b0795ab7a68e53dd2  fdea30805ce2f5666b147fca941dcdd27ad468e27d6ed21902207d3da056a97d
@@ -43,4 +41,3 @@ hf/hub/models--docling-project--docling-models/snapshots/fc0f2d45e2218ea24bce504
 hf/hub/models--docling-project--docling-models/snapshots/fc0f2d45e2218ea24bce5045f58a389aed16dc23/model_artifacts/tableformer/fast/tableformer_fast.safetensors  3119563aab5a7c96fda4d621119b63fd8806272b86c30936d15507616422f718
 hf/hub/models--docling-project--docling-models/snapshots/fc0f2d45e2218ea24bce5045f58a389aed16dc23/model_artifacts/tableformer/fast/tm_config.json  dca6762508dddfae6d57d6cb4ef822c6000119dff0f3b6489db7413118c2622a
 hf/hub/models--docling-project--docling-models/trees/fc0f2d45e2218ea24bce5045f58a389aed16dc23.json  8f74cb05610126508c4afcae60003fb238e7845e53655de6f3140c979e826df0
-hf/xet/logs/xet_20260809T145050300+0000_612.log  819dfe9864f63d6a32f32d49bc0924fa57654cb57f531f42465137ee8e3e7889
