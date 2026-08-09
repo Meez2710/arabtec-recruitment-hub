@@ -15,7 +15,18 @@ export function fillSeatAndCount(request, applicationId) {
   return tx(() => {
     const seat = dbGet("SELECT * FROM requisition_seat WHERE request_id=? AND status IN ('open','reopened','reserved') ORDER BY seat_no LIMIT 1", [request.id]);
     if (!seat) throw Object.assign(new Error('No open seat available to fill.'), { code: 'NO_SEAT' });
-    dbRun("UPDATE requisition_seat SET status='filled', filled_by_application_id=?, filled_at=? WHERE id=?", [applicationId, new Date().toISOString(), seat.id]);
+    // BL-27. The claim is CONDITIONAL on the seat still being unfilled and
+    // unlinked. Two processes reading concurrently can select the same row; an
+    // unconditional UPDATE let the second overwrite the first, leaving one seat
+    // carrying two commitments and headcount_filled short by one. The loser now
+    // sees changes === 0 and raises NO_SEAT, which the caller maps to a 409 and
+    // rolls back — no overfill, no silent double-count.
+    const claimed = dbRun(
+      "UPDATE requisition_seat SET status='filled', filled_by_application_id=?, filled_at=? "
+      + "WHERE id=? AND status IN ('open','reopened','reserved') AND filled_by_application_id IS NULL",
+      [applicationId, new Date().toISOString(), seat.id],
+    );
+    if (!claimed.changes) throw Object.assign(new Error('No open seat available to fill.'), { code: 'NO_SEAT' });
     const filled = dbGet("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status='filled'", [request.id]).c;
     let newStatus = request.status;
     if (filled >= request.headcount) newStatus = 'filled';

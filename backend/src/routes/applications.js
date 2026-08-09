@@ -6,7 +6,8 @@ import {
 import { tx } from '../lib/db.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { hasOpenSeat, fillSeatAndCount } from '../lib/vacancy.js';
+import { hasOpenSeat } from '../lib/vacancy.js';
+import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import {
   APP, APP_STATUSES as STAGES, APP_REASON_REQUIRED, APP_TERMINAL,
   appNorm, appCanMove, APP_LABELS,
@@ -195,7 +196,11 @@ router.get('/:id', (req, res) => {
   res.json({ application: appOut(a, req.user), history: StageHistory.forApplication(a.id) });
 });
 
-/* ---------------- helper: move one application, handle reasons + automation ---------------- */
+/* ---------------- helper: move one application, handle reasons + automation ----------------
+   BL-27. `joined` is NOT handled here. It is the only transition that commits a
+   seat and consumes a candidate's global eligibility, and it now runs through
+   the shared transactional boundary in lib/join.js — the same one the offer
+   result path uses. Everything below stays a plain, non-seat-bearing move. */
 function performMove(appRow, toStatus, req, reason) {
   const fromStatus = appRow.status;
   const reasonField = REASON_REQUIRED[toStatus] || null;
@@ -211,15 +216,20 @@ function performMove(appRow, toStatus, req, reason) {
   if (toStatus === APP.SHORTLISTED) Requests.stampLifecycle(appRow.request_id, 'first_shortlist_at');
   if (toStatus === APP.INTERVIEWING) Requests.stampLifecycle(appRow.request_id, 'first_interview_at');
 
-  // Vacancy automation on Joined: fill a seat, bump count, transition request.
-  if (toStatus === APP.JOINED && fromStatus !== APP.JOINED) {
-    const request = Requests.byId(appRow.request_id);
-    const before = request.headcount_filled;
-    const result = fillSeatAndCount(request, appRow.id);
-    RequestActivity.add(request.id, req.user, 'seat_filled', { note: `${result.filled}/${request.headcount} filled${result.newStatus === 'filled' ? ' — request Filled' : ''}` });
-    writeAudit(req, { action: 'request.seat_filled', entityType: 'recruitment_request', entityId: request.id, newValue: { filled: result.filled, status: result.newStatus } });
-    writeAudit(req, { action: 'request.vacancy_changed', entityType: 'recruitment_request', entityId: request.id, oldValue: { headcountFilled: before }, newValue: { headcountFilled: result.filled, remaining: request.headcount - result.filled, status: result.newStatus } });
+}
+
+/**
+ * BL-27 gate, shared by the single and bulk move routes.
+ * Returns a JoinConflict-shaped object when the candidate may not join, else null.
+ */
+function joinBlocker(appRow) {
+  const blocker = blockingJoinedApplication(appRow.candidate_id, appRow.id);
+  if (blocker) {
+    return new JoinConflict(JOIN_CONFLICT.ALREADY_JOINED_ELSEWHERE, ALREADY_JOINED_MESSAGE, {
+      blockingApplicationId: blocker.applicationId, blockingRequestId: blocker.requestId,
+    });
   }
+  return null;
 }
 
 /* ---------------- MOVE STAGE ---------------- */
@@ -240,6 +250,19 @@ router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) =
   // Overfill protection: block Joined when no vacancy remains.
   if (toStatus === APP.JOINED && !hasOpenSeat(a.request_id)) {
     return res.status(409).json({ error: 'All vacancies for this request are already filled. Cannot join another candidate.' });
+  }
+  if (toStatus === APP.JOINED) {
+    // BL-27. One joined application per candidate, globally. The pre-check
+    // exists for the message; the transaction and the database index decide.
+    const blocked = joinBlocker(a);
+    if (blocked) return res.status(blocked.status).json(blocked.toBody());
+    try {
+      joinApplication({ app: a, req, reason: reasonField ? reason : null, postToThread: true });
+    } catch (e) {
+      if (e instanceof JoinConflict) return res.status(e.status).json(e.toBody());
+      throw e;
+    }
+    return res.json({ application: appOut(Applications.byId(a.id), req.user) });
   }
   performMove(a, toStatus, req, reasonField ? reason : null);
   res.json({ application: appOut(Applications.byId(a.id), req.user) });
@@ -291,6 +314,21 @@ router.post('/bulk', requirePermission('application.bulk_action'), (req, res) =>
       if (TERMINAL.includes(from)) { skipped.push({ id, reason: `terminal_${from}` }); continue; }
       if (!appCanMove(from, status)) { skipped.push({ id, reason: `illegal_${from}_to_${status}` }); continue; }
       if (status === APP.JOINED && !hasOpenSeat(a.request_id)) { skipped.push({ id, reason: 'no_vacancy' }); continue; }
+      if (status === APP.JOINED) {
+        // BL-27. The bulk route reports per-item and never aborts the batch, so
+        // a blocked candidate is skipped with a stable reason rather than
+        // failing the other selections.
+        const blocked = joinBlocker(a);
+        if (blocked) { skipped.push({ id, reason: 'candidate_already_joined', code: blocked.code }); continue; }
+        try {
+          joinApplication({ app: a, req, reason: reasonField ? reason : null, postToThread: true });
+          affected++;
+        } catch (e) {
+          if (!(e instanceof JoinConflict)) throw e;
+          skipped.push({ id, reason: 'candidate_already_joined', code: e.code });
+        }
+        continue;
+      }
       performMove(a, status, req, reasonField ? reason : null); affected++;
     } else if (action === 'assign' && recruiterId) {
       Applications.setRecruiter(a.id, Number(recruiterId)); affected++;
