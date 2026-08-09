@@ -69,8 +69,15 @@ def digest_tree(root: str) -> dict[str, str]:
         for n in sorted(names):
             p = os.path.join(dirpath, n)
             rel = os.path.relpath(p, root)
-            # Lock files and caches of caches are noise, not assets.
-            if rel.endswith((".lock", ".tmp", ".incomplete")):
+            # Volatile cache bookkeeping is not an asset. A timestamped xet
+            # log made the recorded lock unreproducible on the very next run,
+            # which would have turned the integrity check into a coin flip.
+            if rel.endswith((".lock", ".tmp", ".incomplete", ".log")):
+                continue
+            parts = rel.split(os.sep)
+            if "logs" in parts or ".locks" in parts:
+                continue
+            if os.path.basename(rel) in ("CACHEDIR.TAG", ".agent_harnesses.json"):
                 continue
             h = hashlib.sha256()
             try:
