@@ -1,0 +1,11 @@
+# Pinned with hashes: `pip install --require-hashes` refuses anything that does
+# not match, so a compromised or re-uploaded package cannot enter the image.
+# Regenerate with:
+#   pip-compile --generate-hashes --output-file=requirements.txt requirements.in
+#
+# HASHES ARE PLACEHOLDERS UNTIL THE FIRST REAL BUILD. Populate them on the
+# build host with the command above before the staging deploy — the build is
+# expected to FAIL until then, which is the intended behaviour: an unpinned
+# dependency in a CV-processing image is not an acceptable default.
+docling==2.15.1
+requests==2.32.3

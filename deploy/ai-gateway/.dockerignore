@@ -1,0 +1,7 @@
+# Nothing but the gateway sources belongs in the build context. In particular
+# no .env, no test fixtures and no CVs.
+*
+!gateway.py
+!docling_sidecar.py
+!entrypoint.sh
+!requirements.txt
