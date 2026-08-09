@@ -28,8 +28,14 @@ async function approvedRequest(token, recMgr, headcount = 1) {
 }
 async function linkApp(token, reqId, name, status = 'final_interview') {
   const cand = await api('/api/candidates', { method: 'POST', token, body: { fullName: name, phone: '+2010' + Math.floor(Math.random() * 1e8) } });
-  const app = await api('/api/applications', { method: 'POST', token, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: status } });
-  return { candId: cand.json.candidate.id, appId: app.json.application.id };
+  // BL-03: applications are created at an ENTRY stage only. Advanced stages are
+  // reached by moving, which is what records how they were reached.
+  const app = await api('/api/applications', { method: 'POST', token, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: 'matched' } });
+  const appId = app.json.application.id;
+  if (status && !['sourced', 'matched', 'unmatched', 'shortlisted', 'new', 'screened', 'applied'].includes(status)) {
+    await api(`/api/applications/${appId}/move`, { method: 'POST', token, body: { status } });
+  }
+  return { candId: cand.json.candidate.id, appId };
 }
 async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   const reqId = await approvedRequest(hrMgr, recMgr, headcount);

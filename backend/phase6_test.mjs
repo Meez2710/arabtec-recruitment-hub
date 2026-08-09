@@ -38,7 +38,9 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   }
   const reqId = await pipeline(2);
   const cand = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Dash Cand', phone: '+201230000001', expectedSalary: 40000 } });
-  const app = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: 'final_interview' } });
+  const app = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: 'matched' } });
+  // BL-03: reach 'final_interview' by moving, not by creating there.
+  await api(`/api/applications/${app.json.application.id}/move`, { method: 'POST', token: recruiter, body: { status: 'final_interview' } });
   const appId = app.json.application.id;
   // interview
   await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appId, scheduledAt: new Date(Date.now() + 86400000).toISOString(), panel: [{ interviewerId: meta.json.recruiters.find((r) => r.name === 'Mona Sami').id }] } });

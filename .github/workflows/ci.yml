@@ -6,9 +6,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `stabilize/**` added so the stabilization branch runs the SAME required
+    # checks before it is ever proposed for merge. Required checks on main are
+    # unchanged.
+    branches: [main, 'stabilize/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -65,3 +69,67 @@ jobs:
           SEED_DEMO_DATA: 'true'
           RUN_LEGACY: '1'
           JWT_SECRET: ci-test-secret-not-used-in-prod
+
+  postgres-transactions:
+    name: PostgreSQL transaction gate (blocking)
+    # F-01. The transaction affinity fix cannot be proven on SQLite or PGlite —
+    # both are single-connection and structurally cannot exhibit the pooled
+    # connection bug. This job therefore runs against a REAL, pinned PostgreSQL
+    # and is a merge gate. A skip here is a failure, not a pass.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        # PINNED BY IMMUTABLE DIGEST, not just the tag: `16.4-alpine` is mutable
+        # and can be repointed at new content, so what the merge gate actually
+        # tested could change with no commit.
+        #
+        # VERSION ALIGNMENT IS UNVERIFIED. render.yaml declares no
+        # `postgresMajorVersion` for either database, so production's major
+        # version is whatever Render defaulted to at provisioning time and is
+        # not recorded in this repository. 16 is the working assumption; confirm
+        # it with `SELECT version()` against the live instance and, if it
+        # differs, change this digest and render.yaml in one commit.
+        #
+        # CONTROLLED UPDATE PROCEDURE
+        #   1. Pick the tag; it must match production's major version.
+        #   2. Resolve its digest:
+        #        TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/postgres:pull" | jq -r .token)
+        #        curl -sI -H "Authorization: Bearer $TOKEN" \
+        #          -H "Accept: application/vnd.oci.image.index.v1+json" \
+        #          https://registry-1.docker.io/v2/library/postgres/manifests/<TAG> \
+        #          | grep -i docker-content-digest
+        #   3. Update the digest in its own commit, quoting the source tag.
+        #   4. Confirm the required gate passes before merging.
+        image: postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+        env:
+          POSTGRES_USER: txtest
+          POSTGRES_PASSWORD: txtest
+          POSTGRES_DB: arabtec_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U txtest -d arabtec_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the required PostgreSQL transaction gate
+        run: npm run test:pg:required
+        env:
+          # Disposable CI database. Never a production DSN.
+          PG_TEST_URL: postgres://txtest:txtest@127.0.0.1:5432/arabtec_test?sslmode=disable
+          PG_NO_SSL: 'true'

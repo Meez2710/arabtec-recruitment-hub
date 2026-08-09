@@ -3,6 +3,31 @@
 // is done here so route code stays clean.
 import { get, all, run } from './db.js';
 
+/**
+ * Atomically consume the next value of a sequence counter.
+ *
+ * F-01 concurrency. Every caller previously did SELECT-then-UPDATE, which is the
+ * textbook lost update: two transactions in DIFFERENT processes read the same
+ * value at READ COMMITTED, both write value+1, and both mint the same business
+ * number. The unique index then rejects one of them with a 500 — proven by the
+ * multi-process race test, where 16 of 24 legitimate creates failed.
+ *
+ * The increment now happens inside the UPDATE, so the row lock the UPDATE
+ * already takes also covers the read. Concurrent callers serialise on that lock
+ * and each receives a distinct value.
+ *
+ * Portable on purpose: CAST(... AS TEXT) rather than a Postgres `::text`, so the
+ * same statement runs on SQLite (one connection, already safe) and PostgreSQL.
+ */
+export function nextSequence(key) {
+  const row = get(
+    'UPDATE system_setting SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key=? RETURNING value',
+    [key],
+  );
+  if (!row) throw new Error(`Sequence counter "${key}" is missing from system_setting.`);
+  return parseInt(row.value, 10);
+}
+
 const nowISO = () => new Date().toISOString();
 const b = (v) => (v ? 1 : 0);          // bool -> int
 const ub = (v) => v === 1 || v === true; // int -> bool
@@ -433,10 +458,21 @@ export const Audit = {
 
 // ---------------- Phase 2: Recruitment Requests ----------------
 export const Requests = {
+  /**
+   * BL-04 concurrency control. A read-then-write status check cannot serialise
+   * two backend processes; this UPDATE is conditional on the status the caller
+   * observed, so exactly one concurrent reopen can match and the losers see
+   * `changes === 0`. Portable: no FOR UPDATE, no advisory lock.
+   */
+  reopenIfStatus(id, expectedStatus) {
+    const r = run("UPDATE recruitment_request SET status='reopened', closed_at=NULL, close_reason=NULL, updated_at=? WHERE id=? AND status=?",
+      [new Date().toISOString(), Number(id), expectedStatus]);
+    return (r?.changes ?? 0) > 0;
+  },
+
   nextTicketNo() {
     const prefix = (get("SELECT value FROM system_setting WHERE key='ticket_prefix'")?.value) || 'REQ';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='request_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='request_counter'", [String(cur)]);
+    const cur = nextSequence('request_counter');
     const year = new Date().getFullYear();
     return `${prefix}-${year}-${String(cur).padStart(5, '0')}`;
   },
@@ -463,24 +499,31 @@ export const Requests = {
     );
     return this.byId(Number(r.lastInsertRowid));
   },
-  update(id, fields) {
+  /**
+   * BL-21. `expectedHeadcount` folds the stale-write guard INTO the real update:
+   * one statement, so guard and write cannot disagree and nothing mutates before
+   * it. Returns null when another transaction changed headcount first.
+   */
+  update(id, fields, expectedHeadcount) {
     const cur = this.byId(id);
     const f = { ...cur, ...fields };
-    run(
+    const res = run(
       `UPDATE recruitment_request SET title=?,business_unit_id=?,project_id=?,site_id=?,department_id=?,
         employment_type=?,discipline=?,staff_category=?,headcount=?,priority=?,grade=?,salary_band_min=?,
         salary_band_max=?,currency=?,justification=?,job_description=?,required_skills=?,target_join_date=?,
         key_requirements=?,hiring_manager_notes=?,location=?,key_responsibilities=?,hiring_manager_id=?,
         attachment_path=?,attachment_name=?,
-        version=version+1,updated_at=? WHERE id=?`,
+        version=version+1,updated_at=? WHERE id=?${expectedHeadcount === undefined ? '' : ' AND headcount=?'}`,
       [f.title, f.business_unit_id, f.project_id, f.site_id, f.department_id, f.employment_type, f.discipline,
        f.staff_category, f.headcount, f.priority, f.grade, f.salary_band_min, f.salary_band_max, f.currency,
        f.justification, f.job_description,
        f.required_skills != null ? (typeof f.required_skills === 'string' ? f.required_skills : JSON.stringify(f.required_skills)) : null,
        f.target_join_date, f.key_requirements ?? null, f.hiring_manager_notes ?? null,
        f.location ?? null, f.key_responsibilities ?? null, f.hiring_manager_id ?? null,
-       f.attachment_path ?? null, f.attachment_name ?? null, nowISO(), id],
+       f.attachment_path ?? null, f.attachment_name ?? null, nowISO(), id,
+       ...(expectedHeadcount === undefined ? [] : [Number(expectedHeadcount)])],
     );
+    if (expectedHeadcount !== undefined && (res?.changes ?? 0) === 0) return null;
     return this.byId(id);
   },
   setStatus(id, status, extra = {}) {
@@ -519,6 +562,43 @@ export const Seats = {
     for (let i = 1; i <= count; i++) run('INSERT INTO requisition_seat (request_id,seat_no,site_id) VALUES (?,?,?)', [reqId, i, siteId]);
   },
   filledCount(reqId) { return get("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status='filled'", [reqId]).c; },
+  /**
+   * Seats that currently COUNT AS CAPACITY, per the existing capacity rule in
+   * vacancy.js. Kept in one place so reopen and hasOpenSeat cannot drift.
+   */
+  availableCount(reqId) {
+    return get("SELECT COUNT(*) c FROM requisition_seat WHERE request_id=? AND status IN ('open','reopened','reserved')", [reqId]).c;
+  },
+  /**
+   * Cancelled seats that are provably UNOCCUPIED and therefore reusable.
+   *
+   * `filled_by_application_id IS NULL` is the real evidence, not the status:
+   * a seat is linked to an application the moment it is filled, and that link is
+   * never cleared. Restoring on status alone could resurrect a seat that carries
+   * a commitment.
+   */
+  reusableCancelled(reqId) {
+    return all(`SELECT * FROM requisition_seat
+                 WHERE request_id=? AND status='cancelled' AND filled_by_application_id IS NULL
+                 ORDER BY seat_no`, [reqId]);
+  },
+  /** Restore specific seats by id. Identity and seat_no are preserved. */
+  restore(ids) {
+    for (const id of ids) {
+      run("UPDATE requisition_seat SET status='reopened', cancel_reason=NULL WHERE id=? AND status='cancelled' AND filled_by_application_id IS NULL", [id]);
+    }
+  },
+  /** Highest seat_no ever used, so new seats never reuse a retired identity. */
+  maxSeatNo(reqId) {
+    return get('SELECT COALESCE(MAX(seat_no),0) n FROM requisition_seat WHERE request_id=?', [reqId]).n;
+  },
+  /** Append `count` new seats after the highest existing seat_no. */
+  appendSeats(reqId, count, siteId = null) {
+    const start = get('SELECT COALESCE(MAX(seat_no),0) n FROM requisition_seat WHERE request_id=?', [reqId]).n;
+    for (let i = 1; i <= count; i += 1) {
+      run('INSERT INTO requisition_seat (request_id,seat_no,site_id,status) VALUES (?,?,?,?)', [reqId, start + i, siteId, 'reopened']);
+    }
+  },
   cancelOpen(reqId, reason) {
     run("UPDATE requisition_seat SET status='cancelled', cancel_reason=? WHERE request_id=? AND status IN ('open','reserved','reopened')", [reason, reqId]);
   },
@@ -565,8 +645,7 @@ export const Candidates = {
   },
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='candidate_prefix'")?.value || 'CAN';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='candidate_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='candidate_counter'", [String(cur)]);
+    const cur = nextSequence('candidate_counter');
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM candidate WHERE id=?', [id]); },
@@ -743,8 +822,7 @@ export const CandidateDocuments = {
 export const Applications = {
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='application_prefix'")?.value || 'APP';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='application_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='application_counter'", [String(cur)]);
+    const cur = nextSequence('application_counter');
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM application WHERE id=?', [id]); },
@@ -883,8 +961,7 @@ export const Posts = {
 export const Interviews = {
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='interview_prefix'")?.value || 'INT';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='interview_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='interview_counter'", [String(cur)]);
+    const cur = nextSequence('interview_counter');
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM interview WHERE id=?', [id]); },
@@ -973,8 +1050,7 @@ export const InterviewActivity = {
 export const Offers = {
   nextNo() {
     const prefix = get("SELECT value FROM system_setting WHERE key='offer_prefix'")?.value || 'OFR';
-    const cur = parseInt(get("SELECT value FROM system_setting WHERE key='offer_counter'")?.value || '0', 10) + 1;
-    run("UPDATE system_setting SET value=? WHERE key='offer_counter'", [String(cur)]);
+    const cur = nextSequence('offer_counter');
     const year = new Date().getFullYear();
     return `${prefix}-${year}-${String(cur).padStart(5, '0')}`;
   },

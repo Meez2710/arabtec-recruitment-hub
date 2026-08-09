@@ -16,7 +16,10 @@
     "reset": "node -e \"require('fs').rmSync('./prisma/dev.db',{force:true})\" && node --experimental-sqlite prisma/seed.js",
     "test": "node --experimental-sqlite run_tests.mjs",
     "typecheck": "tsc --noEmit",
-    "test:domain": "vitest run"
+    "test:domain": "vitest run",
+    "test:pg": "node pg_tx_test.mjs",
+    "test:pg:required": "node pg_tx_test.mjs --required && node pg_appnumber_race_test.mjs && node pg_sequence_test.mjs && node pg_reopen_race_test.mjs && node reconciliation_test.mjs && node pg_headcount_race_test.mjs && node pg_join_race_test.mjs",
+    "test:cluster": "node pg_cluster_test.mjs --own"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

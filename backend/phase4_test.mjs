@@ -45,9 +45,13 @@ async function approvedRequest(token, recMgr, headcount = 1) {
   // Setup: request + application
   const reqId = await approvedRequest(hrMgr, recMgr, 1);
   const cand = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'IV Candidate', email: 'ivc@x.com', currentPosition: 'Engineer' } });
-  const app = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: 'technical_interview' } });
+  const app = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: 'matched' } });
+  // BL-03: reach 'technical_interview' by moving, not by creating there.
+  await api(`/api/applications/${app.json.application.id}/move`, { method: 'POST', token: recruiter, body: { status: 'technical_interview' } });
   const appId = app.json.application.id;
-  const appStatusBefore = app.json.application.status;
+  // Read the status back AFTER the move: the creation payload is the pre-move
+  // snapshot, and comparing against it would assert the move, not the schedule.
+  const appStatusBefore = (await api(`/api/applications/${appId}`, { token: recruiter })).json.application.status;
 
   console.log('\n— Schedule + links (application+candidate+request) —');
   const futureDate = new Date(Date.now() + 86400000).toISOString();
@@ -96,7 +100,9 @@ async function approvedRequest(token, recMgr, headcount = 1) {
   console.log('\n— Scope: HM / interviewer only see assigned interviews —');
   // a second interview with a DIFFERENT panel (not interviewer/hm above)
   const cand2 = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'IV Cand 2', email: 'ivc2@x.com' } });
-  const app2 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cand2.json.candidate.id, requestId: reqId, initialStatus: 'technical_interview' } });
+  const app2 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cand2.json.candidate.id, requestId: reqId, initialStatus: 'matched' } });
+  // BL-03: reach 'technical_interview' by moving, not by creating there.
+  await api(`/api/applications/${app2.json.application.id}/move`, { method: 'POST', token: recruiter, body: { status: 'technical_interview' } });
   const sched2 = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: app2.json.application.id, scheduledAt: futureDate, panel: [{ interviewerId: otherInterviewer.id }] } });
   const iv2Id = sched2.json.interview.id;
   // interviewer (Mona) is panelist on iv1 only
