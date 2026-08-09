@@ -3841,12 +3841,408 @@ function Pager({ page, pageSize, total, totalPages, onPage, onPageSize }) {
   );
 }
 
+/* ============================ AI-assisted intake ============================
+   Upload a CV → watch the parse → review a PROPOSAL → confirm and save.
+
+   THE MANUAL FORM IS NEVER REPLACED. "Add Candidate" stays first in the
+   toolbar and stays present whatever the AI is doing; "Add from CV" appears
+   only when the backend reports the capability enabled AND configured. Every
+   failure state in here offers "Enter manually" as a real button, not as
+   advice — an offline model must cost a recruiter one click, not a workaround.
+
+   NOTHING IS SAVED UNTIL A HUMAN PRESSES CONFIRM. The review screen edits a
+   local copy; Confirm posts it to the ordinary candidate service, which
+   applies the same validation and duplicate rules as the manual form. ========= */
+
+/** Feature state, fetched once per mount. Never probes the gateway itself. */
+function useAiHealth() {
+  const [health, setHealth] = useState(null);
+  useEffect(() => {
+    let live = true;
+    api.get('/ai/intake/health')
+      .then((h) => { if (live) setHealth(h); })
+      // A failed health check must not break the page. No panel is offered,
+      // which is exactly the same outcome as the feature being switched off.
+      .catch(() => { if (live) setHealth({ ai: { enabled: false, configured: false } }); });
+    return () => { live = false; };
+  }, []);
+  return health;
+}
+
+/**
+ * Poll one parse task until it stops moving.
+ *
+ * Backs off from 1s to 5s: a CV takes tens of seconds and hammering the API
+ * every second for three minutes buys nothing.
+ */
+function useParseTask(taskId) {
+  const [task, setTask] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    if (!taskId) { setTask(null); return undefined; }
+    let live = true;
+    let delay = 1000;
+    let timer = null;
+    const tick = async () => {
+      try {
+        const r = await api.get('/ai/intake/jobs/' + taskId);
+        if (!live) return;
+        setTask(r.task);
+        setError(null);
+        if (r.task.status === 'queued' || r.task.status === 'running') {
+          delay = Math.min(delay + 500, 5000);
+          timer = setTimeout(tick, delay);
+        }
+      } catch (e) {
+        if (!live) return;
+        setError(e.message);
+        // Keep polling: a transient network blip must not strand the panel on
+        // an error for a job that is still running perfectly well.
+        timer = setTimeout(tick, 5000);
+      }
+    };
+    tick();
+    return () => { live = false; if (timer) clearTimeout(timer); };
+  }, [taskId]);
+  return { task, error, setTask };
+}
+
+const PARSE_STAGES = [
+  ['queued', 'Queued'],
+  ['running', 'Reading the document'],
+  ['succeeded', 'Ready for review'],
+];
+
+function ParseProgress({ task }) {
+  const idx = task.status === 'succeeded' ? 2 : task.status === 'running' ? 1 : 0;
+  const failed = task.status === 'failed' || task.status === 'cancelled';
+  return (
+    <div className="ai-progress">
+      <div className="ai-progress-track" role="progressbar"
+        aria-valuemin="0" aria-valuemax="2" aria-valuenow={failed ? 0 : idx}>
+        {PARSE_STAGES.map(([key, label], i) => (
+          <div key={key}
+            className={'ai-progress-step' + (failed ? ' is-failed' : i <= idx ? ' is-done' : '')}>
+            <span className="ai-progress-dot" aria-hidden="true" />
+            <span className="ai-progress-label">{label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+        {task.file?.originalName}
+        {task.attempts > 1 && ` · attempt ${task.attempts} of ${task.maxAttempts}`}
+        {task.status === 'running' && ' · this usually takes under a minute'}
+      </div>
+    </div>
+  );
+}
+
+/** Model, prompt and schema behind a proposal. Collapsed — auditors, not recruiters. */
+function ProvenanceNote({ provenance }) {
+  const [open, setOpen] = useState(false);
+  const rows = [
+    ['Model', provenance.modelId], ['Model digest', provenance.modelDigest],
+    ['Prompt', provenance.promptVersion], ['Schema', provenance.schemaVersion],
+    ['Parser', provenance.parserVersion], ['Gateway', provenance.gatewayVersion],
+  ].filter(([, v]) => v);
+  if (!rows.length) return null;
+  return (
+    <div className="ai-provenance">
+      <button className="linkish" onClick={() => setOpen((o) => !o)}>
+        {open ? 'Hide' : 'Show'} what produced this ({rows.length})
+      </button>
+      {open && (
+        <dl className="ai-provenance-list">
+          {rows.map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+/** The fields a proposal can fill. Order follows the manual form. */
+const REVIEW_FIELDS = [
+  ['fullName', 'Full Name', true],
+  ['email', 'Email', false],
+  ['phone', 'Phone', false],
+  ['location', 'Location', false],
+  ['currentCompany', 'Current Company', false],
+  ['currentPosition', 'Current Position', false],
+  ['yearsExperience', 'Years of Experience', false],
+];
+
+/** Map a validated proposal onto the candidate payload the manual form posts. */
+function proposalToCandidate(fields) {
+  const latest = (fields.employment || [])[0] || {};
+  return {
+    fullName: fields.fullName || '',
+    email: fields.email || '',
+    phone: fields.phone || '',
+    location: fields.location || '',
+    currentCompany: latest.employer || '',
+    currentPosition: latest.title || fields.headline || '',
+    yearsExperience: fields.totalYearsExperience != null ? String(fields.totalYearsExperience) : '',
+  };
+}
+
+/**
+ * Parse Review — proposed value beside the value that will be saved.
+ *
+ * Every field is editable and every field shows what the reader proposed, so a
+ * recruiter can see at a glance what they changed. Fields the model flagged as
+ * uncertain are marked; nothing is blocked on confidence, because a rule that
+ * fires at 0.61 and not at 0.59 is a business rule hidden in a calibration.
+ */
+function ParseReview({ user, task, onConfirmed, onDiscard, onManualEntry }) {
+  const toast = useToast();
+  const proposal = task.draft?.proposal || {};
+  const fields = proposal.fields || {};
+  const evidence = proposal.evidence || {};
+  const uncertain = new Set(task.draft?.uncertainFields || []);
+  const proposed = useMemo(() => proposalToCandidate(fields), [task.id]);
+  const [form, setForm] = useState(proposed);
+  const [busy, setBusy] = useState(false);
+  const [dupError, setDupError] = useState(null);
+  const [overrideReason, setOverrideReason] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const changed = (k) => (form[k] || '') !== (proposed[k] || '');
+  const missingName = !form.fullName.trim();
+  const missingContact = !form.email.trim() && !form.phone.trim();
+
+  async function confirm() {
+    setBusy(true);
+    try {
+      const body = { ...form, source: 'cv_ai_parse' };
+      if (dupError) { body.overrideDuplicate = true; body.overrideReason = overrideReason; }
+      const r = await api.post(`/ai/intake/jobs/${task.id}/confirm`, body);
+      toast('Candidate created from CV');
+      onConfirmed(r.candidateId);
+    } catch (e) {
+      if (e.status === 409 && e.data?.duplicates) {
+        setDupError(e.data.duplicates);
+        toast('Possible duplicate — review before saving', 'error');
+      } else {
+        toast(e.message, 'error');
+      }
+    } finally { setBusy(false); }
+  }
+
+  const canOverride = user.permissions.includes('candidate.merge');
+  const blocked = missingName || missingContact || busy
+    || (dupError && (!canOverride || !overrideReason.trim()));
+
+  return (
+    <div className="ai-review">
+      <div className="ai-review-banner">
+        <strong>This is a proposal, not a saved record.</strong> Check each value against
+        the CV, correct anything wrong, then Confirm &amp; Save. Nothing is stored until you do.
+      </div>
+
+      {proposal.document && (
+        <div className="ai-doc-meta">
+          {proposal.document.pageCount} page{proposal.document.pageCount === 1 ? '' : 's'}
+          {proposal.document.ocrApplied && <> · <span title="The document had no usable text layer, so it was read optically. Check values carefully.">read by OCR</span></>}
+          {proposal.document.detectedLanguage && <> · {proposal.document.detectedLanguage}</>}
+          {task.draft?.confidence != null && <> · reader confidence {Math.round(task.draft.confidence * 100)}%</>}
+        </div>
+      )}
+
+      {uncertain.size > 0 && (
+        <div className="ai-warning">
+          The reader was unsure about: {[...uncertain].join(', ')}. Confirm these against the CV.
+        </div>
+      )}
+
+      {dupError && (
+        <div className="error-banner">
+          Possible duplicate: {dupError.map((d) => `${d.fullName} (${d.candidateNo})`).join(', ')}.
+          <div style={{ marginTop: 8 }}>
+            {canOverride
+              ? <input placeholder="Reason to save anyway (required)" value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  style={{ width: '100%', padding: 8, border: '1px solid var(--border)', borderRadius: 6 }} />
+              : <span className="muted">You don&apos;t have permission to override — use the existing candidate instead.</span>}
+          </div>
+        </div>
+      )}
+
+      <table className="ai-review-table">
+        <thead>
+          <tr><th>Field</th><th>Proposed from CV</th><th>Value to save</th></tr>
+        </thead>
+        <tbody>
+          {REVIEW_FIELDS.map(([key, label, required]) => {
+            const ev = evidence[key];
+            return (
+              <tr key={key} className={changed(key) ? 'is-edited' : ''}>
+                <th scope="row">
+                  {label}{required && ' *'}
+                  {uncertain.has(key) && <span className="ai-flag" title="The reader flagged this as uncertain">?</span>}
+                </th>
+                <td className="ai-proposed">
+                  {proposed[key]
+                    ? <><span>{proposed[key]}</span>{ev?.page != null && <span className="ai-evidence" title={ev.snippet || ''}>p.{ev.page}</span>}</>
+                    : <span className="muted">not found</span>}
+                </td>
+                <td>
+                  <input value={form[key]} onChange={(e) => set(key, e.target.value)}
+                    type={key === 'yearsExperience' ? 'number' : 'text'}
+                    aria-label={label}
+                    className={changed(key) ? 'is-edited' : ''} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {(missingName || missingContact) && (
+        <div className="ai-warning">
+          {missingName && <div>A full name is required before this can be saved.</div>}
+          {missingContact && <div>At least one contact method (email or phone) is required.</div>}
+        </div>
+      )}
+
+      {(fields.skills?.length > 0 || fields.employment?.length > 0 || fields.education?.length > 0) && (
+        <details className="ai-extra">
+          <summary>Also found in the CV ({(fields.skills?.length || 0)} skills, {(fields.employment?.length || 0)} roles, {(fields.education?.length || 0)} qualifications)</summary>
+          {fields.skills?.length > 0 && <p><strong>Skills:</strong> {fields.skills.join(', ')}</p>}
+          {fields.employment?.length > 0 && (
+            <ul>{fields.employment.map((e, i) => (
+              <li key={i}>{[e.title, e.employer].filter(Boolean).join(' — ')}{e.from || e.to ? ` (${[e.from, e.current ? 'present' : e.to].filter(Boolean).join(' – ')})` : ''}</li>
+            ))}</ul>
+          )}
+          {fields.education?.length > 0 && (
+            <ul>{fields.education.map((e, i) => (
+              <li key={i}>{[e.qualification, e.institution].filter(Boolean).join(' — ')}</li>
+            ))}</ul>
+          )}
+          <p className="muted" style={{ fontSize: 11.5 }}>
+            These are kept with the parse record for reference. This staging release saves only the
+            fields in the table above.
+          </p>
+        </details>
+      )}
+
+      <ProvenanceNote provenance={task.provenance} />
+
+      <div className="ai-review-actions">
+        <button className="btn btn-ghost" onClick={onDiscard} disabled={busy}>Discard</button>
+        <button className="btn btn-ghost" onClick={onManualEntry} disabled={busy}>Enter manually instead</button>
+        <button className="btn" onClick={confirm} disabled={blocked}>
+          {busy ? 'Saving…' : 'Confirm & Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The whole flow in one modal: upload → progress → review. */
+function AiIntakeModal({ user, onClose, onSaved, onManualEntry }) {
+  const toast = useToast();
+  const [file, setFile] = useState(null);
+  const [taskId, setTaskId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const { task } = useParseTask(taskId);
+
+  async function submit() {
+    if (!file) return;
+    setSubmitting(true);
+    try {
+      const r = await api.uploadTo('/ai/intake/upload', file);
+      setTaskId(r.task.id);
+      if (r.deduplicated) toast('This CV was already submitted — showing that parse');
+    } catch (e) {
+      // A refusal here is the file being wrong or the service being off. Both
+      // are stated plainly; neither strands the recruiter.
+      toast(e.message, 'error');
+    } finally { setSubmitting(false); }
+  }
+
+  async function retry() {
+    try { const r = await api.post(`/ai/intake/jobs/${taskId}/retry`); setTaskId(r.task.id); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  async function cancel() {
+    try { await api.post(`/ai/intake/jobs/${taskId}/cancel`); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  async function discard() {
+    try { await api.post(`/ai/intake/jobs/${taskId}/discard`); } catch { /* already gone */ }
+    onClose();
+  }
+
+  const inProgress = task && (task.status === 'queued' || task.status === 'running');
+  const failed = task && (task.status === 'failed' || task.status === 'cancelled');
+  const ready = task && task.status === 'succeeded' && task.draft?.status === 'pending';
+
+  return (
+    <Modal title="Add Candidate from CV" onClose={onClose} wide
+      footer={!task ? <>
+        <button className="btn btn-ghost" onClick={onManualEntry}>Enter manually</button>
+        <button className="btn" onClick={submit} disabled={!file || submitting}>
+          {submitting ? 'Uploading…' : 'Upload & Parse'}
+        </button>
+      </> : inProgress ? <>
+        <button className="btn btn-ghost" onClick={onManualEntry}>Enter manually</button>
+        <button className="btn btn-secondary" onClick={cancel}>Cancel parse</button>
+      </> : null}>
+
+      {!task && (
+        <div className="ai-upload">
+          <div className="field full">
+            <label>CV file</label>
+            <input type="file" accept=".pdf,.docx" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+              PDF or DOCX only. The file is read on Arabtec&apos;s own hardware — it is never
+              sent to an external AI provider. You will review everything before anything is saved.
+            </div>
+          </div>
+          {file && <div className="ai-file-chip">{file.name} · {Math.round(file.size / 1024)} KB</div>}
+        </div>
+      )}
+
+      {task && <ParseProgress task={task} />}
+
+      {failed && (
+        <div className="ai-failure">
+          <div className="error-banner" style={{ marginBottom: 12 }}>
+            {task.error || 'Parsing did not complete.'}
+          </div>
+          <div className="ai-review-actions">
+            {task.retryable && <button className="btn btn-secondary" onClick={retry}>Try again</button>}
+            <button className="btn" onClick={onManualEntry}>Enter manually</button>
+          </div>
+          {!task.retryable && (
+            <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+              Retrying would reach the same result for this file. Add the candidate manually —
+              the CV you uploaded is kept and can be attached to the record.
+            </div>
+          )}
+        </div>
+      )}
+
+      {ready && (
+        <ParseReview user={user} task={task}
+          onConfirmed={onSaved} onDiscard={discard} onManualEntry={onManualEntry} />
+      )}
+
+      {task && task.status === 'succeeded' && task.draft?.status !== 'pending' && (
+        <div className="ai-warning">This parse has already been actioned.</div>
+      )}
+    </Modal>
+  );
+}
+
 function CandidatesPage({ user }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
   const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '' });
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [aiIntakeOpen, setAiIntakeOpen] = useState(false);
+  const aiHealth = useAiHealth();
   const [view, setView] = useState('board'); // board | table
 
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
@@ -3938,6 +4334,14 @@ function CandidatesPage({ user }) {
         actions={<>
           <ViewToggle value={view} onChange={setView} options={[['board', 'Cards'], ['table', 'Table']]} />
           {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>{btns.add_candidate.label}</button>}
+          {/* Offered only where the manual form is offered, and only when the
+              backend reports the capability configured. Never a replacement for
+              Add Candidate — the manual path stays first and always present. */}
+          {btns.add_candidate?.visible && aiHealth?.ai?.configured && aiHealth?.ai?.enabled && (
+            <button className="btn btn-secondary" onClick={() => setAiIntakeOpen(true)} title="Upload a CV and review the extracted details before saving">
+              <span aria-hidden="true" style={{ marginRight: 6 }}>✦</span>Add from CV
+            </button>
+          )}
           {btns.import_candidates?.visible && <button className="btn btn-secondary" onClick={async () => {
             const busy = toast;
             try { const r = await api.post('/candidates/inbox-scan', {}); toast(`Imported ${r.imported} CVs from inbox.${r.skipped ? ' Skipped ' + r.skipped + '.' : ''}`); load(); } catch (e) { toast('Scan failed: ' + e.message, 'error'); }
@@ -4069,6 +4473,10 @@ function CandidatesPage({ user }) {
           totalPages={pageInfo.totalPages} onPage={setPage} onPageSize={setPageSize} />
       )}
       {creating && <CandidateForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
+      {aiIntakeOpen && <AiIntakeModal user={user}
+        onClose={() => setAiIntakeOpen(false)}
+        onManualEntry={() => { setAiIntakeOpen(false); setCreating(true); }}
+        onSaved={(id) => { setAiIntakeOpen(false); load(); setSelectedId(id); }} />}
     </div>
   );
 }
