@@ -40,10 +40,11 @@ DOCLING = f"http://127.0.0.1:{os.environ.get('DOCLING_PORT', '8089')}"
 OLLAMA = f"http://{os.environ.get('OLLAMA_HOST', '127.0.0.1:11434')}"
 MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b-instruct")
 
-# Below this, native text is a scan with stray glyphs rather than a CV, and the
-# OCR rescue is worth its cost. Above it, OCR would re-read glyphs that are
-# already exact and LOSE fidelity.
-MIN_CHARS_PER_PAGE = 120
+# The OCR quality gate moved into docling_sidecar.py, where the native-only
+# pass actually happens and the decision can be made per page. Thresholds are
+# configured there via OCR_GATE_* environment variables. Deliberately not
+# duplicated here: two copies of a threshold drift, and the copy that is not
+# next to the measurement is the one that goes stale.
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("gateway")
@@ -208,25 +209,40 @@ class Handler(BaseHTTPRequestHandler):
             })
 
         text = doc.get("markdown") or doc.get("text") or ""
-        ocr_applied = False
-        # OCR RESCUE — only when native text is too thin to be a CV.
-        if pages and len(text) / pages < MIN_CHARS_PER_PAGE:
-            log.info("rid=%s native text thin (%d chars / %d pages) — ocr rescue",
-                     rid, len(text), pages)
-            try:
-                doc = convert(content, filename, mime, ocr=True)
-                text = doc.get("markdown") or doc.get("text") or ""
-                ocr_applied = True
-            except requests.RequestException:
-                log.error("rid=%s ocr rescue failed", rid)
 
+        # THE OCR GATE LIVES IN THE SIDECAR, NOT HERE.
+        #
+        # This used to re-implement the decision by dividing total characters by
+        # page count and, if the average looked thin, re-converting the whole
+        # document with OCR forced. Two things were wrong with that. It averaged
+        # across pages, so a single scanned page inside an otherwise digital CV
+        # never tripped it. And it ran AFTER a conversion whose OCR setting it
+        # did not control, so "was OCR needed" and "was OCR used" were never
+        # actually distinguished — the flaw Stage 2 Run 1 surfaced.
+        #
+        # The sidecar now does a native-only pass, gates each page on its own
+        # text, and rescues only the failing pages. We report what it decided.
+        provenance_pages = doc.get("pageProvenance") or []
         document = {
             "status": "ok",
             "pageCount": int(doc.get("pageCount") or pages),
             "charCount": len(text),
-            "ocrApplied": ocr_applied or bool(doc.get("ocrApplied")),
+            "ocrApplied": bool(doc.get("ocrApplied")),
             "detectedLanguage": (doc.get("detectedLanguages") or [None])[0],
+            # Per-page provenance, so a downstream accuracy number can be split
+            # by how the text was obtained rather than averaged over both.
+            "pageProvenance": provenance_pages,
+            "nativePageCount": doc.get("nativePageCount"),
+            "ocrPageCount": doc.get("ocrPageCount"),
+            "ocrRescueInvoked": bool(doc.get("ocrRescueInvoked")),
+            "ocrError": doc.get("ocrError"),
+            "convertTimings": doc.get("timings"),
         }
+        if doc.get("ocrError"):
+            log.error("rid=%s ocr rescue failed: %s", rid, doc.get("ocrError"))
+        elif doc.get("ocrRescueInvoked"):
+            log.info("rid=%s ocr rescue on %s/%s pages",
+                     rid, doc.get("ocrPageCount"), document["pageCount"])
 
         if not text.strip():
             return self._send(200, {
