@@ -44,9 +44,19 @@ function guardAvailable(res) {
   return true;
 }
 
-/** A task is visible to the person who submitted it, or to a candidate manager. */
+/**
+ * A parse task is visible ONLY to the person who submitted it.
+ *
+ * Deliberately not widened to candidate managers. A pending draft is
+ * unreviewed extraction of a real person's CV — name, contact details,
+ * employment history — held transiently before anyone has decided it is
+ * accurate enough to keep. There is no business need for a second user to read
+ * another recruiter's un-confirmed draft, and "a manager might want to" is not
+ * a reason to widen access to unverified personal data. Once confirmed, the
+ * candidate record exists and the ordinary candidate permissions govern it.
+ */
 function canSee(req, task) {
-  return task.requested_by === req.user.id || req.user.permissions.includes('candidate.merge');
+  return task.requested_by === req.user.id;
 }
 
 /* ------------------------------- health ---------------------------------- */
