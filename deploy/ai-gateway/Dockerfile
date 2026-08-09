@@ -33,8 +33,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # Weights and Docling models live on the persistent volume, not the image:
     # a 5 GB layer would make every deploy a re-download.
     OLLAMA_MODELS=/workspace/models/ollama \
-    HF_HOME=/workspace/models/hf \
-    DOCLING_ARTIFACTS_PATH=/workspace/models/docling \
+    # Docling/OCR models are BAKED AND CHECKSUM-VERIFIED in the image, not on
+    # the volume. Pointing these at /workspace made the sidecar report 503
+    # forever — the volume is empty on a fresh pod — so readiness never came up
+    # and the container exited. The volume carries Qwen weights only.
+    HF_HOME=/opt/ocr-assets/models/hf \
+    # Tini is not PID 1 under RunPod's own init; register it as a subreaper so
+    # zombie reaping still works.
+    TINI_SUBREAPER=1 \
     # No C++ toolchain in this image, so torch must not attempt to JIT.
     TORCHINDUCTOR_DISABLE=1 \
     TORCHDYNAMO_DISABLE=1 \

@@ -40,7 +40,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("DOCLING_PORT", "8089"))
-ARTIFACTS = os.environ.get("DOCLING_ARTIFACTS_PATH", "/workspace/models/docling")
+# Empty or unset means "use the HF cache baked into the image". Docling
+# rejects an artifacts_path that does not already contain every model, so a
+# path pointing at an empty volume is worse than no path at all.
+ARTIFACTS = os.environ.get("DOCLING_ARTIFACTS_PATH") or ""
 OCR_ASSETS = os.environ.get("OCR_ASSETS_DIR", "/opt/ocr-assets")
 
 # --- quality gate thresholds -------------------------------------------------
@@ -90,7 +93,8 @@ def _build(do_ocr: bool):
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    opts = PdfPipelineOptions(artifacts_path=ARTIFACTS)
+    opts = (PdfPipelineOptions(artifacts_path=ARTIFACTS) if ARTIFACTS
+            else PdfPipelineOptions())
     opts.do_ocr = do_ocr
     opts.do_table_structure = True
 
@@ -328,7 +332,9 @@ class Handler(BaseHTTPRequestHandler):
             ok, version = False, str(exc)
 
         ocr_ok, ocr_count = assets_present()
-        models_ok = os.path.isdir(ARTIFACTS)
+        # Readiness tracks the models that actually exist: the baked OCR
+        # bundle, not a volume path that may legitimately be empty.
+        models_ok = os.path.isdir(ARTIFACTS) if ARTIFACTS else ocr_ok
         # Readiness is the conjunction. A runtime that is "up" but would reach
         # modelscope.cn on the first scanned CV is not ready.
         ready = ok and models_ok and ocr_ok
