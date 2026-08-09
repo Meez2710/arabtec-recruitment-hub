@@ -82,7 +82,10 @@ jobs:
         run: |
           chmod +x fetch-ocr-assets.sh
           # --record exits 3 by design: recording is provisioning, not success.
-          set +e; ./fetch-ocr-assets.sh --record /tmp/ocr-assets | tee /tmp/rec.txt; rc=$?; set -e
+          # $? after a pipeline is tee's status, not the script's — take
+          # PIPESTATUS[0] or a genuine failure reads as success.
+          set +e; ./fetch-ocr-assets.sh --record /tmp/ocr-assets | tee /tmp/rec.txt
+          rc=${PIPESTATUS[0]}; set -e
           [ "$rc" = "3" ] || { echo "::error::record run failed (rc=$rc)"; exit 1; }
 
       - name: Substitute __RECORD__ with verified sha256
