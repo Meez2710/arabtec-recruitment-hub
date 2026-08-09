@@ -1,0 +1,42 @@
+# OCR model assets, pinned by URL and content hash.
+#
+# WHY THIS FILE EXISTS. Stage 2 Run 1 recorded Docling fetching RapidOCR
+# PP-OCRv6 weights from modelscope.cn during the FIRST document conversion:
+#
+#   [RapidOCR] Initiating download:
+#   https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/
+#     paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_rec_dict.txt
+#
+# That is a runtime network call on the CV path. It breaks the offline
+# guarantee (ACCEPTANCE_CRITERIA §7 #13) and STAGE2_RUNTIME_REQUIREMENTS §6
+# measurement 9, and it does so on the first parse in a restricted network —
+# the worst possible moment.
+#
+# FORMAT
+#   <relative-path>  <sha256>  <url>
+#
+# `__RECORD__` in the hash column means the checksum has not been captured yet.
+# fetch-ocr-assets.sh REFUSES to install an asset whose hash is __RECORD__
+# unless run with --record, which is a deliberate, supervised, network-enabled
+# provisioning step. Runtime never sees that flag.
+#
+# TO POPULATE
+#   ./fetch-ocr-assets.sh --record ./out    # downloads, prints real sha256s
+#   # paste the printed hashes into this file, commit, then:
+#   ./fetch-ocr-assets.sh ./out             # verifies; fails on any mismatch
+#
+# The exact asset set depends on which RapidOCR release the pinned Docling
+# pulls in. Confirm against that build rather than trusting this list; the
+# fetch script reconciles and reports anything Docling requests that is absent
+# from the lock.
+
+# --- RapidOCR v3.9.2 / PP-OCRv6, the set Run 1 observed being fetched --------
+paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_rec_dict.txt  __RECORD__  https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_rec_dict.txt
+paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/PP-OCRv6_rec_small.onnx  __RECORD__  https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/PP-OCRv6_rec_small.onnx
+paddle/PP-OCRv6/det/PP-OCRv6_det_small/PP-OCRv6_det_small.onnx  __RECORD__  https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv6/det/PP-OCRv6_det_small/PP-OCRv6_det_small.onnx
+paddle/PP-LCNet_x1_0_textline_ori/PP-LCNet_x1_0_textline_ori.onnx  __RECORD__  https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-LCNet_x1_0_textline_ori/PP-LCNet_x1_0_textline_ori.onnx
+
+# --- Fixture font: synthetic Arabic PDFs need embedded Arabic glyphs ---------
+# SIL Open Font License 1.1 — redistribution in an internal image is permitted.
+fonts/NotoNaskhArabic-Regular.ttf  __RECORD__  https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoNaskhArabic/hinted/ttf/NotoNaskhArabic-Regular.ttf
+fonts/NotoSans-Regular.ttf  __RECORD__  https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf
