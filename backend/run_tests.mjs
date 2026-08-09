@@ -26,6 +26,7 @@ const SUITES = [
   'email_test.mjs',           // C2.2 email module (SMTP, dry-run)
   'notifications_test.mjs',   // C2.3 in-app notifications + assignment/approval wiring
   'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention
+  'retention_test.mjs',       // Stage 2: CV/draft retention windows, confirmed never swept
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
   'parser_seam_test.mjs',     // CV parser injection seam + legacy compatibility
