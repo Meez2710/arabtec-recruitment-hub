@@ -283,15 +283,27 @@ export function tx(fn) {
 
   if (impl.kind === 'sqlite') {
     // Single connection: affinity is inherent, so BEGIN/COMMIT on the handle is
-    // already correct. Preserved exactly as it was, plus the same contract check.
+    // already correct.
+    //
+    // BL-27. The stack is pushed here too, even though SQLite ignores the id.
+    // It is what makes the nesting rule above apply to BOTH engines: without it
+    // `txStack` stayed empty on SQLite, so an inner tx() issued a second BEGIN
+    // and SQLite rejected it outright ("cannot start a transaction within a
+    // transaction"). Postgres joined the outer transaction correctly, so a
+    // composed operation — a join, which fills a seat inside its own
+    // transaction — behaved differently on the two engines. A sentinel, not a
+    // real id, because there is only ever one connection to route to.
     exec('BEGIN');
+    txStack.push('sqlite');
     let result;
     try { result = fn(); }
-    catch (e) { try { exec('ROLLBACK'); } catch { /* already unwound */ } throw e; }
+    catch (e) { txStack.pop(); try { exec('ROLLBACK'); } catch { /* already unwound */ } throw e; }
     if (isThenable(result)) {
+      txStack.pop();
       try { exec('ROLLBACK'); } catch { /* already unwound */ }
       throw new Error(ASYNC_MSG);
     }
+    txStack.pop();
     try { exec('COMMIT'); } catch (e) { try { exec('ROLLBACK'); } catch { /* gone */ } throw e; }
     return result;
   }
