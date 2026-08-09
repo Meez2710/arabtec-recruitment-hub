@@ -75,8 +75,8 @@ else
 fi
 
 # --- OCR assets must be checksummed ------------------------------------------
-if grep -q '__RECORD__' ocr-assets.lock 2>/dev/null; then
-  pending="$(grep -c '__RECORD__' ocr-assets.lock)"
+if grep -vE '^[[:space:]]*#' ocr-assets.lock 2>/dev/null | grep -q '__RECORD__'; then
+  pending="$(grep -vE '^[[:space:]]*#' ocr-assets.lock | grep -c '__RECORD__')"
   warn "$pending OCR asset checksum(s) still __RECORD__ — image build will fail closed"
 else
   ok "all OCR asset checksums recorded"

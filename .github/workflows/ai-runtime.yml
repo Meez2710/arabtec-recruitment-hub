@@ -117,7 +117,9 @@ jobs:
       - name: Verify assets against the substituted lock
         working-directory: ${{ env.GATEWAY_DIR }}
         run: |
-          if grep -q '__RECORD__' ocr-assets.lock; then
+          # Only DATA lines count: the file documents the __RECORD__ sentinel
+          # in its own header, and matching that comment fails a passing check.
+          if grep -vE '^[[:space:]]*#' ocr-assets.lock | grep -q '__RECORD__'; then
             echo "::error::placeholders remain"; exit 1
           fi
           rm -rf /tmp/verify
@@ -216,7 +218,7 @@ jobs:
           if grep -q 'ERROR-MARKER-UNLOCKED' requirements.txt; then echo "::error::requirements.txt not generated"; exit 1; fi
           n=$(grep -c -- '--hash=sha256:' requirements.txt || echo 0)
           [ "$n" -ge 50 ] || { echo "::error::requirements hashes missing ($n)"; exit 1; }
-          if grep -q '__RECORD__' ocr-assets.lock; then echo "::error::font checksums are placeholders"; exit 1; fi
+          if grep -vE '^[[:space:]]*#' ocr-assets.lock | grep -q '__RECORD__'; then echo "::error::font checksums are placeholders"; exit 1; fi
           grep -qE '^[^#[:space:]]+[[:space:]]+[0-9a-f]{64}' ocr-models.lock || { echo "::error::no OCR weight checksums recorded"; exit 1; }
           if grep -rnE ':latest' Dockerfile; then echo "::error::latest referenced"; exit 1; fi
           echo "inputs locked: $n hashes, 0 placeholders"
