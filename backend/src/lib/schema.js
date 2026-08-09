@@ -726,6 +726,68 @@ export function ensureSchema() {
     UNIQUE(entity, record_id, field_key)
   );
   CREATE INDEX IF NOT EXISTS idx_cfv_record ON custom_field_value(entity, record_id);
+
+  -- ===================== AI-assisted candidate intake =======================
+  -- One row per asynchronous inference request. Durable because parsing takes
+  -- minutes and the process can restart mid-flight: an in-memory job would
+  -- leave a recruiter watching a spinner for work that no longer exists.
+  --
+  -- The version columns are not bookkeeping. A proposal that influenced a
+  -- hiring record must be explainable months later, and a mutable model tag can
+  -- point at different weights after an upgrade — the digest is what identifies
+  -- what actually read the CV.
+  --
+  -- NO CV CONTENT LIVES HERE. error_detail holds a fixed sentence from
+  -- lib/ai/errors.js and nothing else.
+  CREATE TABLE IF NOT EXISTS ai_task (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    capability TEXT NOT NULL,                         -- e.g. resume.parse
+    status TEXT NOT NULL,                             -- queued|running|succeeded|failed|cancelled
+    idempotency_key TEXT NOT NULL UNIQUE,             -- same upload, same requester → same task
+    entity_type TEXT,
+    entity_id INTEGER,
+    requested_by INTEGER REFERENCES users(id),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 2,
+    timeout_ms INTEGER NOT NULL DEFAULT 180000,
+    permanent INTEGER NOT NULL DEFAULT 0,             -- 1 = retrying cannot help
+    error_code TEXT,
+    error_detail TEXT,
+    model_id TEXT,
+    model_digest TEXT,
+    prompt_version TEXT,
+    schema_version TEXT,
+    parser_version TEXT,
+    gateway_version TEXT,
+    file_stored_name TEXT,
+    file_original_name TEXT,
+    file_mime TEXT,
+    file_size INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT,
+    finished_at TEXT,
+    cancelled_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_ai_task_status ON ai_task(status);
+  CREATE INDEX IF NOT EXISTS idx_ai_task_requester ON ai_task(requested_by);
+
+  -- The reviewable artefact: a PROPOSAL, never a candidate. Nothing here
+  -- becomes a record until a named human confirms it through the ordinary
+  -- candidate service, so the draft carries no foreign key into the pipeline.
+  CREATE TABLE IF NOT EXISTS ai_parse_draft (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL UNIQUE REFERENCES ai_task(id) ON DELETE CASCADE,
+    proposal TEXT NOT NULL,                           -- JSON: fields + evidence
+    confidence REAL,
+    uncertain_fields TEXT,                            -- JSON array of field names
+    status TEXT NOT NULL DEFAULT 'pending',           -- pending|confirmed|discarded
+    confirmed_candidate_id INTEGER REFERENCES candidate(id) ON DELETE SET NULL,
+    confirmed_by INTEGER REFERENCES users(id),
+    confirmed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   `);
 
   migrateWorkflowStages();
