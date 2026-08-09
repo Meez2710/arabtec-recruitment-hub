@@ -1,3 +1,19 @@
+# ===========================================================================
+# SUPERSEDED. NOT THE PINS THE STAGE 2 RUNTIME USES.
+# ===========================================================================
+# The accepted topology is the single authenticated gateway image in
+# deploy/ai-gateway/, where Docling and Ollama both stay on loopback behind one
+# door. Its pins live in deploy/ai-gateway/versions.env and are the only ones
+# check-pins.sh treats as authoritative.
+#
+# This two-service variant predates that decision and still names
+# docling==2.55.1, which is neither what Stage 2 Run 1 measured (2.118.1) nor
+# what the gateway pins. Left in place because it has never been built or run
+# and deleting it is a separate change; DO NOT resolve the version disagreement
+# by editing this file, resolve it by using the gateway.
+#
+# Original header follows.
+# ---------------------------------------------------------------------------
 # Docling sidecar dependencies — UNVERIFIED PINS.
 #
 # These have NOT been resolved or installed. Docker is unavailable on the

@@ -1,11 +1,41 @@
-# Pinned with hashes: `pip install --require-hashes` refuses anything that does
-# not match, so a compromised or re-uploaded package cannot enter the image.
-# Regenerate with:
-#   pip-compile --generate-hashes --output-file=requirements.txt requirements.in
+# ==========================================================================
+# THIS LOCK IS NOT GENERATED YET. THE IMAGE BUILD WILL FAIL. THAT IS CORRECT.
+# ==========================================================================
 #
-# HASHES ARE PLACEHOLDERS UNTIL THE FIRST REAL BUILD. Populate them on the
-# build host with the command above before the staging deploy — the build is
-# expected to FAIL until then, which is the intended behaviour: an unpinned
-# dependency in a CV-processing image is not an acceptable default.
-docling==2.15.1
-requests==2.32.3
+# The previous version of this file listed two bare `==` pins under a comment
+# claiming they were "pinned with hashes". They were not. `pip install
+# --require-hashes` would have rejected the file, so the build could never have
+# succeeded — but anyone reading the header would have believed the image was
+# hash-pinned. That is worse than an obviously missing lock, which is why this
+# file now says so in the first line.
+#
+# TO GENERATE THE REAL LOCK
+#
+#   cd deploy/ai-gateway && ./lock.sh
+#
+# lock.sh runs pip-compile INSIDE the pinned base image from versions.env, so
+# the resolution matches the target platform, Python version and ABI exactly.
+# Resolving on macOS or on a different Python produces wheels the image cannot
+# install, and hashes that mean nothing.
+#
+# It will overwrite this file with the fully-resolved transitive closure,
+# every distribution carrying its --hash=sha256:... . Commit that output.
+#
+# WHY NOT HAND-WRITE IT. The transitive closure of docling alone is well over a
+# hundred distributions, including torch and onnxruntime. Hashes copied by hand
+# from PyPI are unverifiable by review and one transposed character produces a
+# build failure that looks like a network fault. A resolver writes them or
+# nothing does.
+#
+# WHY --require-hashes AT ALL. This image parses candidate CVs. A dependency
+# substituted upstream between the benchmark and the deploy would change
+# extraction output with no signal, and the benchmark evidence would silently
+# stop describing the running system.
+
+--require-hashes
+
+# Intentional syntax error below. pip stops here with a clear message rather
+# than installing an unlocked, unverified dependency tree. Delete this line
+# only by running lock.sh, never by hand.
+#
+# ERROR-MARKER-UNLOCKED-REQUIREMENTS-RUN-lock.sh
