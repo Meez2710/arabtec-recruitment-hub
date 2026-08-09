@@ -84,6 +84,15 @@ RUN chmod +x fetch-ocr-assets.sh \
 COPY compat_check.py ./
 RUN python compat_check.py
 
+# Materialise the RapidOCR weights and verify every byte against the recorded
+# lock. Done here, once, with the network available — after this the runtime
+# has a populated cache and reaches nothing. Fails closed if a weight is
+# missing or its checksum moved.
+COPY warm_ocr_assets.py ocr-models.lock ./
+RUN python warm_ocr_assets.py --mode verify \
+      --dir "${OCR_ASSETS_DIR}/models" --lock ocr-models.lock \
+    && printf 'asset=models\n' >> "${OCR_ASSETS_DIR}/MANIFEST"
+
 COPY gateway.py docling_sidecar.py resource_probe.py entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 

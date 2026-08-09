@@ -116,13 +116,31 @@ jobs:
           grep -q '__RECORD__' ocr-assets.lock && { echo "::error::placeholders remain"; exit 1; }
           rm -rf /tmp/verify && ./fetch-ocr-assets.sh /tmp/verify
 
-      - name: compat_check.py against the pinned Docling
+      - name: compat_check.py and OCR weight recording, in the pinned base
         working-directory: ${{ env.GATEWAY_DIR }}
         run: |
+          # One container: install the hashed deps once, then use them for both
+          # the compatibility assertion and the supervised OCR warm.
           docker run --rm -v "$PWD":/w -w /w "$BASE_IMAGE_REF" bash -eu -c '
+            apt-get update -qq && apt-get install -y -qq --no-install-recommends libgl1 libglib2.0-0 >/dev/null
             pip install --no-cache-dir --quiet --require-hashes -r requirements.txt
             python compat_check.py
+            python warm_ocr_assets.py --mode record --dir /tmp/ocrmodels > /w/.models.raw
           '
+          sudo chown "$(id -u):$(id -g)" .models.raw
+          python3 - <<'PY'
+          head = [l for l in open('ocr-models.lock') if l.startswith('#')]
+          body, keep = [], False
+          for l in open('.models.raw'):
+              if l.startswith('# BEGIN-OCR-ASSETS'): keep = True; continue
+              if l.startswith('# END-OCR-ASSETS'): keep = False; continue
+              if keep and l.strip(): body.append(l)
+          if not body:
+              raise SystemExit('::error::warm run recorded no OCR weights')
+          open('ocr-models.lock','w').writelines(head + ['\n'] + body)
+          print(f'recorded {len(body)} OCR weight checksums')
+          PY
+          rm -f .models.raw
 
       - name: check-pins.sh
         working-directory: ${{ env.GATEWAY_DIR }}
@@ -134,6 +152,7 @@ jobs:
           path: |
             deploy/ai-gateway/requirements.txt
             deploy/ai-gateway/ocr-assets.lock
+            deploy/ai-gateway/ocr-models.lock
           if-no-files-found: error
           retention-days: 14
 
@@ -190,7 +209,8 @@ jobs:
           grep -q 'ERROR-MARKER-UNLOCKED' requirements.txt && { echo "::error::requirements.txt not generated"; exit 1; }
           n=$(grep -c -- '--hash=sha256:' requirements.txt || echo 0)
           [ "$n" -ge 50 ] || { echo "::error::requirements hashes missing ($n)"; exit 1; }
-          grep -q '__RECORD__' ocr-assets.lock && { echo "::error::OCR checksums are placeholders"; exit 1; }
+          grep -q '__RECORD__' ocr-assets.lock && { echo "::error::font checksums are placeholders"; exit 1; }
+          grep -qE '^[^#[:space:]]+[[:space:]]+[0-9a-f]{64}' ocr-models.lock || { echo "::error::no OCR weight checksums recorded"; exit 1; }
           grep -rnE ':latest' Dockerfile && { echo "::error::latest referenced"; exit 1; }
           echo "inputs locked: $n hashes, 0 placeholders"
 
