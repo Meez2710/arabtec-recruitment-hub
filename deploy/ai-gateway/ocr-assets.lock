@@ -18,5 +18,5 @@
 # deliberate, supervised, network-enabled provisioning step. Runtime never
 # passes that flag.
 
-fonts/NotoNaskhArabic-Regular.ttf  __RECORD__  https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoNaskhArabic/hinted/ttf/NotoNaskhArabic-Regular.ttf
-fonts/NotoSans-Regular.ttf  __RECORD__  https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf
+fonts/NotoNaskhArabic-Regular.ttf  6f0a92031367b2f5a2078fe9d24f3433122b61a0bad57c423aad8f3c39aa2e6e  https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoNaskhArabic/hinted/ttf/NotoNaskhArabic-Regular.ttf
+fonts/NotoSans-Regular.ttf  478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823  https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf
