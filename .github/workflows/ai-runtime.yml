@@ -38,7 +38,9 @@ env:
 jobs:
   # ---------------------------------------------------------------- bootstrap
   bootstrap:
-    if: github.event_name == 'push' || inputs.mode == 'bootstrap'
+    # Regenerating the lock is expensive and rarely wanted, so on push it is
+    # opt-in via a [bootstrap] commit-message marker.
+    if: inputs.mode == 'bootstrap' || contains(github.event.head_commit.message, '[bootstrap]')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -167,7 +169,7 @@ jobs:
 
   # --------------------------------------------------------------- regression
   regression:
-    if: inputs.mode == 'image'
+    if: github.event_name == 'push' || inputs.mode == 'image'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -200,7 +202,7 @@ jobs:
 
   # -------------------------------------------------------------------- image
   image:
-    if: inputs.mode == 'image'
+    if: github.event_name == 'push' || inputs.mode == 'image'
     needs: regression
     runs-on: ubuntu-latest
     permissions:
