@@ -78,7 +78,16 @@ def assets_present() -> tuple[bool, int]:
             for line in fh:
                 if line.startswith("asset="):
                     rel = line.split("=", 1)[1].strip()
-                    if not os.path.isfile(os.path.join(OCR_ASSETS, rel)):
+                    p = os.path.join(OCR_ASSETS, rel)
+                    # An entry may name a file (a font) or a directory (the
+                    # warmed model cache). Requiring isfile made the model
+                    # entry always fail, so readiness never came up and the
+                    # container crash-looped. A directory must be non-empty:
+                    # an empty one means the warm did not persist.
+                    if os.path.isdir(p):
+                        if not any(os.scandir(p)):
+                            return False, count
+                    elif not os.path.isfile(p):
                         return False, count
                     count += 1
     except OSError:

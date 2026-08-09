@@ -204,6 +204,38 @@ class TestReadiness(unittest.TestCase):
         finally:
             ds.OCR_ASSETS = old
 
+    def test_manifest_may_list_a_populated_directory(self):
+        # The model cache is a directory, not a file. Requiring isfile here is
+        # what crash-looped the pod.
+        import tempfile
+        old = ds.OCR_ASSETS
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                os.makedirs(os.path.join(d, "models", "hf"))
+                open(os.path.join(d, "models", "hf", "w.bin"), "w").close()
+                with open(os.path.join(d, "MANIFEST"), "w", encoding="utf-8") as f:
+                    f.write("asset_count=1\nasset=models\n")
+                ds.OCR_ASSETS = d
+                ok, n = ds.assets_present()
+                self.assertTrue(ok, "populated model directory rejected")
+                self.assertEqual(n, 1)
+        finally:
+            ds.OCR_ASSETS = old
+
+    def test_manifest_listing_an_empty_directory_is_not_ready(self):
+        import tempfile
+        old = ds.OCR_ASSETS
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                os.makedirs(os.path.join(d, "models"))
+                with open(os.path.join(d, "MANIFEST"), "w", encoding="utf-8") as f:
+                    f.write("asset_count=1\nasset=models\n")
+                ds.OCR_ASSETS = d
+                ok, _ = ds.assets_present()
+                self.assertFalse(ok, "empty model directory accepted")
+        finally:
+            ds.OCR_ASSETS = old
+
     def test_manifest_listing_a_missing_file_is_not_ready(self):
         import tempfile
         old = ds.OCR_ASSETS
