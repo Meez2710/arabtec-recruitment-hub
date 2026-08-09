@@ -36,6 +36,7 @@ const SUITES = [
   'bl03_test.mjs',            // BL-03 application creation entry stages
   'f01_test.mjs',             // F-01 atomic application creation
   'bl04_test.mjs',            // BL-04 reopen restores seat capacity atomically
+  'bl27_test.mjs',            // BL-27 one joined application per candidate, globally
   'pg_tx_test.mjs',           // real-PostgreSQL transaction affinity (skips if embedded-postgres absent)
 ];
 
