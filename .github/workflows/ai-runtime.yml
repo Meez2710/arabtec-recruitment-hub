@@ -1,0 +1,249 @@
+# AI runtime: lock bootstrap, regression, and the immutable image build.
+#
+# Split deliberately. `bootstrap` produces the two generated files as ARTIFACTS
+# and never commits them — a workflow that writes its own pins can launder an
+# unreviewed dependency tree into the image. A human reviews the diff and
+# commits. `image` then builds only from committed, hash-pinned inputs.
+#
+# Every action is pinned to a commit SHA. A tag is mutable, so `@v4` in a
+# workflow that exists to guarantee reproducibility is a contradiction.
+name: ai-runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'bootstrap = regenerate lock artifacts; image = build+push GHCR'
+        required: true
+        default: bootstrap
+        type: choice
+        options: [bootstrap, image]
+
+permissions:
+  contents: read
+
+env:
+  GATEWAY_DIR: deploy/ai-gateway
+
+jobs:
+  # ---------------------------------------------------------------- bootstrap
+  bootstrap:
+    if: inputs.mode == 'bootstrap'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Load pinned versions
+        run: cat "$GATEWAY_DIR/versions.env" >> "$GITHUB_ENV"
+
+      - name: Pull the pinned base digest
+        run: |
+          echo "base: $BASE_IMAGE_REF"
+          docker pull "$BASE_IMAGE_REF"
+          # Fail loudly if the digest cannot be resolved — a pin that does not
+          # pull is the failure this repo already shipped once.
+          docker image inspect "$BASE_IMAGE_REF" >/dev/null
+
+      - name: Generate hashed requirements.txt inside the pinned base
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: |
+          docker run --rm -v "$PWD":/w -w /w "$BASE_IMAGE_REF" bash -eu -c '
+            pip install --no-cache-dir --quiet "pip-tools==7.4.1"
+            pip-compile --generate-hashes --allow-unsafe --strip-extras \
+              --output-file=requirements.txt requirements.in
+          '
+          sudo chown "$(id -u):$(id -g)" requirements.txt
+
+      - name: Assert the lock is real
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: |
+          grep -q 'ERROR-MARKER-UNLOCKED' requirements.txt && {
+            echo "::error::lock was not regenerated"; exit 1; }
+          n=$(grep -c -- '--hash=sha256:' requirements.txt || echo 0)
+          echo "hashes: $n"
+          [ "$n" -ge 50 ] || { echo "::error::only $n hashes — docling closure should be far larger"; exit 1; }
+
+      - name: Record OCR asset checksums
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: |
+          chmod +x fetch-ocr-assets.sh
+          # --record exits 3 by design: recording is provisioning, not success.
+          set +e; ./fetch-ocr-assets.sh --record /tmp/ocr-assets | tee /tmp/rec.txt; rc=$?; set -e
+          [ "$rc" = "3" ] || { echo "::error::record run failed (rc=$rc)"; exit 1; }
+
+      - name: Substitute __RECORD__ with verified sha256
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: |
+          python3 - <<'PY'
+          import re
+          recorded = {}
+          for line in open('/tmp/rec.txt'):
+              p = line.split()
+              if len(p) == 3 and re.fullmatch(r'[0-9a-f]{64}', p[1]):
+                  recorded[p[0]] = p[1]
+          out, missed = [], []
+          for line in open('ocr-assets.lock'):
+              p = line.split()
+              if len(p) == 3 and p[1] == '__RECORD__':
+                  h = recorded.get(p[0])
+                  if not h:
+                      missed.append(p[0]); out.append(line); continue
+                  line = f"{p[0]}  {h}  {p[2]}\n"
+              out.append(line)
+          open('ocr-assets.lock', 'w').writelines(out)
+          if missed:
+              raise SystemExit(f"::error::no checksum recorded for: {missed}")
+          print(f"substituted {len(recorded)} checksums")
+          PY
+
+      - name: Verify assets against the substituted lock
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: |
+          grep -q '__RECORD__' ocr-assets.lock && { echo "::error::placeholders remain"; exit 1; }
+          rm -rf /tmp/verify && ./fetch-ocr-assets.sh /tmp/verify
+
+      - name: compat_check.py against the pinned Docling
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: |
+          docker run --rm -v "$PWD":/w -w /w "$BASE_IMAGE_REF" bash -eu -c '
+            pip install --no-cache-dir --quiet --require-hashes -r requirements.txt
+            python compat_check.py
+          '
+
+      - name: check-pins.sh
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: chmod +x check-pins.sh && ./check-pins.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ai-runtime-lock
+          path: |
+            deploy/ai-gateway/requirements.txt
+            deploy/ai-gateway/ocr-assets.lock
+          if-no-files-found: error
+          retention-days: 14
+
+  # --------------------------------------------------------------- regression
+  regression:
+    if: inputs.mode == 'image'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: npm ci
+        working-directory: backend
+      - name: Runtime pin checks
+        run: chmod +x "$GATEWAY_DIR/check-pins.sh" && "$GATEWAY_DIR/check-pins.sh"
+      - name: OCR gate tests
+        run: python3 -m unittest discover -s "$GATEWAY_DIR" -p 'test_ocr_gate.py' -v
+      - name: Retention tests
+        run: node retention_test.mjs
+        working-directory: backend
+      - name: AI intake tests
+        run: node --experimental-sqlite ai_intake_test.mjs
+        working-directory: backend
+      - name: Parser seam
+        run: node --experimental-sqlite parser_seam_test.mjs
+        working-directory: backend
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: backend
+      - name: Vitest
+        run: npm run test:domain
+        working-directory: backend
+
+  # -------------------------------------------------------------------- image
+  image:
+    if: inputs.mode == 'image'
+    needs: regression
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Refuse unlocked or placeholder inputs
+        working-directory: ${{ env.GATEWAY_DIR }}
+        run: |
+          grep -q 'ERROR-MARKER-UNLOCKED' requirements.txt && { echo "::error::requirements.txt not generated"; exit 1; }
+          n=$(grep -c -- '--hash=sha256:' requirements.txt || echo 0)
+          [ "$n" -ge 50 ] || { echo "::error::requirements hashes missing ($n)"; exit 1; }
+          grep -q '__RECORD__' ocr-assets.lock && { echo "::error::OCR checksums are placeholders"; exit 1; }
+          grep -rnE ':latest' Dockerfile && { echo "::error::latest referenced"; exit 1; }
+          echo "inputs locked: $n hashes, 0 placeholders"
+
+      - name: Registry path (lowercase, from the real repo)
+        id: meta
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
+          repo=$(echo "${{ github.event.repository.name }}" | tr 'A-Z' 'a-z')
+          echo "image=ghcr.io/$owner/$repo/ai-gateway" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build runs fetch-ocr-assets.sh (verify mode), compat_check.py and the
+      # hashed install internally — see the Dockerfile. Load locally first so
+      # the runtime assertions run before anything is published.
+      - name: Build (linux/amd64)
+        run: |
+          docker buildx build --platform linux/amd64 --load \
+            -t "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
+            "$GATEWAY_DIR"
+
+      - name: Runtime user must not be root
+        run: |
+          u=$(docker run --rm --entrypoint sh "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" -c 'id -un')
+          uid=$(docker run --rm --entrypoint sh "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" -c 'id -u')
+          echo "runtime user: $u ($uid)"
+          [ "$uid" != "0" ] || { echo "::error::container runs as root"; exit 1; }
+
+      - name: No public configuration for 22 or 11434
+        run: |
+          exposed=$(docker image inspect "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
+                    --format '{{json .Config.ExposedPorts}}')
+          echo "exposed: $exposed"
+          echo "$exposed" | grep -qE '"(22|11434)/' && { echo "::error::22 or 11434 is EXPOSEd"; exit 1; }
+          host=$(docker image inspect "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
+                 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^OLLAMA_HOST=' || true)
+          echo "$host"
+          echo "$host" | grep -q '127.0.0.1:11434' || { echo "::error::OLLAMA_HOST is not loopback"; exit 1; }
+
+      - name: OCR gate tests inside the image
+        run: |
+          docker run --rm -v "$PWD/$GATEWAY_DIR":/t -w /t \
+            --entrypoint python "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
+            -m unittest test_ocr_gate -v
+
+      - name: Push by digest
+        id: build
+        run: |
+          img="${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+          docker push "$img"
+          d=$(docker buildx imagetools inspect "$img" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          [ -n "$d" ] || { echo "::error::image digest could not be resolved"; exit 1; }
+          echo "digest=$d" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Immutable image"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| tag | \`$img\` |"
+            echo "| digest | \`$d\` |"
+            echo "| pin for RunPod | \`${{ steps.meta.outputs.image }}@$d\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
