@@ -43,6 +43,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates tini \
+      # Ollama 0.32.x ships its tarball zstd-compressed; without this the
+      # install script aborts during extraction.
+      zstd \
       # OCR rescue path. Arabic is included because Gulf CVs routinely mix
       # scripts and an English-only OCR silently drops half a scanned page.
       tesseract-ocr tesseract-ocr-eng tesseract-ocr-ara \
