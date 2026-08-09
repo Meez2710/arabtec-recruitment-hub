@@ -41,6 +41,44 @@ for i in $(seq 1 90); do
   sleep 2
 done
 
+# 4. OPTIONAL one-shot Stage 2 benchmark, gated on STAGE2_RUN_ON_BOOT.
+#
+# WHY THIS EXISTS. RunPod exposes no container-exec primitive: the only ways
+# into a running pod are SSH, the web terminal, or a port you publish. SSH and
+# extra ports are forbidden for this runtime and the web terminal will not
+# start, so Run 2 has no shell to run in. Rather than weaken the network
+# posture, the benchmark becomes a boot mode.
+#
+# It publishes NO port, touches NO real data, and is inert unless the variable
+# is explicitly "true" — absent or any other value preserves the previous
+# behaviour exactly.
+if [ "${STAGE2_RUN_ON_BOOT:-}" = "true" ]; then
+  log "STAGE2_RUN_ON_BOOT=true — running the one-shot synthetic benchmark"
+  BENCH_OUT=/workspace/bench/run2
+  CORPUS=/workspace/bench/corpus
+  mkdir -p "$BENCH_OUT" "$CORPUS"
+
+  # Synthetic fixtures only. generate_fixtures.py fabricates every name, email
+  # and employer from fixed word lists with a fixed seed; it reads no input.
+  if python3 /srv/generate_fixtures.py --out "$CORPUS" \
+       --fonts "${OCR_ASSETS_DIR:-/opt/ocr-assets}/fonts" >>"$BENCH_OUT/boot.log" 2>&1; then
+    log "corpus generated"
+  else
+    log "corpus generation FAILED — see $BENCH_OUT/boot.log"
+  fi
+
+  set +e
+  python3 /srv/stage2_benchmark.py --corpus "$CORPUS" --out "$BENCH_OUT" \
+    --expect-no-egress >>"$BENCH_OUT/boot.log" 2>&1
+  echo "$?" > "$BENCH_OUT/EXIT_CODE"
+  set -e
+  log "benchmark finished rc=$(cat "$BENCH_OUT/EXIT_CODE") — results in $BENCH_OUT"
+
+  # The gateway still starts afterwards: the pod must stay healthy on 8080 so
+  # the results can be collected and the runtime inspected. The benchmark's
+  # exit code is preserved on disk rather than in the container's exit status.
+fi
+
 # Any child dying must take the pod down. A gateway still answering /health
 # while the model is gone is worse than an outage: it looks healthy and fails
 # every request.
