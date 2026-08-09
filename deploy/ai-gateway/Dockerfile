@@ -35,6 +35,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     OLLAMA_MODELS=/workspace/models/ollama \
     HF_HOME=/workspace/models/hf \
     DOCLING_ARTIFACTS_PATH=/workspace/models/docling \
+    # No C++ toolchain in this image, so torch must not attempt to JIT.
+    TORCHINDUCTOR_DISABLE=1 \
+    TORCHDYNAMO_DISABLE=1 \
     GATEWAY_PORT=8080 \
     DOCLING_PORT=8089
 

@@ -39,6 +39,11 @@ def warm(cache_dir: str) -> None:
     os.environ.setdefault("MODELSCOPE_CACHE", cache_dir)
     os.environ.setdefault("RAPIDOCR_MODEL_DIR", cache_dir)
     os.environ.setdefault("HF_HOME", os.path.join(cache_dir, "hf"))
+    # torch's inductor tries to JIT-compile and needs g++, which the slim base
+    # deliberately lacks — shipping a C++ toolchain in an image that parses
+    # untrusted documents is a worse trade than losing the compile speedup.
+    os.environ.setdefault("TORCHINDUCTOR_DISABLE", "1")
+    os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 
     import tempfile
     from docling.datamodel.base_models import InputFormat
