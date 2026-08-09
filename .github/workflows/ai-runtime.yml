@@ -46,7 +46,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Load pinned versions
-        run: cat "$GATEWAY_DIR/versions.env" >> "$GITHUB_ENV"
+        # $GITHUB_ENV parses every line as KEY=VALUE, so the file's comments
+        # must be filtered out rather than piped in wholesale.
+        run: grep -E '^[A-Z][A-Z0-9_]*=' "$GATEWAY_DIR/versions.env" >> "$GITHUB_ENV"
 
       - name: Pull the pinned base digest
         run: |
