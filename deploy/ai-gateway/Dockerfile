@@ -50,6 +50,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       # scripts and an English-only OCR silently drops half a scanned page.
       tesseract-ocr tesseract-ocr-eng tesseract-ocr-ara \
       poppler-utils \
+      # OpenCV, pulled in by RapidOCR, links against libGL and glib at import.
+      libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Ollama, pinned to the version Stage 2 Run 1 actually measured. The install
