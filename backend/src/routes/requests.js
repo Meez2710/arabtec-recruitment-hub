@@ -6,6 +6,7 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { all, tx } from '../lib/db.js';
+import { reconcileSeatsForHeadcount, ReconcileConflict } from '../lib/seat-reconciliation.js';
 import { multipart, streamFile } from '../lib/upload.js';
 import { REQ, reqNorm, REQ_LABELS } from '../lib/stages.js';
 import { notifyUser, notifyByPermission } from '../lib/notify.js';
@@ -263,18 +264,62 @@ router.put('/:id', requirePermission('request.edit'), (req, res) => {
   } else { patch.salary_band_min = r.salary_band_min; patch.salary_band_max = r.salary_band_max; }
 
   // Material change after approval forces re-approval.
+  // STATUS.APPROVED is an ALIAS for persisted `sourcing` — see
+  // docs/REQUEST_STATUS_ALIAS_MAP.md. So this reads "a material change while
+  // sourcing", and the re-approval limb below is reachable and live.
   const materialChange = r.status === STATUS.APPROVED
     && (patch.headcount !== r.headcount || patch.salary_band_max !== r.salary_band_max || patch.grade !== r.grade);
-  const updated = Requests.update(r.id, patch);
-  saveRequestCustomFields(r.id, req.body || {});
-  if (materialChange) {
-    Approvals.resetChain(r.id);
-    Requests.setStatus(r.id, STATUS.PENDING);
-    RequestActivity.add(r.id, req.user, 'reapproval_required', { fromStatus: STATUS.APPROVED, toStatus: STATUS.PENDING, note: 'Material change — re-approval required' });
+
+  // BL-21/BL-23. Headcount used to move with NO seat writes at all, and the whole
+  // write set was unwrapped. One transaction now, with the stale-write guard
+  // folded into the real update so guard and write cannot disagree.
+  const headcountChanged = Number(patch.headcount) !== Number(r.headcount);
+  let seatResult = null;
+  try {
+    tx(() => {
+      const written = Requests.update(r.id, patch, headcountChanged ? r.headcount : undefined);
+      if (written === null) {
+        throw Object.assign(new Error('This request was changed by someone else. Reload and try again.'), { code: 'CONFLICT' });
+      }
+      boundary('headcount', 1);
+      saveRequestCustomFields(r.id, req.body || {});
+      // A material change moves the request back to pending_approval, which is
+      // NOT a recruiting status — so reconciliation must see the FINAL status,
+      // not the one the request arrived in.
+      const finalStatus = materialChange ? STATUS.PENDING : r.status;
+      if (materialChange) {
+        Approvals.resetChain(r.id);
+        Requests.setStatus(r.id, STATUS.PENDING);
+        RequestActivity.add(r.id, req.user, 'reapproval_required', { fromStatus: STATUS.APPROVED, toStatus: STATUS.PENDING, note: 'Material change — re-approval required' });
+      }
+      boundary('headcount', 2);
+      if (headcountChanged) {
+        seatResult = reconcileSeatsForHeadcount({
+          requestId: r.id, newHeadcount: Number(patch.headcount),
+          status: finalStatus, siteId: patch.site_id ?? null,
+        });
+      }
+      boundary('headcount', 3);
+      RequestActivity.add(r.id, req.user, 'edited', { note: 'Request edited' });
+      boundary('headcount', 4);
+      // Strict: inside a transaction a swallowed audit failure would commit the
+      // edit with no audit record.
+      writeAudit(req, {
+        action: 'request.updated', entityType: 'recruitment_request', entityId: r.id,
+        oldValue: before, newValue: { title: patch.title, headcount: patch.headcount },
+      }, { strict: true });
+      boundary('headcount', 5);
+    });
+  } catch (err) {
+    if (err instanceof ReconcileConflict || (err && err.code === 'CONFLICT')) {
+      return res.status(409).json({ error: err.message });
+    }
+    throw err;
   }
-  RequestActivity.add(r.id, req.user, 'edited', { note: 'Request edited' });
-  writeAudit(req, { action: 'request.updated', entityType: 'recruitment_request', entityId: r.id, oldValue: before, newValue: { title: patch.title, headcount: patch.headcount } });
-  res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
+  res.json({
+    request: serialize(Requests.byId(r.id), req.user, { withDetail: true }),
+    ...(seatResult ? { seats: seatResult } : {}),
+  });
 });
 
 /* ===================== SUBMIT ===================== */

@@ -499,24 +499,31 @@ export const Requests = {
     );
     return this.byId(Number(r.lastInsertRowid));
   },
-  update(id, fields) {
+  /**
+   * BL-21. `expectedHeadcount` folds the stale-write guard INTO the real update:
+   * one statement, so guard and write cannot disagree and nothing mutates before
+   * it. Returns null when another transaction changed headcount first.
+   */
+  update(id, fields, expectedHeadcount) {
     const cur = this.byId(id);
     const f = { ...cur, ...fields };
-    run(
+    const res = run(
       `UPDATE recruitment_request SET title=?,business_unit_id=?,project_id=?,site_id=?,department_id=?,
         employment_type=?,discipline=?,staff_category=?,headcount=?,priority=?,grade=?,salary_band_min=?,
         salary_band_max=?,currency=?,justification=?,job_description=?,required_skills=?,target_join_date=?,
         key_requirements=?,hiring_manager_notes=?,location=?,key_responsibilities=?,hiring_manager_id=?,
         attachment_path=?,attachment_name=?,
-        version=version+1,updated_at=? WHERE id=?`,
+        version=version+1,updated_at=? WHERE id=?${expectedHeadcount === undefined ? '' : ' AND headcount=?'}`,
       [f.title, f.business_unit_id, f.project_id, f.site_id, f.department_id, f.employment_type, f.discipline,
        f.staff_category, f.headcount, f.priority, f.grade, f.salary_band_min, f.salary_band_max, f.currency,
        f.justification, f.job_description,
        f.required_skills != null ? (typeof f.required_skills === 'string' ? f.required_skills : JSON.stringify(f.required_skills)) : null,
        f.target_join_date, f.key_requirements ?? null, f.hiring_manager_notes ?? null,
        f.location ?? null, f.key_responsibilities ?? null, f.hiring_manager_id ?? null,
-       f.attachment_path ?? null, f.attachment_name ?? null, nowISO(), id],
+       f.attachment_path ?? null, f.attachment_name ?? null, nowISO(), id,
+       ...(expectedHeadcount === undefined ? [] : [Number(expectedHeadcount)])],
     );
+    if (expectedHeadcount !== undefined && (res?.changes ?? 0) === 0) return null;
     return this.byId(id);
   },
   setStatus(id, status, extra = {}) {
