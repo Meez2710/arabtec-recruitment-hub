@@ -13,6 +13,7 @@ import { ensureSchema } from './lib/schema.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
 import { configureParsing } from './lib/parsing/composition.js';
+import { configureAi } from './lib/ai/composition.js';
 import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import { securityHeaders, securityConfigSummary } from './lib/security-headers.js';
@@ -33,6 +34,7 @@ import assessmentRoutes from './routes/assessments.js';
 import threadRoutes from './routes/thread.js';
 import adminUiRoutes from './routes/admin-ui.js';
 import notificationRoutes from './routes/notifications.js';
+import aiIntakeRoutes from './routes/ai-intake.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +60,11 @@ const isProd = process.env.NODE_ENV === 'production';
 // first request rather than inside the async post-listen boot block.
 // Default is `legacy` — this seam changes wiring, not behaviour.
 configureParsing();
+
+// Register the AI capability handler and, when the feature is enabled, recover
+// tasks a previous process left RUNNING. Off by default: with AI_ENABLED unset
+// this registers a handler nothing can reach and starts no worker.
+configureAi();
 
 const app = express();
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY, isProd));
@@ -170,6 +177,9 @@ app.use('/api/assessments', assessmentRoutes);
 app.use('/api/thread', threadRoutes);
 app.use('/api/admin-ui', adminUiRoutes);
 app.use('/api/notifications', notificationRoutes);
+// AI-assisted intake. Mounted unconditionally so /health can always answer
+// "disabled" — a missing route would be indistinguishable from an outage.
+app.use('/api/ai/intake', aiIntakeRoutes);
 
 // Serve the frontend (single-page app) from ../../frontend/public.
 // Cache policy: the HTML shell must ALWAYS revalidate so a version bump on

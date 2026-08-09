@@ -14,6 +14,7 @@ import { rejection as rejectionTpl } from '../lib/email_templates.js';
 import { getParser } from '../lib/parsing/registry.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
+import { createCandidate, CandidateServiceError } from '../lib/candidate-service.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -148,70 +149,19 @@ router.post('/check-duplicate', requirePermission('candidate.view'), (req, res) 
 });
 
 /* ---------------- CREATE ---------------- */
+// The rules moved to lib/candidate-service.js so AI-assisted intake ends in the
+// SAME creation path — same validation, duplicate detection, override gate,
+// activity and audit. The route contract is unchanged.
 router.post('/', requirePermission('candidate.add'), (req, res) => {
-  const d = req.body || {};
-  if (!d.fullName || !d.fullName.trim()) return res.status(400).json({ error: 'Full name is required.' });
-  if (!d.email && !d.phone) return res.status(400).json({ error: 'At least one contact method (email or phone) is required.' });
-  if (d.email && !EMAIL_RE.test(d.email)) return res.status(400).json({ error: 'Invalid email format.' });
-  if (d.yearsExperience != null && d.yearsExperience !== '' && isNaN(Number(d.yearsExperience))) return res.status(400).json({ error: 'Years of experience must be numeric.' });
-
-  // Duplicate detection
-  const dups = Candidates.findDuplicates({ email: d.email, phone: d.phone, linkedinUrl: d.linkedinUrl });
-  if (dups.length && !d.overrideDuplicate) {
-    return res.status(409).json({
-      error: 'Possible duplicate candidate detected.',
-      duplicates: dups.map((c) => ({ id: c.id, candidateNo: c.candidate_no, fullName: c.full_name, email: c.email, phone: c.phone })),
-      hint: 'Resubmit with overrideDuplicate=true and a reason (requires candidate.merge), or use an existing candidate.',
-    });
+  try {
+    const { candidate, application } = createCandidate(req, req.body || {});
+    const result = { candidate: serialize(candidate, req.user, { withDetail: true }) };
+    if (application) result.application = application;
+    res.status(201).json(result);
+  } catch (e) {
+    if (e instanceof CandidateServiceError) return res.status(e.status).json(e.body);
+    throw e;
   }
-  if (dups.length && d.overrideDuplicate) {
-    if (!req.user.permissions.includes('candidate.merge')) return res.status(403).json({ error: 'You are not permitted to override duplicate detection.' });
-    if (!d.overrideReason || !d.overrideReason.trim()) return res.status(400).json({ error: 'A reason is required to override duplicate detection.' });
-  }
-
-  // Salary only settable by authorized roles.
-  const expectedSalary = canSalary(req.user) && d.expectedSalary != null && d.expectedSalary !== '' ? Number(d.expectedSalary) : null;
-  const candidateNo = Candidates.nextNo();
-  const created = Candidates.create({
-    candidateNo, fullName: d.fullName.trim(), email: d.email, phone: d.phone, nationality: d.nationality,
-    location: d.location, linkedinUrl: d.linkedinUrl, currentCompany: d.currentCompany,
-    currentPosition: d.currentPosition,
-    yearsExperience: d.yearsExperience != null && d.yearsExperience !== '' ? Number(d.yearsExperience) : null,
-    expectedSalary, noticePeriod: d.noticePeriod, source: d.source,
-    // enhancement fields
-    employer: d.employer, currentProject: d.currentProject,
-    graduationYear: d.graduationYear != null && d.graduationYear !== '' ? Number(d.graduationYear) : null,
-    university: d.university, major: d.major,
-    tags: Array.isArray(d.tags) ? d.tags : (d.tags ? String(d.tags).split(',').map((s) => s.trim()).filter(Boolean) : []),
-    ownerRecruiterId: d.ownerRecruiterId ? Number(d.ownerRecruiterId) : req.user.id, createdBy: req.user.id,
-  });
-  saveCustomFields('candidate', created.id, d);
-  CandidateActivity.add({ candidateId: created.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_created', note: candidateNo });
-  writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: created.id, newValue: { candidateNo, fullName: created.full_name }, comments: d.overrideDuplicate ? `Duplicate override: ${d.overrideReason}` : null });
-
-  // Auto-link to request when requestId is provided (single-step create+link).
-  let linkedApp = null;
-  if (d.requestId && req.user.permissions.includes('candidate.link')) {
-    const reqId = Number(d.requestId);
-    const request = Requests.byId(reqId);
-    if (request && !['closed','cancelled','rejected','filled'].includes(request.status)) {
-      const existing = Applications.existing(created.id, reqId);
-      if (!existing) {
-        const appNo = Applications.nextNo();
-        const app = Applications.create({
-          applicationNo: appNo, candidateId: created.id, requestId: reqId,
-          positionApplied: d.positionApplied || request.title, status: 'sourced',
-          recruiterId: req.user.id, source: d.source, createdBy: req.user.id,
-        });
-        StageHistory.add(app.id, null, 'sourced', req.user);
-        CandidateActivity.add({ candidateId: created.id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'linked_to_request', note: `Linked to ${request.ticket_no}` });
-        linkedApp = app;
-      }
-    }
-  }
-  const result = { candidate: serialize(created, req.user, { withDetail: true }) };
-  if (linkedApp) result.application = linkedApp;
-  res.status(201).json(result);
 });
 
 /* ---------------- PARSE CV (upload + extract + auto-create candidate) ---------------- */

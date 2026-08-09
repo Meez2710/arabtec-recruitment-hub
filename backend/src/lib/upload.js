@@ -139,6 +139,89 @@ export function streamFile(storedName, res, fallbackName, opts = {}) {
   return true;
 }
 
+/* ----------------------- AI-assisted intake variants ----------------------- */
+//
+// The middleware above decides the allowed types itself and writes the file
+// immediately. The AI path cannot use it: the type must be decided by the
+// LEADING BYTES (see lib/ai/file-validation.js), which means the bytes have to
+// be inspected before anything is stored. A rejected upload should leave
+// nothing behind at all.
+//
+// So `multipartMemory` parses into memory and stores nothing; the route
+// validates, and only then calls `saveIntakeBlob`. Same parser, same storage
+// policy, one less irreversible step before the check.
+
+/**
+ * Parse multipart into memory. Sets `req.uploadedFile = { bytes, originalName,
+ * size }` and `req.fields`. Writes NOTHING to disk or to the database.
+ */
+export function multipartMemory(req, res, next) {
+  const ct = req.headers['content-type'] || '';
+  if (!ct.startsWith('multipart/form-data')) return res.status(400).json({ error: 'Expected multipart/form-data.' });
+  const m = ct.match(/boundary=(.+)$/);
+  if (!m) return res.status(400).json({ error: 'Missing multipart boundary.' });
+  const boundary = Buffer.from('--' + m[1]);
+
+  const chunks = [];
+  let total = 0;
+  let tooBig = false;
+  req.on('data', (c) => {
+    total += c.length;
+    // Stop accumulating once the hard cap is passed: a request that is already
+    // too large must not be buffered to completion just to be rejected.
+    if (total > MAX_BYTES) { tooBig = true; return; }
+    chunks.push(c);
+  });
+  req.on('end', () => {
+    if (tooBig) return res.status(413).json({ error: 'File too large.', code: 'FILE_TOO_LARGE' });
+    try {
+      const parts = splitBuffer(Buffer.concat(chunks), boundary);
+      req.fields = {};
+      req.uploadedFile = null;
+      for (const part of parts) {
+        const headerEnd = part.indexOf('\r\n\r\n');
+        if (headerEnd < 0) continue;
+        const header = part.slice(0, headerEnd).toString('utf8');
+        let content = part.slice(headerEnd + 4);
+        if (content.slice(-2).toString() === '\r\n') content = content.slice(0, -2);
+        const nameM = header.match(/name="([^"]*)"/);
+        const fileM = header.match(/filename="([^"]*)"/);
+        if (!nameM) continue;
+        if (fileM && fileM[1]) {
+          // basename only: a filename is attacker-controlled and must never be
+          // able to carry a path segment anywhere.
+          req.uploadedFile = {
+            bytes: content,
+            originalName: path.basename(fileM[1]),
+            size: content.length,
+          };
+        } else {
+          req.fields[nameM[1]] = content.toString('utf8');
+        }
+      }
+      // Field values are also exposed as req.body so a route reads one shape.
+      req.body = { ...(req.body || {}), ...req.fields };
+      next();
+    } catch { res.status(400).json({ error: 'Failed to parse upload.' }); }
+  });
+  req.on('error', () => res.status(400).json({ error: 'Upload stream error.' }));
+}
+
+/**
+ * Store validated intake bytes under the EXISTING policy — `file_blob` is the
+ * source of truth, with a best-effort disk cache — so the AI path introduces no
+ * second store and no new retention rule.
+ *
+ * @returns {string} the generated stored name
+ */
+export function saveIntakeBlob({ bytes, originalName, mime }) {
+  const ext = path.extname(originalName || '').toLowerCase();
+  const stored = crypto.randomUUID() + ext;
+  saveBlob(stored, originalName, mime, bytes);
+  try { fs.writeFileSync(path.join(UPLOAD_DIR, stored), bytes, { mode: 0o600 }); } catch { /* cache only */ }
+  return stored;
+}
+
 export function uploadPath(storedName) { return path.join(UPLOAD_DIR, storedName); }
 export function fileExists(storedName) {
   if (!storedName) return false;

@@ -201,6 +201,13 @@ export const AiDrafts = {
     return r.changes > 0;
   },
 
+  /** Record which candidate a confirmed draft produced. Ids only, never PII. */
+  linkCandidate(taskId, candidateId) {
+    run(`UPDATE ai_parse_draft SET confirmed_candidate_id=?, confirmed_at=COALESCE(confirmed_at,?), updated_at=?
+          WHERE task_id=? AND confirmed_candidate_id IS NULL`,
+    [candidateId, nowISO(), nowISO(), taskId]);
+  },
+
   discard(taskId, userId) {
     const r = run(
       `UPDATE ai_parse_draft SET status='discarded', confirmed_by=?, updated_at=?
