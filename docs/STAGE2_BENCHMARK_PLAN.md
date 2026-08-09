@@ -72,10 +72,14 @@ cd deploy/ai-gateway && ./check-pins.sh
 ### 5. Generate the synthetic corpus
 
 ```bash
-python3 backend/data/bench/synthetic/generate_fixtures.py \
+python3 deploy/ai-gateway/generate_fixtures.py \
   --out /workspace/bench/corpus \
   --fonts /opt/ocr-assets/fonts
 ```
+
+The corpus is written to `/workspace` on the pod, never into `backend/data/`
+— that path is gitignored because it holds the live database and real uploads,
+and synthetic fixtures must not be mixed in with them.
 
 22 documents, seed `20260809`, 14 of them Arabic / mixed / scanned. The script
 exits non-zero if the corpus falls below 20 documents or 8 Arabic/mixed/scanned.
