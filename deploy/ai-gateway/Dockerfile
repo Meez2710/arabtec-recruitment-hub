@@ -95,7 +95,11 @@ RUN python compat_check.py
 # has a populated cache and reaches nothing. Fails closed if a weight is
 # missing or its checksum moved.
 COPY warm_ocr_assets.py ocr-models.lock ./
-RUN python warm_ocr_assets.py --mode verify \
+# DOCLING_ARTIFACTS_PATH is unset for this step only. It points at the
+# persistent volume, which is empty at build time, and Docling rejects an
+# artifacts_path that does not already contain every model. During the warm we
+# want Docling to populate our own cache instead.
+RUN DOCLING_ARTIFACTS_PATH= python warm_ocr_assets.py --mode verify \
       --dir "${OCR_ASSETS_DIR}/models" --lock ocr-models.lock \
     && printf 'asset=models\n' >> "${OCR_ASSETS_DIR}/MANIFEST"
 
