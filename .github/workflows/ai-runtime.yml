@@ -18,6 +18,16 @@ on:
         default: bootstrap
         type: choice
         options: [bootstrap, image]
+  # GitHub only exposes workflow_dispatch for workflows present on the DEFAULT
+  # branch. This one lives on feature/ai-candidate-intake and merging it to
+  # main to unlock a button is out of scope, so bootstrap is also reachable by
+  # pushing the gateway sources on this branch. Scoped to one branch and the
+  # paths that can invalidate a lock; it never builds or pushes an image.
+  push:
+    branches: [feature/ai-candidate-intake]
+    paths:
+      - 'deploy/ai-gateway/**'
+      - '.github/workflows/ai-runtime.yml'
 
 permissions:
   contents: read
@@ -28,7 +38,7 @@ env:
 jobs:
   # ---------------------------------------------------------------- bootstrap
   bootstrap:
-    if: inputs.mode == 'bootstrap'
+    if: github.event_name == 'push' || inputs.mode == 'bootstrap'
     runs-on: ubuntu-latest
     permissions:
       contents: read
