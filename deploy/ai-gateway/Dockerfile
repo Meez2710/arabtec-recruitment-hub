@@ -38,6 +38,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # forever — the volume is empty on a fresh pod — so readiness never came up
     # and the container exited. The volume carries Qwen weights only.
     HF_HOME=/opt/ocr-assets/models/hf \
+    # The asset tree is root-owned and read-only to the runtime user, so HF's
+    # attempts to rewrite refs/main logged permission errors on every request.
+    # Offline is also what we actually want: the models are baked and verified,
+    # and a runtime fetch is the exact failure Run 1 exposed.
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
     # Tini is not PID 1 under RunPod's own init; register it as a subreaper so
     # zombie reaping still works.
     TINI_SUBREAPER=1 \

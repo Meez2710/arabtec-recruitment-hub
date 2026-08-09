@@ -276,7 +276,11 @@ def convert_with_gate(path: str, force_ocr: bool | None = None) -> dict:
                     provenance[i] = "ocr-no-improvement"
             markdown = ocr_doc.export_to_markdown()
         except Exception as exc:  # noqa: BLE001 - never re-raised onto the CV path
-            ocr_error = type(exc).__name__
+            # Include the message, not just the class. A bare "ImportError"
+            # told us nothing and hid a missing onnxruntime for a whole
+            # deployment cycle. The message is library text, never document
+            # content, so this does not violate the no-PII-in-logs rule.
+            ocr_error = f"{type(exc).__name__}: {str(exc)[:300]}"
             log.error("ocr rescue failed: %s", ocr_error)
             for i in failing:
                 provenance[i] = "ocr-failed"

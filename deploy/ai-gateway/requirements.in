@@ -12,6 +12,13 @@
 # the image build; see versions.env DOCLING_PIN_STATUS.
 docling==2.118.1
 
+# RapidOCR's inference engine. docling pulls in rapidocr, but rapidocr declares
+# onnxruntime as an OPTIONAL extra, so the resolver never selected it. At
+# runtime RapidOCR chose engine_name=onnxruntime and every OCR rescue died with
+# a bare ImportError — the whole scanned-document path was silently broken
+# while digital documents looked fine. compat_check.py now asserts the import.
+onnxruntime==1.28.0
+
 # HTTP client used by the gateway to reach the loopback sidecar and Ollama.
 requests==2.32.3
 

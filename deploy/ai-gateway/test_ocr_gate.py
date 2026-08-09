@@ -167,7 +167,10 @@ class TestConvertWithGate(GateHarness):
         self.native = FakeConverter([SCANNED_NATIVE_PAGE], "NATIVE_MD")
         ds._converters = {False: self.native, True: Boom()}
         r = ds.convert_with_gate("/tmp/fake.pdf")
-        self.assertEqual(r["ocrError"], "RuntimeError")
+        # The message is now included so a bare exception class can never
+        # again hide the real cause (a missing onnxruntime cost a full cycle).
+        self.assertTrue(r["ocrError"].startswith("RuntimeError"), r["ocrError"])
+        self.assertIn("exploded", r["ocrError"])
         self.assertEqual(r["pageProvenance"], ["ocr-failed"])
         self.assertFalse(r["ocrApplied"])
 

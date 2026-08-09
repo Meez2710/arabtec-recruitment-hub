@@ -121,6 +121,18 @@ def main() -> int:
         NOTES.append(f"docling_core.types.doc not importable ({exc}); "
                      "sidecar will fall back to document-level provenance")
 
+    # ---- OCR engine runtime must actually import ----
+    # rapidocr ships without an inference engine by default. Without this the
+    # image builds, digital documents parse, and only scanned documents fail —
+    # at runtime, in production, on the first CV that needs OCR.
+    try:
+        import onnxruntime
+        print(f"onnxruntime: {onnxruntime.__version__} "
+              f"providers={onnxruntime.get_available_providers()}")
+    except ImportError as exc:
+        FAILURES.append(f"onnxruntime not importable ({exc}) — RapidOCR selects "
+                        "engine_name=onnxruntime and every OCR rescue will fail")
+
     # ---- report ----
     for n in NOTES:
         print(f"NOTE: {n}")
