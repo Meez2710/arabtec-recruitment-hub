@@ -21,7 +21,12 @@
 !ocr-models.lock
 !warm_ocr_assets.py
 
-# Deliberately NOT copied into the image: check-pins.sh, lock.sh,
-# stage2_benchmark.py, generate_fixtures.py, test_ocr_gate.py, versions.env.
-# They are CI and benchmark tooling; the runtime image has no use for them and
-# every extra file is surface.
+# --- Stage 2 benchmark tooling ---
+# Run 2 executes inside the pod, so these must ship. They are inert on the
+# request path: nothing in the gateway imports them.
+!stage2_benchmark.py
+!generate_fixtures.py
+!test_ocr_gate.py
+
+# Deliberately NOT copied: check-pins.sh, lock.sh, versions.env. Those are CI
+# tooling and every extra file in a document-parsing image is surface.

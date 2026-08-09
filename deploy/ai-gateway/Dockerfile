@@ -106,6 +106,8 @@ RUN env -u DOCLING_ARTIFACTS_PATH -u HF_HOME python warm_ocr_assets.py --mode ve
     && printf 'asset=models\n' >> "${OCR_ASSETS_DIR}/MANIFEST"
 
 COPY gateway.py docling_sidecar.py resource_probe.py entrypoint.sh ./
+# Stage 2 benchmark tooling. Run 2 runs in the pod, so it has to be here.
+COPY stage2_benchmark.py generate_fixtures.py test_ocr_gate.py ./
 RUN chmod +x entrypoint.sh
 
 # Runs as a non-root user: a document-parsing service processes untrusted input
