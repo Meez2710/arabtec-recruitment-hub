@@ -3969,11 +3969,23 @@ const REVIEW_FIELDS = [
   ['currentCompany', 'Current Company', false],
   ['currentPosition', 'Current Position', false],
   ['yearsExperience', 'Years of Experience', false],
+  ['employer', 'Employer', false],
+  ['currentProject', 'Current Project', false],
+  ['graduationYear', 'Graduation Year', false],
+  ['university', 'University', false],
+  ['major', 'Major', false],
+  ['tags', 'Skills / Tags', false],
 ];
 
 /** Map a validated proposal onto the candidate payload the manual form posts. */
 function proposalToCandidate(fields) {
   const latest = (fields.employment || [])[0] || {};
+  const edu = (fields.education || [])[0] || {};
+  
+  // Extract graduation year from the 'to' date string if possible, e.g. '2020-05' -> '2020'
+  let gradYear = edu.to || '';
+  if (gradYear && gradYear.match(/^\d{4}/)) gradYear = gradYear.substring(0, 4);
+
   return {
     fullName: fields.fullName || '',
     email: fields.email || '',
@@ -3982,6 +3994,16 @@ function proposalToCandidate(fields) {
     currentCompany: latest.employer || '',
     currentPosition: latest.title || fields.headline || '',
     yearsExperience: fields.totalYearsExperience != null ? String(fields.totalYearsExperience) : '',
+    employer: latest.employer || '',
+    currentProject: '',
+    graduationYear: gradYear,
+    university: edu.institution || '',
+    major: edu.field || edu.qualification || '',
+    tags: [
+      ...(Array.isArray(fields.skills) ? fields.skills : []),
+      ...(Array.isArray(fields.languages) ? fields.languages : []),
+      ...(Array.isArray(fields.certifications) ? fields.certifications : [])
+    ].join(', '),
   };
 }
 
