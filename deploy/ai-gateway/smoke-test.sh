@@ -33,7 +33,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$BASE/health" || ec
 
 echo "── 3. readiness and version reporting ──"
 health=$(curl -fsS --max-time 20 -H "Authorization: Bearer $AI_GATEWAY_TOKEN" "$BASE/health" || echo '{}')
-echo "$health" | grep -q '"ready":true'   && ok "gateway reports ready"          || bad "gateway not ready:" "$health"
+echo "$health" | grep -qE '"ready": *true'   && ok "gateway reports ready"          || bad "gateway not ready:" "$health"
 echo "$health" | grep -q '"modelId"'      && ok "model id reported"              || bad "no modelId in /health"
 echo "$health" | grep -q '"promptVersion"'&& ok "prompt version reported"        || bad "no promptVersion in /health"
 echo "$health" | grep -q '"schemaVersion"'&& ok "schema version reported"        || bad "no schemaVersion in /health"
