@@ -57,7 +57,13 @@ if (dsn) {
   try {
     ({ default: EmbeddedPostgres } = await import('embedded-postgres'));
   } catch {
-    bail('no PG_TEST_URL set and embedded-postgres is not installed');
+    // Name the fix. This gate is REQUIRED, so "not installed" without a remedy
+    // costs whoever hits it a search through two workflows to learn that CI
+    // supplies a real database and local runs need the optional package.
+    bail('no PG_TEST_URL set and embedded-postgres is not installed.\n'
+      + '    Either: export PG_TEST_URL=postgres://…/<name containing test|ci|scratch>\n'
+      + '    Or:     npm install            (embedded-postgres is an optional dependency;\n'
+      + '                                    a previous `npm ci --omit=optional` skips it)');
   }
   const free = (port) => new Promise((res) => {
     const srv = net.createServer()
