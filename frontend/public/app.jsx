@@ -4140,10 +4140,7 @@ function ParseReview({ user, task, onConfirmed, onDiscard, onManualEntry }) {
               <li key={i}>{[e.qualification, e.institution].filter(Boolean).join(' — ')}</li>
             ))}</ul>
           )}
-          <p className="muted" style={{ fontSize: 11.5 }}>
-            These are kept with the parse record for reference. This staging release saves only the
-            fields in the table above.
-          </p>
+
         </details>
       )}
 
