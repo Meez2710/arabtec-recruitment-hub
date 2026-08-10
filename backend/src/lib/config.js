@@ -6,6 +6,8 @@
 //
 // This never prints secret VALUES — only variable NAMES and booleans.
 
+import { aiConfig } from './ai/config.js';
+
 const isProd = process.env.NODE_ENV === 'production';
 
 function present(name) {
@@ -46,9 +48,9 @@ export function validateConfig() {
   }
 
   // AI CV parsing
-  const hasAiKey = present('DEEPSEEK_API_KEY') || present('ANTHROPIC_API_KEY');
-  if (!hasAiKey && isProd) {
-    warnings.push('AI CV parsing is OFF (no DEEPSEEK_API_KEY / ANTHROPIC_API_KEY) — falling back to the heuristic parser.');
+  const { enabled: aiEnabled } = aiConfig();
+  if (!aiEnabled && isProd) {
+    warnings.push('AI CV parsing is OFF (AI_ENABLED is not set) — falling back to the heuristic parser.');
   }
 
   // Monitoring
@@ -67,7 +69,7 @@ export function validateConfig() {
       : /^postgres/.test(process.env.DATABASE_URL || '') ? 'postgres'
       : 'sqlite',
     email: smtpUser && smtpPass,
-    aiParsing: hasAiKey,
+    aiParsing: aiEnabled,
     sentry: present('SENTRY_DSN'),
     watcher: present('CV_INBOX') || present('CV_WATCH_INTERVAL_MIN'),
     trustProxy: process.env.TRUST_PROXY ?? (isProd ? '1 (default)' : 'false (default)'),
