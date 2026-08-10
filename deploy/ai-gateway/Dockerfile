@@ -113,7 +113,7 @@ COPY warm_ocr_assets.py ocr-models.lock ./
 # persistent volume, which is empty at build time, and Docling rejects an
 # artifacts_path that does not already contain every model. During the warm we
 # want Docling to populate our own cache instead.
-RUN env -u DOCLING_ARTIFACTS_PATH -u HF_HOME python warm_ocr_assets.py --mode verify \
+RUN env -u DOCLING_ARTIFACTS_PATH -u HF_HOME -u HF_HUB_OFFLINE -u TRANSFORMERS_OFFLINE python warm_ocr_assets.py --mode verify \
       --dir "${OCR_ASSETS_DIR}/models" --lock ocr-models.lock \
     && printf 'asset=models\n' >> "${OCR_ASSETS_DIR}/MANIFEST"
 
