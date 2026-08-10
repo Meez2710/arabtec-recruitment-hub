@@ -67,9 +67,23 @@ if [ "${STAGE2_RUN_ON_BOOT:-}" = "true" ]; then
     log "corpus generation FAILED — see $BENCH_OUT/boot.log"
   fi
 
+  # EGRESS MODE. RunPod Pods expose no outbound firewall control, so asserting
+  # --expect-no-egress there guarantees a FAIL that says nothing: the network is
+  # up because the platform cannot take it down. STAGE2_EGRESS_MODE selects the
+  # honest posture per platform and defaults to the RunPod reality.
+  #
+  #   not-controllable (default) — run every other gate, record §6 #9 UNPROVEN
+  #   expect-blocked             — assert it; use only where egress CAN be cut
+  case "${STAGE2_EGRESS_MODE:-not-controllable}" in
+    expect-blocked)   EGRESS_FLAG=--expect-no-egress ;;
+    not-controllable) EGRESS_FLAG=--egress-not-controllable ;;
+    *) log "unknown STAGE2_EGRESS_MODE — defaulting to not-controllable"
+       EGRESS_FLAG=--egress-not-controllable ;;
+  esac
+
   set +e
   python3 /srv/stage2_benchmark.py --corpus "$CORPUS" --out "$BENCH_OUT" \
-    --expect-no-egress >>"$BENCH_OUT/boot.log" 2>&1
+    "$EGRESS_FLAG" >>"$BENCH_OUT/boot.log" 2>&1
   echo "$?" > "$BENCH_OUT/EXIT_CODE"
   set -e
   log "benchmark finished rc=$(cat "$BENCH_OUT/EXIT_CODE") — results in $BENCH_OUT"

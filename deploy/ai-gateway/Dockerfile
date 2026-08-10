@@ -119,7 +119,7 @@ RUN env -u DOCLING_ARTIFACTS_PATH -u HF_HOME -u HF_HUB_OFFLINE -u TRANSFORMERS_O
 
 COPY gateway.py docling_sidecar.py resource_probe.py entrypoint.sh ./
 # Stage 2 benchmark tooling. Run 2 runs in the pod, so it has to be here.
-COPY stage2_benchmark.py generate_fixtures.py test_ocr_gate.py ./
+COPY stage2_benchmark.py generate_fixtures.py test_ocr_gate.py test_stage2_verdict.py ./
 RUN chmod +x entrypoint.sh
 
 # Runs as a non-root user: a document-parsing service processes untrusted input

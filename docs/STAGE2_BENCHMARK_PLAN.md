@@ -8,11 +8,13 @@ plumbing. ACCEPTANCE_CRITERIA §7 still requires human labels that do not exist
 RunPod pod `arabtec-ai-stage2-l4` stays **stopped** until this plan is executed
 deliberately.
 
-EUR-IS-1 was approved by the owner for real candidate data on 2026-08-10 (see
-STAGE2_BENCHMARK_RECORD §5a). **Run 2 is synthetic regardless.** Its corpus is
-fabricated with a fixed seed and reads no input, so region status cannot change
-what it processes — and a runtime that has not passed Run 2 must not see a real
-CV anyway.
+EUR-IS-1 is approved for **synthetic Stage 2 testing only** and is **not**
+approved for real candidate data (2026-08-10, owner — see
+STAGE2_BENCHMARK_RECORD §5a). Run 2's corpus is fabricated with a fixed seed and
+reads no input, which is what makes it runnable under that scope.
+
+Reuse the existing 50 GB EUR-IS-1 network volume and the existing pod. Do not
+create another volume and do not rebuild for another region.
 
 ---
 
@@ -94,14 +96,43 @@ exits non-zero if the corpus falls below 20 documents or 8 Arabic/mixed/scanned.
 
 ## The benchmark
 
-Start the pod, then **block egress**, then run. Order matters: provisioning
-needs the network, the measurement must not have it.
+### Egress: what is actually possible on RunPod
+
+**RunPod Pods expose no outbound-network firewall control.** An earlier revision
+of this plan said to "block egress" before running; that instruction was wrong
+and there is no setting to look for. Asserting `--expect-no-egress` on RunPod
+therefore guarantees a failure that says nothing about the runtime — the network
+is up because the platform cannot take it down.
+
+So the run selects its posture explicitly:
+
+| Mode | Flag | Use where |
+| --- | --- | --- |
+| `not-controllable` (default) | `--egress-not-controllable` | RunPod. Runs every other gate and records §6 #9 as **UNPROVEN** |
+| `expect-blocked` | `--expect-no-egress` | Any platform that *can* cut outbound. Asserts §6 #9 |
+
+Set via `STAGE2_EGRESS_MODE` when using the boot mode; the default is the RunPod
+reality, so nothing needs to be set on the existing pod.
+
+**A reachable network is never recorded as a pass.** `egressBlocked.pass` stays
+`null`/`false` and §6 #9 stays open.
+
+### What replaces it, and what that is worth
+
+`noDownloadsDuringRun` inventories every asset tree (OCR assets, HF cache,
+Ollama models, Docling artifacts) before the first document and again after the
+last, and passes only if **nothing was added and nothing was modified**. That
+demonstrates the pipeline ran on prewarmed, checksum-verified assets alone.
+
+It is **strictly weaker** than blocking egress and never substitutes for it: a
+process that downloaded to a tmpfs and deleted it would pass this and still
+violate the offline requirement. It is the best evidence obtainable on a
+platform that cannot cut the network.
+
+### Running it
 
 ```bash
-python3 deploy/ai-gateway/stage2_benchmark.py \
-  --corpus /workspace/bench/corpus \
-  --out /workspace/bench/run2 \
-  --expect-no-egress
+python3 deploy/ai-gateway/stage2_benchmark.py --corpus /workspace/bench/corpus --out /workspace/bench/run2 --egress-not-controllable
 ```
 
 Exit 0 = every gate passed. Exit 1 = at least one did not; `run2.json` names
@@ -123,8 +154,24 @@ provenance, per-document resource peaks, and the gate verdicts.
 - `peakContainerRss.pctOfLimit` is the number Run 1 could not produce. If it is
   absent, the pod is not running under a cgroup memory limit and §6 #6 is still
   unmeasured — do not record it as passed.
-- `egressBlocked.pass: null` means `--expect-no-egress` was not passed, so the
-  offline guarantee was **not** tested. It is not a pass.
+- `egressBlocked.pass: null` means the offline guarantee was **not** tested. It
+  is not a pass, and on RunPod it never will be.
+
+### The three verdicts
+
+`run2.json` carries a `verdict`, and it is what must be quoted — not the exit
+code, which is 0 for both acceptance and a waiver so the boot mode records a
+usable result.
+
+| `verdict` | Meaning |
+| --- | --- |
+| `ACCEPTED` | Every gate passed **including** a proven blocked egress |
+| `ACCEPTED_SYNTHETIC_STAGING_WAIVER` | Every other gate passed; §6 #9 unproven because the platform cannot block outbound. Scope: **synthetic staging only**. Does not carry to production |
+| `FAILED` | At least one substantive gate failed |
+
+A waiver is not an acceptance with a footnote. **No-egress must be proven on a
+platform that can block outbound before any real candidate data is processed**,
+and that remains an open production blocker regardless of how Run 2 lands.
 
 ## After Run 2
 

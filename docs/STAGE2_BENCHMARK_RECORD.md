@@ -138,35 +138,33 @@ gate by 26% with no degradation across repeated runs, and held the 7B Q4_K_M
 model in 4.8 GB of 22.5 GB VRAM — room for a larger model later without
 changing hardware. L40/L40S are not recommended and are not under evaluation.
 
-## 5a. Region approval
+## 5a. Region scope
 
-**2026-08-10 — the owner approved EUR-IS-1 for real candidate data.** Recorded
-here as an owner decision, not as an assessment this project performed. The
-supporting basis (processor agreement with RunPod, transfer mechanism, retention
-position) is held outside this repository; see `REGION_APPROVAL_REF` below once
-supplied.
+**2026-08-10 — the owner scoped EUR-IS-1 to synthetic Stage 2 testing only. It
+is NOT approved for real candidate data.**
 
 | | |
 | --- | --- |
-| Decision | EUR-IS-1 approved for real candidate data |
+| Decision | EUR-IS-1 approved for **synthetic Stage 2 testing only** |
+| Real candidate data | **Not approved** |
 | Decided by | Owner |
 | Date | 2026-08-10 |
-| Reference | `REGION_APPROVAL_REF` — **not yet supplied** |
 
-**What this unlocks: one blocker, not the path.** Region was one of several
-conditions on processing a real CV through the AI pipeline. The others are
-unchanged and remain closed:
+An earlier revision of this section recorded the opposite. It was wrong and is
+corrected here rather than deleted, because a compliance-adjacent record that
+silently changes its mind is worse than one that shows the correction: anyone
+who read the earlier claim needs to be able to find out it was superseded.
 
-- Parser field accuracy has **never been measured**. ACCEPTANCE_CRITERIA §6
-  records that every metric needs human ground-truth labels, and those labels do
-  not exist.
-- `AI_ENABLED` is `false` and `CV_PARSER_PROVIDER` is still `legacy`.
-- Stage 2 Run 2 has not been executed, so the runtime itself is unaccepted.
+No real CV has been processed on this pod, and under this scope none may be.
 
-**Run 2 is unaffected by this decision.** Its corpus is fabricated by
-`generate_fixtures.py` with a fixed seed and reads no input, so it stays
-synthetic whatever the region's status. No real CV has been processed on this
-pod to date.
+**Consequences that follow from the scope, not from convenience:**
+
+- Run 2's corpus stays synthetic — `generate_fixtures.py` fabricates every
+  document from fixed word lists with a fixed seed and reads no input.
+- The 50 GB EUR-IS-1 network volume is reused as-is. No new volume, no rebuild
+  for another region.
+- Any result from this pod is a **synthetic staging** result and may not be
+  quoted as evidence about real candidate data.
 
 ---
 

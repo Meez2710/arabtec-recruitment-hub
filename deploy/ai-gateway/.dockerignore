@@ -27,6 +27,7 @@
 !stage2_benchmark.py
 !generate_fixtures.py
 !test_ocr_gate.py
+!test_stage2_verdict.py
 
 # Deliberately NOT copied: check-pins.sh, lock.sh, versions.env. Those are CI
 # tooling and every extra file in a document-parsing image is surface.

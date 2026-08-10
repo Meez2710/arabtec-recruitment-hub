@@ -182,8 +182,11 @@ jobs:
         working-directory: backend
       - name: Runtime pin checks
         run: chmod +x "$GATEWAY_DIR/check-pins.sh" && "$GATEWAY_DIR/check-pins.sh"
-      - name: OCR gate tests
-        run: python3 -m unittest discover -s "$GATEWAY_DIR" -p 'test_ocr_gate.py' -v
+      # Discover every test_*.py, not one named file: a suite CI does not run
+      # is not a guard, and the previous pattern silently excluded any test
+      # added later.
+      - name: Gateway python tests (OCR gate, Run 2 verdict)
+        run: python3 -m unittest discover -s "$GATEWAY_DIR" -p 'test_*.py' -v
       - name: Retention tests
         run: node retention_test.mjs
         working-directory: backend

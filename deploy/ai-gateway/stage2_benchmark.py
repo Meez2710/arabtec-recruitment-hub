@@ -90,10 +90,17 @@ def readiness() -> dict:
 
 
 def egress_blocked() -> dict:
-    """Prove the runtime cannot reach the internet.
+    """Record whether the runtime can reach the internet.
 
     Checked by attempting the exact host Run 1 was observed downloading from.
     A refusal here is the evidence for §6 measurement 9.
+
+    REACHABLE IS RECORDED, NOT HIDDEN. RunPod Pods expose no outbound firewall
+    control, so on that platform this probe is expected to report REACHABLE and
+    §6 #9 cannot be satisfied there. That is a fact about the platform, not a
+    result to soften: `allBlocked` stays false and the offline guarantee stays
+    unproven. See `no_downloads_during_run` for the weaker property that CAN be
+    demonstrated with the network up.
     """
     probes = [("modelscope.cn", 443), ("huggingface.co", 443), ("pypi.org", 443)]
     results = {}
@@ -106,6 +113,75 @@ def egress_blocked() -> dict:
             results[host] = f"blocked ({type(exc).__name__})"
     return {"probes": results,
             "allBlocked": all(v != "REACHABLE" for v in results.values())}
+
+
+# Trees that a runtime download would have to land in. Everything the pipeline
+# reads at inference time is supposed to be baked or prewarmed into one of them.
+def _asset_trees() -> dict:
+    return {
+        "ocrAssets": os.environ.get("OCR_ASSETS_DIR", "/opt/ocr-assets"),
+        "hfCache": os.environ.get("HF_HOME", "/workspace/models/hf"),
+        "ollamaModels": os.environ.get("OLLAMA_MODELS", "/workspace/models/ollama"),
+        "doclingArtifacts": os.environ.get("DOCLING_ARTIFACTS_PATH", "") or "",
+    }
+
+
+def _inventory(root: str) -> dict:
+    """path -> (size, mtime_ns) for every file under root. Cheap; no hashing.
+
+    Size AND mtime together are what catch a download: a replaced file changes
+    at least one, and a newly fetched file appears as a new key.
+    """
+    out: dict = {}
+    if not root or not os.path.isdir(root):
+        return out
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for fn in filenames:
+            p = os.path.join(dirpath, fn)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            out[os.path.relpath(p, root)] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+def snapshot_assets() -> dict:
+    return {name: _inventory(root) for name, root in _asset_trees().items()}
+
+
+def no_downloads_during_run(before: dict, after: dict) -> dict:
+    """Did the run fetch anything into an asset tree?
+
+    THE PROPERTY THIS PROVES, AND THE ONE IT DOES NOT. It proves the pipeline
+    read only what was already on disk when the run started — no weights
+    appeared, none were replaced. It does NOT prove the runtime cannot reach the
+    internet; a process that downloads to a tmpfs and deletes it would pass
+    this and fail the real offline requirement.
+
+    So this is the evidence available when egress cannot be blocked. It is
+    strictly weaker than §6 #9 and never substitutes for it.
+    """
+    added: dict = {}
+    modified: dict = {}
+    for name in before:
+        b, a = before[name], after.get(name, {})
+        new = sorted(k for k in a if k not in b)
+        chg = sorted(k for k in a if k in b and a[k] != b[k])
+        if new:
+            added[name] = new[:50]
+        if chg:
+            modified[name] = chg[:50]
+    clean = not added and not modified
+    return {
+        "added": added,
+        "modified": modified,
+        "offlineEnvSet": {
+            "HF_HUB_OFFLINE": os.environ.get("HF_HUB_OFFLINE"),
+            "TRANSFORMERS_OFFLINE": os.environ.get("TRANSFORMERS_OFFLINE"),
+        },
+        "pass": clean,
+    }
 
 
 def convert(path: str) -> dict:
@@ -132,12 +208,59 @@ def extract(text: str) -> tuple[dict | None, dict]:
                  "tokS": round(ec / (ed / 1e9), 2) if ed else None}
 
 
+def decide_verdict(gates: dict, egress_not_controllable: bool) -> tuple:
+    """Three outcomes, not two.
+
+    "Every gate that could run passed, but one could not be tested" is neither
+    acceptance nor failure. Collapsing it into acceptance is how an unproven
+    offline guarantee gets quoted later as a proven one; collapsing it into
+    failure discards a run that told us everything else we asked.
+
+    THE INVARIANT: a reachable network can never produce ACCEPTED. `ACCEPTED`
+    requires egressBlocked to have actually passed, which requires the assertion
+    to have been made and the probes to have refused.
+
+    @returns (verdict, waiver_or_None)
+    """
+    offline_proven = gates.get("egressBlocked", {}).get("pass") is True
+    others_passed = all(
+        g.get("pass") for name, g in gates.items()
+        if name != "egressBlocked" and g.get("pass") is not None)
+
+    if offline_proven and others_passed:
+        return "ACCEPTED", None
+
+    if others_passed and egress_not_controllable:
+        return "ACCEPTED_SYNTHETIC_STAGING_WAIVER", {
+            "scope": "synthetic staging only",
+            "unproven": ["ACCEPTANCE_CRITERIA §6 #9 — egress blocked"],
+            "compensating": ("noDownloadsDuringRun passed: no asset tree gained or "
+                             "lost a file during the run, so the pipeline ran on "
+                             "prewarmed, checksum-verified assets."),
+            "productionBlocker": ("No-egress must be PROVEN on a platform that can "
+                                  "block outbound before any real candidate data is "
+                                  "processed. This waiver does not carry to production."),
+        }
+
+    return "FAILED", None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--expect-no-egress", action="store_true")
+    # RunPod Pods expose no outbound firewall control, so §6 #9 cannot be
+    # satisfied there. This flag says "I know egress is up; run every other gate
+    # and record the offline requirement as UNPROVEN" — it does not weaken any
+    # gate and it never turns a reachable network into a pass.
+    ap.add_argument("--egress-not-controllable", action="store_true",
+                    help="platform cannot block egress; record §6 #9 as unproven")
     args = ap.parse_args()
+    if args.expect_no_egress and args.egress_not_controllable:
+        print("--expect-no-egress and --egress-not-controllable are contradictory",
+              file=sys.stderr)
+        return 2
 
     os.makedirs(args.out, exist_ok=True)
     manifest = json.load(open(os.path.join(args.corpus, "manifest.json"), encoding="utf-8"))
@@ -167,6 +290,10 @@ def main() -> int:
         report["fatal"] = f"corpus has {len(docs)} documents; 20 required"
         print(report["fatal"], file=sys.stderr)
         return 2
+
+    # Taken AFTER readiness and BEFORE the first document, so anything that
+    # appears in an asset tree is attributable to the run itself.
+    assets_before = snapshot_assets()
 
     timeouts, ocr_wrong = 0, []
 
@@ -258,13 +385,26 @@ def main() -> int:
         "egressBlocked": {
             "probes": report["egress"]["probes"],
             "pass": (report["egress"]["allBlocked"] if args.expect_no_egress else None),
-            "asserted": args.expect_no_egress},
+            "asserted": args.expect_no_egress,
+            "platformCannotBlock": args.egress_not_controllable,
+            "note": ("RunPod Pods expose no outbound firewall control; §6 #9 is "
+                     "UNPROVEN on this platform and remains a production blocker."
+                     if args.egress_not_controllable else None)},
+        # Weaker than egressBlocked and never a substitute for it. Reported as a
+        # gate because when egress cannot be blocked it is the only evidence
+        # available that the pipeline ran on prewarmed assets alone.
+        "noDownloadsDuringRun": no_downloads_during_run(assets_before, snapshot_assets()),
         "ocrDecisionsCorrect": {
             "wrong": ocr_wrong, "n": len(ok),
             "pass": not ocr_wrong},
     }
     report["allGatesPassed"] = all(
         g.get("pass") for g in report["gates"].values() if g.get("pass") is not None)
+
+    verdict, waiver = decide_verdict(report["gates"], args.egress_not_controllable)
+    report["verdict"] = verdict
+    if waiver:
+        report["waiver"] = waiver
 
     with open(os.path.join(args.out, "run2.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
@@ -274,8 +414,14 @@ def main() -> int:
         verdict = {True: "PASS", False: "FAIL", None: "n/a "}[g.get("pass")]
         print(f"  {verdict}  {name}")
     print(f"\nallGatesPassed={report['allGatesPassed']}")
+    print(f"verdict={report['verdict']}")
+    if report.get("waiver"):
+        print("  WAIVER: synthetic staging only — offline guarantee UNPROVEN.")
+        print("  " + report["waiver"]["productionBlocker"])
     print("NOTE: runtime/infrastructure only. No parser field-accuracy claim.")
-    return 0 if report["allGatesPassed"] else 1
+    # A waiver exits 0 so the boot mode records a usable result, but the verdict
+    # in run2.json is what must be quoted — never the exit code alone.
+    return 0 if report["verdict"].startswith("ACCEPTED") else 1
 
 
 if __name__ == "__main__":
