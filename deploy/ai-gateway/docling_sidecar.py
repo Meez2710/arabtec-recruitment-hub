@@ -85,8 +85,16 @@ def assets_present() -> tuple[bool, int]:
                     # container crash-looped. A directory must be non-empty:
                     # an empty one means the warm did not persist.
                     if os.path.isdir(p):
-                        if not any(os.scandir(p)):
-                            return False, count
+                        # `with`, because os.scandir holds an open directory
+                        # handle. Readiness is polled continuously by the
+                        # container healthcheck, and an unclosed iterator per
+                        # probe leaks a file descriptor every few seconds until
+                        # the process hits its limit and readiness starts
+                        # failing for a reason that has nothing to do with the
+                        # assets.
+                        with os.scandir(p) as entries:
+                            if not any(entries):
+                                return False, count
                     elif not os.path.isfile(p):
                         return False, count
                     count += 1
