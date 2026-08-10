@@ -41,7 +41,49 @@ for i in $(seq 1 90); do
   sleep 2
 done
 
-# 4. OPTIONAL one-shot Stage 2 benchmark, gated on STAGE2_RUN_ON_BOOT.
+# 4. The authenticated gateway, STARTED BEFORE THE BENCHMARK.
+#
+# ORDERING BUG THIS FIXES. The benchmark used to run here, synchronously, and
+# the gateway started only after it finished. Three consequences, all bad:
+#
+#   * Port 8080 stayed CLOSED for the entire run. A 22-document benchmark takes
+#     far longer than a boot, so the pod looked dead exactly when someone would
+#     be checking on it.
+#   * The container HEALTHCHECK probes 8080. With nothing listening it fails,
+#     the container is marked unhealthy within minutes, and a platform that
+#     restarts unhealthy containers restarts the benchmark — which never
+#     finishes, forever.
+#   * There was no way to watch progress: /health was the only window and it
+#     was shut.
+#
+# So the gateway comes up first and keeps serving THROUGHOUT the benchmark. It
+# is backgrounded rather than exec'd, and the script waits on it at the end.
+log "starting authenticated gateway on 0.0.0.0:${GATEWAY_PORT}"
+python gateway.py &
+GATEWAY_PID=$!
+
+# Waits for a LISTENING SOCKET, not for readiness. /health answers 503 until
+# both components respond, and curl -f treats that as failure — but a 503 still
+# proves the port is open, which is all this loop needs to know before handing
+# the benchmark a working gateway.
+for i in $(seq 1 60); do
+  # curl already prints 000 on a failed connection, so `|| echo 000` would
+  # CONCATENATE and produce "000000" — which is != "000" and breaks the loop
+  # immediately, handing the benchmark a gateway that is not listening. Take
+  # curl's output alone and let a non-zero exit fall through to the retry.
+  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${GATEWAY_PORT}/health" 2>/dev/null) || true
+  [ -n "$code" ] && [ "$code" != "000" ] && break
+  if [ "$i" = 60 ]; then log "gateway did not open ${GATEWAY_PORT}"; exit 1; fi
+  sleep 1
+done
+log "gateway is listening on ${GATEWAY_PORT} (health=${code})"
+
+# Any child dying must take the pod down. A gateway still answering /health
+# while the model is gone is worse than an outage: it looks healthy and fails
+# every request.
+trap 'kill -TERM "$OLLAMA_PID" "$DOCLING_PID" "$GATEWAY_PID" 2>/dev/null || true' TERM INT
+
+# 5. OPTIONAL one-shot Stage 2 benchmark, gated on STAGE2_RUN_ON_BOOT.
 #
 # WHY THIS EXISTS. RunPod exposes no container-exec primitive: the only ways
 # into a running pod are SSH, the web terminal, or a port you publish. SSH and
@@ -87,16 +129,14 @@ if [ "${STAGE2_RUN_ON_BOOT:-}" = "true" ]; then
   echo "$?" > "$BENCH_OUT/EXIT_CODE"
   set -e
   log "benchmark finished rc=$(cat "$BENCH_OUT/EXIT_CODE") — results in $BENCH_OUT"
+  log "verdict: $(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("verdict","(none)"))' "$BENCH_OUT/run2.json" 2>/dev/null || echo '(run2.json unreadable)')"
 
-  # The gateway still starts afterwards: the pod must stay healthy on 8080 so
-  # the results can be collected and the runtime inspected. The benchmark's
-  # exit code is preserved on disk rather than in the container's exit status.
+  # The benchmark's exit code is preserved on disk rather than in the
+  # container's exit status: the pod must stay up on 8080 so the results can be
+  # collected and the runtime inspected.
 fi
 
-# Any child dying must take the pod down. A gateway still answering /health
-# while the model is gone is worse than an outage: it looks healthy and fails
-# every request.
-trap 'kill -TERM "$OLLAMA_PID" "$DOCLING_PID" 2>/dev/null || true' TERM INT
-
-log "starting authenticated gateway on 0.0.0.0:${GATEWAY_PORT}"
-exec python gateway.py
+# Hand the foreground to the gateway. It has been serving since step 4; this is
+# what keeps the container alive and propagates its exit.
+log "gateway serving; container will stay up for result collection"
+wait "$GATEWAY_PID"

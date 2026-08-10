@@ -136,7 +136,18 @@ USER gateway
 # ONLY the gateway. Not 11434, not 8089.
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+# start-period covers the SLOWEST legitimate cold start, not the average one:
+# ollama loading a 4.7 GB model plus the Docling import can exceed five minutes
+# on a cold volume. 180s marked healthy pods unhealthy mid-boot, and a platform
+# that restarts unhealthy containers then restarts the boot — a loop that never
+# converges.
+#
+# Still requires a 200, not merely a listening socket. /health returns 503 while
+# ollama or docling is down, and treating that as healthy would keep a pod alive
+# that answers every real request with a failure. Failures inside start-period
+# do not count against retries, so the long window is what tolerates a cold
+# start — not a weaker success condition.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8080/health || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
