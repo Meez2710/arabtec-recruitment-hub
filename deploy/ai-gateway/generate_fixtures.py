@@ -3,8 +3,13 @@
 
 EVERY DOCUMENT IS FABRICATED. Names, emails, phones and employers are invented
 from fixed word lists with a fixed seed. No real CV, no candidate data, no
-employee data is read, copied or derived from. This is what makes the corpus
-safe to run in EUR-IS-1 while that region remains legally unapproved.
+employee data is read, copied or derived from.
+
+This property is INDEPENDENT of region approval and stays that way. EUR-IS-1 was
+approved for real candidate data on 2026-08-10, which changes nothing here: a
+benchmark that measures the runtime must not be the thing that first puts a real
+CV on a pod, and a corpus that reads no input cannot leak one. Do not add a
+"use real CVs" mode to this script.
 
 Deterministic: same seed, byte-identical output. A benchmark whose inputs move
 between runs measures the inputs.

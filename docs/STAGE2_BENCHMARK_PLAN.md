@@ -6,7 +6,13 @@ plumbing. ACCEPTANCE_CRITERIA §7 still requires human labels that do not exist
 (see §9 of that document).
 
 RunPod pod `arabtec-ai-stage2-l4` stays **stopped** until this plan is executed
-deliberately. EUR-IS-1 remains **synthetic-only**.
+deliberately.
+
+EUR-IS-1 was approved by the owner for real candidate data on 2026-08-10 (see
+STAGE2_BENCHMARK_RECORD §5a). **Run 2 is synthetic regardless.** Its corpus is
+fabricated with a fixed seed and reads no input, so region status cannot change
+what it processes — and a runtime that has not passed Run 2 must not see a real
+CV anyway.
 
 ---
 

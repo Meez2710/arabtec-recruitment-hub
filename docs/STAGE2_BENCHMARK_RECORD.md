@@ -138,8 +138,39 @@ gate by 26% with no degradation across repeated runs, and held the 7B Q4_K_M
 model in 4.8 GB of 22.5 GB VRAM — room for a larger model later without
 changing hardware. L40/L40S are not recommended and are not under evaluation.
 
-EUR-IS-1 remains **synthetic-only** until the region is legally approved. No
-real CV has been processed on this pod, and none may be.
+## 5a. Region approval
+
+**2026-08-10 — the owner approved EUR-IS-1 for real candidate data.** Recorded
+here as an owner decision, not as an assessment this project performed. The
+supporting basis (processor agreement with RunPod, transfer mechanism, retention
+position) is held outside this repository; see `REGION_APPROVAL_REF` below once
+supplied.
+
+| | |
+| --- | --- |
+| Decision | EUR-IS-1 approved for real candidate data |
+| Decided by | Owner |
+| Date | 2026-08-10 |
+| Reference | `REGION_APPROVAL_REF` — **not yet supplied** |
+
+**What this unlocks: one blocker, not the path.** Region was one of several
+conditions on processing a real CV through the AI pipeline. The others are
+unchanged and remain closed:
+
+- Parser field accuracy has **never been measured**. ACCEPTANCE_CRITERIA §6
+  records that every metric needs human ground-truth labels, and those labels do
+  not exist.
+- `AI_ENABLED` is `false` and `CV_PARSER_PROVIDER` is still `legacy`.
+- Stage 2 Run 2 has not been executed, so the runtime itself is unaccepted.
+
+**Run 2 is unaffected by this decision.** Its corpus is fabricated by
+`generate_fixtures.py` with a fixed seed and reads no input, so it stays
+synthetic whatever the region's status. No real CV has been processed on this
+pod to date.
+
+---
+
+## 6. Hardware result, scoped
 
 **This is a hardware capability result.** It is not production readiness, not
 parser acceptance, and not permission to switch `CV_PARSER_PROVIDER`.
