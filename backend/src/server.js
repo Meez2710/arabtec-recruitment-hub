@@ -61,10 +61,8 @@ const isProd = process.env.NODE_ENV === 'production';
 // Default is `legacy` — this seam changes wiring, not behaviour.
 configureParsing();
 
-// Register the AI capability handler and, when the feature is enabled, recover
-// tasks a previous process left RUNNING. Off by default: with AI_ENABLED unset
-// this registers a handler nothing can reach and starts no worker.
-configureAi();
+// The AI capability handler is registered during the async boot sequence
+// after the database schema is ensured.
 
 const app = express();
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY, isProd));
@@ -247,6 +245,7 @@ app.listen(PORT, () => {
     try {
       await initObservability(); // Sentry (no-op without SENTRY_DSN)
       ensureSchema();            // create/upgrade tables + migrate workflow stages
+      configureAi();             // recover orphaned AI tasks now that tables exist
       ensureFeatureFlags();      // seed feature toggles (idempotent)
       await bootSeedIfEmpty();   // seed admin/reference data if empty
       APP_READY = true;
