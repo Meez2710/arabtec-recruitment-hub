@@ -5,11 +5,11 @@
 // the seam existed, so selecting this provider reproduces production byte for
 // byte. That is what makes it a safe default during migration.
 
-import { parseHeuristic, parseEntitiesFromFile } from '../cv-parser.js';
+import { parse, parseEntitiesFromFile } from '../cv-parser.js';
 
 /** @type {import('./registry.js').ParserProvider} */
 export const legacyParserProvider = {
   name: 'legacy',
-  parseLegacy: (filePath) => parseHeuristic(filePath),
+  parseLegacy: (filePath) => parse(filePath),
   parseEntities: (filePath) => parseEntitiesFromFile(filePath),
 };
