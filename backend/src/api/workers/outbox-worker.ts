@@ -12,6 +12,7 @@
 import { OutboxDispatcher } from '../../infrastructure/db/outbox-dispatcher.js';
 import { outboxBacklog } from '../../infrastructure/db/outbox.js';
 import type { Executor } from '../../infrastructure/db/types.js';
+import type { AITaskWorker } from '../../infrastructure/ai/task-worker.js';
 import type { EventDispatcher } from '../../infrastructure/events/event-dispatcher.js';
 import type { OfferService } from '../../modules/offer/application/offer-service.js';
 import { AuthContext } from '../../modules/shared/kernel/auth-context.js';
@@ -108,6 +109,21 @@ export const startOfferExpiryWorker = (
   });
   return loop('offer-expiry', async () => { await offers.expireDue(ctx); }, {
     intervalMs: opts.intervalMs ?? 60_000,
+    ...(opts.onError ? { onError: opts.onError } : {}),
+  });
+};
+
+export interface AIWorkerOptions {
+  readonly intervalMs?: number;
+  readonly onError?: (error: unknown) => void;
+}
+
+export const startAITaskWorker = (
+  worker: AITaskWorker,
+  opts: AIWorkerOptions = {},
+): WorkerHandle => {
+  return loop('ai-task', async () => { await worker.drainOnce(); }, {
+    intervalMs: opts.intervalMs ?? 5_000,
     ...(opts.onError ? { onError: opts.onError } : {}),
   });
 };

@@ -18,15 +18,15 @@ import type { AITaskDispatcher } from '../../shared/kernel/ai/index.js';
 import { AI_CAPABILITIES } from '../../shared/kernel/ai/index.js';
 
 export const TALENT_PERMISSIONS = {
-  CREATE: 'candidate.create',
+  CREATE: 'candidate.add',
   EDIT: 'candidate.edit',
-  VIEW_ALL: 'candidate.view_all',
-  VIEW_OWN: 'candidate.view_own',
-  UPLOAD_DOCUMENT: 'candidate.upload_document',
-  DELETE_DOCUMENT: 'candidate.delete_document',
-  CHANGE_STATE: 'candidate.change_state',
-  ASSIGN_OWNER: 'candidate.assign_owner',
-  REVIEW_PROPOSAL: 'candidate.review_proposal',
+  VIEW_ALL: 'candidate.view',
+  VIEW_OWN: 'candidate.view',
+  UPLOAD_DOCUMENT: 'candidate.edit',
+  DELETE_DOCUMENT: 'candidate.edit',
+  CHANGE_STATE: 'candidate.move_stage',
+  ASSIGN_OWNER: 'candidate.edit',
+  REVIEW_PROPOSAL: 'candidate.edit',
 } as const;
 
 export interface CandidateSummary {

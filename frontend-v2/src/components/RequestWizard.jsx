@@ -22,8 +22,8 @@ export default function RequestWizard({ onClose, onCreated }) {
           {STEPS.map((s, i) => (
             <div key={s} className="flex items-center gap-2 flex-1">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                i <= step ? 'bg-primary-green text-workspace-white' : 'text-legibility-black/60 bg-elevation-grey'
-              }`}>
+                i <= step ? 'text-white' : 'text-gray-400 bg-gray-100'}`}
+                style={i <= step ? { backgroundColor: '#d2232a' } : {}}>
                 {i < step ? '✓' : i + 1}
               </div>
               <span className={`text-xs font-medium ${i <= step ? 'text-gray-800' : 'text-gray-300'}`}>{s}</span>
@@ -71,11 +71,11 @@ export default function RequestWizard({ onClose, onCreated }) {
         </div>
 
         <div className="flex justify-between px-6 pb-5">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-legibility-black border border-legibility-black rounded-lg hover:bg-elevation-grey">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           <div className="flex gap-2">
-            {step > 0 && <button onClick={() => setStep(s => s - 1)} className="px-4 py-2 text-sm border border-legibility-black/20 rounded-lg">Back</button>}
-            {step < 2 && <button onClick={() => setStep(s => s + 1)} className="px-4 py-2 text-sm text-workspace-white bg-primary-green rounded-lg hover:opacity-90">Next</button>}
-            {step === 2 && <button onClick={submit} disabled={busy} className="px-4 py-2 text-sm text-workspace-white bg-primary-green rounded-lg disabled:opacity-50 hover:opacity-90">{busy ? 'Creating…' : 'Create Request'}</button>}
+            {step > 0 && <button onClick={() => setStep(s => s - 1)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg">Back</button>}
+            {step < 2 && <button onClick={() => setStep(s => s + 1)} className="px-4 py-2 text-sm text-white rounded-lg" style={{ backgroundColor: '#d2232a' }}>Next</button>}
+            {step === 2 && <button onClick={submit} disabled={busy} className="px-4 py-2 text-sm text-white rounded-lg" style={{ backgroundColor: busy ? '#e88' : '#d2232a' }}>{busy ? 'Creating…' : 'Create Request'}</button>}
           </div>
         </div>
       </div>

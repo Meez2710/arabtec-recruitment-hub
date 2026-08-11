@@ -8,13 +8,13 @@ export default function Dashboard() {
 
   useEffect(() => { api.get('/dashboard').then(setData); }, []);
 
-  if (!data) return <div className="text-legibility-black/60">Loading…</div>;
+  if (!data) return <div className="text-gray-400">Loading…</div>;
 
   const kpis = [
-    { label: 'Open Requests', value: data.requests?.open ?? 0, colorClass: 'text-brand-red' },
-    { label: 'Candidates in Pipeline', value: data.applications?.total ?? 0, colorClass: 'text-legibility-black' },
-    { label: 'Upcoming Interviews', value: data.interviews?.upcoming ?? 0, colorClass: 'text-info-blue' },
-    { label: 'Avg Time-to-Fill (days)', value: data.requests?.avgTimeToFill ?? '—', colorClass: 'text-primary-green' },
+    { label: 'Open Requests', value: data.requests?.open ?? 0, color: '#d2232a' },
+    { label: 'Candidates in Pipeline', value: data.applications?.total ?? 0, color: '#1b1f24' },
+    { label: 'Upcoming Interviews', value: data.interviews?.upcoming ?? 0, color: '#2563eb' },
+    { label: 'Avg Time-to-Fill (days)', value: data.requests?.avgTimeToFill ?? '—', color: '#059669' },
   ];
 
   const myTasks = [];
@@ -25,27 +25,27 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-1 text-legibility-black">Dashboard</h1>
-      <p className="text-sm text-legibility-black/60 mb-6">Welcome back, {user?.fullName}</p>
+      <h1 className="text-xl font-bold mb-1">Dashboard</h1>
+      <p className="text-sm text-gray-400 mb-6">Welcome back, {user?.fullName}</p>
 
       {/* KPI cards */}
       <div className="grid grid-cols-4 gap-4 mb-8">
         {kpis.map(k => (
-          <div key={k.label} className="bg-workspace-white rounded-lg border border-elevation-grey p-5">
-            <div className={`text-2xl font-bold ${k.colorClass}`}>{k.value}</div>
-            <div className="text-xs text-legibility-black/60 mt-1">{k.label}</div>
+          <div key={k.label} className="bg-white rounded-lg border border-gray-100 p-5">
+            <div className="text-2xl font-bold" style={{ color: k.color }}>{k.value}</div>
+            <div className="text-xs text-gray-400 mt-1">{k.label}</div>
           </div>
         ))}
       </div>
 
       {/* My Tasks widget */}
-      <div className="bg-workspace-white rounded-lg border border-elevation-grey p-5">
-        <h2 className="font-semibold text-sm mb-4 text-legibility-black">My Tasks</h2>
+      <div className="bg-white rounded-lg border border-gray-100 p-5">
+        <h2 className="font-semibold text-sm mb-4">My Tasks</h2>
         <div className="grid grid-cols-2 gap-3">
           {myTasks.map(t => (
-            <a key={t.label} href={t.href} className="flex items-center justify-between p-3 rounded-lg border border-elevation-grey/50 hover:bg-elevation-grey transition-colors">
-              <span className="text-sm text-legibility-black/80">{t.label}</span>
-              <span className="text-sm font-bold text-brand-red">{t.count}</span>
+            <a key={t.label} href={t.href} className="flex items-center justify-between p-3 rounded-lg border border-gray-50 hover:bg-gray-50 transition-colors">
+              <span className="text-sm text-gray-700">{t.label}</span>
+              <span className="text-sm font-bold text-red-600">{t.count}</span>
             </a>
           ))}
         </div>

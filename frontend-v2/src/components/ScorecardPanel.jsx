@@ -20,11 +20,12 @@ export default function ScorecardPanel({ title, criteria, scores, onChange }) {
                 <button key={n} onClick={() => setScore(c, n)}
                   className={`flex-1 h-7 rounded text-xs font-medium transition-colors ${
                     scores[c] === n
-                      ? 'bg-brand-red text-workspace-white'
+                      ? 'text-white'
                       : scores[c] >= n
-                        ? 'bg-brand-red/10 text-brand-red'
-                        : 'bg-elevation-grey text-legibility-black/40 hover:bg-elevation-grey/80'
+                        ? 'bg-red-100 text-red-600'
+                        : 'bg-gray-100 text-gray-300 hover:bg-gray-200'
                   }`}
+                  style={scores[c] === n ? { backgroundColor: '#d2232a' } : {}}
                 >{n}</button>
               ))}
             </div>

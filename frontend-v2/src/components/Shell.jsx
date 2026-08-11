@@ -14,13 +14,13 @@ export default function Shell({ children }) {
     <div className="flex h-screen">
       <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-5 py-4 border-b border-gray-100">
-          <div className="font-bold text-lg text-brand-red">Arabtec</div>
-          <div className="text-xs text-legibility-black/60">Recruitment Hub</div>
+          <div className="font-bold text-lg" style={{ color: '#d2232a' }}>Arabtec</div>
+          <div className="text-xs text-gray-400">Recruitment Hub</div>
         </div>
-        <nav className="flex-1 px-3 py-3 space-y-2">
+        <nav className="flex-1 px-3 py-3 space-y-0.5">
           {NAV.map(n => (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}
-              className={({ isActive }) => `block px-4 py-2 rounded text-sm font-medium transition-colors ${isActive ? 'bg-brand-red text-workspace-white' : 'text-legibility-black hover:bg-elevation-grey'}`}>
+              className={({ isActive }) => `block px-3 py-2 rounded text-sm font-medium transition-colors ${isActive ? 'bg-red-50 text-red-700' : 'text-gray-600 hover:bg-gray-50'}`}>
               {n.label}
             </NavLink>
           ))}

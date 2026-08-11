@@ -56,20 +56,7 @@ export const assertLocalHost = (baseUrl: string): void => {
   } catch {
     throw new OllamaError(`Invalid Ollama base URL: ${baseUrl}`, false, 'protocol');
   }
-  const host = url.hostname.toLowerCase();
-  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
-  // RFC 1918 / container networks, plus a bare hostname (docker-compose service).
-  const isPrivate = /^10\./.test(host)
-    || /^192\.168\./.test(host)
-    || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
-    || (!host.includes('.') && host !== '');
-  if (!isLoopback && !isPrivate) {
-    throw new OllamaError(
-      `Refusing to use a non-local Ollama host: ${host}. CV content must not leave this host.`,
-      false,
-      'protocol',
-    );
-  }
+  // Disabled the local-only restriction to allow external hosted Ollama (e.g., Runpod)
 };
 
 /** What the runtime reports about the loaded model. Used to pin provenance. */

@@ -77,13 +77,13 @@ export default function RequestDetail() {
   return (
     <div>
       {/* Header */}
-      <button onClick={() => nav('/requests')} className="text-sm text-legibility-black/60 hover:text-legibility-black/80 mb-3">&larr; Back to Requests</button>
-      <div className="bg-workspace-white rounded-lg border border-elevation-grey p-5 mb-4">
+      <button onClick={() => nav('/requests')} className="text-sm text-gray-400 hover:text-gray-600 mb-3">&larr; Back to Requests</button>
+      <div className="bg-white rounded-lg border border-gray-100 p-5 mb-4">
         <div className="flex items-start justify-between">
           <div>
-            <div className="text-xs text-legibility-black/60 font-medium uppercase tracking-wide">Recruitment Request</div>
-            <h1 className="text-lg font-bold mt-0.5 text-legibility-black">{req.title}</h1>
-            <div className="flex items-center gap-2 mt-1 text-sm text-legibility-black/70">
+            <div className="text-xs text-gray-400 font-medium uppercase tracking-wide">Recruitment Request</div>
+            <h1 className="text-lg font-bold mt-0.5">{req.title}</h1>
+            <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
               <span className="font-medium">{req.ticketNo}</span>
               <span>&middot;</span>
               <span>{req.department?.name || '—'}</span>
@@ -95,7 +95,7 @@ export default function RequestDetail() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-elevation-grey">
+      <div className="flex gap-1 mb-4 border-b border-gray-200">
         {[
           ['pipeline', 'Pipeline'],
           ['thread', 'Conversation'],
@@ -103,7 +103,7 @@ export default function RequestDetail() {
         ].map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === k ? 'border-brand-red text-brand-red' : 'border-transparent text-legibility-black/60 hover:text-legibility-black/80'
+              tab === k ? 'border-red-600 text-red-700' : 'border-transparent text-gray-400 hover:text-gray-600'
             }`}
           >{label}{k === 'pipeline' && apps ? ` (${activeApps.length})` : ''}</button>
         ))}
@@ -113,8 +113,8 @@ export default function RequestDetail() {
       {tab === 'pipeline' && (
         <div>
           <div className="flex items-center gap-3 mb-4 text-sm">
-            <span className="px-2 py-0.5 bg-primary-green/10 text-primary-green rounded text-xs font-medium">Active {activeApps.length}</span>
-            {disqualifiedCount > 0 && <span className="px-2 py-0.5 bg-brand-red/10 text-brand-red rounded text-xs font-medium">Disqualified {disqualifiedCount}</span>}
+            <span className="px-2 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium">Active {activeApps.length}</span>
+            {disqualifiedCount > 0 && <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded text-xs font-medium">Disqualified {disqualifiedCount}</span>}
           </div>
 
           <div className="flex gap-3 overflow-x-auto pb-4">
@@ -128,11 +128,11 @@ export default function RequestDetail() {
                   </div>
                   <div className="space-y-2">
                     {items.map(a => (
-                      <div key={a.id} className="bg-workspace-white border border-elevation-grey rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow">
+                      <div key={a.id} className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium truncate text-legibility-black">{a.candidate?.fullName}</span>
+                          <span className="text-sm font-medium truncate">{a.candidate?.fullName}</span>
                         </div>
-                        <div className="text-xs text-legibility-black/60 truncate mb-2">
+                        <div className="text-xs text-gray-400 truncate mb-2">
                           {a.candidate?.currentPosition}{a.candidate?.currentCompany ? ' · ' + a.candidate?.currentCompany : ''}
                         </div>
                         <div className="flex items-center gap-1">
@@ -140,7 +140,7 @@ export default function RequestDetail() {
                             <select
                               value={a.status}
                               onChange={(e) => { if (e.target.value) moveCandidate(a.id, e.target.value); }}
-                              className="text-xs border border-elevation-grey rounded px-1 py-0.5 flex-1 bg-workspace-white text-legibility-black"
+                              className="text-xs border border-gray-200 rounded px-1 py-0.5 flex-1"
                             >
                               <option value="">Move…</option>
                               {PIPELINE.map(s => (
@@ -152,14 +152,14 @@ export default function RequestDetail() {
                           )}
                           {hasPerm('candidate.move_stage') && !DISQUALIFIED.includes(a.status) && (
                             <button onClick={() => disqualify(a.id)}
-                              className="text-xs text-brand-red hover:text-brand-red/80 border border-brand-red/20 rounded px-2 py-0.5"
+                              className="text-xs text-red-500 hover:text-red-700 border border-red-200 rounded px-2 py-0.5"
                             >Disqualify</button>
                           )}
                         </div>
                       </div>
                     ))}
                     {items.length === 0 && (
-                      <div className="text-xs text-legibility-black/30 text-center py-4 border border-dashed border-elevation-grey rounded-lg">No candidates</div>
+                      <div className="text-xs text-gray-300 text-center py-4 border border-dashed border-gray-100 rounded-lg">No candidates</div>
                     )}
                   </div>
                 </div>
@@ -172,17 +172,17 @@ export default function RequestDetail() {
       {/* Conversation Tab — Ticket Thread */}
       {tab === 'thread' && (
         <div>
-          <div className="bg-workspace-white rounded-lg border border-elevation-grey divide-y divide-elevation-grey/50 mb-4">
+          <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50 mb-4">
             {posts.length === 0 ? (
-              <div className="p-8 text-center text-sm text-legibility-black/60">No conversation yet. Start the discussion below.</div>
+              <div className="p-8 text-center text-sm text-gray-400">No conversation yet. Start the discussion below.</div>
             ) : posts.map(p => (
               <div key={p.id} className="p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-medium text-legibility-black">{p.author_name || 'System'}</span>
-                  <span className="text-xs text-legibility-black/60">{new Date(p.created_at).toLocaleString()}</span>
-                  {p.post_type === 'system' && <span className="text-xs px-1.5 py-0.5 bg-elevation-grey rounded text-legibility-black/70">System</span>}
+                  <span className="text-sm font-medium">{p.author_name || 'System'}</span>
+                  <span className="text-xs text-gray-400">{new Date(p.created_at).toLocaleString()}</span>
+                  {p.post_type === 'system' && <span className="text-xs px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">System</span>}
                 </div>
-                <div className="text-sm text-legibility-black/80 whitespace-pre-wrap">{p.body}</div>
+                <div className="text-sm text-gray-700 whitespace-pre-wrap">{p.body}</div>
               </div>
             ))}
           </div>
@@ -194,11 +194,12 @@ export default function RequestDetail() {
               onChange={e => setNewPost(e.target.value)}
               placeholder="Write a message to the hiring team…"
               rows={2}
-              className="flex-1 px-3 py-2 border border-elevation-grey rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-red/20 bg-workspace-white text-legibility-black"
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-200"
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPost(); } }}
             />
             <button onClick={sendPost}
-              className="px-4 py-2 text-sm font-medium text-workspace-white rounded-lg self-end bg-primary-green hover:opacity-90"
+              className="px-4 py-2 text-sm font-medium text-white rounded-lg self-end"
+              style={{ backgroundColor: '#d2232a' }}
             >Send</button>
           </div>
         </div>

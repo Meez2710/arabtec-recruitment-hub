@@ -18,29 +18,29 @@ export default function TalentPool() {
       <div className={`flex-1 transition-all ${selected ? 'mr-[420px]' : ''}`}>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-bold text-legibility-black">Talent Pool</h1>
-            <p className="text-sm text-legibility-black/60">{candidates?.length ?? 0} candidates</p>
+            <h1 className="text-xl font-bold">Talent Pool</h1>
+            <p className="text-sm text-gray-400">{candidates?.length ?? 0} candidates</p>
           </div>
           <input placeholder="Search name or company…" value={search} onChange={e => setSearch(e.target.value)}
-            className="px-3 py-2 border border-elevation-grey rounded-lg text-sm w-64 bg-workspace-white text-legibility-black" />
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-64" />
         </div>
 
         {/* Directory list */}
-        <div className="bg-workspace-white rounded-lg border border-elevation-grey divide-y divide-elevation-grey/50">
-          {!candidates ? <div className="p-6 text-legibility-black/60">Loading…</div> : filtered.length === 0 ? (
-            <div className="p-6 text-legibility-black/60">No candidates found.</div>
+        <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50">
+          {!candidates ? <div className="p-6 text-gray-400">Loading…</div> : filtered.length === 0 ? (
+            <div className="p-6 text-gray-400">No candidates found.</div>
           ) : filtered.map(c => (
             <div key={c.id} onClick={() => setSelected(c)}
-              className="flex items-center gap-4 px-5 py-3 hover:bg-elevation-grey/50 cursor-pointer transition-colors">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-workspace-white text-xs font-bold bg-brand-red">
-                {(c.fullName || '?')[0]}</div>
+              className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 cursor-pointer transition-colors">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                style={{ backgroundColor: '#d2232a' }}>{(c.fullName || '?')[0]}</div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate text-legibility-black">{c.fullName}</div>
-                <div className="text-xs text-legibility-black/60 truncate">{c.currentPosition}{c.currentCompany ? ' at ' + c.currentCompany : ''}</div>
+                <div className="text-sm font-medium truncate">{c.fullName}</div>
+                <div className="text-xs text-gray-400 truncate">{c.currentPosition}{c.currentCompany ? ' at ' + c.currentCompany : ''}</div>
               </div>
               <div className="text-right">
-                <div className="text-xs text-legibility-black/60">{c.location || '—'}</div>
-                <div className="text-xs text-legibility-black/60">{c.yearsExperience != null ? c.yearsExperience + 'y exp' : ''}</div>
+                <div className="text-xs text-gray-400">{c.location || '—'}</div>
+                <div className="text-xs text-gray-400">{c.yearsExperience != null ? c.yearsExperience + 'y exp' : ''}</div>
               </div>
             </div>
           ))}

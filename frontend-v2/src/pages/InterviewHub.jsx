@@ -25,11 +25,11 @@ export default function InterviewHub() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-6 text-legibility-black">Interview Hub</h1>
+      <h1 className="text-xl font-bold mb-6">Interview Hub</h1>
 
       <div className="grid grid-cols-3 gap-4 h-[calc(100vh-120px)]">
         {/* Left: Candidate CV */}
-        <div className="bg-workspace-white rounded-lg border border-elevation-grey p-5 overflow-auto">
+        <div className="bg-white rounded-lg border border-gray-100 p-5 overflow-auto">
           <h2 className="font-semibold text-sm mb-4">Candidate CV</h2>
           <div className="space-y-4">
             <div>
@@ -75,14 +75,14 @@ export default function InterviewHub() {
       </div>
 
       {/* Submit bar */}
-      <div className="fixed bottom-0 left-56 right-0 bg-workspace-white border-t border-elevation-grey px-6 py-3 flex items-center justify-between z-30">
+      <div className="fixed bottom-0 left-56 right-0 bg-white border-t border-gray-200 px-6 py-3 flex items-center justify-between z-30">
         <div>
-          <span className="text-sm text-legibility-black/60">Overall Score: </span>
+          <span className="text-sm text-gray-400">Overall Score: </span>
           <span className="text-lg font-bold">{isNaN(overall) ? '—' : overall}</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-legibility-black/70">Suggested: <strong>{recommendation}</strong></span>
-          <button className="px-4 py-2 text-sm text-workspace-white rounded-lg bg-primary-green hover:opacity-90">
+          <span className="text-sm text-gray-500">Suggested: <strong>{recommendation}</strong></span>
+          <button className="px-4 py-2 text-sm text-white rounded-lg" style={{ backgroundColor: '#d2232a' }}>
             Submit & Advance
           </button>
         </div>

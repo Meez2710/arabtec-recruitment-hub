@@ -25,9 +25,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_INBOX = path.resolve(__dirname, '../../cv_inbox');
 const DEFAULT_INTERVAL_MIN = 60;
 function apiConfig() {
-  const key = process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY || '';
-  const base = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '');
-  return { key, url: base + '/chat/completions', model: process.env.DEEPSEEK_MODEL || 'deepseek-chat' };
+  const deepseekKey = process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY || '';
+  const deepseekBase = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '');
+  const ollamaBase = (process.env.OLLAMA_BASE_URL || '').replace(/\/$/, '');
+  const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
+  return { 
+    deepseekKey, 
+    deepseekUrl: deepseekBase + '/chat/completions', 
+    deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    ollamaBase,
+    ollamaModel
+  };
 }
 
 let watcherTimer = null;
@@ -75,7 +83,7 @@ async function extractText(filePath) {
 // DeepSeek API extraction with strict structured prompt
 async function deepseekExtract(text) {
   const cfg = apiConfig();
-  if (!cfg.key || !text) return null;
+  if (!cfg.deepseekKey || !text) return null;
 
   const systemPrompt = `You are an expert ATS data extraction API. Extract the following from the provided resume text. You must return ONLY a valid JSON object matching this exact schema. Do not include markdown formatting or conversational text.
 
@@ -89,14 +97,14 @@ Schema:
 }`;
 
   try {
-    const res = await fetch(cfg.url, {
+    const res = await fetch(cfg.deepseekUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${cfg.key}`,
+        'Authorization': `Bearer ${cfg.deepseekKey}`,
       },
       body: JSON.stringify({
-        model: cfg.model,
+        model: cfg.deepseekModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: text.slice(0, 12000) },
@@ -115,6 +123,63 @@ Schema:
     return JSON.parse(json.slice(start, end + 1));
   } catch (e) {
     console.error('[watcher] DeepSeek API error:', e.message);
+    return null;
+  }
+}
+
+// Ollama API extraction
+async function ollamaExtract(text) {
+  const cfg = apiConfig();
+  if (!cfg.ollamaBase || !text) return null;
+
+  const systemPrompt = `You extract structured data from a candidate CV. You must return ONLY a valid JSON object matching this exact schema. No markdown formatting or conversational text.
+
+Schema:
+{
+  "full_name": "string",
+  "email": "string",
+  "phone": "string",
+  "years_experience": "number",
+  "role_applied": "string"
+}`;
+
+  try {
+    const res = await fetch(`${cfg.ollamaBase}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: cfg.ollamaModel,
+        system: systemPrompt,
+        prompt: text.slice(0, 12000),
+        stream: false,
+        format: {
+          "type": "object",
+          "properties": {
+            "full_name": { "type": "string" },
+            "email": { "type": "string" },
+            "phone": { "type": "string" },
+            "years_experience": { "type": "number" },
+            "role_applied": { "type": "string" }
+          },
+          "required": ["full_name"]
+        },
+        options: {
+          temperature: 0,
+          num_ctx: 8192
+        }
+      }),
+    });
+
+    const data = await res.json();
+    const raw = data?.response || '';
+    const json = raw.replace(/```(?:json)?\s*/g, '').replace(/```\s*/g, '').trim();
+    const start = json.indexOf('{'), end = json.lastIndexOf('}');
+    if (start === -1 || end === -1) return null;
+    return JSON.parse(json.slice(start, end + 1));
+  } catch (e) {
+    console.error('[watcher] Ollama API error:', e.message);
     return null;
   }
 }
@@ -152,7 +217,22 @@ async function parseCV(filePath) {
   const text = await extractText(filePath);
   if (!text) return { ...heuristicParse('', filename), extraction_status: 'failed' };
 
-  if (process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY) {
+  const cfg = apiConfig();
+  
+  if (cfg.ollamaBase) {
+    const ai = await ollamaExtract(text);
+    if (ai && ai.full_name) {
+      return {
+        full_name: ai.full_name,
+        email: ai.email || null,
+        phone: ai.phone || null,
+        years_experience: typeof ai.years_experience === 'number' ? ai.years_experience : null,
+        role_applied: ai.role_applied || null,
+        extraction_status: 'done',
+        engine: 'ollama',
+      };
+    }
+  } else if (cfg.deepseekKey) {
     const ai = await deepseekExtract(text);
     if (ai && ai.full_name) {
       return {
