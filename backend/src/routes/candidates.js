@@ -12,6 +12,7 @@ import { rejection as rejectionTpl } from '../lib/email_templates.js';
 // Resolved per request through the parsing registry, never imported directly.
 // One provider serves a request; there is no fallback chain and no fan-out.
 import { getParser } from '../lib/parsing/registry.js';
+import { evaluateCandidate } from '../lib/cv/index.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
 import fs from 'node:fs';
@@ -276,7 +277,6 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
         writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: candidate.id,
           newValue: { candidateNo, fullName: candidate.full_name, source: 'cv_parse' } });
 
-        // Auto-link to request if provided
         const requestId = req.fields?.requestId ? Number(req.fields.requestId) : null;
         if (requestId && req.user.permissions.includes('candidate.link')) {
           const request = Requests.byId(requestId);
@@ -288,6 +288,20 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
               recruiterId: req.user.id, source: 'cv_parse', createdBy: req.user.id,
             });
             StageHistory.add(application.id, null, 'sourced', req.user);
+            
+            // Stage 5: Agent Reasoner
+            // Run asynchronously in the background so it doesn't block the UI upload response
+            evaluateCandidate(parsedFields, request).then(evalData => {
+              if (evalData) {
+                CandidateNotes.add({
+                  candidateId: candidate.id,
+                  authorId: req.user.id,
+                  type: 'ai_evaluation',
+                  isPinned: 1,
+                  note: `**AI Evaluation (Score: ${evalData.score}/100 - ${evalData.recommendation})**\n\n${evalData.summary}\n\n**Strengths:**\n- ${evalData.strengths.join('\\n- ')}\n\n**Weaknesses:**\n- ${evalData.weaknesses.join('\\n- ')}`
+                });
+              }
+            }).catch(e => console.error('[reasoner] Background evaluation failed', e));
           }
         }
       }

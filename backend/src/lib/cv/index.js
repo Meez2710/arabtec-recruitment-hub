@@ -10,12 +10,13 @@
 // Parser modules return generic entities. Mapping to ATS/database columns happens
 // outside this directory.
 import path from 'node:path';
-import { extractText, extractTextAsync, isSupported, SUPPORTED_EXTENSIONS } from './extractor.js';
+import { extractText, extractTextAsync, isSupported, SUPPORTED_EXTENSIONS, preScanDocument } from './extractor.js';
 import { detectSections } from './section-detector.js';
 import * as E from './entity-parser.js';
 import { validate } from './validator.js';
 import { fieldConfidence, summarise, deriveStatus, statusReason } from './confidence-engine.js';
 import { aiExtract, aiGateStatus, isAiEnabled } from './ai-parser.js';
+import { evaluateCandidate } from './reasoner.js';
 import { compactPhone } from './normalizer.js';
 
 const GROUPS = {
@@ -110,9 +111,15 @@ export function parseEntities(text, filename) {
   return out;
 }
 
+export { preScanDocument, evaluateCandidate };
+
 /** File-level convenience wrappers. */
 export async function parseEntitiesFromFile(filePath, opts = {}) {
   const filename = path.basename(filePath);
+  
+  // Stage 2: Pre-scanning Layer (Quality Check)
+  await preScanDocument(filePath);
+  
   const text = await extractTextAsync(filePath);
   
   if (isAiEnabled(opts)) {

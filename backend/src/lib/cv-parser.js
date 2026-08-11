@@ -15,7 +15,7 @@
 // one deliberate exception documented on parse().
 import path from 'node:path';
 import { extractText, extractTextAsync } from './cv/extractor.js';
-import { heuristicParse, parseEntities, parseEntitiesFromFile } from './cv/index.js';
+import { heuristicParse, parseEntities, parseEntitiesFromFile, preScanDocument } from './cv/index.js';
 import { detectPhone } from './cv/entity-parser.js';
 import { aiExtract, isAiEnabled, aiGateStatus } from './cv/ai-parser.js';
 
@@ -56,6 +56,10 @@ export async function claudeParse(text, filename, opts = {}) {
 
 export async function parse(filePath, opts = {}) {
   const filename = path.basename(filePath);
+  
+  // Stage 2: Pre-scanning Layer (Quality Check)
+  await preScanDocument(filePath);
+  
   const text = await extractTextAsync(filePath);
   if (isAiEnabled(opts)) return claudeParse(text, filename, opts);
   return heuristicParse(text, filename);

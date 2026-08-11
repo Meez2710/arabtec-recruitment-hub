@@ -202,3 +202,37 @@ export async function extractTextAsync(filePath) {
     return fs.readFileSync(filePath, 'utf-8').trim();
   } catch { return ''; }
 }
+
+export async function preScanDocument(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const stat = fs.statSync(filePath);
+  
+  // Basic file size limits
+  if (stat.size < 100) throw new Error('Quality below threshold: File is too small to be a valid CV.');
+  if (stat.size > 20 * 1024 * 1024) throw new Error('Quality below threshold: File exceeds 20MB limit.');
+  
+  if (ext === '.pdf') {
+    const pdfjs = await loadPdfjs();
+    const data = new Uint8Array(fs.readFileSync(filePath));
+    const doc = await pdfjs.getDocument({
+      data,
+      isEvalSupported: false,
+      disableFontFace: true,
+      useSystemFonts: false,
+    }).promise;
+    
+    if (doc.numPages === 0) throw new Error('Quality below threshold: Empty PDF document.');
+    
+    const page = await doc.getPage(1);
+    const tc = await page.getTextContent();
+    
+    // If the first page is completely empty of text items, it is likely a scanned image.
+    // Without Docling to perform OCR, the LLM will receive garbage.
+    if (tc.items.length === 0 && !process.env.DOCLING_BASE_URL) {
+      throw new Error('Quality below threshold: Scanned image detected and VLM OCR (Docling) is unavailable. Requires manual correction.');
+    }
+    
+    page.cleanup();
+    await doc.destroy();
+  }
+}
