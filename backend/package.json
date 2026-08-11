@@ -21,6 +21,9 @@
     "typecheck": "tsc --noEmit",
     "reconcile": "tsx src/infrastructure/tools/reconcile/run.ts",
     "test:pg": "vitest run --no-file-parallelism",
+    "test:pg:legacy": "node pg_tx_test.mjs",
+    "test:pg:required": "node pg_tx_test.mjs --required && node pg_appnumber_race_test.mjs && node pg_sequence_test.mjs && node pg_reopen_race_test.mjs && node reconciliation_test.mjs && node pg_headcount_race_test.mjs && node pg_join_race_test.mjs",
+    "test:cluster": "node pg_cluster_test.mjs --own",
     "api": "tsx src/api/main.ts",
     "api:dev": "tsx watch src/api/main.ts"
   },

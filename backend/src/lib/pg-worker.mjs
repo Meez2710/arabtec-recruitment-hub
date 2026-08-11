@@ -11,8 +11,46 @@ const dataBuf = Buffer.from(workerData.dataBuf);  // shared result bytes (JSON)
 const ENGINE = workerData.engine; // 'pg' | 'pglite'
 const CONN = workerData.conn;
 
-let query; // (sql, params) => Promise<{ rows, affected }>
+let query; // (sql, params) => Promise<{ rows, affected }>  — NON-transactional path
+let checkout = null; // () => Promise<client>  — pins ONE connection for a transaction
 let initError = null;
+
+/* ------------------------- transaction registry ---------------------------
+   F-01. `pool.query()` acquires a connection, runs one statement and releases
+   it. So a transaction driven by repeated pool.query() calls is not a
+   transaction at all: BEGIN opens one on connection A which is then handed back
+   to the pool, the writes autocommit on B/C/D, and COMMIT lands wherever it
+   lands. Under concurrency another request's statements can execute inside the
+   open transaction, and a ROLLBACK then discards *its* writes.
+
+   Fix: a transaction checks out its own client and every statement carrying its
+   txId is routed to that client. Non-transactional queries keep using the pool.
+   There is deliberately NO ambient "current transaction" here — the id travels
+   with each message, so two concurrent transactions cannot see each other.
+   -------------------------------------------------------------------------- */
+
+const transactions = new Map(); // txId -> { client, settled, timer }
+let txCounter = 0;
+
+// An abandoned transaction would hold a pooled connection forever and, at max:4,
+// starve the pool. Bounded so a crashed caller cannot wedge the process.
+const TX_MAX_MS = Number(process.env.PG_TX_TIMEOUT_MS || 30000);
+
+function forget(txId) {
+  const t = transactions.get(txId);
+  if (!t) return null;
+  if (t.timer) clearTimeout(t.timer);
+  transactions.delete(txId);
+  return t;
+}
+
+/** Release exactly once, whatever path got us here. */
+function releaseOnce(t) {
+  if (t.settled) return;
+  t.settled = true;
+  try { if (t.client && t.client.release) t.client.release(); } catch { /* already gone */ }
+}
+
 let ready = (async () => {
   try {
     if (ENGINE === 'pglite') {
@@ -22,6 +60,14 @@ let ready = (async () => {
         const r = await db.query(sql, unwrapParams(params));
         return { rows: r.rows, affected: r.affectedRows ?? 0 };
       };
+      // PGlite is ONE in-process connection, so affinity is automatic and there
+      // is nothing to check out. It therefore cannot exercise the pool bug above
+      // and can never stand in for a real Postgres transaction test.
+      checkout = async () => ({
+        query: (sql, params) => db.query(sql, unwrapParams(params))
+          .then((r) => ({ rows: r.rows, rowCount: r.affectedRows ?? 0 })),
+        release: () => {},
+      });
     } else {
       const pg = (await import('pg')).default;
       // Parse bigint (int8, OID 20) and numeric (OID 1700) as JS numbers so COUNT(*)
@@ -38,6 +84,7 @@ let ready = (async () => {
         const r = await pool.query(sql, unwrapParams(params));
         return { rows: r.rows, affected: r.rowCount ?? 0 };
       };
+      checkout = () => pool.connect();
     }
   } catch (e) {
     // Record but DON'T throw — the message handler must always be able to respond,
@@ -82,6 +129,70 @@ parentPort.on('message', async (msg) => {
     await ready; // never throws now (errors captured into initError)
     if (msg.type === 'ping') { respond({ ok: true, ready: !initError, error: initError || undefined }); return; }
     if (initError || !query) { respond({ ok: false, error: 'DB not initialised: ' + (initError || 'unknown') }); return; }
+
+    /* ------------------------------ BEGIN -------------------------------- */
+    if (msg.type === 'txBegin') {
+      const client = await checkout();
+      const txId = `tx${++txCounter}`;
+      const t = { client, settled: false, timer: null };
+      // Roll back and release if the caller never settles. Without this an
+      // abandoned transaction holds a pooled connection until the process dies.
+      t.timer = setTimeout(() => {
+        if (transactions.get(txId) !== t) return;
+        transactions.delete(txId);
+        Promise.resolve()
+          .then(() => client.query('ROLLBACK'))
+          .catch(() => {})
+          .finally(() => releaseOnce(t));
+      }, TX_MAX_MS);
+      if (t.timer.unref) t.timer.unref();
+      try {
+        await client.query('BEGIN');
+      } catch (e) {
+        forget(txId); releaseOnce(t);
+        respond({ ok: false, error: e.message || String(e) });
+        return;
+      }
+      transactions.set(txId, t);
+      respond({ ok: true, txId });
+      return;
+    }
+
+    /* --------------------------- COMMIT / ROLLBACK ------------------------ */
+    if (msg.type === 'txCommit' || msg.type === 'txRollback') {
+      const t = forget(msg.txId);
+      if (!t) {
+        // Unknown or already-settled id. Never silently succeed: a caller that
+        // thinks it committed when nothing happened is the failure mode this
+        // whole change exists to remove.
+        respond({ ok: false, error: `Unknown transaction: ${msg.txId}` });
+        return;
+      }
+      const verb = msg.type === 'txCommit' ? 'COMMIT' : 'ROLLBACK';
+      try {
+        await t.client.query(verb);
+        respond({ ok: true });
+      } catch (e) {
+        // A failed COMMIT leaves the transaction open on that client; roll it
+        // back so the connection returns to the pool clean.
+        if (verb === 'COMMIT') { try { await t.client.query('ROLLBACK'); } catch { /* gone */ } }
+        respond({ ok: false, error: e.message || String(e) });
+      } finally {
+        releaseOnce(t); // exactly once, on every path
+      }
+      return;
+    }
+
+    /* ------------------------------ QUERY --------------------------------- */
+    if (msg.txId) {
+      const t = transactions.get(msg.txId);
+      if (!t) { respond({ ok: false, error: `Unknown transaction: ${msg.txId}` }); return; }
+      // Pinned client — same connection as BEGIN and as the eventual COMMIT.
+      const r = await t.client.query(msg.sql, unwrapParams(msg.params));
+      respond({ ok: true, rows: r.rows, affected: r.rowCount ?? 0 });
+      return;
+    }
+
     const out = await query(msg.sql, msg.params);
     respond({ ok: true, rows: out.rows, affected: out.affected });
   } catch (e) {

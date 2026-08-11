@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import {
   Offers, OfferApprovals, OfferActivity,
-  Applications, Candidates, Requests, Projects, Users, SystemSettings, StageHistory, CandidateActivity, RequestActivity,
+  Applications, Candidates, Requests, Projects, Users, SystemSettings, StageHistory, CandidateActivity,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { hasOpenSeat, fillSeatAndCount, applicationAlreadyFilledSeat } from '../lib/vacancy.js';
+import { hasOpenSeat, applicationAlreadyFilledSeat } from '../lib/vacancy.js';
+import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import { APP, appNorm } from '../lib/stages.js';
 import { sendMail } from '../lib/mailer.js';
 import { offerSent as offerSentTpl, offerLetterHtml } from '../lib/email_templates.js';
@@ -287,21 +288,27 @@ router.post('/:id/result', requirePermission('offer.result_update'), (req, res) 
     }
     const request = Requests.byId(o.request_id);
     if (!hasOpenSeat(request.id)) return res.status(409).json({ error: 'All vacancies for this request are already filled.' });
+    // BL-27. One joined application per candidate, globally — the offer flow is
+    // no more privileged than a manual move. Checked here for the message,
+    // decided inside the shared transaction and by the database index.
+    const blocker = blockingJoinedApplication(app.candidate_id, app.id);
+    if (blocker) {
+      return res.status(409).json({
+        error: ALREADY_JOINED_MESSAGE, code: JOIN_CONFLICT.ALREADY_JOINED_ELSEWHERE,
+        blockingApplicationId: blocker.applicationId, blockingRequestId: blocker.requestId,
+      });
+    }
 
-    // Move application → joined and fill a seat atomically.
-    const beforeFilled = request.headcount_filled;
-    StageHistory.add(app.id, app.status, 'joined', req.user, 'Joined via offer');
-    Applications.setStatus(app.id, 'joined');
-    const result2 = fillSeatAndCount(request, app.id);
-    Offers.setStatus(o.id, 'joined', { joined_at: new Date().toISOString() });
-
-    OfferActivity.add(o.id, req.user, 'joined', { toStatus: 'joined' });
-    CandidateActivity.add({ candidateId: o.candidate_id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_joined' });
-    RequestActivity.add(request.id, req.user, 'seat_filled', { note: `${result2.filled}/${request.headcount} filled${result2.newStatus === 'filled' ? ' — request Filled' : ''}` });
-    writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: 'joined' }, comments: 'Joined via offer' });
-    writeAudit(req, { action: 'offer.joined', entityType: 'offer', entityId: o.id });
-    writeAudit(req, { action: 'request.seat_filled', entityType: 'recruitment_request', entityId: request.id, newValue: { filled: result2.filled, status: result2.newStatus } });
-    writeAudit(req, { action: 'request.vacancy_changed', entityType: 'recruitment_request', entityId: request.id, oldValue: { headcountFilled: beforeFilled }, newValue: { headcountFilled: result2.filled, remaining: request.headcount - result2.filled, status: result2.newStatus } });
+    // Application → joined, seat, counters, activity, offer settlement and audit
+    // all commit together (lib/join.js). Previously this ran unwrapped: only the
+    // seat fill was transactional, so a failure after it left an application
+    // marked joined against a requisition whose counters never moved.
+    try {
+      joinApplication({ app, req, reason: 'Joined via offer', offer: o });
+    } catch (e) {
+      if (e instanceof JoinConflict) return res.status(e.status).json(e.toBody());
+      throw e;
+    }
   } else {
     return res.status(400).json({ error: 'Invalid result.' });
   }

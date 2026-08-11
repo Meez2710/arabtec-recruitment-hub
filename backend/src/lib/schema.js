@@ -2,6 +2,9 @@
 // structure ports to PostgreSQL (swap AUTOINCREMENT→SERIAL/IDENTITY, DATETIME→TIMESTAMPTZ,
 // INTEGER booleans→BOOLEAN). See docs/SCHEMA.sql for the Postgres variant.
 import { exec, all, run, driverKind } from './db.js';
+import {
+  duplicateJoinedCandidates, formatDuplicateJoined, JOINED_UNIQUE_INDEX_SQL,
+} from './join-reconciliation.js';
 
 // Idempotent additive migration: add a column only if it doesn't already exist.
 // Works on both engines (SQLite PRAGMA vs Postgres information_schema).
@@ -748,6 +751,65 @@ export function ensureSchema() {
   `);
 
   migrateWorkflowStages();
+  ensureOneJoinedPerCandidate();
+}
+
+/* ------------------------- BL-27 database invariant ------------------------ */
+
+/**
+ * Outcome of the last bootstrap attempt, so a test or an operator console can
+ * ask whether the rule is actually being enforced by the database rather than
+ * assuming it. `{ enforced, reason, duplicates }`.
+ */
+let joinedUniquenessState = { enforced: false, reason: 'not_attempted', duplicates: [] };
+export function joinedUniqueness() { return joinedUniquenessState; }
+
+/**
+ * Install the partial unique index: one `joined` application per candidate.
+ *
+ * ORDER MATTERS. This runs AFTER migrateWorkflowStages, because that is what
+ * folds legacy aliases into the canonical vocabulary. Creating the index first
+ * would index a status column mid-rewrite.
+ *
+ * MIGRATION SAFETY. `CREATE UNIQUE INDEX` on a table that already violates the
+ * rule fails, and on PostgreSQL a failed statement poisons the surrounding
+ * transaction. So the duplicates are counted FIRST with a read-only query, and
+ * when any exist the statement is never attempted: enforcement stops for this
+ * environment and the exact conflict is reported by ID. Nothing is repaired and
+ * no winner is chosen — that is a human decision (see join-reconciliation.js).
+ *
+ * A clean database — new or existing — gets the index and upgrades silently.
+ * Re-running is a no-op thanks to IF NOT EXISTS, on both engines.
+ */
+function ensureOneJoinedPerCandidate() {
+  let duplicates = [];
+  try {
+    duplicates = duplicateJoinedCandidates();
+  } catch (e) {
+    // Table not present yet (first boot mid-DDL) — nothing to protect.
+    joinedUniquenessState = { enforced: false, reason: `precheck_failed: ${e.message}`, duplicates: [] };
+    return joinedUniquenessState;
+  }
+
+  if (duplicates.length) {
+    joinedUniquenessState = { enforced: false, reason: 'historical_duplicates', duplicates };
+    console.error(
+      `\n  ✖ BL-27: refusing to enforce one-joined-application-per-candidate.\n`
+      + `    ${duplicates.length} candidate(s) already hold more than one joined application.\n`
+      + formatDuplicateJoined(duplicates).map((l) => `      • ${l}\n`).join('')
+      + `    Resolve these records deliberately, then restart. Nothing was changed.\n`,
+    );
+    return joinedUniquenessState;
+  }
+
+  try {
+    run(JOINED_UNIQUE_INDEX_SQL);
+    joinedUniquenessState = { enforced: true, reason: 'ok', duplicates: [] };
+  } catch (e) {
+    joinedUniquenessState = { enforced: false, reason: `create_failed: ${e.message}`, duplicates: [] };
+    console.error(`  ✖ BL-27: could not create the joined-uniqueness index: ${e.message}`);
+  }
+  return joinedUniquenessState;
 }
 
 // One-time, idempotent migration: rewrite any legacy request/application status

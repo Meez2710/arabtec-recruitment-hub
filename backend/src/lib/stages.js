@@ -83,6 +83,35 @@ export const APP_PIPELINE = [
 ];
 export const APP_TERMINALS = [APP.REJECTED, APP.OFFER_DECLINED, APP.ON_HOLD, APP.SHORTLISTED];
 export const APP_STATUSES = [...APP_PIPELINE, ...APP_TERMINALS];
+
+/**
+ * BL-03 — the ONLY statuses an application may be CREATED at.
+ *
+ * `APP_STATUSES` is the set of statuses an application may ever HOLD, which is a
+ * different question and must never be used to validate creation: it contains
+ * `joined`, `offer_sent` and `rejected`, so validating against it let a caller
+ * create an application already at a terminal stage — bypassing the interview
+ * record, the offer flow and seat accounting in one request.
+ *
+ * Entry stages are the early, pre-interview, non-terminal ones. A candidate can
+ * legitimately be linked as already sourced, matched, screened out, or
+ * shortlisted; everything later must be REACHED through `appCanMove`, which is
+ * what records how it was reached.
+ *
+ * Deliberately excluded, and why:
+ *   interviewing, waiting_feedback  — imply an interview that does not exist
+ *   issuing_offer, offer_sent       — imply an offer that does not exist
+ *   joined                          — consumes a seat; must come from offer_sent
+ *   rejected, offer_declined        — terminal; nothing to reject yet
+ *   on_hold                         — resumes to a prior stage; there is none
+ */
+export const APP_ENTRY = [APP.SOURCED, APP.MATCHED, APP.UNMATCHED, APP.SHORTLISTED];
+
+/** Default when a caller supplies no initial status at all. */
+export const APP_ENTRY_DEFAULT = APP.SOURCED;
+
+/** True when `status` is a legal creation stage. Aliases are resolved first. */
+export const appIsEntry = (status) => APP_ENTRY.includes(appNorm(status));
 // Truly terminal (cannot be moved out of): joined + the two rejections.
 export const APP_TERMINAL = [APP.JOINED, APP.REJECTED, APP.OFFER_DECLINED];
 // Stages that require a reason when set.
