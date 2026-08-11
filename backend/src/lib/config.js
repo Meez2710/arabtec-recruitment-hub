@@ -46,7 +46,7 @@ export function validateConfig() {
   }
 
   // AI CV parsing
-  const hasAiKey = present('DEEPSEEK_API_KEY') || present('ANTHROPIC_API_KEY') || present('OLLAMA_BASE_URL');
+  const hasAiKey = present('ANTHROPIC_API_KEY') || present('OLLAMA_BASE_URL');
   const aiEnabledEnv = String(process.env.CV_AI_PARSING_ENABLED || '').trim().toLowerCase() === 'true';
   if (!hasAiKey && !aiEnabledEnv && isProd) {
     warnings.push('AI CV parsing is OFF (no AI keys or OLLAMA_BASE_URL) — falling back to the heuristic parser.');

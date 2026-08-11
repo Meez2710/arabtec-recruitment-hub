@@ -27,14 +27,7 @@ export function extractPhone(text) {
   return detectPhone(text).value;
 }
 
-/**
- * BEHAVIOUR CHANGE (intentional, approved):
- * previously this called Claude whenever ANTHROPIC_API_KEY was set. AI is now
- * off unless CV_AI_PARSING_ENABLED=true AND feature.ai_parsing is enabled AND a
- * key exists AND the caller passes { allowAi: true }. Otherwise heuristic only.
- * No route currently calls this function.
- */
-export async function claudeParse(text, filename, opts = {}) {
+export async function aiParse(text, filename, opts = {}) {
   const ai = await aiExtract(text, filename, opts);
   if (!ai) return heuristicParse(text, filename);
   return {
@@ -61,7 +54,7 @@ export async function parse(filePath, opts = {}) {
   await preScanDocument(filePath);
   
   const text = await extractTextAsync(filePath);
-  if (isAiEnabled(opts)) return claudeParse(text, filename, opts);
+  if (isAiEnabled(opts)) return aiParse(text, filename, opts);
   return heuristicParse(text, filename);
 }
 
