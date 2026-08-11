@@ -4160,7 +4160,14 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
                   if (p.full_name) set('fullName', p.full_name);
                   if (p.email) set('email', p.email);
                   if (p.phone) set('phone', p.phone);
+                  if (p.location) set('location', p.location);
+                  if (p.current_company) set('currentCompany', p.current_company);
+                  if (p.current_position) set('currentPosition', p.current_position);
                   if (p.years_experience) set('yearsExperience', String(p.years_experience));
+                  if (p.university) set('university', p.university);
+                  if (p.major) set('major', p.major);
+                  if (p.graduation_year) set('graduationYear', String(p.graduation_year));
+                  
                   toast('CV parsed: ' + (p.full_name || 'fields extracted'));
                 }
               } catch (e) { toast('Parse failed: ' + e.message, 'error'); }
