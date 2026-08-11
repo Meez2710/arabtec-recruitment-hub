@@ -113,12 +113,16 @@ async function pdfText(filePath) {
   try {
     if (process.env.DOCLING_BASE_URL) {
       const baseUrl = process.env.DOCLING_BASE_URL.replace(/\/$/, '');
-      const formData = new FormData();
-      formData.append('file', new Blob([fs.readFileSync(filePath)]), path.basename(filePath));
+      const fileBytes = fs.readFileSync(filePath);
       
-      const res = await fetch(`${baseUrl}/convert`, {
+      const res = await fetch(`${baseUrl}/v1/convert`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: path.basename(filePath),
+          mimeType: 'application/pdf',
+          contentBase64: fileBytes.toString('base64'),
+        }),
       });
       if (res.ok) {
         const data = await res.json();
