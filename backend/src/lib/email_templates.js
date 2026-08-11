@@ -176,6 +176,32 @@ export function offerLetterHtml({ candidateName, position, salary, allowances, o
 </div>
 </body></html>`;
 }// Simple test email (used by the admin “send test” button).
+// 7. Password reset (Step 2). Staff-facing, not candidate-facing.
+// The link is the ONLY secret in this message; nothing identifying is included
+// beyond the recipient's own name, and the token never appears in the subject.
+export function passwordReset({ fullName, resetUrl, expiresMinutes = 60 }) {
+  const name = fullName ? fullName.split(' ')[0] : 'there';
+  return {
+    subject: 'Reset your Arabtec Recruitment Hub password',
+    html: shell('Reset your password', [
+      p(`Hi ${name},`),
+      p('We received a request to reset the password for your Arabtec Recruitment Hub account.'),
+      `<p style="margin:22px 0;">
+         <a href="${resetUrl}"
+            style="background:${INK};color:#ffffff;text-decoration:none;padding:12px 22px;
+                   border-radius:8px;font-size:14px;font-weight:bold;display:inline-block;">
+           Choose a new password
+         </a>
+       </p>`,
+      p(`This link expires in <strong>${expiresMinutes} minutes</strong> and can be used only once.`),
+      p('If you did not request this, you can safely ignore this email — your password has not changed.'),
+      `<p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:${MUT};word-break:break-all;">
+         If the button does not work, paste this link into your browser:<br>${resetUrl}
+       </p>`,
+    ].join('')),
+  };
+}
+
 export function testEmail() {
   return {
     subject: 'Arabtec Recruitment — test email',

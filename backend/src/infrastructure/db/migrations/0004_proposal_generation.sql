@@ -1,0 +1,1 @@
+ALTER TABLE "candidate_proposal" ADD COLUMN "generation" jsonb;

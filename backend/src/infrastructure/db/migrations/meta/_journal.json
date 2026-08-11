@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785742383060,
+      "tag": "0000_init_hiring_interview_offer",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785742406750,
+      "tag": "0001_business_number_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785787240049,
+      "tag": "0002_talent",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785789507871,
+      "tag": "0003_ai_task",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785830622957,
+      "tag": "0004_proposal_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785831302573,
+      "tag": "0005_cv_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785833666619,
+      "tag": "0006_candidate_match",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786017289013,
+      "tag": "0007_candidate_search",
+      "breakpoints": true
+    }
+  ]
+}

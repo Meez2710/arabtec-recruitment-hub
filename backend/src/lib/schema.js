@@ -549,6 +549,28 @@ export function ensureSchema() {
   // Security (Phase 1): force first-login password rotation. 1 = user must change
   // their password before doing anything else. Reversible (drop column on rollback).
   addColumnIfMissing('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+  // Password reset tokens (Step 2). Design notes:
+  //   • The token is stored HASHED (sha256). A database leak therefore cannot be
+  //     replayed to take over an account — same reasoning as password hashing.
+  //   • Single-use: used_at is stamped on redemption and checked on every attempt.
+  //   • Short-lived: expires_at is enforced in SQL, not just in JS.
+  //   • Rows are kept after use so the audit trail survives; a cleanup can prune
+  //     them later without affecting correctness.
+  run(`CREATE TABLE IF NOT EXISTS password_reset_token (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    requested_ip TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  for (const stmt of [
+    'CREATE INDEX IF NOT EXISTS idx_prt_token_hash ON password_reset_token(token_hash)',
+    'CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_token(user_id)',
+    'CREATE INDEX IF NOT EXISTS idx_prt_expires ON password_reset_token(expires_at)',
+  ]) { try { run(stmt); } catch {} }
+
   // Account lockout (C1.3): count consecutive failed logins; lock the account until
   // locked_until after too many. Both reset on a successful login. Reversible.
   addColumnIfMissing('users', 'failed_login_count', 'INTEGER NOT NULL DEFAULT 0');

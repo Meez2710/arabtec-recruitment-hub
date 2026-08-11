@@ -1048,3 +1048,38 @@ export const OfferActivity = {
 };
 
 export { ub, b };
+
+/* ------------------------- Password reset tokens -------------------------
+   The raw token is NEVER stored. We keep sha256(token) so a database leak
+   cannot be replayed. Redemption is single-use and time-bound, and both
+   conditions are enforced in SQL rather than trusted to the caller.
+   ------------------------------------------------------------------------ */
+export const PasswordResets = {
+  // Invalidate any outstanding tokens for a user before issuing a new one, so a
+  // second "forgot password" click cannot leave two live links in two inboxes.
+  invalidateForUser(userId) {
+    run("UPDATE password_reset_token SET used_at=? WHERE user_id=? AND used_at IS NULL",
+      [nowISO(), Number(userId)]);
+  },
+  create({ userId, tokenHash, expiresAt, ip }) {
+    run(`INSERT INTO password_reset_token (user_id, token_hash, expires_at, requested_ip, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      [Number(userId), tokenHash, expiresAt, ip || null, nowISO()]);
+    return get("SELECT * FROM password_reset_token WHERE token_hash=?", [tokenHash]);
+  },
+  // Valid = exists, not used, not expired. Expiry compared as ISO-8601 text,
+  // which sorts lexicographically, so a plain string comparison is correct.
+  findValid(tokenHash) {
+    return get(`SELECT * FROM password_reset_token
+                 WHERE token_hash=? AND used_at IS NULL AND expires_at > ?`,
+      [tokenHash, nowISO()]);
+  },
+  markUsed(id) {
+    run("UPDATE password_reset_token SET used_at=? WHERE id=? AND used_at IS NULL", [nowISO(), Number(id)]);
+  },
+  // Housekeeping: drop rows that expired long ago. Safe to call any time.
+  purgeExpired(olderThanDays = 30) {
+    const cutoff = new Date(Date.now() - olderThanDays * 86400000).toISOString();
+    run("DELETE FROM password_reset_token WHERE expires_at < ?", [cutoff]);
+  },
+};
