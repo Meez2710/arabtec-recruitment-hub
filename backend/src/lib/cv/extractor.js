@@ -112,23 +112,27 @@ async function loadPdfjs() {
 async function pdfText(filePath) {
   try {
     if (process.env.DOCLING_BASE_URL) {
-      const baseUrl = process.env.DOCLING_BASE_URL.replace(/\/$/, '');
-      const fileBytes = fs.readFileSync(filePath);
-      
-      const res = await fetch(`${baseUrl}/v1/convert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: path.basename(filePath),
-          mimeType: 'application/pdf',
-          contentBase64: fileBytes.toString('base64'),
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.markdown || '';
+      try {
+        const baseUrl = process.env.DOCLING_BASE_URL.replace(/\/$/, '');
+        const fileBytes = fs.readFileSync(filePath);
+        
+        const res = await fetch(`${baseUrl}/v1/convert`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: path.basename(filePath),
+            mimeType: 'application/pdf',
+            contentBase64: fileBytes.toString('base64'),
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return data.markdown || '';
+        }
+        console.warn('[docling] Fallback to pdfjs due to sidecar error:', res.status, await res.text());
+      } catch (doclingErr) {
+        console.warn('[docling] Network error or OOM disconnect. Falling back to pdfjs:', doclingErr.message);
       }
-      console.warn('[docling] Fallback to pdfjs due to Docling sidecar error:', res.status, await res.text());
     }
     const pdfjs = await loadPdfjs();
     const data = new Uint8Array(fs.readFileSync(filePath));
