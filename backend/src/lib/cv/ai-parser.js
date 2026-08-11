@@ -36,34 +36,46 @@ export async function aiExtract(text, filename, { allowAi = false, timeoutMs = 2
       const ollamaBase = process.env.OLLAMA_BASE_URL.replace(/\/$/, '');
       const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
       const systemPrompt = 'Extract candidate details from this CV. Respond with ONLY a JSON object: {full_name, email, phone, location, current_company, current_position, years_experience (integer), university, major, graduation_year, role_applied}. Phone numbers are Egyptian (MENA region).';
-      const res = await fetch(`${ollamaBase}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: ollamaModel,
-          system: systemPrompt,
-          prompt: text.slice(0, 24000), // Docling markdown can be longer
-          stream: false,
-          format: {
-            type: "object",
-            properties: {
-              full_name: { type: "string" },
-              email: { type: "string" },
-              phone: { type: "string" },
-              location: { type: "string" },
-              current_company: { type: "string" },
-              current_position: { type: "string" },
-              years_experience: { type: "number" },
-              university: { type: "string" },
-              major: { type: "string" },
-              graduation_year: { type: "string" },
-              role_applied: { type: "string" }
+      const origTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      if (ollamaBase.includes('runpod.net')) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      }
+      let res;
+      try {
+        res = await fetch(`${ollamaBase}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: ollamaModel,
+            system: systemPrompt,
+            prompt: text.slice(0, 24000), // Docling markdown can be longer
+            stream: false,
+            format: {
+              type: "object",
+              properties: {
+                full_name: { type: "string" },
+                email: { type: "string" },
+                phone: { type: "string" },
+                location: { type: "string" },
+                current_company: { type: "string" },
+                current_position: { type: "string" },
+                years_experience: { type: "number" },
+                university: { type: "string" },
+                major: { type: "string" },
+                graduation_year: { type: "string" },
+                role_applied: { type: "string" }
+              },
+              required: ["full_name"]
             },
-            required: ["full_name"]
-          },
-          options: { temperature: 0, num_ctx: 16384 }
-        })
-      });
+            options: { temperature: 0, num_ctx: 16384 }
+          })
+        });
+      } finally {
+        if (ollamaBase.includes('runpod.net')) {
+          if (origTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+          else process.env.NODE_TLS_REJECT_UNAUTHORIZED = origTls;
+        }
+      }
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Ollama API error (${res.status}): ${text}`);
