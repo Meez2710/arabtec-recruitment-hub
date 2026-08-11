@@ -92,6 +92,7 @@ def health() -> dict[str, Any]:
 
 
 @app.post(f"/{API_VERSION}/convert", response_model=ConvertResponse)
+@app.post("/convert", response_model=ConvertResponse)
 def convert(req: ConvertRequest) -> ConvertResponse:
     request_id = uuid.uuid4().hex[:12]
     started = time.monotonic()
