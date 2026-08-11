@@ -64,12 +64,16 @@ export async function aiExtract(text, filename, { allowAi = false, timeoutMs = 2
           options: { temperature: 0, num_ctx: 16384 }
         })
       });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Ollama API error (${res.status}): ${text}`);
+      }
       const data = await res.json();
       const raw = data?.response || '';
       const jsonStr = raw.replace(/```(?:json)?\s*/g, '').replace(/```\s*/g, '').trim();
       const start = jsonStr.indexOf('{');
       const end = jsonStr.lastIndexOf('}');
-      if (start === -1 || end === -1) return null;
+      if (start === -1 || end === -1) throw new Error('AI returned malformed JSON');
       return JSON.parse(jsonStr.slice(start, end + 1));
     } else {
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
@@ -89,6 +93,6 @@ export async function aiExtract(text, filename, { allowAi = false, timeoutMs = 2
     }
   } catch (err) {
     console.error('[ai-parser] Extraction failed:', err.message);
-    return null;                                        // fall back to heuristic
+    throw err;
   }
 }
