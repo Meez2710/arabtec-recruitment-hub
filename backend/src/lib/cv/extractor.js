@@ -111,6 +111,21 @@ async function loadPdfjs() {
 
 async function pdfText(filePath) {
   try {
+    if (process.env.DOCLING_BASE_URL) {
+      const baseUrl = process.env.DOCLING_BASE_URL.replace(/\/$/, '');
+      const formData = new FormData();
+      formData.append('file', new Blob([fs.readFileSync(filePath)]), path.basename(filePath));
+      
+      const res = await fetch(`${baseUrl}/convert`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.markdown || '';
+      }
+      console.warn('[docling] Fallback to pdfjs due to Docling sidecar error:', res.status, await res.text());
+    }
     const pdfjs = await loadPdfjs();
     const data = new Uint8Array(fs.readFileSync(filePath));
     const doc = await pdfjs.getDocument({

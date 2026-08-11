@@ -19,7 +19,7 @@ export function aiGateStatus({ allowAi = false } = {}) {
   const hasKey = !!String(process.env.ANTHROPIC_API_KEY || '').trim() || !!String(process.env.OLLAMA_BASE_URL || '').trim();
   return {
     envEnabled, flagEnabled, hasKey, callerOptIn: !!allowAi,
-    allowed: envEnabled && flagEnabled && hasKey && !!allowAi,
+    allowed: envEnabled && flagEnabled && hasKey, // Enabled globally if ENV/Flags pass
   };
 }
 
@@ -35,14 +35,14 @@ export async function aiExtract(text, filename, { allowAi = false, timeoutMs = 2
     if (process.env.OLLAMA_BASE_URL) {
       const ollamaBase = process.env.OLLAMA_BASE_URL.replace(/\/$/, '');
       const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
-      const systemPrompt = 'Extract candidate details from this CV. Respond with ONLY a JSON object: {full_name, email, phone, years_experience (integer or null), role_applied}. Phone numbers are Egyptian (MENA region).';
+      const systemPrompt = 'Extract candidate details from this CV. Respond with ONLY a JSON object: {full_name, email, phone, location, current_company, current_position, years_experience (integer), university, major, graduation_year, role_applied}. Phone numbers are Egyptian (MENA region).';
       const res = await fetch(`${ollamaBase}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: ollamaModel,
           system: systemPrompt,
-          prompt: text.slice(0, 12000),
+          prompt: text.slice(0, 24000), // Docling markdown can be longer
           stream: false,
           format: {
             type: "object",
@@ -50,12 +50,18 @@ export async function aiExtract(text, filename, { allowAi = false, timeoutMs = 2
               full_name: { type: "string" },
               email: { type: "string" },
               phone: { type: "string" },
+              location: { type: "string" },
+              current_company: { type: "string" },
+              current_position: { type: "string" },
               years_experience: { type: "number" },
+              university: { type: "string" },
+              major: { type: "string" },
+              graduation_year: { type: "string" },
               role_applied: { type: "string" }
             },
             required: ["full_name"]
           },
-          options: { temperature: 0, num_ctx: 8192 }
+          options: { temperature: 0, num_ctx: 16384 }
         })
       });
       const data = await res.json();

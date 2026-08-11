@@ -111,9 +111,44 @@ export function parseEntities(text, filename) {
 }
 
 /** File-level convenience wrappers. */
-export async function parseEntitiesFromFile(filePath) {
+export async function parseEntitiesFromFile(filePath, opts = {}) {
+  const filename = path.basename(filePath);
   const text = await extractTextAsync(filePath);
-  return parseEntities(text, path.basename(filePath));
+  
+  if (isAiEnabled(opts)) {
+    const aiData = await aiExtract(text, filename, opts);
+    if (aiData) {
+      // Map AI data into the rich shape
+      const flat = {};
+      const allFields = Object.values(GROUPS).flat();
+      for (const f of allFields) {
+        flat[f] = {
+          value: aiData[f] || null,
+          method: 'ai',
+          confidence: aiData[f] ? 0.9 : 0,
+          validation: aiData[f] ? 'verified' : 'missing',
+        };
+      }
+      const out = { personal: {}, employment: {}, education: {}, metadata: {} };
+      for (const [group, fields] of Object.entries(GROUPS)) {
+        for (const f of fields) out[group][f] = flat[f];
+      }
+      out.metadata = {
+        parse_status: 'done',
+        parse_status_reason: null,
+        overall_confidence: 0.9,
+        fields_found: Object.values(flat).filter(f => f.value).length,
+        fields_missing: Object.values(flat).filter(f => !f.value).length,
+        core_fields_found: (flat.full_name?.value ? 1 : 0) + (flat.email?.value || flat.phone?.value ? 1 : 0),
+        sections_detected: [],
+        parsed_by: 'ai',
+        engine_version: 3,
+      };
+      return out;
+    }
+  }
+
+  return parseEntities(text, filename);
 }
 
 export {
