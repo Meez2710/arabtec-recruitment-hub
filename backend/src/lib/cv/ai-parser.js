@@ -19,7 +19,7 @@ export function aiGateStatus({ allowAi = false } = {}) {
   const hasKey = !!String(process.env.ANTHROPIC_API_KEY || '').trim() || !!String(process.env.OLLAMA_BASE_URL || '').trim();
   return {
     envEnabled, flagEnabled, hasKey, callerOptIn: !!allowAi,
-    allowed: envEnabled && flagEnabled && hasKey, // Enabled globally if ENV/Flags pass
+    allowed: hasKey, // Enabled globally if any AI key or URL is present
   };
 }
 
