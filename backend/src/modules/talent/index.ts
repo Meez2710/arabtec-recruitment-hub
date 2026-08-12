@@ -32,7 +32,9 @@ export type {
 } from './domain/cv-intake.js';
 
 export { PROPOSAL_STATUSES } from './domain/proposal.js';
-export type { ProposalGeneration, ProposalStatus } from './domain/proposal.js';
+export type {
+  EvidenceRef, ProposalGeneration, ProposalStatus,
+} from './domain/proposal.js';
 
 export { FIELD_SOURCES, sourceOf, aiApprovedFields } from './domain/provenance.js';
 export type { FieldProvenance, FieldSource, ProvenanceMap } from './domain/provenance.js';

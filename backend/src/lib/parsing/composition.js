@@ -3,14 +3,17 @@
 // Called once during startup. Everything that decides WHICH parser runs lives
 // here; nothing else in the application may register or select a provider.
 //
-// The default is `legacy`, deliberately: this phase adds the seam without
-// changing production behaviour. Switching to the Docling/Qwen pipeline is a
-// configuration change here, made only after the benchmark gate passes.
+// The default is `document-pipeline`: ingestion and routing, layout-aware
+// parsing, a conditional OCR pass, native/OCR reconciliation, a structured
+// document, evidence-bound extraction, deterministic validation, and a résumé
+// proposal. It is the ONLY production path — the heuristic parser it replaced
+// has been removed rather than left registered, because a second registered
+// provider is a second production system that nobody is watching.
 
 import { registerParser, selectParser, selectedParserName } from './registry.js';
-import { legacyParserProvider } from './legacy-provider.js';
+import { pipelineParserProvider } from './pipeline-provider.js';
 
-export const DEFAULT_PARSER_PROVIDER = 'legacy';
+export const DEFAULT_PARSER_PROVIDER = 'document-pipeline';
 
 /**
  * Register every known provider and select one.
@@ -21,12 +24,7 @@ export const DEFAULT_PARSER_PROVIDER = 'legacy';
  * @returns {string} the selected provider name
  */
 export function configureParsing(opts = {}) {
-  registerParser(legacyParserProvider.name, legacyParserProvider);
-
-  // The new pipeline is NOT registered yet. Its adapters live in the
-  // TypeScript tree and are not wired into this runtime until they have passed
-  // the benchmark gate. Registering an unproven provider here — even unselected
-  // — would invite it being switched on without evidence.
+  registerParser(pipelineParserProvider.name, pipelineParserProvider);
 
   const requested = opts.provider ?? process.env.CV_PARSER_PROVIDER ?? DEFAULT_PARSER_PROVIDER;
   selectParser(requested);

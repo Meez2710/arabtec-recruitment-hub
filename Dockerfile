@@ -2,6 +2,15 @@
 # natively). Deterministic, pinned Node, non-root, with a container health check.
 # Build context = repo root so both backend/ and frontend/ are available (the
 # backend serves the SPA from ../../frontend/public).
+# Build stage: devDependencies (TypeScript) are needed to compile the document
+# pipeline to dist/. They are NOT carried into the runtime image below.
+FROM node:22.11.0-slim AS build
+WORKDIR /app/backend
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci --include=dev
+COPY backend/ ./
+RUN npm run build
+
 FROM node:22.11.0-slim AS base
 
 ENV NODE_ENV=production
@@ -15,6 +24,10 @@ RUN cd backend && npm ci --omit=dev && npm cache clean --force
 # App source
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
+
+# Compiled document pipeline. src/server.js loads it from here; without it the
+# parser provider fails loudly at the first parse rather than degrading.
+COPY --from=build /app/backend/dist ./backend/dist
 
 # Run as an unprivileged user (the node image ships a `node` user).
 RUN chown -R node:node /app

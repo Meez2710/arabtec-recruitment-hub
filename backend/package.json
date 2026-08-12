@@ -19,6 +19,7 @@
     "test:domain:watch": "vitest",
     "test:domain:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
     "reconcile": "tsx src/infrastructure/tools/reconcile/run.ts",
     "test:pg": "vitest run --no-file-parallelism",
     "test:pg:legacy": "node pg_tx_test.mjs",

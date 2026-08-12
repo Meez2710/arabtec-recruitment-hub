@@ -355,6 +355,32 @@ export function ensureSchema() {
     uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Field values a CV parse SUGGESTED, awaiting a human.
+  --
+  -- A NEW table. Nothing about the candidate table changes: a proposal points at
+  -- a candidate and holds values that have NOT been applied to it. That is the
+  -- whole point - an extraction writes here, never to the candidate row, and a
+  -- person accepting a field is what moves it across.
+  --
+  -- The fields and generation columns are JSON text, read and written whole and
+  -- never queried by key, so they need no columns of their own on either engine.
+  CREATE TABLE IF NOT EXISTS candidate_proposal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    candidate_id INTEGER NOT NULL REFERENCES candidate(id) ON DELETE CASCADE,
+    origin TEXT NOT NULL,                               -- 'resume.extract', 'bulk.import', …
+    task_id TEXT NOT NULL DEFAULT '',
+    model_id TEXT NOT NULL DEFAULT '',
+    document_id TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING',             -- PENDING|APPLIED|REJECTED|SUPERSEDED
+    generation TEXT,                                    -- JSON: how it was produced
+    fields TEXT NOT NULL DEFAULT '[]',                  -- JSON: [{field,value,confidence,evidence,evidenceRef,decision}]
+    reviewed_by INTEGER REFERENCES users(id),
+    reviewed_at TEXT,
+    version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS application (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     application_no TEXT UNIQUE NOT NULL,
@@ -602,6 +628,8 @@ export function ensureSchema() {
     'CREATE INDEX IF NOT EXISTS idx_candidate_screening ON candidate(screening_status)',
     'CREATE INDEX IF NOT EXISTS idx_candidate_parse_status ON candidate(parse_status)',
     'CREATE INDEX IF NOT EXISTS idx_candidate_state ON candidate(candidate_state)',
+    // Proposal lookups are always "the pending one for this candidate".
+    'CREATE INDEX IF NOT EXISTS idx_proposal_candidate ON candidate_proposal(candidate_id, status)',
   ]) { try { run(stmt); } catch {} }  // candidate — HR-leadership-requested fields
   addColumnIfMissing('candidate', 'employer', 'TEXT');
   addColumnIfMissing('candidate', 'current_project', 'TEXT');

@@ -19,11 +19,111 @@
 // parsing system alive and make a Docling outage invisible.
 
 import type {
-  AIOutcome, DocumentParser, ParsedDocument, SourceDocument,
+  AIOutcome, BlockKind, DocumentParser, DocumentTable, LayoutBox, ParsedDocument,
+  SourceDocument, StructuredDocument, TableCell,
 } from '../../../modules/shared/kernel/ai/index.js';
 import { AI_CAPABILITIES } from '../../../modules/shared/kernel/ai/index.js';
-import type { SidecarDocument, SidecarOptions, SidecarStatus } from './sidecar-client.js';
+import type { RawBlock } from '../document/structure-builder.js';
+import { buildStructuredDocument } from '../document/structure-builder.js';
+import type {
+  SidecarBlock, SidecarDocument, SidecarOptions, SidecarStatus,
+} from './sidecar-client.js';
 import { DoclingSidecarClient, SidecarError } from './sidecar-client.js';
+
+/** Sidecar element names mapped onto the neutral block vocabulary. */
+const BLOCK_KINDS: Record<string, BlockKind> = {
+  title: 'title',
+  section_header: 'heading',
+  heading: 'heading',
+  paragraph: 'paragraph',
+  text: 'paragraph',
+  list_item: 'list-item',
+  'list-item': 'list-item',
+  table: 'table',
+  caption: 'caption',
+  picture: 'figure',
+  figure: 'figure',
+  page_header: 'header',
+  page_footer: 'footer',
+};
+
+const readBox = (bbox: readonly number[] | undefined): LayoutBox | undefined => {
+  if (bbox === undefined || bbox.length < 4) return undefined;
+  const [x, y, width, height] = bbox;
+  if (x === undefined || y === undefined || width === undefined || height === undefined) {
+    return undefined;
+  }
+  return { x, y, width, height };
+};
+
+const readTable = (block: SidecarBlock): DocumentTable | undefined => {
+  const table = block.table;
+  if (table === undefined) return undefined;
+  const cells: TableCell[] = (table.cells ?? []).map((cell) => ({
+    row: cell.row ?? 0,
+    column: cell.column ?? 0,
+    text: cell.text ?? '',
+    ...(cell.rowSpan !== undefined ? { rowSpan: cell.rowSpan } : {}),
+    ...(cell.columnSpan !== undefined ? { columnSpan: cell.columnSpan } : {}),
+    ...(cell.header !== undefined ? { header: cell.header } : {}),
+  }));
+  return {
+    rowCount: table.rowCount ?? (cells.length === 0
+      ? 0 : Math.max(...cells.map((c) => c.row)) + 1),
+    columnCount: table.columnCount ?? (cells.length === 0
+      ? 0 : Math.max(...cells.map((c) => c.column)) + 1),
+    cells,
+  };
+};
+
+/**
+ * Map the sidecar's layout elements onto neutral blocks.
+ *
+ * Returns undefined when the sidecar reported no usable elements, so the
+ * pipeline falls back to recovering structure from the Markdown instead of
+ * receiving an empty structure that looks authoritative.
+ */
+const toStructure = (
+  result: SidecarDocument,
+  parserVersion: string,
+): StructuredDocument | undefined => {
+  const source = result.blocks;
+  if (source === undefined || source.length === 0) return undefined;
+
+  const blocks: RawBlock[] = [];
+  for (const block of source) {
+    const text = (block.text ?? '').trim();
+    const table = readTable(block);
+    // A table block carries its grid even when its linearised text is empty;
+    // every other kind with no text is layout noise and is dropped.
+    if (text === '' && table === undefined) continue;
+    const box = readBox(block.bbox);
+    blocks.push({
+      page: block.page ?? 1,
+      kind: BLOCK_KINDS[(block.kind ?? '').toLowerCase()] ?? 'unknown',
+      text,
+      // The sidecar's own OCR pass is OCR, and saying so here is what keeps the
+      // quality gate from sending an already-recognised page round again.
+      method: block.ocr === true ? 'ocr' : 'native',
+      ...(block.level !== undefined ? { level: block.level } : {}),
+      ...(box !== undefined ? { box } : {}),
+      ...(table !== undefined ? { table } : {}),
+      ...(block.confidence !== undefined ? { confidence: block.confidence } : {}),
+    });
+  }
+  if (blocks.length === 0) return undefined;
+
+  return buildStructuredDocument({
+    blocks,
+    provenance: {
+      parser: 'docling-sidecar',
+      parserVersion,
+      convertedAt: new Date(),
+      ...(result.pipelineVersion !== undefined
+        ? { pipelineVersion: result.pipelineVersion } : {}),
+    },
+  });
+};
 
 /**
  * Document-level rejections, and whether re-running could ever change them.
@@ -131,6 +231,7 @@ export class DoclingDocumentParser implements DocumentParser {
       : undefined;
 
     const language = result.detectedLanguages?.[0];
+    const structure = toStructure(result, this.version);
 
     return {
       content: {
@@ -139,6 +240,7 @@ export class DoclingDocumentParser implements DocumentParser {
         pages,
         ...(language !== undefined ? { detectedLanguage: language } : {}),
         ...(markdown !== undefined ? { markdown } : {}),
+        ...(structure !== undefined ? { structure } : {}),
       },
       // Decoding and layout recovery are deterministic given the same pipeline;
       // this is not a model's guess about meaning. OCR is not — an OCR'd page

@@ -9,14 +9,12 @@
 
 import 'dotenv/config';
 import { createDb, createPool } from '../infrastructure/db/client.js';
-import { compose } from './composition-root.js';
+import { compose, composeAI } from './composition-root.js';
 import { configFromEnv } from './infrastructure/gateways.js';
 import { createApiApp } from './server.js';
 import { JwtTokenVerifier } from './auth/authenticate.js';
 import { LegacyPrincipalResolver } from './auth/legacy-principal-resolver.js';
 import { startOfferExpiryWorker, startOutboxWorker, startAITaskWorker } from './workers/outbox-worker.js';
-import { PlainTextDocumentParser } from '../infrastructure/ai/plain-text-parser.js';
-import { OllamaResumeExtractor } from '../infrastructure/ai/ollama/ollama-resume-extractor.js';
 
 const log = (level: 'info' | 'error', message: string, extra: unknown = {}): void => {
   // Structured, one line per event, so a log aggregator can index it. A real
@@ -36,16 +34,14 @@ const main = async (): Promise<void> => {
   const pool = createPool({ connectionString });
   const db = createDb(pool);
 
-  const capabilities = {
-    documentParser: new PlainTextDocumentParser(),
-    resumeExtractor: new OllamaResumeExtractor({ 
-      model: 'llama3.2',
-      ...(process.env['OLLAMA_BASE_URL'] ? { baseUrl: process.env['OLLAMA_BASE_URL'] } : {})
-    }),
-  };
+  // Wiring lives in the composition root, not here. This entry point only
+  // decides to USE it, so both entry points read the same environment the same
+  // way and select the same engines.
+  const ai = composeAI(process.env);
+  log('info', 'ai capabilities composed', ai.description);
 
   const app = compose(db, {
-    capabilities,
+    capabilities: ai.capabilities,
     config: configFromEnv(),
     onError: (error) => { log('error', 'event delivery failed', { error: String(error) }); },
   });

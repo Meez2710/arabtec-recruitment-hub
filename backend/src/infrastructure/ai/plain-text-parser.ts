@@ -39,7 +39,11 @@ export class PlainTextDocumentParser implements DocumentParser {
       };
     }
 
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(document.bytes);
+    // NUL padding is not content. Left in, it survives into every extracted
+    // value and makes the quality gate read the page as mis-decoded.
+    const text = new TextDecoder('utf-8', { fatal: false })
+      .decode(document.bytes)
+      .replace(/\u0000+/g, '');
     if (text.trim() === '') {
       // PERMANENT: the bytes are what they are.
       return {

@@ -2,6 +2,9 @@ node_modules/
 **/node_modules/
 coverage/
 **/coverage/
+# Compiled TypeScript. Produced by `npm run build` at deploy time; committing it
+# would let a stale build ship alongside changed sources.
+backend/dist/
 *.log
 .env
 .env.*

@@ -12,7 +12,9 @@ import { rejection as rejectionTpl } from '../lib/email_templates.js';
 // Resolved per request through the parsing registry, never imported directly.
 // One provider serves a request; there is no fallback chain and no fan-out.
 import { getParser } from '../lib/parsing/registry.js';
-import { evaluateCandidate } from '../lib/cv/index.js';
+import { evaluateAgainstRequest } from '../lib/parsing/evaluation.js';
+import { reviewableFields } from '../lib/parsing/pipeline-provider.js';
+import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
 import fs from 'node:fs';
@@ -224,7 +226,10 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
     // parse is what actually populates the candidate record.
     const parsed = await getParser().parseLegacy(filePath);
     const entities = await getParser().parseEntities(filePath);
-    const { payload: parsedFields, persisted, skipped } = toCandidatePayload(entities);
+    // verifiedOnly: a value only the MODEL read never lands on the record here.
+    // It is raised as a PENDING proposal below and waits for a human.
+    const { payload: parsedFields, persisted, skipped } = toCandidatePayload(entities,
+      { verifiedOnly: true });
     const meta = toParseMetadata(entities);
     const hash = fileHash(filePath);
 
@@ -274,6 +279,35 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
           actorName: req.user.fullName, type: 'candidate_created',
           note: `${candidateNo} (CV parsed: ${req.uploadedFile.originalName})`,
         });
+
+        // Anything only the model read is PROPOSED, not written. It sits PENDING
+        // until a person accepts it through POST /:id/proposals/:pid/review.
+        try {
+          const review = await reviewableFields(filePath);
+          if (review.fields.length > 0) {
+            const raised = await raiseProposal({
+              candidateId: candidate.id,
+              origin: 'resume.extract',
+              documentId: review.documentId,
+              modelId: review.generation?.modelId ?? '',
+              generation: review.generation,
+              fields: review.fields,
+            });
+            if (raised) {
+              CandidateActivity.add({
+                candidateId: candidate.id, actorId: req.user.id,
+                actorName: req.user.fullName, type: 'proposal_raised',
+                note: `${raised.fields.length} field(s) awaiting review`,
+              });
+            }
+          }
+        } catch (e) {
+          // A proposal failure must never lose the candidate or the file.
+          console.error(JSON.stringify({
+            level: 'error', msg: 'proposal.raise_failed',
+            candidateId: candidate.id, error: String((e && e.message) || e),
+          }));
+        }
         writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: candidate.id,
           newValue: { candidateNo, fullName: candidate.full_name, source: 'cv_parse' } });
 
@@ -289,19 +323,34 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
             });
             StageHistory.add(application.id, null, 'sourced', req.user);
             
-            // Stage 5: Agent Reasoner
-            // Run asynchronously in the background so it doesn't block the UI upload response
-            evaluateCandidate(parsedFields, request).then(evalData => {
-              if (evalData) {
-                CandidateNotes.add({
-                  candidateId: candidate.id,
-                  authorId: req.user.id,
-                  type: 'ai_evaluation',
-                  isPinned: 1,
-                  note: `**AI Evaluation (Score: ${evalData.score}/100 - ${evalData.recommendation})**\n\n${evalData.summary}\n\n**Strengths:**\n- ${evalData.strengths.join('\\n- ')}\n\n**Weaknesses:**\n- ${evalData.weaknesses.join('\\n- ')}`
-                });
-              }
-            }).catch(e => console.error('[reasoner] Background evaluation failed', e));
+            // Competency evaluation — background, so it never blocks the upload
+            // response. It reads the ResumeProposal produced by the parse above,
+            // so every level it reports is tied to evidence from this document.
+            // Field names below MUST match CandidateNotes.add in lib/models.js
+            // ({ noteType, body, authorName }): the previous { type, note,
+            // isPinned } left `body` undefined against a `body TEXT NOT NULL`
+            // column, so EVERY evaluation failed its INSERT silently.
+            const evalActorId = req.user.id;
+            const evalActorName = req.user.fullName;
+            const evalCandidateId = candidate.id;
+            const evalApplicationId = application ? application.id : null;
+
+            evaluateAgainstRequest(filePath, request).then((result) => {
+              // null = no model configured, or the evaluator abstained. Both are
+              // normal outcomes and leave the candidate record untouched.
+              if (!result) return;
+              CandidateNotes.add({
+                candidateId: evalCandidateId,
+                applicationId: evalApplicationId,
+                noteType: 'ai_evaluation',
+                body: result.body,
+                authorId: evalActorId,
+                authorName: evalActorName,
+              });
+            }).catch((e) => console.error(JSON.stringify({
+              level: 'error', msg: 'evaluation.background_failed',
+              candidateId: evalCandidateId, error: String((e && e.message) || e),
+            })));
           }
         }
       }
@@ -550,6 +599,64 @@ router.post('/:id/erase', requirePermission('candidate.privacy'), (req, res) => 
   res.json({ candidate: serialize(updated, req.user, { withDetail: true }) });
 });
 
+/* ---------------- PARSE PROPOSALS (human review of suggested fields) ---------------- */
+//
+// The review boundary. A CV parse writes deterministic, document-supported
+// values straight to the record and PROPOSES everything only the model read.
+// These two endpoints are how a proposed value becomes candidate data — there
+// is no other path.
+
+router.get('/:id/proposals', requirePermission('candidate.view'), (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  res.json({
+    pending: pendingProposal(c.id),
+    proposals: proposalsFor(c.id),
+  });
+});
+
+router.post('/:id/proposals/:pid/review', requirePermission('candidate.edit'), async (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+
+  const decisions = (req.body || {}).decisions;
+  if (decisions === undefined || decisions === null || typeof decisions !== 'object') {
+    return res.status(400).json({
+      error: 'decisions is required: { "fullName": true, "phone": false }.',
+    });
+  }
+
+  try {
+    const result = await reviewProposal(Number(req.params.pid), decisions, req.user);
+    if (result === null) return res.status(404).json({ error: 'Proposal not found.' });
+
+    CandidateActivity.add({
+      candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName,
+      type: 'proposal_reviewed',
+      note: result.applied.length > 0
+        ? `Accepted: ${result.applied.join(', ')}`
+        : 'No field accepted',
+    });
+    // Provenance: the audit trail records WHO accepted a machine suggestion.
+    writeAudit(req, {
+      action: 'candidate.proposal_reviewed', entityType: 'candidate', entityId: c.id,
+      newValue: { proposalId: result.id, status: result.status, accepted: result.applied },
+    });
+
+    res.json({
+      proposal: { id: result.id, status: result.status },
+      applied: result.applied,
+      rejected: result.rejected,
+      // Accepted but with nowhere to store them on the candidate table.
+      unapplied: result.unapplied,
+      candidate: serialize(result.candidate, req.user, { withDetail: true }),
+    });
+  } catch (e) {
+    // The aggregate's own rules: already reviewed, or an unknown field.
+    res.status(409).json({ error: e.message });
+  }
+});
+
 /* ---------------- DOCUMENTS (metadata; file storage is Phase 4) ---------------- */
 router.post('/:id/documents', requirePermission('candidate.edit'), (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
@@ -678,6 +785,24 @@ router.get('/meta/form', requirePermission('candidate.view'), (req, res) => {
     noticePeriods: ['Immediate', '2 weeks', '1 month', '2 months', '3 months', '> 3 months'],
     canSeeSalary: canSalary(req.user),
   });
+});
+
+/* ---------------- DELETE ---------------- */
+router.delete('/:id', (req, res) => {
+  const candidate = Candidates.byId(req.params.id);
+  if (!candidate) return res.status(404).json({ error: 'Candidate not found.' });
+
+  // Restrict to admin or the user who created the candidate/owns it.
+  const isAdmin = req.user.role === 'admin' || req.user.role === 'hr_manager';
+  const isOwner = candidate.created_by === req.user.id || candidate.owner_recruiter_id === req.user.id;
+  
+  if (!isAdmin && !isOwner) {
+    return res.status(403).json({ error: 'You do not have permission to delete this candidate.' });
+  }
+
+  Candidates.delete(req.params.id);
+  writeAudit(req, { action: 'candidate.deleted', entityType: 'candidate', entityId: req.params.id, newValue: { name: candidate.full_name } });
+  res.json({ message: 'Candidate deleted successfully.' });
 });
 
 export default router;

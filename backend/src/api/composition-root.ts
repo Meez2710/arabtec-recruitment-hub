@@ -37,6 +37,14 @@ import { HiringPipelineLinkGateway } from './infrastructure/pipeline-link-gatewa
 import type { DocumentStore } from '../modules/talent/application/ports.js';
 import { DrizzleAITaskDispatcher } from '../infrastructure/ai/task-dispatcher.js';
 import { AITaskWorker } from '../infrastructure/ai/task-worker.js';
+import { DocumentUnderstandingPipeline } from '../infrastructure/ai/document/index.js';
+import { DoclingDocumentParser } from '../infrastructure/ai/docling/index.js';
+import { LocalDocumentParser } from '../infrastructure/ai/local/local-document-parser.js';
+import { HttpOcrEngine } from '../infrastructure/ai/ocr/index.js';
+import { OllamaResumeExtractor } from '../infrastructure/ai/ollama/index.js';
+import { PlainTextDocumentParser } from '../infrastructure/ai/plain-text-parser.js';
+import { OllamaCompetencyEvaluator } from '../infrastructure/ai/evaluation/index.js';
+import type { CandidateEvaluator } from '../infrastructure/ai/evaluation/index.js';
 import type { AICapabilities, AITaskDispatcher } from '../modules/shared/kernel/ai/index.js';
 import type { NotificationHub } from '../modules/shared/kernel/ports.js';
 import { AuditSubscriber } from './infrastructure/subscribers/audit-subscriber.js';
@@ -56,6 +64,99 @@ import { DrizzleMatchingReadModel } from './infrastructure/queries/matching-read
 import type { MatchingReadModel } from './queries/matching-ports.js';
 import { DrizzleSearchReadModel } from './infrastructure/queries/search-read-model.js';
 import type { SearchReadModel } from './queries/search-ports.js';
+
+/* ------------------------- AI capabilities from env ------------------------ */
+//
+// Building the AI capabilities is a wiring decision, so it lives HERE with every
+// other wiring decision rather than in a process entry point. Both entry points
+// call this: `api/main.ts` and, through the compiled output, the deployed
+// `src/server.js` parser provider. One definition, one answer to "which engine
+// read this CV?".
+
+export interface AIComposition {
+  readonly capabilities: AICapabilities;
+  /** Absent when no model is configured. Evaluation is optional, not required. */
+  readonly evaluator?: CandidateEvaluator;
+  /** What was selected. For the startup log and the health endpoint. */
+  readonly description: {
+    readonly layoutParser: string;
+    readonly fallbackParser: string;
+    readonly ocrEngine: string;
+    readonly extractor: string;
+    readonly evaluator: string;
+  };
+}
+
+const readEnv = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
+  const value = env[key];
+  return value === undefined || value.trim() === '' ? undefined : value.trim();
+};
+
+/**
+ * Compose the document pipeline and the model capabilities from the environment.
+ *
+ * Docling is the primary structured parser when a sidecar is configured; the
+ * local pdfjs/mammoth parser is the fallback implementation of the SAME
+ * `DocumentParser` port. Both sit behind `DocumentUnderstandingPipeline`, which
+ * is itself a `DocumentParser` — so everything downstream sees one port.
+ */
+export const composeAI = (env: NodeJS.ProcessEnv = process.env): AIComposition => {
+  const doclingBaseUrl = readEnv(env, 'DOCLING_BASE_URL');
+  const local = new LocalDocumentParser();
+  const layoutParser = doclingBaseUrl === undefined
+    ? local
+    : new DoclingDocumentParser({
+      baseUrl: doclingBaseUrl,
+      ...(readEnv(env, 'DOCLING_TIMEOUT_MS') !== undefined
+        ? { timeoutMs: Number(readEnv(env, 'DOCLING_TIMEOUT_MS')) } : {}),
+      ...(readEnv(env, 'DOCLING_PIPELINE_VERSION') !== undefined
+        ? { pipelineVersion: readEnv(env, 'DOCLING_PIPELINE_VERSION') } : {}),
+    });
+
+  // Provider-neutral: swapping PaddleOCR for OpenOCR is these two variables.
+  const ocrBaseUrl = readEnv(env, 'OCR_BASE_URL');
+  const ocrEngine = ocrBaseUrl === undefined ? undefined : new HttpOcrEngine({
+    baseUrl: ocrBaseUrl,
+    engineName: readEnv(env, 'OCR_ENGINE') ?? 'http-ocr',
+    ...(readEnv(env, 'OCR_PATH') !== undefined ? { path: readEnv(env, 'OCR_PATH') } : {}),
+    ...(readEnv(env, 'OCR_TIMEOUT_MS') !== undefined
+      ? { timeoutMs: Number(readEnv(env, 'OCR_TIMEOUT_MS')) } : {}),
+  });
+
+  const documentParser = new DocumentUnderstandingPipeline({
+    layoutParser,
+    textParser: new PlainTextDocumentParser(),
+    ...(layoutParser === local ? {} : { fallbackParser: local }),
+    ...(ocrEngine !== undefined ? { ocrEngine } : {}),
+  });
+
+  const ollamaBaseUrl = readEnv(env, 'OLLAMA_BASE_URL');
+  const model = readEnv(env, 'OLLAMA_MODEL') ?? 'llama3.2';
+  const resumeExtractor = ollamaBaseUrl === undefined ? undefined : new OllamaResumeExtractor({
+    baseUrl: ollamaBaseUrl, model,
+  });
+  const evaluator = ollamaBaseUrl === undefined ? undefined : new OllamaCompetencyEvaluator({
+    baseUrl: ollamaBaseUrl, model,
+  });
+
+  return {
+    capabilities: {
+      documentParser,
+      ...(resumeExtractor !== undefined ? { resumeExtractor } : {}),
+      ...(ocrEngine !== undefined ? { ocrEngine } : {}),
+    },
+    ...(evaluator !== undefined ? { evaluator } : {}),
+    description: {
+      layoutParser: doclingBaseUrl === undefined ? 'local-pdfjs-mammoth' : 'docling-sidecar',
+      fallbackParser: doclingBaseUrl === undefined ? 'none' : 'local-pdfjs-mammoth',
+      ocrEngine: ocrEngine?.name ?? 'none',
+      // Deterministic rules ALWAYS run. A model, when present, is a second
+      // reader whose answers are located in the document — never a replacement.
+      extractor: resumeExtractor === undefined ? 'deterministic-rules' : `rules+${model}`,
+      evaluator: evaluator === undefined ? 'none' : model,
+    },
+  };
+};
 
 export interface CompositionOptions {
   readonly config?: PlatformConfig;

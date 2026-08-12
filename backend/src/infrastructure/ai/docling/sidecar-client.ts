@@ -14,6 +14,40 @@
 /** How a conversion ended. Mirrors the sidecar's documented status values. */
 export type SidecarStatus = 'ok' | 'unsupported' | 'encrypted' | 'corrupt' | 'empty';
 
+/**
+ * One layout element, as the sidecar reports it. Internal shape.
+ *
+ * OPTIONAL in the contract: a sidecar build that predates layout reporting
+ * returns only markdown and text, and the adapter recovers structure from the
+ * markdown instead. That keeps a sidecar upgrade from being a breaking change
+ * in both directions.
+ *
+ * `bbox` is [x, y, width, height] as FRACTIONS of the page, origin top-left, so
+ * it survives a DPI change and stays comparable between runs.
+ */
+export interface SidecarBlock {
+  readonly page?: number;
+  readonly kind?: string;
+  readonly text?: string;
+  readonly level?: number;
+  readonly bbox?: readonly number[];
+  readonly table?: {
+    readonly rowCount?: number;
+    readonly columnCount?: number;
+    readonly cells?: ReadonlyArray<{
+      readonly row?: number;
+      readonly column?: number;
+      readonly rowSpan?: number;
+      readonly columnSpan?: number;
+      readonly text?: string;
+      readonly header?: boolean;
+    }>;
+  };
+  /** True when this element's text came from the sidecar's own OCR pass. */
+  readonly ocr?: boolean;
+  readonly confidence?: number;
+}
+
 /** A converted document, as the sidecar returns it. Internal shape. */
 export interface SidecarDocument {
   readonly status: SidecarStatus;
@@ -22,6 +56,8 @@ export interface SidecarDocument {
   /** Plain text fallback, always present when status is 'ok'. */
   readonly text?: string;
   readonly pages?: readonly string[];
+  /** Layout elements in reading order. Absent on older sidecar builds. */
+  readonly blocks?: readonly SidecarBlock[];
   readonly pageCount?: number;
   readonly detectedLanguages?: readonly string[];
   /** True when an OCR pass ran. Operational signal only. */

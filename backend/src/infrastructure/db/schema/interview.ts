@@ -9,7 +9,7 @@ import {
   text, timestamp, uniqueIndex, varchar,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { hiringApplication } from './hiring';
+import { hiringApplication } from './hiring.js';
 
 /* ------------------------------- vocabulary ------------------------------- */
 // Mirrors modules/interview/domain/{interview,assessment}.ts.

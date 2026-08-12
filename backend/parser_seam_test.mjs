@@ -1,5 +1,5 @@
 // Parser injection seam — proves the LIVE route resolves through the registry
-// and that the legacy provider still produces byte-identical output.
+// and that the selected provider is the document pipeline.
 //
 // Run: node --experimental-sqlite parser_seam_test.mjs
 //
@@ -65,12 +65,20 @@ await test('an unconfigured registry throws instead of guessing', () => {
   assert.throws(() => registry.getParser(), /No CV parser provider selected/);
 });
 
-await test('the default provider is legacy — behaviour is unchanged by this phase', () => {
+await test('the default provider is the document pipeline', () => {
   registry.resetParserRegistry();
   const selected = configureParsing();
-  assert.equal(selected, 'legacy');
-  assert.equal(DEFAULT_PARSER_PROVIDER, 'legacy');
-  assert.equal(registry.getParser().name, 'legacy');
+  assert.equal(selected, 'document-pipeline');
+  assert.equal(DEFAULT_PARSER_PROVIDER, 'document-pipeline');
+  assert.equal(registry.getParser().name, 'document-pipeline');
+});
+
+await test('the legacy heuristic provider is no longer registered', () => {
+  registry.resetParserRegistry();
+  configureParsing();
+  // Exactly ONE production parsing path. The legacy files still exist on disk
+  // (removal is a later, separately verified step) but nothing can select them.
+  assert.throws(() => registry.selectParser('legacy'), /unknown provider "legacy"/);
 });
 
 await test('selecting an unknown provider fails loudly', () => {
@@ -93,46 +101,72 @@ await test('exactly one provider is active — selection replaces, never chains'
   registry.selectParser('stub');
   assert.equal(registry.getParser(), stub);
   assert.equal(registry.selectedParserName(), 'stub');
-  registry.selectParser('legacy');
-  assert.equal(registry.getParser().name, 'legacy');
+  registry.selectParser('document-pipeline');
+  assert.equal(registry.getParser().name, 'document-pipeline');
 });
 
-/* ------------------- 3. legacy compatibility ------------------------------ */
+/* ------------------- 3. the pipeline provider ----------------------------- */
 
-await test('legacy provider output is identical to calling the parser directly', async () => {
+await test('the selected provider extracts evidence-bearing fields from a real CV', async () => {
   registry.resetParserRegistry();
   configureParsing();
 
   const cv = path.join(os.tmpdir(), `seam-cv-${process.pid}.txt`);
   fs.writeFileSync(cv, [
     'Ahmed Hassan',
-    'Site Engineer',
-    'Email: ahmed.hassan@example.com',
-    'Mobile: +20 100 123 4567',
+    'Cairo, Egypt',
+    'ahmed.hassan@example.test',
+    '+20 100 123 4567',
     '',
     'EXPERIENCE',
-    'Orascom Construction — Site Engineer (2019 - Present)',
+    'Senior Structural Engineer at Arabtec Construction',
     '',
     'EDUCATION',
-    'Cairo University — BSc Civil Engineering, 2018',
+    'BSc in Civil Engineering, Cairo University, 2015',
   ].join('\n'));
 
   try {
-    const direct = await import('./src/lib/cv-parser.js');
-    const viaSeam = registry.getParser();
+    const provider = registry.getParser();
 
-    const a = await direct.parseHeuristic(cv);
-    const b = await viaSeam.parseLegacy(cv);
-    assert.deepEqual(b, a, 'parseLegacy diverged from parseHeuristic');
+    const flat = await provider.parseLegacy(cv);
+    assert.equal(flat.full_name, 'Ahmed Hassan');
+    assert.equal(flat.email, 'ahmed.hassan@example.test');
+    assert.notEqual(flat.extraction_status, 'failed');
 
-    const c = await direct.parseEntitiesFromFile(cv);
-    const d = await viaSeam.parseEntities(cv);
-    assert.deepEqual(d, c, 'parseEntities diverged from parseEntitiesFromFile');
+    const rich = await provider.parseEntities(cv);
+    assert.equal(rich.metadata.parsed_by, 'document-pipeline');
+    assert.equal(rich.personal.full_name.value, 'Ahmed Hassan');
+    assert.equal(rich.education.university.value, 'Cairo University');
+    assert.equal(rich.education.graduation_year.value, 2015);
 
-    // Sanity: the fixture really did parse, so equality is not vacuous.
-    assert.equal(a.full_name, 'Ahmed Hassan');
-    assert.equal(a.email, 'ahmed.hassan@example.com');
-    assert.ok(c.metadata.parse_status);
+    // EVERY persisted value cites where it was read from — the thing the
+    // previous parser could not do at all.
+    for (const group of ['personal', 'employment', 'education']) {
+      for (const [name, field] of Object.entries(rich[group])) {
+        if (field.value === null) continue;
+        assert.ok(field.evidence, `${name} has no evidence snippet`);
+        assert.ok(field.source && field.source.blockId, `${name} has no source block`);
+      }
+    }
+  } finally {
+    fs.rmSync(cv, { force: true });
+  }
+});
+
+await test('a value the document does not contain is never persistable', async () => {
+  registry.resetParserRegistry();
+  configureParsing();
+
+  const cv = path.join(os.tmpdir(), `seam-thin-${process.pid}.txt`);
+  // No name anywhere: the old heuristic invented one from the FILENAME.
+  fs.writeFileSync(cv, 'ahmed.hassan@example.test\n+20 100 123 4567\n');
+
+  try {
+    const rich = await registry.getParser().parseEntities(cv);
+    const { toCandidatePayload } = await import('./src/lib/cv-mapper.js');
+    const { payload } = toCandidatePayload(rich);
+    assert.equal(payload.fullName, undefined, 'a name was invented from the filename');
+    assert.equal(payload.email, 'ahmed.hassan@example.test');
   } finally {
     fs.rmSync(cv, { force: true });
   }

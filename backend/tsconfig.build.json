@@ -1,0 +1,21 @@
+{
+  // Emit the TypeScript trees to dist/ so the production server — plain
+  // `node src/server.js`, with devDependencies pruned — can import them.
+  //
+  // Separate from tsconfig.json, which stays noEmit for typechecking, because
+  // the two jobs have different inputs: typechecking covers tests and the API
+  // entry point, the build covers only what the running server loads.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": false,
+    "sourceMap": true
+  },
+  // src/api is included because the composition root lives there — it is the
+  // ONE place that wires AI capabilities, and the deployed server.js loads it
+  // from dist rather than duplicating that wiring.
+  "include": ["src/modules/**/*.ts", "src/infrastructure/**/*.ts", "src/api/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/infrastructure/tools/**"]
+}

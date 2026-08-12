@@ -25,6 +25,23 @@ export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 export const FIELD_DECISIONS = ['PENDING', 'ACCEPTED', 'REJECTED'] as const;
 export type FieldDecision = (typeof FIELD_DECISIONS)[number];
 
+/**
+ * A citable position in the source document.
+ *
+ * ADDITIVE and OPTIONAL: `evidence` remains the human-readable string that is
+ * already persisted and rendered, and this is the machine-readable location
+ * beside it. Defined here rather than imported from `kernel/ai` on purpose —
+ * see the note in provenance.ts: the Candidate and its proposal must compile
+ * and behave identically in a deployment with no AI configured at all.
+ */
+export interface EvidenceRef {
+  readonly page?: number;
+  readonly blockId?: string;
+  readonly section?: string;
+  readonly startOffset?: number;
+  readonly endOffset?: number;
+}
+
 export interface ProposedField {
   readonly field: string;
   readonly value: unknown;
@@ -32,6 +49,13 @@ export interface ProposedField {
   readonly confidence: number;
   /** Where in the source this came from, e.g. "page 1". Shown next to the value. */
   readonly evidence: string | null;
+  /**
+   * Structured source location, when the producer could cite one.
+   *
+   * Absent for producers that cannot — a CSV import, a recruiter pasting a
+   * profile — so its absence is information, not a defect.
+   */
+  readonly evidenceRef?: EvidenceRef;
   readonly decision: FieldDecision;
 }
 
@@ -94,7 +118,10 @@ export class CandidateProposal {
     modelId?: string;
     documentId?: string | null;
     generation?: ProposalGeneration | null;
-    fields: readonly { field: string; value: unknown; confidence?: number; evidence?: string | null }[];
+    fields: readonly {
+      field: string; value: unknown; confidence?: number;
+      evidence?: string | null; evidenceRef?: EvidenceRef;
+    }[];
     now: Date;
   }): CandidateProposal {
     // Filter to the whitelist HERE, at the boundary. A producer that offers
@@ -108,6 +135,7 @@ export class CandidateProposal {
         value: f.value,
         confidence: clamp(f.confidence ?? 0),
         evidence: f.evidence ?? null,
+        ...(f.evidenceRef !== undefined ? { evidenceRef: f.evidenceRef } : {}),
         decision: 'PENDING' as const,
       }));
 

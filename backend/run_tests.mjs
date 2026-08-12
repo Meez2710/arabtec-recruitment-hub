@@ -28,7 +28,8 @@ const SUITES = [
   'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
-  'parser_seam_test.mjs',     // CV parser injection seam + legacy compatibility
+  'parser_seam_test.mjs',     // CV parser injection seam + selected provider
+  'cv_proposal_test.mjs',     // CV -> proposal -> approved fields -> candidate
   'fixture_probe_test.mjs',    // fixture determinism, before anything relies on it
   'bl21_test.mjs',             // BL-21/BL-23 headcount + seat reconciliation
   'reconciliation_test.mjs',   // BL-21/BL-23 seat reconciliation helper

@@ -9,10 +9,16 @@
 // record is unaffected and the recruiter carries on typing.
 
 import type {
-  AICapabilities, AIOutcome, ExtractedResume, ParsedDocument,
+  AICapabilities, AIOutcome, ExtractedResume, FieldEvidence, ParsedDocument,
+  StructuredDocument,
 } from '../../modules/shared/kernel/ai/index.js';
 import { isProposal } from '../../modules/shared/kernel/ai/index.js';
-import type { DocumentStore } from '../../modules/talent/index.js';
+import type { DocumentStore, EvidenceRef } from '../../modules/talent/index.js';
+import { isProposableField } from '../../modules/talent/index.js';
+import { structureOf } from './document/structure-builder.js';
+import { extractDeterministically } from './extraction/deterministic-extractor.js';
+import { locateDigits, locateValue } from './extraction/evidence-locator.js';
+import { crossValidate, validateField } from './extraction/validate.js';
 
 /**
  * One parse, two possible destinations.
@@ -35,8 +41,31 @@ export interface ParseInput {
 export interface ProposedFieldInput {
   readonly field: string;
   readonly value: unknown;
+  /**
+   * 0..1, PRESENTATION ONLY.
+   *
+   * It is not a gate anywhere in this file and must not become one. What
+   * decides whether a value may be proposed is: it was located in the document,
+   * and deterministic validation accepted it. A number cannot substitute for
+   * either, which is exactly the mistake the parser this replaces made.
+   */
   readonly confidence: number;
   readonly evidence: string | null;
+  /** Machine-readable source location, when one could be cited. */
+  readonly evidenceRef?: EvidenceRef;
+}
+
+/**
+ * A value the extractor produced that was NOT proposed, and why.
+ *
+ * Recorded rather than discarded: "the model claimed a location that is nowhere
+ * in the CV" is an operational signal about the model, and silently dropping it
+ * makes that invisible.
+ */
+export interface WithheldField {
+  readonly field: string;
+  readonly value: unknown;
+  readonly reason: string;
 }
 
 /**
@@ -62,6 +91,8 @@ export type HandlerOutcome =
   | {
       readonly kind: 'PROPOSAL';
       readonly fields: readonly ProposedFieldInput[];
+      /** Extracted but not proposed. Never persisted; surfaced for operators. */
+      readonly withheld: readonly WithheldField[];
       readonly generation: GenerationProvenance;
     }
   | { readonly kind: 'ABSTAIN'; readonly reason: string; readonly permanent: boolean };
@@ -126,6 +157,187 @@ export const toProposedFields = (
   return fields;
 };
 
+/* ------------------- evidence, validation, and withholding ----------------- */
+//
+// THE STAGE THAT MAKES AI ADVISORY IN PRACTICE. `toProposedFields` above is
+// mapping and nothing else: it will happily carry a value the model invented.
+// This stage asks two questions that the extractor cannot answer about itself:
+//
+//   1. IS IT IN THE DOCUMENT?  Answered by searching the parsed structure. The
+//      extractor's own claim to have read it is not evidence.
+//   2. IS IT WELL-FORMED?      Answered by deterministic rules that never see
+//      the model, its prompt, or its confidence.
+//
+// Only a value that passes BOTH is proposed — and even then it is proposed as
+// PENDING, because approval is a human act. Everything else is withheld with a
+// reason. Confidence is computed for display afterwards and gates nothing.
+
+const refOf = (evidence: FieldEvidence): EvidenceRef => ({
+  page: evidence.location.page,
+  blockId: evidence.location.blockId,
+  ...(evidence.location.sectionId !== undefined
+    ? { section: evidence.location.sectionId } : {}),
+  ...(evidence.location.charStart !== undefined
+    ? { startOffset: evidence.location.charStart } : {}),
+  ...(evidence.location.charEnd !== undefined
+    ? { endOffset: evidence.location.charEnd } : {}),
+});
+
+/** Locate a value in the document. Digits for phones, text for everything else. */
+const findEvidence = (
+  structure: StructuredDocument,
+  field: string,
+  value: unknown,
+): readonly FieldEvidence[] => {
+  if (field === 'phone') return locateDigits(structure, String(value).replace(/\D/g, ''));
+  if (Array.isArray(value)) {
+    // A list is supported when its members are; locating the joined string
+    // would fail on every CV that writes skills as bullets.
+    const hits: FieldEvidence[] = [];
+    for (const item of value) {
+      const found = locateValue(structure, String(item), { limit: 1 });
+      if (found.length > 0 && hits.length < 3) hits.push(...found);
+    }
+    return hits;
+  }
+  return locateValue(structure, String(value), { limit: 2 });
+};
+
+/** Presentation weights. Agreement between two independent readers is earned. */
+const CONFIDENCE = { agreed: 0.9, deterministic: 0.75, ai: 0.5 } as const;
+
+export interface BuildFieldsInput {
+  readonly resume: ExtractedResume;
+  readonly document: ParsedDocument;
+  /** The extractor's own confidence. Used for display only, and capped. */
+  readonly aiConfidence: number;
+  readonly parser?: string;
+  readonly parserVersion?: string;
+}
+
+/**
+ * Turn an extraction into the fields a `CandidateProposal` may be raised from.
+ *
+ * Returns proposable fields and withheld ones. Nothing here decides anything is
+ * approved: every returned field becomes a PENDING entry a person still has to
+ * accept.
+ */
+export const buildProposedFields = (input: BuildFieldsInput): {
+  readonly fields: readonly ProposedFieldInput[];
+  readonly withheld: readonly WithheldField[];
+} => {
+  const structure = structureOf(
+    input.document, input.parser ?? 'unknown-parser', input.parserVersion ?? 'unversioned',
+  );
+
+  const fields: ProposedFieldInput[] = [];
+  const withheld: WithheldField[] = [];
+
+  /* 1. the deterministic control — narrow, and it cites its own source block */
+  const ruled = new Map<string, { value: unknown; evidence: FieldEvidence }>();
+  for (const hit of extractDeterministically(structure)) {
+    ruled.set(hit.field, {
+      value: hit.value,
+      evidence: {
+        snippet: hit.block.text.slice(0, 240),
+        match: 'exact',
+        location: {
+          page: hit.block.page,
+          blockId: hit.block.id,
+          ...(hit.block.sectionId !== undefined ? { sectionId: hit.block.sectionId } : {}),
+        },
+      },
+    });
+  }
+
+  /* 2. the model's claims, as plain mapped values */
+  const claimed = new Map(
+    toProposedFields(input.resume, input.aiConfidence).map((f) => [f.field, f]),
+  );
+
+  /* 3. judge each candidate field */
+  const considered = new Set([...ruled.keys(), ...claimed.keys()]);
+  const accepted = new Map<string, unknown>();
+
+  for (const field of considered) {
+    // The aggregate would drop a non-proposable field anyway; not raising it
+    // keeps the review screen honest about what a reviewer can act on.
+    if (!isProposableField(field)) continue;
+
+    const rule = ruled.get(field);
+    const claim = claimed.get(field);
+    const agree = rule !== undefined && claim !== undefined
+      && String(rule.value).trim().toLowerCase() === String(claim.value).trim().toLowerCase();
+
+    // The rule wins on value where both spoke: it is narrower and it refused to
+    // guess. A disagreement is recorded rather than silently resolved.
+    const value = rule?.value ?? claim?.value;
+    if (value === undefined) continue;
+
+    const source: keyof typeof CONFIDENCE = agree
+      ? 'agreed'
+      : rule !== undefined ? 'deterministic' : 'ai';
+
+    if (rule !== undefined && claim !== undefined && !agree) {
+      withheld.push({
+        field,
+        value: claim.value,
+        reason: 'the deterministic rules and the model read different values here',
+      });
+    }
+
+    /* 3a. IS IT IN THE DOCUMENT? */
+    const evidence = rule !== undefined ? [rule.evidence] : findEvidence(structure, field, value);
+    if (evidence.length === 0) {
+      // THE HALLUCINATION GATE. A value the document does not contain is not
+      // proposed at all — not proposed with low confidence, not flagged for
+      // review. There is nothing for a reviewer to check it against.
+      withheld.push({
+        field, value, reason: 'the value could not be located in the document',
+      });
+      continue;
+    }
+
+    /* 3b. IS IT WELL-FORMED? */
+    const validation = validateField(field, value);
+    if (validation.state === 'invalid') {
+      withheld.push({
+        field, value, reason: validation.note ?? 'the value failed deterministic validation',
+      });
+      continue;
+    }
+
+    accepted.set(field, value);
+    const first = evidence[0];
+    fields.push({
+      field,
+      value,
+      confidence: source === 'ai'
+        ? Math.min(input.aiConfidence, CONFIDENCE.ai)
+        : CONFIDENCE[source],
+      evidence: first?.snippet ?? null,
+      ...(first !== undefined ? { evidenceRef: refOf(first) } : {}),
+    });
+  }
+
+  /* 4. rules that need more than one field */
+  const conflicts = crossValidate(accepted);
+  if (conflicts.length === 0) return { fields, withheld };
+
+  const conflicted = new Map(conflicts.map((c) => [c.field, c.note]));
+  return {
+    fields: fields.filter((f) => !conflicted.has(f.field)),
+    withheld: [
+      ...withheld,
+      ...fields.filter((f) => conflicted.has(f.field)).map((f) => ({
+        field: f.field,
+        value: f.value,
+        reason: conflicted.get(f.field) ?? 'conflicts with another field',
+      })),
+    ],
+  };
+};
+
 /**
  * Run the parse pipeline for one task.
  *
@@ -179,19 +391,31 @@ export const runResumeParse = async (
     };
   }
 
-  const fields = toProposedFields(extracted.content, extracted.confidence);
+  const { fields, withheld } = buildProposedFields({
+    resume: extracted.content,
+    document: parsed.content,
+    aiConfidence: extracted.confidence,
+    parser: documentParser.version ?? 'unversioned',
+    parserVersion: documentParser.version ?? 'unversioned',
+  });
+
   if (fields.length === 0) {
-    // PERMANENT: the extractor read the document and found nothing. A proposal
-    // with no fields is a review screen with nothing on it.
+    // PERMANENT: nothing survived evidence location and validation. A proposal
+    // with no fields is a review screen with nothing on it — and filling it
+    // from the withheld values is exactly the invention this refuses.
     return {
-      kind: 'ABSTAIN', permanent: true,
-      reason: 'No candidate fields could be extracted.',
+      kind: 'ABSTAIN',
+      permanent: true,
+      reason: withheld.length === 0
+        ? 'No candidate fields could be extracted.'
+        : `No extracted field could be supported by the document (${withheld.length} withheld).`,
     };
   }
 
   return {
     kind: 'PROPOSAL',
     fields,
+    withheld,
     generation: {
       capability: extracted.provenance.capability,
       modelId: extracted.provenance.modelId,

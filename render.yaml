@@ -18,7 +18,9 @@ services:
     region: oregon
     rootDir: backend
     branch: main                 # prod tracks main
-    buildCommand: npm ci
+    # --include=dev: NODE_ENV=production would otherwise prune TypeScript,
+    # and the document pipeline has to be compiled before the server starts.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
@@ -92,7 +94,9 @@ services:
     region: oregon
     rootDir: backend
     branch: staging
-    buildCommand: npm ci
+    # --include=dev: NODE_ENV=production would otherwise prune TypeScript,
+    # and the document pipeline has to be compiled before the server starts.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true

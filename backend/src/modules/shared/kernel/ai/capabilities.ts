@@ -16,6 +16,7 @@
 // force a round trip through the queue for a lookup.
 
 import type { AIOutcome } from './contracts.js';
+import type { OcrEngine, StructuredDocument } from './document.js';
 
 /* ------------------------------ shared shapes ------------------------------ */
 
@@ -48,6 +49,18 @@ export interface ParsedDocument {
    * types cross this port.
    */
   readonly markdown?: string;
+  /**
+   * Blocks, reading order, sections, tables, geometry and per-page OCR status.
+   *
+   * OPTIONAL so that a plain-text parser remains a valid `DocumentParser`, but
+   * this is the field the extraction layer actually wants: it is what makes a
+   * value citable back to a page and a block instead of to "the CV somewhere".
+   *
+   * `text`, `pages` and `markdown` remain the flat views of the same content
+   * and stay consistent with it — they are derived FROM the structure, never a
+   * second, competing representation of the document.
+   */
+  readonly structure?: StructuredDocument;
 }
 
 export interface DocumentParser {
@@ -240,6 +253,11 @@ export interface CandidateRankingService {
  */
 export interface AICapabilities {
   readonly documentParser?: DocumentParser;
+  /**
+   * Conditional OCR. Absent means "this deployment cannot read pixels", which
+   * leaves image-only pages marked degraded rather than silently empty.
+   */
+  readonly ocrEngine?: OcrEngine;
   readonly resumeExtractor?: ResumeExtractor;
   readonly resumeEmbeddings?: ResumeEmbeddingProvider;
   readonly jobDescriptionAnalyzer?: JobDescriptionAnalyzer;
