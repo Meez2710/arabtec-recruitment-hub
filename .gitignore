@@ -36,6 +36,6 @@ backend/live-fixtures/*.png
 
 # Local pilot secrets and venv — never committed.
 deploy/docling-sidecar/.env.local
-deploy/docling-sidecar/.venv/
+deploy/docling-sidecar/.venv
 logs/
 deploy/docling-sidecar/__pycache__/

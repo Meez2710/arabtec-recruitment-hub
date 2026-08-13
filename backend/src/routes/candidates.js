@@ -229,6 +229,28 @@ router.post('/', requirePermission('candidate.add'), (req, res) => {
   res.status(201).json(result);
 });
 
+/**
+ * Read-only provenance of the document stage: which parser produced the text,
+ * and whether any of it came from OCR rather than a native text layer.
+ *
+ * Returned to the reviewer, never persisted and never consulted by the
+ * persistence gate — it answers "where did this text come from", not "is this
+ * value trustworthy", which stays with evidence + deterministic validation.
+ */
+function documentProvenance(parsed) {
+  const structure = parsed?.parsed?.structure;
+  if (!structure) return null;
+  return {
+    parser: structure.provenance?.parser ?? null,
+    parserVersion: structure.provenance?.parserVersion ?? null,
+    ocrApplied: structure.ocrApplied === true,
+    ocrEngine: structure.provenance?.ocrEngine ?? null,
+    pageCount: structure.pages?.length ?? 0,
+    blockCount: structure.blocks?.length ?? 0,
+    degradedPages: structure.degradedPages ?? [],
+  };
+}
+
 /* ---------------- PARSE CV (upload -> PENDING intake, no candidate) ---------------- */
 //
 // This route used to create a candidate from whatever the parser returned. It no
@@ -297,6 +319,11 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
       // PENDING. No candidate exists yet and nothing has been written.
       intake,
       file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
+      // How the text a reviewer is about to judge was actually obtained. Text
+      // recovered by OCR is a recognition, not a reading, so a reviewer must be
+      // able to see that before trusting an evidence snippet. Read-only
+      // provenance: nothing downstream branches on it.
+      document: documentProvenance(parsed),
       report: toImportReport(entities, { fileName: req.uploadedFile.originalName }),
     });
   } catch (e) {

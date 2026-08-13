@@ -97,3 +97,41 @@ Restart only the backend process after changing these.
 - **OCR resolution** is `SIDECAR_OCR_SCALE` (default 4.0 ≈ 288 dpi). Docling's
   default of 1.0 is 72 dpi, at which tesseract answers "Too few characters.
   Skipping this page" and every scan comes back empty. Do not lower it.
+
+## Verification record — what was actually measured, and what was wrong before
+
+Kept in the repository because two earlier conclusions were wrong in ways that
+would otherwise be repeated.
+
+**The earlier RunPod OCR conclusions were invalid — the fixtures were black.**
+The image-only fixtures had been produced by converting a PDF with `sips`,
+which wrote all-black rasters. Running `tesseract` directly on them reports
+`extrema (0, 0)`: there were no legible pixels to recognise. Every "OCR
+returned empty" result measured on RunPod was therefore measuring a blank
+image, not the OCR path. An earlier report called these fixtures "verified
+valid"; that claim only established the absence of a *text layer*, never the
+presence of readable *pixels*. A fixture is not an OCR fixture until tesseract
+can read words out of it standalone.
+
+**The corrected fixtures are directly readable.** They are rendered with PIL
+`ImageDraw` at 300 dpi on a white ground, and `tesseract <file> -` recovers the
+ground-truth strings with no application code in the loop.
+
+**The decisive correction was `SIDECAR_OCR_SCALE=4.0`.** With Docling's default
+`images_scale` of 1.0 the page reaches tesseract at 72 dpi and is skipped as
+"Too few characters", so a readable scan still returns nothing. Raising the
+scale is what made scanned CVs parse; it is not a tuning preference.
+
+**Measured on this Mac.** Sidecar peak RSS **687 MB** across the full
+eight-fixture matrix including cold model load; **381 MB** for a single scanned
+PDF with models already warm. Processing is **sequential** — uvicorn runs one
+worker and the converter is a shared cached instance, so concurrent uploads
+queue rather than run in parallel. Sizing for a Linux host should assume one
+document at a time.
+
+**Still unresolved: mixed documents.** A PDF whose native text layer is healthy
+returns that text and does **not** additionally OCR scanned images embedded in
+it, because routing probes the native layer first and only retries with OCR
+when the text falls under `SIDECAR_MIN_NATIVE_CHARS`. Text living only inside
+an embedded image of such a document is silently absent. This limitation is
+open, not closed.

@@ -140,7 +140,29 @@
 
   /* -------------------------------- detail -------------------------------- */
 
-  function IntakeDetail({ id, onConverted, onBack }) {
+  /**
+   * How the text under review was obtained. OCR is a recognition, not a
+   * reading, so a reviewer checking an evidence snippet against the original
+   * needs to know when the words were recovered from pixels.
+   */
+  function DocumentSource({ provenance }) {
+    if (!provenance) return null;
+    const parts = [
+      provenance.ocrApplied
+        ? `Text recovered by OCR${provenance.ocrEngine ? ` (${provenance.ocrEngine})` : ''}`
+        : 'Read from the document text layer',
+      provenance.parser ? `parser ${provenance.parser}` : null,
+      provenance.pageCount ? `${provenance.pageCount} page${provenance.pageCount === 1 ? '' : 's'}` : null,
+      provenance.degradedPages && provenance.degradedPages.length
+        ? `${provenance.degradedPages.length} degraded page(s)` : null,
+    ].filter(Boolean);
+    return h(Banner, {
+      tone: provenance.ocrApplied ? 'warning' : 'info',
+      title: provenance.ocrApplied ? 'Scanned document' : 'Document source',
+    }, `${parts.join(' · ')}. Check each value against the original before accepting it.`);
+  }
+
+  function IntakeDetail({ id, onConverted, onBack, provenance }) {
     const [intake, setIntake] = useState(null);
     const [decisions, setDecisions] = useState({});
     const [busy, setBusy] = useState(false);
@@ -242,6 +264,7 @@
           h('button', { className: 'btn btn-danger', onClick: () => setRejectOpen(true) }, 'Reject intake'))),
 
       error ? h(Banner, { tone: 'danger', title: 'Review not submitted' }, error) : null,
+      h(DocumentSource, { provenance }),
       conflict ? h(BlockingDuplicate, { conflict }) : null,
 
       h('div', { className: 'review-summary' },
@@ -305,6 +328,9 @@
     const [notice, setNotice] = useState(null);      // parse produced nothing
     const [result, setResult] = useState(null);      // last conversion
     const [uploading, setUploading] = useState(false);
+    // Document-stage provenance for the intake just uploaded. Response-only —
+    // the intake record itself stores no parser metadata.
+    const [source, setSource] = useState(null);
     const fileRef = useRef(null);
 
     const load = useCallback(async () => {
@@ -318,7 +344,7 @@
       const file = e.target.files && e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      setUploading(true); setError(''); setNotice(null); setResult(null);
+      setUploading(true); setError(''); setNotice(null); setResult(null); setSource(null);
       try {
         const r = await api().upload('/candidates/parse-cv', file);
         if (!r.intake) {
@@ -328,11 +354,16 @@
             tone: 'warning',
             title: 'No reviewable field could be read from this document',
             text: `${r.reason || 'The parser found no value supported by the document.'} `
-              + 'This is expected for image-only or scanned PDFs, which are not yet supported. '
-              + 'Upload a text-based PDF or DOCX, or add the candidate manually.',
+              + (r.document && r.document.ocrApplied
+                ? 'The page was recognised by OCR, but nothing it produced could be '
+                  + 'supported as a candidate field — usually an unreadable scan. '
+                  + 'Try a clearer copy, '
+                : 'Upload a text-based PDF or DOCX, ')
+              + 'or add the candidate manually.',
           });
           return;
         }
+        setSource(r.document ? { ...r.document, intakeId: r.intake.id } : null);
         await load();
         setActive(r.intake.id);
       } catch (err) {
@@ -343,6 +374,9 @@
     if (active) {
       return h(IntakeDetail, {
         id: active,
+        // Only the intake that was just uploaded carries known provenance; one
+        // opened from the queue shows none rather than a guess.
+        provenance: source && source.intakeId === active ? source : null,
         onBack: () => { setActive(null); load(); },
         onConverted: (r) => {
           setActive(null);
