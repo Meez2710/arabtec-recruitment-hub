@@ -24,7 +24,7 @@ import type {
 } from '../../../modules/shared/kernel/ai/index.js';
 import { AI_CAPABILITIES } from '../../../modules/shared/kernel/ai/index.js';
 import type { RawBlock } from '../document/structure-builder.js';
-import { buildStructuredDocument } from '../document/structure-builder.js';
+import { blocksFromMarkdown, buildStructuredDocument } from '../document/structure-builder.js';
 import type {
   SidecarBlock, SidecarDocument, SidecarOptions, SidecarStatus,
 } from './sidecar-client.js';
@@ -88,7 +88,31 @@ const toStructure = (
   parserVersion: string,
 ): StructuredDocument | undefined => {
   const source = result.blocks;
-  if (source === undefined || source.length === 0) return undefined;
+
+  // The sidecar reported no layout elements, so structure has to be recovered
+  // from its Markdown. Do it HERE rather than letting the pipeline do it,
+  // because only this layer knows whether the sidecar used OCR — and that flag
+  // is the difference between "decoded" and "recognised" for every block on
+  // the page. Losing it made a scanned CV indistinguishable from a digital one.
+  if (source === undefined || source.length === 0) {
+    const markdown = result.markdown ?? result.text ?? '';
+    if (markdown.trim() === '') return undefined;
+    const method = result.ocrApplied === true ? 'ocr' : 'native';
+    const derived = blocksFromMarkdown(markdown, 1, method);
+    if (derived.length === 0) return undefined;
+    return buildStructuredDocument({
+      blocks: derived,
+      provenance: {
+        parser: 'docling-sidecar',
+        parserVersion,
+        convertedAt: new Date(),
+        ...(result.ocrApplied === true
+          ? { ocrEngine: result.ocrEngine ?? 'sidecar-internal' } : {}),
+        ...(result.pipelineVersion !== undefined
+          ? { pipelineVersion: result.pipelineVersion } : {}),
+      },
+    });
+  }
 
   const blocks: RawBlock[] = [];
   for (const block of source) {

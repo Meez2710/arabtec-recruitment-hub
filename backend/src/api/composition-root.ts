@@ -107,6 +107,9 @@ export const composeAI = (env: NodeJS.ProcessEnv = process.env): AIComposition =
     ? local
     : new DoclingDocumentParser({
       baseUrl: doclingBaseUrl,
+      // Read from the environment only; never hardcoded, never logged.
+      ...(readEnv(env, 'DOCLING_BEARER_TOKEN') !== undefined
+        ? { bearerToken: readEnv(env, 'DOCLING_BEARER_TOKEN') } : {}),
       ...(readEnv(env, 'DOCLING_TIMEOUT_MS') !== undefined
         ? { timeoutMs: Number(readEnv(env, 'DOCLING_TIMEOUT_MS')) } : {}),
       ...(readEnv(env, 'DOCLING_PIPELINE_VERSION') !== undefined
