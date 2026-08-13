@@ -16,7 +16,7 @@ import { getParser } from '../lib/parsing/registry.js';
 import { evaluateAgainstRequest } from '../lib/parsing/evaluation.js';
 import { parseDocument, reviewableFields } from '../lib/parsing/pipeline-provider.js';
 import {
-  createIntake, intakeById, pendingIntakes, reviewIntake, rejectIntake,
+  checkRequest, createIntake, intakeById, pendingIntakes, reviewIntake, rejectIntake,
 } from '../lib/intake-store.js';
 import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
@@ -238,6 +238,20 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
   if (!req.uploadedFile) return res.status(400).json({ error: 'CV file is required.' });
   try {
     const filePath = uploadPath(req.uploadedFile.storedName);
+
+    // The requisition this CV was submitted against, if any. Validated NOW so a
+    // reviewer is not told at approval time that the reference was never good —
+    // but NO application is created here: there is no candidate yet.
+    const requestId = req.fields?.requestId ? Number(req.fields.requestId) : null;
+    if (requestId !== null) {
+      const check = checkRequest(requestId);
+      if (!check.ok) {
+        return res.status(409).json({
+          error: check.reason, code: 'request-ineligible', requestId,
+        });
+      }
+    }
+
     const entities = await getParser().parseEntities(filePath);
     const parsed = await parseDocument(filePath);
     const hash = fileHash(filePath);
@@ -262,13 +276,16 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
       documentId: parsed.documentId,
       generation: parsed.generation,
       fields: parsed.fields,
+      ...(requestId !== null ? { requestId } : {}),
       createdBy: req.user.id,
     });
 
     writeAudit(req, {
       action: 'candidate.intake_created', entityType: 'candidate_intake',
       entityId: intake.id,
-      newValue: { fileName: req.uploadedFile.originalName, fields: intake.fields.length },
+      newValue: {
+        fileName: req.uploadedFile.originalName, fields: intake.fields.length, requestId,
+      },
     });
 
     res.json({
@@ -356,21 +373,76 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
       newValue: {
         candidateNo: result.candidate.candidate_no,
         source: 'cv_intake', intakeId: result.intakeId,
-        proposalId: result.proposalId, accepted: result.applied,
+        proposalId: result.proposalId, applicationId: result.applicationId,
+        requestId: result.requestId, accepted: result.applied,
       },
     });
+    if (result.applicationId !== null) {
+      CandidateActivity.add({
+        candidateId: result.candidateId, actorId: req.user.id, actorName: req.user.fullName,
+        type: 'linked_to_request',
+        note: `Linked to request ${result.requestId}`,
+      });
+    }
 
+    // Respond FIRST. Everything above has committed; the evaluation below is a
+    // separate, best-effort job and its failure must not undo a completed review.
     res.status(201).json({
+      intake: intakeById(result.intakeId),
       intakeId: result.intakeId,
       proposalId: result.proposalId,
+      applicationId: result.applicationId,
       applied: result.applied,
       rejected: result.rejected,
       candidate: serialize(result.candidate, req.user, { withDetail: true }),
+      application: result.application
+        ? { id: result.application.id, applicationNo: result.application.application_no }
+        : null,
+      proposal: result.proposal,
     });
+
+    // Competency evaluation — AFTER the transaction committed, dispatched once,
+    // and only when the CV was submitted against a requisition. It reads the
+    // ACCEPTED values and their evidence, so a field the reviewer rejected can
+    // never appear in an assessment.
+    if (result.requestId !== null && result.storedName) {
+      const request = Requests.byId(result.requestId);
+      if (request) {
+        const evalCandidateId = result.candidateId;
+        const evalApplicationId = result.applicationId;
+        const evalActorId = req.user.id;
+        const evalActorName = req.user.fullName;
+        evaluateAgainstRequest(uploadPath(result.storedName), request).then((evaluation) => {
+          // null = no model configured, or the evaluator abstained. Both normal.
+          if (!evaluation) return;
+          CandidateNotes.add({
+            candidateId: evalCandidateId,
+            applicationId: evalApplicationId,
+            noteType: 'ai_evaluation',
+            body: evaluation.body,
+            authorId: evalActorId,
+            authorName: evalActorName,
+          });
+        }).catch((e) => console.error(JSON.stringify({
+          // Reported, never silently swallowed — and the candidate stands.
+          level: 'error', msg: 'evaluation.dispatch_failed',
+          candidateId: evalCandidateId, intakeId: result.intakeId,
+          error: String((e && e.message) || e),
+        })));
+      }
+    }
+    return undefined;
   } catch (e) {
     if (e.code === 'duplicate') {
-      // The intake is preserved; a duplicate is a decision for a person.
+      // The intake is PRESERVED; a duplicate is a decision for a person. The
+      // payload is structured facts only — no colours, no severity words. How
+      // an exact match differs from a potential one is the UI's to render.
       return res.status(409).json({ error: e.message, code: 'duplicate', ...e.detail });
+    }
+    if (e.code === 'request-ineligible') {
+      // requestId is neither discarded nor half-applied; the intake stays
+      // PENDING so it can be corrected and retried.
+      return res.status(409).json({ error: e.message, code: e.code, ...(e.detail || {}) });
     }
     const status = e.code === 'incomplete' || e.code === 'invalid' ? 400 : 409;
     res.status(status).json({ error: e.message, code: e.code || null, ...(e.detail || {}) });

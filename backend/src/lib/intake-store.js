@@ -14,7 +14,7 @@
 // aggregate unchanged, and it — not this file — decides what "accepted" means.
 
 import { get, all, run, tx } from './db.js';
-import { Candidates } from './models.js';
+import { Applications, Candidates, Requests, StageHistory } from './models.js';
 import { loadAggregate, raiseProposalIn, reviewProposalIn } from './proposal-store.js';
 
 /** A conversion that cannot proceed. `code` picks the HTTP status at the route. */
@@ -47,8 +47,10 @@ function toIntake(row) {
     documentId: row.document_id ?? null,
     generation: parseJson(row.generation, null),
     fields: parseJson(row.fields, []),
+    requestId: row.request_id ?? null,
     candidateId: row.candidate_id ?? null,
     proposalId: row.proposal_id ?? null,
+    applicationId: row.application_id ?? null,
     reason: row.reason ?? null,
     createdBy: row.created_by ?? null,
     reviewedBy: row.reviewed_by ?? null,
@@ -74,8 +76,8 @@ export function createIntake(input) {
       `INSERT INTO candidate_intake
         (tenant_id, status, stored_name, file_name, mime_type, file_hash,
          origin, task_id, model_id, document_id, generation, fields,
-         created_by, version, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         request_id, created_by, version, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         1, 'PENDING', input.storedName ?? null, input.fileName ?? null,
         input.mimeType ?? null, input.fileHash ?? null,
@@ -83,6 +85,8 @@ export function createIntake(input) {
         input.documentId ?? null,
         input.generation ? JSON.stringify(input.generation) : null,
         JSON.stringify(input.fields),
+        // Carried, not acted on: no application exists until a human approves.
+        input.requestId ?? null,
         input.createdBy ?? null, 0, new Date().toISOString(),
       ],
     );
@@ -106,6 +110,40 @@ export function pendingIntakes() {
 /* ------------------------------- converting -------------------------------- */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** A requisition in one of these states can no longer take new candidates. */
+const CLOSED_REQUEST_STATES = ['closed', 'cancelled', 'rejected', 'filled'];
+
+/**
+ * Is this requisition real and still open?
+ *
+ * Used at intake creation (fail fast, before storing a reference that can never
+ * resolve) and again at conversion, because a requisition can close in between.
+ */
+export function checkRequest(requestId) {
+  const request = Requests.byId(Number(requestId));
+  if (!request) return { ok: false, reason: 'The requisition does not exist.', request: null };
+  if (CLOSED_REQUEST_STATES.includes(request.status)) {
+    return {
+      ok: false,
+      reason: `The requisition is ${request.status} and cannot take new candidates.`,
+      request,
+    };
+  }
+  return { ok: true, request };
+}
+
+/** Case-insensitive text equality, ignoring surrounding space. */
+const sameText = (a, b) => typeof a === 'string' && typeof b === 'string'
+  && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Phone equality on digits alone: "+20 100…" and "0100…" are one number. */
+const sameDigits = (a, b) => {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const left = a.replace(/\D/g, '');
+  const right = b.replace(/\D/g, '');
+  return left.length >= 7 && left.slice(-9) === right.slice(-9);
+};
 
 /** List fields are stored as JSON arrays; everything else passes through. */
 const LIST_FIELDS = new Set(['skills', 'languages', 'certifications']);
@@ -198,13 +236,35 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
       if (duplicates.length > 0) {
         // The intake is PRESERVED: a duplicate is a decision for a person, not
         // a reason to discard a parsed CV.
+        //
+        // FACTS ONLY. Which fields matched, and whether the match is on an
+        // identity-grade field. No severity words, no colours — how an exact
+        // match is presented differently from a potential one is the UI's
+        // decision, not this layer's.
+        const matches = duplicates.map((d) => {
+          const matchedFields = [];
+          if (sameText(d.email, accepted.get('email'))) matchedFields.push('email');
+          if (sameDigits(d.phone, accepted.get('phone'))) matchedFields.push('phone');
+          if (sameText(d.linkedin_url, accepted.get('linkedinUrl'))) matchedFields.push('linkedinUrl');
+          return {
+            id: d.id,
+            candidateNo: d.candidate_no,
+            fullName: d.full_name,
+            email: d.email,
+            matchedFields,
+            // Email is an identity-grade match; a shared phone or profile link
+            // is common enough between real, distinct people to be only a hint.
+            kind: matchedFields.includes('email') ? 'exact' : 'potential',
+          };
+        });
         throw new IntakeReviewError(
           'A candidate with these contact details already exists.',
           'duplicate',
           {
-            matches: duplicates.map((d) => ({
-              id: d.id, candidateNo: d.candidate_no, fullName: d.full_name, email: d.email,
-            })),
+            matches,
+            // Conversion did not happen and will not until someone decides.
+            blocked: true,
+            overridable: true,
           },
         );
       }
@@ -236,6 +296,38 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
       fields: intake.fields,
     });
 
+    /* ------------------------- link to the requisition -------------------- */
+
+    let application = null;
+    if (intake.requestId !== null) {
+      // Re-validated HERE, not trusted from intake time: a requisition can be
+      // closed between upload and review. Failing inside the transaction means
+      // no partial candidate survives a stale reference.
+      const check = checkRequest(intake.requestId);
+      if (!check.ok) {
+        throw new IntakeReviewError(check.reason, 'request-ineligible', {
+          requestId: intake.requestId,
+          requestStatus: check.request ? check.request.status : null,
+        });
+      }
+
+      // The existing guard against two applications for one candidate/request
+      // pair. A fresh candidate cannot have one yet, but the check is the
+      // contract and a retry must not create a second.
+      const existing = Applications.existing(candidate.id, check.request.id);
+      application = existing ?? Applications.create({
+        applicationNo: Applications.nextNo(),
+        candidateId: candidate.id,
+        requestId: check.request.id,
+        positionApplied: check.request.title,
+        status: 'sourced',
+        recruiterId: actor.id,
+        source: opts.source ?? 'cv_intake',
+        createdBy: actor.id,
+      });
+      if (!existing) StageHistory.add(application.id, null, 'sourced', actor);
+    }
+
     let reviewed = null;
     if (proposal !== null) {
       // Restricted to the fields the aggregate actually kept — it filters to the
@@ -247,18 +339,26 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
     }
 
     run(`UPDATE candidate_intake SET status='CONVERTED', candidate_id=?, proposal_id=?,
-         reviewed_by=?, reviewed_at=?, version=? WHERE id=?`,
-    [candidate.id, proposal ? proposal.id : null, actor.id,
-      new Date().toISOString(), intake.version + 1, intake.id]);
+         application_id=?, reviewed_by=?, reviewed_at=?, version=? WHERE id=?`,
+    [candidate.id, proposal ? proposal.id : null, application ? application.id : null,
+      actor.id, new Date().toISOString(), intake.version + 1, intake.id]);
 
     return {
       status: 'CONVERTED',
       intakeId: intake.id,
       candidateId: candidate.id,
       proposalId: proposal ? proposal.id : null,
+      applicationId: application ? application.id : null,
+      requestId: intake.requestId,
       applied: reviewed ? reviewed.applied : [],
       rejected: reviewed ? reviewed.rejected : [],
       candidate: Candidates.byId(candidate.id),
+      application,
+      // The reviewed proposal, so the caller does not have to re-read it.
+      proposal: proposal ? { id: proposal.id, status: reviewed ? reviewed.status : 'PENDING' } : null,
+      // Everything below has COMMITTED by the time the caller sees this, which
+      // is what makes it safe to dispatch an evaluation afterwards.
+      storedName: intake.storedName,
     };
   });
 }

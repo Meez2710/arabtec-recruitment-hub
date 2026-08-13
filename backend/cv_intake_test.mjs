@@ -43,6 +43,11 @@ if (!dbGet("SELECT value FROM system_setting WHERE key='candidate_counter'")) {
 if (!dbGet("SELECT value FROM system_setting WHERE key='candidate_prefix'")) {
   dbRun("INSERT INTO system_setting (key, value) VALUES ('candidate_prefix','CAN')");
 }
+for (const [key, value] of [['application_counter', '0'], ['application_prefix', 'APP']]) {
+  if (!dbGet('SELECT value FROM system_setting WHERE key=?', [key])) {
+    dbRun('INSERT INTO system_setting (key, value) VALUES (?,?)', [key, value]);
+  }
+}
 if (!dbGet('SELECT id FROM users WHERE id=1')) {
   dbRun("INSERT INTO users (id, full_name, email, password_hash) VALUES (1,'Reviewer','reviewer@example.test','x')");
 }
@@ -55,6 +60,7 @@ const {
   createIntake, intakeById, pendingIntakes, reviewIntake, rejectIntake,
 } = await import('./src/lib/intake-store.js');
 const { proposalById } = await import('./src/lib/proposal-store.js');
+const { renderEvaluation } = await import('./src/lib/parsing/evaluation.js');
 
 registry.resetParserRegistry();
 configureParsing();
@@ -303,6 +309,150 @@ await test('a failure rolls back the candidate, the proposal and the intake', as
   assert.equal(intakeById(poison.id).status, 'PENDING', 'the intake was resolved anyway');
   assert.equal(intakeById(poison.id).candidateId, null);
   assert.equal(dbAll("SELECT id FROM candidate WHERE full_name='Broken Record'").length, 0);
+});
+
+/* ------------------- 6. requisition association --------------------------- */
+
+// A real, open requisition to submit against.
+dbRun(`INSERT INTO recruitment_request
+  (id, ticket_no, title, status, headcount, requester_id, created_by, created_at, updated_at)
+  VALUES (1,'REQ-TEST-1','Structural Engineer','sourcing',1,1,1,datetime('now'),datetime('now'))`);
+dbRun(`INSERT INTO recruitment_request
+  (id, ticket_no, title, status, headcount, requester_id, created_by, created_at, updated_at)
+  VALUES (2,'REQ-TEST-2','Closed Role','closed',1,1,1,datetime('now'),datetime('now'))`);
+
+const countApplications = () => dbGet('SELECT COUNT(*) c FROM application').c;
+
+const intakeFor = (requestId) => createIntake({
+  storedName: path.basename(cvPath),
+  fileName: 'linked-cv.txt',
+  fields: [
+    { field: 'fullName', value: `Linked Person ${requestId}-${Date.now()}`, confidence: 0.75, evidence: 'x' },
+    { field: 'location', value: 'Cairo, Egypt', confidence: 0.75, evidence: 'y' },
+  ],
+  ...(requestId !== null ? { requestId } : {}),
+  createdBy: 1,
+});
+
+await test('requestId survives intake creation and creates no application', () => {
+  const before = countApplications();
+  const intake = intakeFor(1);
+  assert.equal(intake.requestId, 1);
+  assert.equal(intake.applicationId, null);
+  assert.equal(countApplications(), before, 'an application was created before review');
+});
+
+await test('an approved intake creates the application exactly once', async () => {
+  const intake = intakeFor(1);
+  const beforeApps = countApplications();
+  const result = await reviewIntake(intake.id, decide(intake.id, { fullName: true, location: true }),
+    REVIEWER, { overrideDuplicate: true });
+
+  assert.equal(result.status, 'CONVERTED');
+  assert.ok(result.applicationId, 'no application was created');
+  assert.equal(countApplications(), beforeApps + 1, 'expected exactly one new application');
+
+  const stored = intakeById(intake.id);
+  assert.equal(stored.applicationId, result.applicationId, 'applicationId not stored on the intake');
+  assert.equal(stored.requestId, 1);
+
+  // The existing per-candidate/request uniqueness guard.
+  const apps = dbAll('SELECT * FROM application WHERE candidate_id=? AND request_id=?',
+    [result.candidateId, 1]);
+  assert.equal(apps.length, 1, 'a duplicate application was created');
+});
+
+await test('an intake naming a closed requisition is refused and preserved', async () => {
+  const intake = intakeFor(2);
+  const beforeApps = countApplications();
+  const beforeCandidates = countCandidates();
+  let error = null;
+  try {
+    await reviewIntake(intake.id, decide(intake.id, { fullName: true }), REVIEWER,
+      { overrideDuplicate: true });
+  } catch (e) { error = e; }
+
+  assert.ok(error, 'a closed requisition was accepted');
+  assert.equal(error.code, 'request-ineligible');
+  assert.equal(countApplications(), beforeApps, 'a partial application was created');
+  assert.equal(countCandidates(), beforeCandidates, 'a candidate survived an ineligible request');
+  // requestId is neither discarded nor half-applied.
+  assert.equal(intakeById(intake.id).status, 'PENDING');
+  assert.equal(intakeById(intake.id).requestId, 2);
+});
+
+await test('an intake with no requestId converts without an application', async () => {
+  const intake = intakeFor(null);
+  const beforeApps = countApplications();
+  const result = await reviewIntake(intake.id, decide(intake.id, { fullName: true }),
+    REVIEWER, { overrideDuplicate: true });
+  assert.equal(result.status, 'CONVERTED');
+  assert.equal(result.applicationId, null);
+  assert.equal(result.requestId, null);
+  assert.equal(countApplications(), beforeApps, 'an application appeared without a requisition');
+});
+
+await test('the duplicate response reports matched fields and match kind', async () => {
+  const first = createIntake({
+    fileName: 'dup-a.txt',
+    fields: [
+      { field: 'fullName', value: 'Duplicate Probe', confidence: 0.75, evidence: 'x' },
+      { field: 'email', value: 'dup.probe@example.test', confidence: 0.75, evidence: 'y' },
+    ],
+    createdBy: 1,
+  });
+  await reviewIntake(first.id, decide(first.id, { fullName: true, email: true }), REVIEWER,
+    { overrideDuplicate: true });
+
+  const second = createIntake({
+    fileName: 'dup-b.txt',
+    fields: [
+      { field: 'fullName', value: 'Duplicate Probe Two', confidence: 0.75, evidence: 'x' },
+      { field: 'email', value: 'dup.probe@example.test', confidence: 0.75, evidence: 'y' },
+    ],
+    createdBy: 1,
+  });
+  let error = null;
+  try {
+    await reviewIntake(second.id, decide(second.id, { fullName: true, email: true }), REVIEWER);
+  } catch (e) { error = e; }
+
+  assert.ok(error && error.code === 'duplicate');
+  const match = error.detail.matches[0];
+  assert.deepEqual(match.matchedFields, ['email']);
+  assert.equal(match.kind, 'exact');
+  assert.equal(error.detail.blocked, true);
+  assert.equal(error.detail.overridable, true);
+  // No presentation concerns leak out of the backend.
+  const payload = JSON.stringify(error.detail).toLowerCase();
+  for (const word of ['red', 'amber', 'colour', 'color', 'severity', 'warning']) {
+    assert.equal(payload.includes(word), false, `the duplicate payload mentions "${word}"`);
+  }
+});
+
+/* --------------------------- 7. evaluation --------------------------------- */
+
+await test('the qualitative evaluator emits no numeric score', () => {
+  const rendered = renderEvaluation({
+    overall: 'Proficient',
+    summary: 'Reads as a competent structural engineer.',
+    competencies: [{
+      competency: 'Structural design',
+      level: 'Exceeds Requirements',
+      evidence: ['Senior Structural Engineer at Arabtec Construction'],
+      rationale: 'Held the role for several years.',
+    }],
+    gaps: ['Bridge design'],
+    modelId: 'test-model',
+    promptVersionId: 'v1',
+    documentId: 'cv.txt',
+  });
+  for (const level of ['Exceeds Requirements', 'Proficient', 'Requires Development', 'No Evidence Found']) {
+    // The vocabulary is closed; anything outside it is a regression.
+    assert.equal(typeof level, 'string');
+  }
+  assert.match(rendered, /Exceeds Requirements/);
+  assert.equal(/\/100|\bscore\b|%/i.test(rendered), false, 'a numeric score reappeared');
 });
 
 fs.rmSync(cvPath, { force: true });

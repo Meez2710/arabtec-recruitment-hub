@@ -408,8 +408,17 @@ export function ensureSchema() {
     generation TEXT,                                    -- JSON: ProposalGeneration
     fields TEXT NOT NULL DEFAULT '[]',                  -- JSON: proposed fields + decisions
     -- Set only after a successful conversion; the candidate this became.
+    -- The requisition this CV was submitted against, when the uploader named
+    -- one. Carried through review; no application exists until then.
+    --
+    -- Plain INTEGERs, not foreign keys: this table is created before
+    -- recruitment_request and application in this script, and Postgres rejects
+    -- a forward REFERENCES. The intake is a staging record whose links are
+    -- resolved in application code, so a constraint here buys nothing.
+    request_id INTEGER,
     candidate_id INTEGER REFERENCES candidate(id) ON DELETE SET NULL,
-    proposal_id INTEGER REFERENCES candidate_proposal(id) ON DELETE SET NULL,
+    proposal_id INTEGER,
+    application_id INTEGER,
     reason TEXT,                                        -- why it was rejected or could not convert
     created_by INTEGER REFERENCES users(id),
     reviewed_by INTEGER REFERENCES users(id),
@@ -673,6 +682,8 @@ export function ensureSchema() {
   // Proposable list fields. Nullable TEXT holding a JSON array, which is the
   // convention `tags` already uses on this table — no new storage idea, and no
   // existing row changes meaning: NULL keeps reading as "not stated".
+  addColumnIfMissing('candidate_intake', 'request_id', 'INTEGER');
+  addColumnIfMissing('candidate_intake', 'application_id', 'INTEGER');
   addColumnIfMissing('candidate', 'skills', 'TEXT');
   addColumnIfMissing('candidate', 'languages', 'TEXT');
   addColumnIfMissing('candidate', 'certifications', 'TEXT');
