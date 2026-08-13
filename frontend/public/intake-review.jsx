@@ -1,138 +1,409 @@
 /* Arabtec Candidate Intake Review
-   Drop-in Babel/React component for the frozen pre-candidate intake API.
-   Decisions remain local until one complete review map is submitted. */
+   Drop-in Babel/React page for the pre-candidate intake API.
+
+   Wired to the REAL routes on the candidates router (mounted at /api/candidates):
+     POST /candidates/parse-cv                    -> { intake|null, file, report, reason? }
+     GET  /candidates/intakes                     -> { intakes: [...] }   (PENDING only)
+     GET  /candidates/intakes/:iid                -> { intake }
+     GET  /candidates/intakes/:iid/document       -> the stored CV bytes
+     POST /candidates/intakes/:iid/review         -> 201 { candidate, application, ... }
+
+   The review contract is a COMPLETE BOOLEAN MAP: the backend rejects a review
+   that omits any proposed field ('incomplete'), so decisions are collected
+   locally and submitted once. There is deliberately no per-field save and no
+   edit-the-value control — the API accepts accept/reject only, and offering an
+   editor the backend cannot honour would be a lie in the UI. */
 (function () {
   const h = React.createElement;
   const { useCallback, useEffect, useMemo, useRef, useState } = React;
+
+  /* Labels for the fields the domain actually proposes (PROPOSABLE_FIELDS).
+     `major` carries the degree subject the extractor reads out of a line like
+     "Bachelor of Science in Mechanical Engineering"; there is no separate
+     `degree` field on the proposal whitelist, so it is not invented here. */
   const LABELS = {
-    fullName: 'Full name', full_name: 'Full name', email: 'Email', phone: 'Phone',
-    linkedinUrl: 'LinkedIn', linkedin: 'LinkedIn', nationality: 'Nationality', location: 'Location',
-    currentCompany: 'Current company', current_company: 'Current company',
-    currentPosition: 'Current position', current_position: 'Current position',
-    yearsExperience: 'Years of experience', years_experience: 'Years of experience',
-    graduationCertificate: 'Graduation certificate / degree', degree: 'Graduation certificate / degree',
-    graduationUniversity: 'University', university: 'University', graduationYear: 'Graduation year', graduation_year: 'Graduation year',
-    noticePeriod: 'Notice period', notice_period: 'Notice period', skills: 'Skills'
+    fullName: 'Full name',
+    email: 'Email',
+    phone: 'Phone',
+    linkedinUrl: 'LinkedIn',
+    nationality: 'Nationality',
+    location: 'Location',
+    currentPosition: 'Current position',
+    currentCompany: 'Current company',
+    yearsExperience: 'Years of experience',
+    noticePeriod: 'Notice period',
+    major: 'Degree / field of study',
+    university: 'University',
+    graduationYear: 'Graduation year',
+    certifications: 'Certifications',
+    skills: 'Skills',
+    languages: 'Languages',
   };
-  const FIELD_ORDER = ['fullName','email','phone','linkedinUrl','nationality','location','currentCompany','currentPosition','yearsExperience','graduationCertificate','graduationUniversity','graduationYear','noticePeriod','skills'];
+  const FIELD_ORDER = Object.keys(LABELS);
+
   const api = () => {
     if (!window.ARABTEC_API) throw new Error('ATS API is not ready.');
     return window.ARABTEC_API;
   };
-  const listOf = (r) => Array.isArray(r) ? r : (r && (r.intakes || r.items || r.results)) || [];
-  const oneOf = (r) => (r && (r.intake || r.item)) || r || {};
-  const clean = (v) => v == null || v === '' ? '—' : Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
+
+  const labelFor = (key) => LABELS[key]
+    || String(key).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+  const clean = (v) => (v === null || v === undefined || v === ''
+    ? '—'
+    : Array.isArray(v) ? v.join(', ') : String(v));
+
   const when = (v) => { const d = new Date(v); return v && !isNaN(d) ? d.toLocaleString() : '—'; };
-  const initials = (v) => (v || '?').split(/\s+/).filter(Boolean).slice(0,2).map(x => x[0]).join('').toUpperCase();
-  const labelFor = (key) => LABELS[key] || String(key).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/_/g,' ').replace(/^./,c=>c.toUpperCase());
-  const evidenceText = (e) => {
-    if (!e) return 'No evidence supplied';
-    if (typeof e === 'string') return e;
-    return e.quote || e.text || e.snippet || e.rawText || e.value || [e.page != null ? `Page ${e.page}` : '', e.blockId ? `Block ${e.blockId}` : ''].filter(Boolean).join(' · ') || 'Evidence available';
+  const initials = (v) => (v || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+
+  /** Name shown for an intake before a candidate exists. Never a candidate no. */
+  const intakeName = (intake) => {
+    const named = (intake.fields || []).find((f) => f.field === 'fullName');
+    return (named && named.value) || intake.fileName || `Intake ${intake.id}`;
   };
-  function normaliseFields(intake) {
-    const source = intake.reviewFields || intake.fields || intake.proposal?.fields || intake.parsed?.fields || intake.parsedDocument?.fields || {};
-    let rows = Array.isArray(source) ? source.map((x,i) => ({ key: x.key || x.field || x.name || `field_${i}`, ...x }))
-      : Object.entries(source).map(([key,v]) => v && typeof v === 'object' && !Array.isArray(v) ? ({ key, ...v }) : ({ key, value:v }));
-    const byKey = new Map(rows.map(r => [r.key, r]));
-    rows = [...FIELD_ORDER.filter(k => byKey.has(k)).map(k => byKey.get(k)), ...rows.filter(r => !FIELD_ORDER.includes(r.key))];
-    return rows.map(r => ({
-      key: r.key, label: r.label || labelFor(r.key),
-      value: r.value ?? r.normalizedValue ?? r.normalized ?? r.parsedValue ?? r.rawValue ?? '',
-      evidence: r.evidence || r.provenance || r.source, confidence: r.confidence,
-      decision: String(r.decision || 'PENDING').toUpperCase()
-    }));
+
+  /** Proposed fields in review order; unknown fields keep their own order after. */
+  const orderFields = (fields) => {
+    const list = Array.isArray(fields) ? fields : [];
+    const known = FIELD_ORDER.filter((k) => list.some((f) => f.field === k))
+      .map((k) => list.find((f) => f.field === k));
+    return [...known, ...list.filter((f) => !FIELD_ORDER.includes(f.field))];
+  };
+
+  /* -------------------------------- pieces -------------------------------- */
+
+  function Banner({ tone = 'info', title, children }) {
+    return h('div', { className: `intake-banner ${tone}` }, h('strong', null, title), h('div', null, children));
   }
-  function Banner({ tone='info', title, children }) {
-    return h('div',{className:`intake-banner ${tone}`},h('strong',null,title),h('div',null,children));
+
+  /** Structured citation: the snippet, then where it came from in the document. */
+  function Evidence({ field }) {
+    const ref = field.evidenceRef || null;
+    const where = ref
+      ? [ref.page != null ? `Page ${ref.page}` : null,
+        ref.section ? `Section ${ref.section}` : null,
+        ref.blockId ? `Block ${ref.blockId}` : null].filter(Boolean).join(' · ')
+      : '';
+    return h('div', { className: 'evidence-cell' },
+      h('div', { className: 'evidence-quote' },
+        field.evidence ? `“${field.evidence}”` : 'No evidence supplied'),
+      where ? h('small', null, where) : null);
   }
-  function IntakeList({ items, active, onOpen, loading }) {
-    if (loading) return h('div',{className:'intake-list-state'},'Loading pending CV reviews…');
-    if (!items.length) return h('div',{className:'intake-list-state'},h('strong',null,'No pending reviews'),h('span',null,'New CV uploads will appear here before a candidate is created.'));
-    return h('div',{className:'intake-list'},items.map(x => {
-      const id = x.iid || x.id;
-      const name = x.fullName || x.full_name || x.filename || x.fileName || `Intake ${id}`;
-      return h('button',{key:id,className:'intake-list-row'+(String(active)===String(id)?' active':''),onClick:()=>onOpen(id)},
-        h('span',{className:'intake-avatar'},initials(name)),
-        h('span',{className:'intake-list-copy'},h('strong',null,name),h('small',null,(x.requestTitle || x.request?.title || 'Talent pool')+' · '+when(x.createdAt || x.created_at))),
-        h('span',{className:'intake-state'},x.status || 'PENDING'));
-    }));
+
+  /**
+   * Identity conflict raised by the review endpoint (409, code 'duplicate').
+   *
+   * Only ever rendered from a real backend response — exact matches block, and
+   * `overridable` decides whether an override is offered at all. Name-only
+   * lookalikes never reach here; they come back on success as potentialMatches.
+   */
+  function BlockingDuplicate({ conflict }) {
+    const matches = conflict.matches || [];
+    return h(Banner, { tone: 'danger', title: 'Exact duplicate identifier found' },
+      h('span', null, conflict.overridable
+        ? 'Candidate creation is blocked unless an authorised override is confirmed. '
+        : 'Candidate creation is blocked. '),
+      matches.map((m, i) => h('span', { key: m.id || i, className: 'duplicate-match' },
+        `${m.candidateNo || m.id || 'Candidate'} · ${(m.matchedFields || []).join(', ')}`)));
   }
-  function Evidence({ value }) {
-    return h('div',{className:'evidence-cell'},h('div',{className:'evidence-quote'},'“'+evidenceText(value)+'”'),
-      value && typeof value === 'object' && (value.page != null || value.blockId) ? h('small',null,[value.page != null ? `Page ${value.page}` : null,value.blockId ? `Block ${value.blockId}` : null].filter(Boolean).join(' · ')) : null);
+
+  function PotentialMatches({ matches }) {
+    if (!matches || !matches.length) return null;
+    return h(Banner, { tone: 'warning', title: 'Potential match — review only' },
+      h('span', null, 'Name-only matches do not block review. '),
+      matches.map((m, i) => h('span', { key: m.id || i, className: 'duplicate-match' },
+        `${m.candidateNo || m.id || 'Candidate'} · ${(m.matchedFields || ['fullName']).join(', ')}`)));
   }
-  function DuplicateNotice({ duplicate }) {
-    const matches = duplicate?.matches || [];
-    if (!matches.length) return null;
-    const blocked = duplicate.blocked === true || matches.some(m => m.kind === 'exact');
-    return h(Banner,{tone:blocked?'danger':'warning',title:blocked?'Exact duplicate identifier found':'Potential match — review only'},
-      h('span',null,blocked ? 'Candidate creation is blocked unless an authorised override is confirmed. ' : 'Name-only matches do not block review. '),
-      matches.map((m,i)=>h('span',{key:m.id||i,className:'duplicate-match'},`${m.candidateNo || m.id || 'Candidate'} · ${(m.matchedFields || []).join(', ') || m.kind}`)));
-  }
-  function ReviewTable({ fields, decisions, setDecision, edits, setEdit }) {
-    return h('div',{className:'review-table-wrap'},h('table',{className:'review-table'},
-      h('thead',null,h('tr',null,h('th',null,'Field'),h('th',null,'Parsed value'),h('th',null,'Evidence'),h('th',null,'Decision'))),
-      h('tbody',null,fields.map(f => {
-        const d = decisions[f.key] || 'PENDING';
-        return h('tr',{key:f.key,className:'decision-'+d.toLowerCase()},
-          h('td',null,h('strong',null,f.label),f.confidence!=null?h('small',null,`${Math.round(Number(f.confidence)*100)}% confidence`):null),
-          h('td',null,d==='EDIT' ? h('input',{className:'review-edit',value:edits[f.key] ?? clean(f.value),onChange:e=>setEdit(f.key,e.target.value)}) : h('span',{className:'parsed-value'},clean(f.value))),
-          h('td',null,h(Evidence,{value:f.evidence})),
-          h('td',null,h('select',{className:'decision-select',value:d,onChange:e=>setDecision(f.key,e.target.value)},
-            h('option',{value:'PENDING'},'Choose…'),h('option',{value:'ACCEPT'},'Accept'),h('option',{value:'EDIT'},'Edit'),h('option',{value:'REJECT'},'Reject'))));
+
+  function ReviewTable({ fields, decisions, setDecision }) {
+    return h('div', { className: 'review-table-wrap' }, h('table', { className: 'review-table' },
+      h('thead', null, h('tr', null,
+        h('th', null, 'Field'), h('th', null, 'Parsed value'),
+        h('th', null, 'Evidence'), h('th', null, 'Decision'))),
+      h('tbody', null, fields.map((f) => {
+        const d = decisions[f.field] || 'PENDING';
+        return h('tr', { key: f.field, className: 'decision-' + d.toLowerCase() },
+          h('td', null, h('strong', null, labelFor(f.field)),
+            f.confidence != null ? h('small', null, `${Math.round(Number(f.confidence) * 100)}% parse confidence`) : null),
+          h('td', null, h('span', { className: 'parsed-value' }, clean(f.value))),
+          h('td', null, h(Evidence, { field: f })),
+          h('td', null, h('select', {
+            className: 'decision-select', value: d,
+            'aria-label': `Decision for ${labelFor(f.field)}`,
+            onChange: (e) => setDecision(f.field, e.target.value),
+          },
+          h('option', { value: 'PENDING' }, 'Choose…'),
+          h('option', { value: 'ACCEPT' }, 'Accept'),
+          h('option', { value: 'REJECT' }, 'Reject'))));
       }))));
   }
-  function IntakeDetail({ id, onDone, onBack }) {
-    const [item,setItem]=useState(null), [fields,setFields]=useState([]), [decisions,setDecisions]=useState({}), [edits,setEdits]=useState({});
-    const [busy,setBusy]=useState(false), [error,setError]=useState(''), [override,setOverride]=useState(false), [rejectOpen,setRejectOpen]=useState(false), [reason,setReason]=useState('');
-    const savedRef=useRef({});
-    const load=useCallback(async()=>{ setError(''); try { const x=oneOf(await api().get('/intakes/'+id)); const fs=normaliseFields(x); setItem(x); setFields(fs); const ds=Object.fromEntries(fs.map(f=>[f.key,f.decision==='PENDING'?'PENDING':f.decision])); setDecisions(ds); savedRef.current=ds; } catch(e){ setError(e.message); } },[id]);
-    useEffect(()=>{load();},[load]);
-    const pending=fields.filter(f=>(decisions[f.key]||'PENDING')==='PENDING').length;
-    const duplicate=item?.duplicate || item?.duplicates || item?.duplicateCheck;
-    const blocked=duplicate?.blocked===true;
-    const setDecision=(k,v)=>setDecisions(s=>({...s,[k]:v}));
-    const setEdit=(k,v)=>setEdits(s=>({...s,[k]:v}));
-    const payloadDecisions=useMemo(()=>Object.fromEntries(fields.map(f=>[f.key,{decision:decisions[f.key]||'PENDING',...(decisions[f.key]==='EDIT'?{value:edits[f.key] ?? clean(f.value)}:{})}])),[fields,decisions,edits]);
-    async function submit(){ if(pending) return; setBusy(true);setError('');try{const r=await api().post(`/intakes/${id}/review`,{decisions:payloadDecisions,version:item.version,overrideDuplicate:blocked?override:false,ownerRecruiterId:item.ownerRecruiterId || undefined}); onDone(r);}catch(e){setError(e.message);if(e.data?.error==='stale'||e.status===409) setError('This intake changed on the server. Your local decisions are preserved; reload before retrying.');}finally{setBusy(false);} }
-    async function reject(){if(!reason.trim())return;setBusy(true);setError('');try{await api().post(`/intakes/${id}/review`,{reject:true,reason:reason.trim()});onDone();}catch(e){setError(e.message);}finally{setBusy(false);} }
-    if(error && !item) return h('div',{className:'intake-detail-state'},h(Banner,{tone:'danger',title:'Unable to load intake'},error),h('button',{className:'btn btn-secondary',onClick:onBack},'Back'));
-    if(!item) return h('div',{className:'intake-detail-state'},'Loading extracted fields…');
-    const title=item.fullName || item.full_name || fields.find(f=>['fullName','full_name'].includes(f.key))?.value || item.filename || 'Candidate intake';
-    return h('div',{className:'intake-review-detail'},
-      h('div',{className:'intake-review-head'},h('div',null,h('button',{className:'intake-back',onClick:onBack},'← Candidate Review'),h('h1',null,title),h('p',null,`${item.filename || item.fileName || 'CV document'} · ${item.request?.title || item.requestTitle || 'Talent pool'} · Version ${item.version ?? '—'}`)),
-        h('div',{className:'intake-head-actions'},h('button',{className:'btn btn-secondary',onClick:()=>api().download(`/intakes/${id}/document`)},'View CV'),h('button',{className:'btn btn-danger',onClick:()=>setRejectOpen(true)},'Reject intake'))),
-      error?h(Banner,{tone:'danger',title:'Review not submitted'},error):null,
-      h(DuplicateNotice,{duplicate}),
-      h('div',{className:'review-summary'},h('div',null,h('strong',null,fields.length),h('span',null,'reviewable fields')),h('div',null,h('strong',null,pending),h('span',null,'decisions remaining')),h('div',null,h('strong',null,item.status||'PENDING'),h('span',null,'intake status'))),
-      h('div',{className:'review-panel'},h('div',{className:'review-panel-head'},h('div',null,h('h2',null,'Parsed CV review'),h('p',null,'Approve, edit or reject every field. Nothing is persisted to the candidate database until final submission.')),h('button',{className:'btn btn-secondary',onClick:()=>setDecisions(Object.fromEntries(fields.map(f=>[f.key,'ACCEPT'])))},'Accept all')),
-        h(ReviewTable,{fields,decisions,setDecision,edits,setEdit})),
-      blocked?h('label',{className:'override-check'},h('input',{type:'checkbox',checked:override,onChange:e=>setOverride(e.target.checked)}),h('span',null,h('strong',null,'Authorised duplicate override'),h('small',null,'I verified the exact identifiers and confirm this should create a separate candidate.'))):null,
-      h('div',{className:'review-submit'},h('span',null,pending?`${pending} fields still need a decision`:'Complete decision map ready'),h('button',{className:'btn btn-success',disabled:busy||pending>0||(blocked&&!override),onClick:submit},busy?'Submitting…':'Approve & create candidate')),
-      rejectOpen?h('div',{className:'intake-modal-backdrop'},h('div',{className:'intake-modal'},h('h3',null,'Reject this intake?'),h('p',null,'The CV remains auditable but no candidate or application is created.'),h('textarea',{value:reason,onChange:e=>setReason(e.target.value),placeholder:'Required reason'}),h('div',null,h('button',{className:'btn btn-secondary',onClick:()=>setRejectOpen(false)},'Cancel'),h('button',{className:'btn btn-danger-solid',disabled:busy||!reason.trim(),onClick:reject},'Reject intake')))):null);
-  }
-  function CandidateIntakeReviewPage({ user }) {
-    const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[active,setActive]=useState(null),[error,setError]=useState(''),[uploading,setUploading]=useState(false);
-    const fileRef=useRef(null);
-    const load=useCallback(async()=>{setLoading(true);setError('');try{const xs=listOf(await api().get('/intakes'));setItems(xs.filter(x=>!x.status||String(x.status).toUpperCase()==='PENDING'));}catch(e){setError(e.message);}finally{setLoading(false);}},[]);
-    useEffect(()=>{load();},[load]);
-    async function uploadCv(e){
-      const file=e.target.files && e.target.files[0]; e.target.value=''; if(!file) return;
-      setUploading(true); setError('');
-      try{
-        const r=await api().upload('/parse-cv',file,{});
-        const nextId=r.iid || r.intakeId || r.intake?.iid || r.intake?.id || r.id;
-        await load(); if(nextId) setActive(nextId);
-      }catch(err){ setError(err.message || 'CV upload failed'); }
-      finally{ setUploading(false); }
+
+  /* -------------------------------- detail -------------------------------- */
+
+  function IntakeDetail({ id, onConverted, onBack }) {
+    const [intake, setIntake] = useState(null);
+    const [decisions, setDecisions] = useState({});
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const [conflict, setConflict] = useState(null);   // 409 duplicate payload
+    const [override, setOverride] = useState(false);
+    const [rejectOpen, setRejectOpen] = useState(false);
+    const [reason, setReason] = useState('');
+
+    const load = useCallback(async () => {
+      setError('');
+      try {
+        const r = await api().get('/candidates/intakes/' + id);
+        const x = r.intake;
+        setIntake(x);
+        // Only seed decisions that are still unset, so a reload after a stale
+        // conflict never discards what the reviewer already chose.
+        setDecisions((prev) => {
+          const next = { ...prev };
+          for (const f of x.fields || []) if (!next[f.field]) next[f.field] = 'PENDING';
+          return next;
+        });
+      } catch (e) { setError(e.message); }
+    }, [id]);
+    useEffect(() => { load(); }, [load]);
+
+    const fields = useMemo(() => orderFields(intake && intake.fields), [intake]);
+    const pending = fields.filter((f) => (decisions[f.field] || 'PENDING') === 'PENDING').length;
+    const acceptedCount = fields.filter((f) => decisions[f.field] === 'ACCEPT').length;
+
+    const setDecision = (k, v) => setDecisions((s) => ({ ...s, [k]: v }));
+    const setAll = (v) => setDecisions(Object.fromEntries(fields.map((f) => [f.field, v])));
+
+    async function submit() {
+      if (pending > 0) return;
+      setBusy(true); setError('');
+      try {
+        // Complete boolean map — every proposed field, exactly once.
+        const map = Object.fromEntries(fields.map((f) => [f.field, decisions[f.field] === 'ACCEPT']));
+        const r = await api().post(`/candidates/intakes/${id}/review`, {
+          decisions: map,
+          version: intake.version,
+          ...(conflict && override ? { overrideDuplicate: true } : {}),
+        });
+        setConflict(null);
+        onConverted(r);
+      } catch (e) {
+        const d = e.data || {};
+        if (d.code === 'duplicate') {
+          // Local decisions are untouched; the reviewer decides on the conflict.
+          setConflict({ matches: d.matches || [], blocked: d.blocked === true, overridable: d.overridable === true });
+          setError('');
+        } else if (d.code === 'stale') {
+          // Reload to pick up the current version. `load()` merges rather than
+          // resets, so every decision already made survives the refresh.
+          await load();
+          setError('This intake changed on the server. Your decisions were kept and the latest version has been loaded — submit again to apply them.');
+        } else if (d.code === 'not-pending') {
+          setError(`${e.message} Return to the queue and refresh.`);
+        } else {
+          setError(e.message);
+        }
+      } finally { setBusy(false); }
     }
-    if(active) return h(IntakeDetail,{id:active,onBack:()=>setActive(null),onDone:()=>{setActive(null);load();}});
-    return h('div',null,h('div',{className:'page-head intake-page-head'},h('div',{className:'page-head-main'},h('div',{className:'breadcrumb'},'Recruitment / Candidate Review'),h('h1',{className:'page-title'},'Candidate Intake Review'),h('p',{className:'page-sub'},'Human approval gate between CV parsing and candidate creation.')),
-      h('div',{className:'page-head-actions'},h('span',{className:'status-chip pending'},`${items.length} pending`),h('input',{ref:fileRef,type:'file',accept:'.pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg',style:{display:'none'},onChange:uploadCv}),h('button',{className:'btn btn-secondary',disabled:uploading,onClick:()=>fileRef.current&&fileRef.current.click()},uploading?'Uploading…':'Upload CV'),h('button',{className:'btn btn-success',disabled:uploading,onClick:load},'Refresh'))),
-      h(Banner,{tone:'info',title:'Workflow control'},'Upload creates a pending intake only. Candidate and application records are created after complete human review.'),
-      error?h(Banner,{tone:'danger',title:'Unable to load intakes'},error):null,
-      h('div',{className:'card intake-queue'},h('div',{className:'card-head'},h('h3',null,'Pending CVs'),h('span',{className:'muted'},'No automatic persistence')),h(IntakeList,{items,active,onOpen:setActive,loading})));
+
+    async function reject() {
+      if (!reason.trim()) return;
+      setBusy(true); setError('');
+      try {
+        await api().post(`/candidates/intakes/${id}/review`, { reject: true, reason: reason.trim() });
+        setRejectOpen(false);
+        onConverted(null);
+      } catch (e) { setError(e.message); setRejectOpen(false); } finally { setBusy(false); }
+    }
+
+    if (error && !intake) {
+      return h('div', { className: 'intake-list-state' },
+        h(Banner, { tone: 'danger', title: 'Unable to load intake' }, error),
+        h('button', { className: 'btn btn-secondary', onClick: onBack }, 'Back'));
+    }
+    if (!intake) return h('div', { className: 'intake-list-state' }, 'Loading extracted fields…');
+
+    const blocked = !!(conflict && conflict.blocked);
+    return h('div', null,
+      h('div', { className: 'intake-review-head' },
+        h('div', null,
+          h('button', { className: 'intake-back', onClick: onBack }, '← Candidate Review'),
+          h('h1', null, intakeName(intake)),
+          h('p', null, [
+            intake.fileName || 'CV document',
+            intake.requestId ? `Request #${intake.requestId}` : 'Talent pool',
+            `Intake ${intake.id} · version ${intake.version}`,
+          ].join(' · '))),
+        h('div', { className: 'intake-head-actions' },
+          h('button', {
+            className: 'btn btn-secondary',
+            onClick: () => api().download(`/candidates/intakes/${id}/document`),
+          }, 'View CV'),
+          h('button', { className: 'btn btn-danger', onClick: () => setRejectOpen(true) }, 'Reject intake'))),
+
+      error ? h(Banner, { tone: 'danger', title: 'Review not submitted' }, error) : null,
+      conflict ? h(BlockingDuplicate, { conflict }) : null,
+
+      h('div', { className: 'review-summary' },
+        h('div', null, h('strong', null, fields.length), h('span', null, 'reviewable fields')),
+        h('div', null, h('strong', null, pending), h('span', null, 'decisions remaining')),
+        h('div', null, h('strong', null, intake.status), h('span', null, 'intake status'))),
+
+      h('div', { className: 'review-panel' },
+        h('div', { className: 'review-panel-head' },
+          h('div', null,
+            h('h2', null, 'Parsed CV review'),
+            h('p', null, 'Accept or reject every field. Nothing is written to the candidate database until this review is submitted.')),
+          h('div', { className: 'intake-head-actions' },
+            h('button', { className: 'btn btn-secondary', onClick: () => setAll('REJECT') }, 'Reject all'),
+            h('button', { className: 'btn btn-secondary', onClick: () => setAll('ACCEPT') }, 'Accept all'))),
+        h(ReviewTable, { fields, decisions, setDecision })),
+
+      blocked && conflict.overridable
+        ? h('label', { className: 'override-check' },
+          h('input', { type: 'checkbox', checked: override, onChange: (e) => setOverride(e.target.checked) }),
+          h('span', null,
+            h('strong', null, 'Authorised duplicate override'),
+            h('small', null, 'I verified the matched identifiers and confirm this should create a separate candidate.')))
+        : null,
+
+      h('div', { className: 'review-submit' },
+        h('span', null, pending > 0
+          ? `${pending === 1 ? '1 field still needs' : `${pending} fields still need`} a decision`
+          : acceptedCount === 0
+            ? 'No field accepted — submitting will reject this intake and create no candidate'
+            : `Ready — ${acceptedCount} field${acceptedCount === 1 ? '' : 's'} will be applied`),
+        h('button', {
+          className: 'btn btn-success',
+          disabled: busy || pending > 0 || (blocked && conflict.overridable && !override) || (blocked && !conflict.overridable),
+          onClick: submit,
+        }, busy ? 'Submitting…' : (conflict ? 'Submit with override' : 'Approve & create candidate'))),
+
+      rejectOpen
+        ? h('div', { className: 'intake-modal-backdrop' }, h('div', { className: 'intake-modal' },
+          h('h3', null, 'Reject this intake?'),
+          h('p', null, 'The CV and its parse stay on record for audit. No candidate and no application are created.'),
+          h('textarea', {
+            value: reason, onChange: (e) => setReason(e.target.value),
+            'aria-label': 'Reason for rejecting this intake', placeholder: 'Required reason',
+          }),
+          h('div', null,
+            h('button', { className: 'btn btn-secondary', onClick: () => setRejectOpen(false) }, 'Cancel'),
+            h('button', {
+              className: 'btn btn-danger-solid', disabled: busy || !reason.trim(), onClick: reject,
+            }, 'Reject intake'))))
+        : null);
   }
+
+  /* --------------------------------- page --------------------------------- */
+
+  function CandidateIntakeReviewPage({ user }) {
+    const [items, setItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [active, setActive] = useState(null);
+    const [error, setError] = useState('');
+    const [notice, setNotice] = useState(null);      // parse produced nothing
+    const [result, setResult] = useState(null);      // last conversion
+    const [uploading, setUploading] = useState(false);
+    const fileRef = useRef(null);
+
+    const load = useCallback(async () => {
+      setLoading(true); setError('');
+      try { setItems((await api().get('/candidates/intakes')).intakes || []); }
+      catch (e) { setError(e.message); } finally { setLoading(false); }
+    }, []);
+    useEffect(() => { load(); }, [load]);
+
+    async function uploadCv(e) {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      setUploading(true); setError(''); setNotice(null); setResult(null);
+      try {
+        const r = await api().upload('/candidates/parse-cv', file);
+        if (!r.intake) {
+          // Nothing in the document could be supported by evidence — an empty
+          // proposal is never raised, so say what happened and what to do.
+          setNotice({
+            tone: 'warning',
+            title: 'No reviewable field could be read from this document',
+            text: `${r.reason || 'The parser found no value supported by the document.'} `
+              + 'This is expected for image-only or scanned PDFs, which are not yet supported. '
+              + 'Upload a text-based PDF or DOCX, or add the candidate manually.',
+          });
+          return;
+        }
+        await load();
+        setActive(r.intake.id);
+      } catch (err) {
+        setError(err.message || 'CV upload failed');
+      } finally { setUploading(false); }
+    }
+
+    if (active) {
+      return h(IntakeDetail, {
+        id: active,
+        onBack: () => { setActive(null); load(); },
+        onConverted: (r) => {
+          setActive(null);
+          setResult(r);
+          load();
+        },
+      });
+    }
+
+    return h('div', null,
+      h('div', { className: 'page-head intake-page-head' },
+        h('div', { className: 'page-head-main' },
+          h('div', { className: 'breadcrumb' }, 'Recruitment / Candidate Review'),
+          h('h1', { className: 'page-title' }, 'Candidate Intake Review'),
+          h('p', { className: 'page-sub' }, 'Human approval gate between CV parsing and candidate creation.')),
+        h('div', { className: 'page-head-actions' },
+          h('span', { className: 'status-chip pending' }, `${items.length} pending`),
+          h('input', {
+            ref: fileRef, type: 'file', style: { display: 'none' }, onChange: uploadCv,
+            accept: '.pdf,.doc,.docx,.png,.jpg,.jpeg,.txt',
+          }),
+          h('button', {
+            className: 'btn btn-secondary', disabled: uploading,
+            onClick: () => fileRef.current && fileRef.current.click(),
+          }, uploading ? 'Uploading…' : 'Upload CV'),
+          h('button', { className: 'btn btn-success', disabled: uploading, onClick: load }, 'Refresh'))),
+
+      h(Banner, { tone: 'info', title: 'Workflow control' },
+        'Upload creates a pending intake only. The candidate and any application are created after a complete human review.'),
+
+      notice ? h(Banner, { tone: notice.tone, title: notice.title }, notice.text) : null,
+      error ? h(Banner, { tone: 'danger', title: 'Unable to load intakes' }, error) : null,
+
+      result && result.candidate
+        ? h('div', null,
+          h(Banner, { tone: 'info', title: `Candidate created — ${result.candidate.candidateNo}` },
+            `${result.applied.length} field${result.applied.length === 1 ? '' : 's'} applied`
+            + `${result.rejected.length ? `, ${result.rejected.length} rejected` : ''}`
+            + `${result.application ? `. Linked to application ${result.application.applicationNo}` : '. Not linked to a request'}.`),
+          h(PotentialMatches, { matches: result.potentialMatches }))
+        : null,
+
+      h('div', { className: 'card intake-queue' },
+        h('div', { className: 'card-head' },
+          h('h3', null, 'Pending CVs'),
+          h('span', { className: 'muted' }, 'No automatic persistence')),
+        loading
+          ? h('div', { className: 'intake-list-state' }, 'Loading pending CV reviews…')
+          : !items.length
+            ? h('div', { className: 'intake-list-state' },
+              h('strong', null, 'No pending reviews'),
+              h('span', null, 'New CV uploads appear here before a candidate is created.'))
+            : h('div', { className: 'intake-list' }, items.map((x) => h('button', {
+              key: x.id, className: 'intake-list-row', onClick: () => setActive(x.id),
+            },
+            h('span', { className: 'intake-avatar' }, initials(intakeName(x))),
+            h('span', { className: 'intake-list-copy' },
+              h('strong', null, intakeName(x)),
+              h('small', null, `${x.requestId ? `Request #${x.requestId}` : 'Talent pool'} · ${x.fields.length} field${x.fields.length === 1 ? '' : 's'} · ${when(x.createdAt)}`)),
+            h('span', { className: 'intake-state' }, x.status))))));
+  }
+
   window.ArabtecCandidateIntakeReviewPage = CandidateIntakeReviewPage;
 })();

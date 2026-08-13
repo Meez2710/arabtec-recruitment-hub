@@ -144,7 +144,12 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
   });
 });
 
-router.get('/:id', requirePermission('candidate.view'), (req, res) => {
+router.get('/:id', requirePermission('candidate.view'), (req, res, next) => {
+  // A candidate id is numeric. Anything else is a LITERAL path registered later
+  // in this router — `/intakes` is the live one — and must fall through rather
+  // than be read as an id: `Number('intakes')` is NaN, which this handler would
+  // report as "Candidate not found", making the real route unreachable.
+  if (!/^\d+$/.test(req.params.id)) return next();
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
   res.json({ candidate: serialize(c, req.user, { withDetail: true }) });
