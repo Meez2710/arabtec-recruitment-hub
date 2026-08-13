@@ -19,7 +19,7 @@
 // named human, and only for fields that human accepted.
 
 import { get, all, run, tx } from './db.js';
-import { Candidates } from './models.js';
+import { Candidates, encodeList } from './models.js';
 
 /* ---------------------------- the aggregate ------------------------------- */
 
@@ -27,7 +27,7 @@ import { Candidates } from './models.js';
 // proposal model. A missing build is a deployment defect, not a reason to
 // reimplement it here.
 let CandidateProposal = null;
-async function aggregate() {
+export async function loadAggregate() {
   if (CandidateProposal !== null) return CandidateProposal;
   const { pathToFileURL } = await import('node:url');
   const path = await import('node:path');
@@ -93,7 +93,18 @@ const iso = (date) => (date instanceof Date ? date.toISOString() : date ?? null)
  *   null when there was nothing to propose.
  */
 export async function raiseProposal(input) {
-  const Aggregate = await aggregate();
+  const Aggregate = await loadAggregate();
+  return raiseProposalIn(Aggregate, input);
+}
+
+/**
+ * The synchronous core. Joins an outer transaction when there is one.
+ *
+ * Separate from the async wrapper because `tx()` callbacks must be synchronous:
+ * an async callback would yield with the transaction open. A composed operation
+ * resolves the aggregate first, then calls this inside its own transaction.
+ */
+export function raiseProposalIn(Aggregate, input) {
   if (!input.fields || input.fields.length === 0) return null;
 
   return tx(() => {
@@ -173,14 +184,7 @@ export function proposalById(id) {
 
 /* --------------------------- applying a review ---------------------------- */
 
-/**
- * Proposable field -> candidate column.
- *
- * Fields with no column — skills, languages, certifications — are deliberately
- * absent: the candidate table has nowhere to put them, and inventing a column
- * would be a schema change this migration does not make. They stay on the
- * proposal and are reported as unapplied rather than silently dropped.
- */
+/** Proposable field -> candidate column. Every proposable field has one. */
 const COLUMN_BY_FIELD = {
   fullName: 'full_name',
   email: 'email',
@@ -195,7 +199,13 @@ const COLUMN_BY_FIELD = {
   university: 'university',
   major: 'major',
   graduationYear: 'graduation_year',
+  skills: 'skills',
+  languages: 'languages',
+  certifications: 'certifications',
 };
+
+/** Columns holding a JSON array. Encoded on the way in, decoded on the way out. */
+const LIST_FIELDS = new Set(['skills', 'languages', 'certifications']);
 
 /** A review that cannot proceed. Carries an HTTP-ish reason for the route. */
 export class ProposalReviewError extends Error {
@@ -223,8 +233,12 @@ export class ProposalReviewError extends Error {
  * @param {{ expectedVersion?: number }} [opts]  optimistic concurrency guard
  */
 export async function reviewProposal(proposalId, decisions, actor, opts = {}) {
-  const Aggregate = await aggregate();
+  const Aggregate = await loadAggregate();
+  return reviewProposalIn(Aggregate, proposalId, decisions, actor, opts);
+}
 
+/** The synchronous core. See raiseProposalIn. */
+export function reviewProposalIn(Aggregate, proposalId, decisions, actor, opts = {}) {
   return tx(() => {
     // Re-read INSIDE the transaction: a proposal resolved by someone else
     // between the route's lookup and this write must lose, not overwrite.
@@ -283,7 +297,9 @@ export async function reviewProposal(proposalId, decisions, actor, opts = {}) {
       // land anywhere.
       if (column === undefined) { unapplied.push(field); continue; }
       sets.push(`${column}=?`);
-      values.push(value);
+      // encodeList validates: a malformed list throws and takes the whole
+      // transaction with it rather than storing something unreadable.
+      values.push(LIST_FIELDS.has(field) ? encodeList(value) : value);
       applied.push(field);
     }
 

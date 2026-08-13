@@ -636,6 +636,45 @@ const normEmail = (e) => (e || '').toLowerCase().trim() || null;
 const normPhone = (p) => (p || '').replace(/[^0-9]/g, '') || null;
 const normLinkedin = (l) => (l || '').toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\/(www\.)?/, '') || null;
 
+/**
+ * A candidate list field, stored as a JSON array in nullable TEXT.
+ *
+ * Same convention `tags` already uses on this table. Values are trimmed and
+ * de-duplicated case-insensitively while KEEPING the original spelling — two
+ * spellings of one skill are one skill, but the one a person wrote is the one
+ * shown back to them.
+ *
+ * Returns null for "not stated", which is different from [] ("stated, empty").
+ * A malformed value throws rather than being coerced: silently storing garbage
+ * is how a list column becomes unreadable.
+ */
+export function encodeList(value) {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) throw new Error('List fields must be an array of strings.');
+  const seen = new Set();
+  const out = [];
+  for (const item of value) {
+    if (typeof item !== 'string') throw new Error('List fields must contain only strings.');
+    const trimmed = item.trim();
+    if (trimmed === '') continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return JSON.stringify(out);
+}
+
+/** Read a stored list back. Always an array for the API; [] when unset. */
+export function decodeList(stored) {
+  if (stored === null || stored === undefined || stored === '') return [];
+  if (Array.isArray(stored)) return stored;
+  try {
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
 export const Candidates = {
   /** Parse-quality metadata. Never stores CV text — the file is the source of truth. */
   setParseMeta(id, { parseStatus, parseConfidence, parsedAt } = {}) {
@@ -654,13 +693,16 @@ export const Candidates = {
       `INSERT INTO candidate (candidate_no,full_name,email,phone,nationality,location,linkedin_url,
         current_company,current_position,years_experience,expected_salary,notice_period,source,
         employer,current_project,graduation_year,university,major,tags,
+        skills,languages,certifications,
         owner_recruiter_id,dedup_email,dedup_phone,dedup_linkedin,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [d.candidateNo, d.fullName, d.email || null, d.phone || null, d.nationality || null, d.location || null,
        d.linkedinUrl || null, d.currentCompany || null, d.currentPosition || null,
        d.yearsExperience ?? null, d.expectedSalary ?? null, d.noticePeriod || null, d.source || null,
        d.employer || null, d.currentProject || null, d.graduationYear ?? null, d.university || null, d.major || null,
-       d.tags ? JSON.stringify(d.tags) : null, d.ownerRecruiterId || null,
+       d.tags ? JSON.stringify(d.tags) : null,
+       encodeList(d.skills), encodeList(d.languages), encodeList(d.certifications),
+       d.ownerRecruiterId || null,
        normEmail(d.email), normPhone(d.phone), normLinkedin(d.linkedinUrl), d.createdBy, nowISO(), nowISO()],
     );
     const id = Number(r.lastInsertRowid);

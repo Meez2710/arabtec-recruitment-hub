@@ -278,17 +278,47 @@ await test('a failed candidate update rolls the whole review back', async () => 
   assert.equal(Candidates.byId(candidate.id).full_name, nameBefore, 'the candidate name changed');
 });
 
-await test('every proposable field is either persistable or reported', () => {
+await test('every proposable field has somewhere on the candidate to live', () => {
   // Guards against drift: a field added to the aggregate's whitelist without a
-  // candidate column must be a deliberate, visible decision.
-  const KNOWN_UNPERSISTABLE = ['skills', 'languages', 'certifications'];
+  // candidate column must be a deliberate, visible decision, not a silent drop.
   const proposable = [
     'fullName', 'email', 'phone', 'nationality', 'location', 'linkedinUrl',
     'currentCompany', 'currentPosition', 'yearsExperience', 'noticePeriod',
     'university', 'major', 'graduationYear', 'skills', 'languages', 'certifications',
   ];
   const unmapped = proposable.filter((f) => !PERSISTABLE_PROPOSAL_FIELDS.includes(f));
-  assert.deepEqual(unmapped.sort(), [...KNOWN_UNPERSISTABLE].sort());
+  assert.deepEqual(unmapped, [], `no candidate column for: ${unmapped.join(', ')}`);
+});
+
+await test('accepted list fields round-trip; rejected ones stay unset', async () => {
+  const listProposal = await raiseProposal({
+    candidateId: candidate.id,
+    origin: 'resume.extract',
+    fields: [
+      { field: 'skills', value: ['AutoCAD', 'ETABS', 'autocad'], confidence: 0.75, evidence: 'SKILLS' },
+      { field: 'languages', value: ['Arabic', 'English'], confidence: 0.5, evidence: 'LANGUAGES' },
+    ],
+  });
+  await reviewProposal(listProposal.id, { skills: true, languages: false }, REVIEWER);
+
+  const row = Candidates.byId(candidate.id);
+  // Case-insensitive dedup keeps the spelling the CV used.
+  assert.deepEqual(JSON.parse(row.skills), ['AutoCAD', 'ETABS']);
+  // Rejected: the column is never written at all.
+  assert.equal(row.languages, null, 'a rejected list field was persisted');
+});
+
+await test('a malformed list value is refused, not stored', async () => {
+  const bad = await raiseProposal({
+    candidateId: candidate.id,
+    origin: 'resume.extract',
+    fields: [{ field: 'certifications', value: 'PMP', confidence: 0.75, evidence: 'x' }],
+  });
+  await assert.rejects(() => reviewProposal(bad.id, { certifications: true }, REVIEWER),
+    /must be an array/);
+  assert.equal(Candidates.byId(candidate.id).certifications, null);
+  // The rollback covers the proposal too.
+  assert.equal(proposalById(bad.id).status, 'PENDING');
 });
 
 fs.rmSync(cvPath, { force: true });

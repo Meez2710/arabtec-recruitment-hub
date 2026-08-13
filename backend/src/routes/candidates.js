@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   Candidates, CandidateDocuments, Applications, CandidateNotes, CandidateActivity,
   Users, Projects, Requests, Interviews, Offers, CustomFields, StageHistory,
+  decodeList,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -13,7 +14,10 @@ import { rejection as rejectionTpl } from '../lib/email_templates.js';
 // One provider serves a request; there is no fallback chain and no fan-out.
 import { getParser } from '../lib/parsing/registry.js';
 import { evaluateAgainstRequest } from '../lib/parsing/evaluation.js';
-import { reviewableFields } from '../lib/parsing/pipeline-provider.js';
+import { parseDocument, reviewableFields } from '../lib/parsing/pipeline-provider.js';
+import {
+  createIntake, intakeById, pendingIntakes, reviewIntake, rejectIntake,
+} from '../lib/intake-store.js';
 import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
@@ -47,6 +51,9 @@ function serialize(c, user, { withDetail = false } = {}) {
     graduationYear: c.graduation_year, university: c.university, major: c.major,
     resumeName: c.resume_name, hasResume: !!c.resume_path,
     tags: c.tags ? JSON.parse(c.tags) : [], candidateState: c.candidate_state,
+    // Always arrays through the API, even when the column is NULL.
+    skills: decodeList(c.skills), languages: decodeList(c.languages),
+    certifications: decodeList(c.certifications),
     parseStatus: c.parse_status || null, parseConfidence: c.parse_confidence ?? null,
     parsedAt: c.parsed_at || null,
     screeningStatus: c.screening_status || 'new',
@@ -217,156 +224,156 @@ router.post('/', requirePermission('candidate.add'), (req, res) => {
   res.status(201).json(result);
 });
 
-/* ---------------- PARSE CV (upload + extract + auto-create candidate) ---------------- */
+/* ---------------- PARSE CV (upload -> PENDING intake, no candidate) ---------------- */
+//
+// This route used to create a candidate from whatever the parser returned. It no
+// longer creates anything: the CV is parsed, evidence is located, deterministic
+// validation runs, and the result is stored as a PENDING intake for a person to
+// review. A candidate is created only by POST /intakes/:iid/review.
+//
+// Why not create the candidate first and propose against it? `candidate.full_name`
+// is NOT NULL, so creating the row means writing a parsed name before anyone has
+// looked at it — precisely the unreviewed write this design forbids.
 router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (req, res) => {
   if (!req.uploadedFile) return res.status(400).json({ error: 'CV file is required.' });
   try {
     const filePath = uploadPath(req.uploadedFile.storedName);
-    // Legacy shape kept for the existing response contract; the structured entity
-    // parse is what actually populates the candidate record.
-    const parsed = await getParser().parseLegacy(filePath);
     const entities = await getParser().parseEntities(filePath);
-    // verifiedOnly: a value only the MODEL read never lands on the record here.
-    // It is raised as a PENDING proposal below and waits for a human.
-    const { payload: parsedFields, persisted, skipped } = toCandidatePayload(entities,
-      { verifiedOnly: true });
-    const meta = toParseMetadata(entities);
+    const parsed = await parseDocument(filePath);
     const hash = fileHash(filePath);
 
-    // Auto-create the candidate in the talent pool if we got text
-    let candidate = null;
-    let application = null;
-    let duplicate = false;
-    if (parsed.extraction_status !== 'failed' && parsed.full_name) {
-      const dups = parsed.email ? Candidates.findDuplicates({ email: parsed.email }) : [];
-      if (dups.length) {
-        // Return existing candidate instead of creating duplicate
-        candidate = Candidates.byId(dups[0].id);
-        duplicate = true;
-      } else {
-        const candidateNo = Candidates.nextNo();
-        candidate = Candidates.create({
-          candidateNo,
-          // Structured fields from the entity parser. Only values validated
-          // `verified`/`likely` are present; `uncertain` ones are reported but
-          // not written, so the Talent Pool is not filled with doubtful data.
-          ...parsedFields,
-          // Legacy fallbacks so behaviour never regresses if a field was skipped.
-          fullName: parsedFields.fullName || parsed.full_name,
-          email: parsedFields.email || parsed.email,
-          phone: parsedFields.phone || parsed.phone,
-          yearsExperience: parsedFields.yearsExperience ?? parsed.years_experience,
-          source: 'folder_drop',
-          ownerRecruiterId: req.user.id,
-          createdBy: req.user.id,
-        });
-        // Candidates.create does not persist resume columns, and streamFile()
-        // expects the STORED name (not an absolute path) — POST /:id/resume already
-        // stores it that way. Without this the CV was unreachable for every
-        // candidate created by CV import.
-        dbRun('UPDATE candidate SET resume_path=?, resume_name=?, updated_at=? WHERE id=?',
-          [req.uploadedFile.storedName, req.uploadedFile.originalName, new Date().toISOString(), candidate.id]);
-        candidate = Candidates.byId(candidate.id);
-        // Parse-quality metadata (never the CV text itself).
-        Candidates.setParseMeta?.(candidate.id, meta);
-        CandidateDocuments.add({
-          candidateId: candidate.id, docType: 'cv',
-          fileName: req.uploadedFile.originalName,
-          fileHash: hash, uploadedBy: req.user.id,   // primary duplicate key
-        });
-        CandidateActivity.add({
-          candidateId: candidate.id, actorId: req.user.id,
-          actorName: req.user.fullName, type: 'candidate_created',
-          note: `${candidateNo} (CV parsed: ${req.uploadedFile.originalName})`,
-        });
-
-        // Anything only the model read is PROPOSED, not written. It sits PENDING
-        // until a person accepts it through POST /:id/proposals/:pid/review.
-        try {
-          const review = await reviewableFields(filePath);
-          if (review.fields.length > 0) {
-            const raised = await raiseProposal({
-              candidateId: candidate.id,
-              origin: 'resume.extract',
-              documentId: review.documentId,
-              modelId: review.generation?.modelId ?? '',
-              generation: review.generation,
-              fields: review.fields,
-            });
-            if (raised) {
-              CandidateActivity.add({
-                candidateId: candidate.id, actorId: req.user.id,
-                actorName: req.user.fullName, type: 'proposal_raised',
-                note: `${raised.fields.length} field(s) awaiting review`,
-              });
-            }
-          }
-        } catch (e) {
-          // A proposal failure must never lose the candidate or the file.
-          console.error(JSON.stringify({
-            level: 'error', msg: 'proposal.raise_failed',
-            candidateId: candidate.id, error: String((e && e.message) || e),
-          }));
-        }
-        writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: candidate.id,
-          newValue: { candidateNo, fullName: candidate.full_name, source: 'cv_parse' } });
-
-        const requestId = req.fields?.requestId ? Number(req.fields.requestId) : null;
-        if (requestId && req.user.permissions.includes('candidate.link')) {
-          const request = Requests.byId(requestId);
-          if (request && !['closed','cancelled','rejected','filled'].includes(request.status)) {
-            const appNo = Applications.nextNo();
-            application = Applications.create({
-              applicationNo: appNo, candidateId: candidate.id, requestId,
-              positionApplied: request.title, status: 'sourced',
-              recruiterId: req.user.id, source: 'cv_parse', createdBy: req.user.id,
-            });
-            StageHistory.add(application.id, null, 'sourced', req.user);
-            
-            // Competency evaluation — background, so it never blocks the upload
-            // response. It reads the ResumeProposal produced by the parse above,
-            // so every level it reports is tied to evidence from this document.
-            // Field names below MUST match CandidateNotes.add in lib/models.js
-            // ({ noteType, body, authorName }): the previous { type, note,
-            // isPinned } left `body` undefined against a `body TEXT NOT NULL`
-            // column, so EVERY evaluation failed its INSERT silently.
-            const evalActorId = req.user.id;
-            const evalActorName = req.user.fullName;
-            const evalCandidateId = candidate.id;
-            const evalApplicationId = application ? application.id : null;
-
-            evaluateAgainstRequest(filePath, request).then((result) => {
-              // null = no model configured, or the evaluator abstained. Both are
-              // normal outcomes and leave the candidate record untouched.
-              if (!result) return;
-              CandidateNotes.add({
-                candidateId: evalCandidateId,
-                applicationId: evalApplicationId,
-                noteType: 'ai_evaluation',
-                body: result.body,
-                authorId: evalActorId,
-                authorName: evalActorName,
-              });
-            }).catch((e) => console.error(JSON.stringify({
-              level: 'error', msg: 'evaluation.background_failed',
-              candidateId: evalCandidateId, error: String((e && e.message) || e),
-            })));
-          }
-        }
-      }
+    if (!parsed.ok || parsed.fields.length === 0) {
+      return res.json({
+        intake: null,
+        file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
+        report: toImportReport(entities, { fileName: req.uploadedFile.originalName }),
+        reason: parsed.reason || 'No candidate field could be supported by the document.',
+      });
     }
-    res.json({ parsed, file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
-      candidate: candidate ? { id: candidate.id, candidateNo: candidate.candidate_no, fullName: candidate.full_name, duplicate } : null,
-      // Structured parse report — field-level outcome, no CV text.
-      report: toImportReport(entities, {
-        fileName: req.uploadedFile.originalName,
-        candidateNo: candidate ? candidate.candidate_no : null,
-        duplicateOf: duplicate && candidate ? candidate.candidate_no : null,
-      }),
-      application: application ? { id: application.id, applicationNo: application.application_no } : null,
+
+    const intake = createIntake({
+      // The stored upload, so the reviewer can open the original CV.
+      storedName: req.uploadedFile.storedName,
+      fileName: req.uploadedFile.originalName,
+      mimeType: req.uploadedFile.mimeType || null,
+      fileHash: hash,
+      origin: 'resume.extract',
+      modelId: parsed.generation?.modelId ?? '',
+      documentId: parsed.documentId,
+      generation: parsed.generation,
+      fields: parsed.fields,
+      createdBy: req.user.id,
+    });
+
+    writeAudit(req, {
+      action: 'candidate.intake_created', entityType: 'candidate_intake',
+      entityId: intake.id,
+      newValue: { fileName: req.uploadedFile.originalName, fields: intake.fields.length },
+    });
+
+    res.json({
+      // PENDING. No candidate exists yet and nothing has been written.
+      intake,
+      file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
+      report: toImportReport(entities, { fileName: req.uploadedFile.originalName }),
     });
   } catch (e) {
     res.status(500).json({ error: 'CV parsing failed.', detail: e.message });
+  }
+});
+
+/* ---------------- PRE-CANDIDATE INTAKES (review before creation) ---------------- */
+
+router.get('/intakes', requirePermission('candidate.view'), (req, res) => {
+  res.json({ intakes: pendingIntakes() });
+});
+
+router.get('/intakes/:iid', requirePermission('candidate.view'), (req, res) => {
+  const intake = intakeById(Number(req.params.iid));
+  if (!intake) return res.status(404).json({ error: 'Intake not found.' });
+  res.json({ intake });
+});
+
+// The original CV, so a reviewer can check a proposed value against the document
+// it was read from. Uses the existing upload storage and the existing auth.
+router.get('/intakes/:iid/document', requirePermission('candidate.view'), (req, res) => {
+  const intake = intakeById(Number(req.params.iid));
+  if (!intake) return res.status(404).json({ error: 'Intake not found.' });
+  if (!intake.storedName) return res.status(404).json({ error: 'No document on file.' });
+  streamFile(intake.storedName, res, intake.fileName || 'cv');
+});
+
+// Approve an intake: create the candidate and record the review, atomically.
+router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (req, res) => {
+  const body = req.body || {};
+  const decisions = body.decisions;
+
+  // An explicit rejection creates nothing and keeps the record.
+  if (body.reject === true) {
+    try {
+      const result = rejectIntake(Number(req.params.iid), req.user, body.reason || null);
+      if (result === null) return res.status(404).json({ error: 'Intake not found.' });
+      writeAudit(req, {
+        action: 'candidate.intake_rejected', entityType: 'candidate_intake',
+        entityId: result.intakeId, comments: body.reason || undefined,
+      });
+      return res.json(result);
+    } catch (e) {
+      return res.status(409).json({ error: e.message, code: e.code || null });
+    }
+  }
+
+  if (decisions === undefined || decisions === null || typeof decisions !== 'object') {
+    return res.status(400).json({
+      error: 'decisions is required: { "fullName": true, "phone": false }.',
+    });
+  }
+
+  try {
+    const result = await reviewIntake(Number(req.params.iid), decisions, req.user, {
+      ...(body.version !== undefined ? { expectedVersion: Number(body.version) } : {}),
+      ...(body.overrideDuplicate === true ? { overrideDuplicate: true } : {}),
+      ...(body.ownerRecruiterId !== undefined
+        ? { ownerRecruiterId: Number(body.ownerRecruiterId) } : {}),
+    });
+    if (result === null) return res.status(404).json({ error: 'Intake not found.' });
+
+    if (result.status === 'REJECTED') {
+      writeAudit(req, {
+        action: 'candidate.intake_rejected', entityType: 'candidate_intake',
+        entityId: result.intakeId,
+      });
+      return res.json(result);
+    }
+
+    CandidateActivity.add({
+      candidateId: result.candidateId, actorId: req.user.id, actorName: req.user.fullName,
+      type: 'candidate_created',
+      note: `${result.candidate.candidate_no} (CV intake ${result.intakeId} approved)`,
+    });
+    writeAudit(req, {
+      action: 'candidate.created', entityType: 'candidate', entityId: result.candidateId,
+      newValue: {
+        candidateNo: result.candidate.candidate_no,
+        source: 'cv_intake', intakeId: result.intakeId,
+        proposalId: result.proposalId, accepted: result.applied,
+      },
+    });
+
+    res.status(201).json({
+      intakeId: result.intakeId,
+      proposalId: result.proposalId,
+      applied: result.applied,
+      rejected: result.rejected,
+      candidate: serialize(result.candidate, req.user, { withDetail: true }),
+    });
+  } catch (e) {
+    if (e.code === 'duplicate') {
+      // The intake is preserved; a duplicate is a decision for a person.
+      return res.status(409).json({ error: e.message, code: 'duplicate', ...e.detail });
+    }
+    const status = e.code === 'incomplete' || e.code === 'invalid' ? 400 : 409;
+    res.status(status).json({ error: e.message, code: e.code || null, ...(e.detail || {}) });
   }
 });
 
