@@ -30,3 +30,6 @@ backend/launch_check.mjs
 
 # Local static ATS review mockup; reference copy is stored under docs/ui-review/
 frontend/public/ats-full-review.html
+# Rendered live-test fixtures are generated on the host, not committed as binaries.
+backend/live-fixtures/*.pdf
+backend/live-fixtures/*.png

@@ -74,6 +74,12 @@ function toIntake(row) {
 export function createIntake(input) {
   if (!input.fields || input.fields.length === 0) return null;
 
+  // Every proposed field starts PENDING, exactly as it will on the proposal
+  // this becomes. Without it the intake payload and the proposal payload
+  // disagree about their own shape, and a reviewer's client has to special-case
+  // which stage it is looking at.
+  const fields = input.fields.map((f) => ({ ...f, decision: 'PENDING' }));
+
   return tx(() => {
     const inserted = run(
       `INSERT INTO candidate_intake
@@ -87,7 +93,7 @@ export function createIntake(input) {
         input.origin ?? 'resume.extract', input.taskId ?? '', input.modelId ?? '',
         input.documentId ?? null,
         input.generation ? JSON.stringify(input.generation) : null,
-        JSON.stringify(input.fields),
+        JSON.stringify(fields),
         // Carried, not acted on: no application exists until a human approves.
         input.requestId ?? null,
         input.createdBy ?? null, 0, new Date().toISOString(),
