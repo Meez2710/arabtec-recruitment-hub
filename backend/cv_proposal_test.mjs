@@ -53,8 +53,8 @@ if (!dbGet('SELECT id FROM users WHERE id=1')) {
 const { Candidates } = await import('./src/lib/models.js');
 const { configureParsing } = await import('./src/lib/parsing/composition.js');
 const registry = await import('./src/lib/parsing/registry.js');
-const { raiseProposal, pendingProposal, proposalById, reviewProposal } =
-  await import('./src/lib/proposal-store.js');
+const { raiseProposal, pendingProposal, proposalById, reviewProposal,
+  PERSISTABLE_PROPOSAL_FIELDS } = await import('./src/lib/proposal-store.js');
 
 registry.resetParserRegistry();
 configureParsing();
@@ -159,15 +159,39 @@ await test('a PENDING proposal does not touch the candidate record', () => {
 
 /* --------------------- 4. review applies ONLY what was accepted ------------ */
 
+/** A COMPLETE decision map: every proposed field, accepted unless named false. */
+function decide(id, accept = {}) {
+  const out = {};
+  for (const f of proposalById(id).fields) out[f.field] = accept[f.field] === true;
+  return out;
+}
+
+await test('an incomplete decision map is refused', async () => {
+  await assert.rejects(
+    () => reviewProposal(proposalId, { university: true }, REVIEWER),
+    /decision is required for every proposed field/,
+  );
+  // Refused means nothing moved.
+  assert.equal(proposalById(proposalId).status, 'PENDING');
+});
+
+await test('a stale version is refused', async () => {
+  await assert.rejects(
+    () => reviewProposal(proposalId, decide(proposalId), REVIEWER, { expectedVersion: 99 }),
+    /changed since it was loaded/,
+  );
+  assert.equal(proposalById(proposalId).status, 'PENDING');
+});
+
 await test('only accepted fields reach the candidate record', async () => {
   const before = Candidates.byId(candidate.id);
 
-  const result = await reviewProposal(proposalId, {
+  const result = await reviewProposal(proposalId, decide(proposalId, {
     university: true,
     location: true,
-    // Deliberately withheld by the reviewer.
-    currentCompany: false,
-  }, REVIEWER);
+    // Everything else, including currentCompany, is rejected by omission
+    // from the accept list — but still named explicitly in the map.
+  }), REVIEWER, { expectedVersion: 0 });
 
   assert.equal(result.status, 'APPLIED');
   assert.deepEqual([...result.applied].sort(), ['location', 'university']);
@@ -187,7 +211,7 @@ await test('only accepted fields reach the candidate record', async () => {
 await test('a reviewed proposal cannot be reviewed again', async () => {
   await assert.rejects(
     () => reviewProposal(proposalId, { university: true }, REVIEWER),
-    /already/i,
+    /APPLIED and can no longer be reviewed/,
   );
 });
 
@@ -199,7 +223,7 @@ await test('accepting nothing rejects the proposal and writes nothing', async ()
     fields: parsedFields,
   });
   const before = Candidates.byId(candidate.id);
-  const result = await reviewProposal(second.id, {}, REVIEWER);
+  const result = await reviewProposal(second.id, decide(second.id), REVIEWER);
   assert.equal(result.status, 'REJECTED');
   assert.deepEqual(result.applied, []);
   const after = Candidates.byId(candidate.id);
@@ -218,6 +242,53 @@ await test('raising a new proposal supersedes the previous pending one', async (
   assert.equal(proposalById(b.id).status, 'PENDING');
   // Exactly one live proposal, so a reviewer is never shown two.
   assert.equal(pendingProposal(candidate.id).id, b.id);
+});
+
+await test('a superseded proposal cannot be reviewed', async () => {
+  const older = await raiseProposal({
+    candidateId: candidate.id, origin: 'resume.extract', fields: parsedFields,
+  });
+  // A newer parse arrives and retires the one above.
+  await raiseProposal({
+    candidateId: candidate.id, origin: 'resume.extract', fields: parsedFields,
+  });
+  assert.equal(proposalById(older.id).status, 'SUPERSEDED');
+  await assert.rejects(
+    () => reviewProposal(older.id, decide(older.id, { university: true }), REVIEWER),
+    /SUPERSEDED and can no longer be reviewed/,
+  );
+});
+
+await test('a failed candidate update rolls the whole review back', async () => {
+  // full_name is NOT NULL. Accepting a null name makes the candidate UPDATE
+  // fail, which must take the proposal's status change down with it — a
+  // proposal marked APPLIED whose values never landed is the worst outcome
+  // available, because it looks exactly like a successful review.
+  const poison = await raiseProposal({
+    candidateId: candidate.id,
+    origin: 'resume.extract',
+    fields: [{ field: 'fullName', value: null, confidence: 0.75, evidence: 'x' }],
+  });
+  const nameBefore = Candidates.byId(candidate.id).full_name;
+
+  await assert.rejects(() => reviewProposal(poison.id, { fullName: true }, REVIEWER));
+
+  assert.equal(proposalById(poison.id).status, 'PENDING', 'the proposal was resolved anyway');
+  assert.equal(proposalById(poison.id).fields[0].decision, 'PENDING', 'a decision was persisted');
+  assert.equal(Candidates.byId(candidate.id).full_name, nameBefore, 'the candidate name changed');
+});
+
+await test('every proposable field is either persistable or reported', () => {
+  // Guards against drift: a field added to the aggregate's whitelist without a
+  // candidate column must be a deliberate, visible decision.
+  const KNOWN_UNPERSISTABLE = ['skills', 'languages', 'certifications'];
+  const proposable = [
+    'fullName', 'email', 'phone', 'nationality', 'location', 'linkedinUrl',
+    'currentCompany', 'currentPosition', 'yearsExperience', 'noticePeriod',
+    'university', 'major', 'graduationYear', 'skills', 'languages', 'certifications',
+  ];
+  const unmapped = proposable.filter((f) => !PERSISTABLE_PROPOSAL_FIELDS.includes(f));
+  assert.deepEqual(unmapped.sort(), [...KNOWN_UNPERSISTABLE].sort());
 });
 
 fs.rmSync(cvPath, { force: true });

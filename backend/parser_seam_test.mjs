@@ -46,6 +46,27 @@ await test('the live route resolves every parse through getParser()', () => {
     'a direct parseEntitiesFromFile() call remains');
 });
 
+await test('attaching a CV to an existing candidate proposes, it does not fill', () => {
+  const src = fs.readFileSync(ROUTE, 'utf8');
+  // The old behaviour: parse a CV and write every value into the candidate's
+  // empty columns. Replaced by raising a PENDING proposal.
+  assert.equal(/parseAndFill/.test(src), false, 'parseAndFill still exists');
+  assert.match(src, /async function parseAndPropose\(/);
+  assert.match(src, /raiseProposal\(/);
+  // The reparse route no longer takes an overwrite flag, because it no longer
+  // writes anything to overwrite.
+  assert.equal(/parseAndPropose\([^)]*overwrite/.test(src), false,
+    'the propose path still accepts an overwrite flag');
+});
+
+await test('the review endpoint is the only path from a proposal to the record', () => {
+  const src = fs.readFileSync(ROUTE, 'utf8');
+  assert.match(src, /proposals\/:pid\/review/);
+  // reviewProposal owns the candidate UPDATE; the routes never build one for a
+  // proposed value themselves.
+  assert.match(src, /reviewProposal\(/);
+});
+
 await test('server.js registers the provider at module scope, before any request', () => {
   const src = fs.readFileSync(path.join(__dirname, 'src/server.js'), 'utf8');
   assert.match(src, /import \{ configureParsing \} from '\.\/lib\/parsing\/composition\.js'/);

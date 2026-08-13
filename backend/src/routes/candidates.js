@@ -627,7 +627,11 @@ router.post('/:id/proposals/:pid/review', requirePermission('candidate.edit'), a
   }
 
   try {
-    const result = await reviewProposal(Number(req.params.pid), decisions, req.user);
+    const result = await reviewProposal(Number(req.params.pid), decisions, req.user, {
+      // Optimistic concurrency: the client echoes the version it reviewed, so
+      // two reviewers on the same proposal cannot both win.
+      ...(req.body.version !== undefined ? { expectedVersion: Number(req.body.version) } : {}),
+    });
     if (result === null) return res.status(404).json({ error: 'Proposal not found.' });
 
     CandidateActivity.add({
@@ -644,7 +648,7 @@ router.post('/:id/proposals/:pid/review', requirePermission('candidate.edit'), a
     });
 
     res.json({
-      proposal: { id: result.id, status: result.status },
+      proposal: { id: result.id, status: result.status, version: result.version },
       applied: result.applied,
       rejected: result.rejected,
       // Accepted but with nowhere to store them on the candidate table.
@@ -652,8 +656,10 @@ router.post('/:id/proposals/:pid/review', requirePermission('candidate.edit'), a
       candidate: serialize(result.candidate, req.user, { withDetail: true }),
     });
   } catch (e) {
-    // The aggregate's own rules: already reviewed, or an unknown field.
-    res.status(409).json({ error: e.message });
+    // An incomplete decision map is the caller's mistake; everything else is a
+    // conflict with the proposal's current state.
+    const status = e.code === 'incomplete' || e.name === 'UnknownProposalFieldError' ? 400 : 409;
+    res.status(status).json({ error: e.message, code: e.code || null });
   }
 });
 
@@ -682,28 +688,38 @@ router.post('/:id/documents', requirePermission('candidate.edit'), (req, res) =>
 // Only columns that are currently empty are written: a recruiter's manual
 // correction must never be overwritten by a later upload. Parse metadata is
 // always refreshed so the quality badge reflects the newest file.
-async function parseAndFill(candidateId, storedName, req, { overwrite = false } = {}) {
+// Parse a CV attached to an EXISTING candidate and PROPOSE what it says.
+//
+// This used to write every parsed value straight into the candidate's empty
+// columns. It no longer writes any field value at all: the parse raises a
+// PENDING CandidateProposal and a person decides, field by field, through
+// POST /:id/proposals/:pid/review.
+//
+// Parse-quality metadata (status, confidence, timestamp) IS still written. That
+// is a fact about the DOCUMENT, not a claim about the person, and the quality
+// badge would otherwise never reflect the newest file.
+async function parseAndPropose(candidateId, storedName, req) {
   const filePath = uploadPath(storedName);
   const entities = await getParser().parseEntities(filePath);
-  const { payload } = toCandidatePayload(entities);
   const meta = toParseMetadata(entities);
-
-  const current = Candidates.byId(candidateId);
-  const sets = []; const vals = []; const filled = []; const kept = [];
-  for (const [column, key] of Object.entries(FIELD_MAP)) {
-    const incoming = payload[key];
-    if (incoming === undefined || incoming === null || incoming === '') continue;
-    const existing = current ? current[column] : null;
-    const isEmpty = existing === null || existing === undefined || String(existing).trim() === '';
-    if (isEmpty || overwrite) { sets.push(`${column}=?`); vals.push(incoming); filled.push(column); }
-    else { kept.push(column); }
-  }
-  if (sets.length) {
-    vals.push(new Date().toISOString(), candidateId);
-    dbRun(`UPDATE candidate SET ${sets.join(', ')}, updated_at=? WHERE id=?`, vals);
-  }
   Candidates.setParseMeta?.(candidateId, meta);
-  return { filled, kept, meta, entities };
+
+  const { parseDocument } = await import('../lib/parsing/pipeline-provider.js');
+  const parsed = await parseDocument(filePath);
+
+  let proposal = null;
+  if (parsed.ok && parsed.fields.length > 0) {
+    proposal = await raiseProposal({
+      candidateId,
+      origin: 'resume.extract',
+      documentId: parsed.documentId,
+      modelId: parsed.generation?.modelId ?? '',
+      generation: parsed.generation,
+      fields: parsed.fields,
+    });
+  }
+
+  return { meta, entities, proposal };
 }
 
 
@@ -717,9 +733,12 @@ router.post('/:id/resume', requirePermission('candidate.edit'), multipart, async
   // Parse the newly attached CV (D-01). A parser failure must never fail the
   // upload — the file is already stored and is the source of truth.
   let report = null;
+  let proposal = null;
   try {
-    const r = await parseAndFill(c.id, req.uploadedFile.storedName, req);
+    const r = await parseAndPropose(c.id, req.uploadedFile.storedName, req);
     report = toImportReport(r.entities, { fileName: req.uploadedFile.originalName, candidateNo: c.candidate_no });
+    // No candidate field was written. What the CV says is waiting for a person.
+    proposal = r.proposal;
     CandidateDocuments.add({
       candidateId: c.id, docType: 'cv', fileName: req.uploadedFile.originalName,
       fileHash: fileHash(uploadPath(req.uploadedFile.storedName)), uploadedBy: req.user.id,
@@ -730,7 +749,12 @@ router.post('/:id/resume', requirePermission('candidate.edit'), multipart, async
 
   CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName, type: 'resume_uploaded', note: req.uploadedFile.originalName });
   writeAudit(req, { action: 'candidate.resume_uploaded', entityType: 'candidate', entityId: c.id, newValue: { fileName: req.uploadedFile.originalName } });
-  res.status(201).json({ candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }), report });
+  res.status(201).json({
+    candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }),
+    report,
+    // PENDING. Nothing here has touched the candidate record.
+    proposal,
+  });
 });
 
 // D-02: re-run the parser against the resume already on file. Reads the stored
@@ -740,16 +764,19 @@ router.post('/:id/reparse', requirePermission('candidate.edit'), async (req, res
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
   if (!c.resume_path) return res.status(400).json({ error: 'No resume on file to parse.' });
-  const overwrite = String(req.query.overwrite || '') === 'true';
   try {
-    const r = await parseAndFill(c.id, c.resume_path, req, { overwrite });
+    const r = await parseAndPropose(c.id, c.resume_path, req);
+    const proposed = r.proposal ? r.proposal.fields.length : 0;
     CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName,
-      type: 'resume_reparsed', note: `${r.filled.length} field(s) updated` });
+      type: 'resume_reparsed', note: `${proposed} field(s) proposed for review` });
     writeAudit(req, { action: 'candidate.resume_reparsed', entityType: 'candidate', entityId: c.id,
-      newValue: { filled: r.filled, kept: r.kept } });
+      newValue: { proposalId: r.proposal ? r.proposal.id : null, proposed } });
     res.json({
       candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }),
-      filled: r.filled, kept: r.kept,
+      // A re-parse supersedes any pending proposal and raises a new one. It
+      // writes no field value: `overwrite` is gone because there is nothing to
+      // overwrite until a person accepts something.
+      proposal: r.proposal,
       report: toImportReport(r.entities, { fileName: c.resume_name || c.resume_path, candidateNo: c.candidate_no }),
     });
   } catch (e) {

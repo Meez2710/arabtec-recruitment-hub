@@ -197,31 +197,75 @@ const COLUMN_BY_FIELD = {
   graduationYear: 'graduation_year',
 };
 
+/** A review that cannot proceed. Carries an HTTP-ish reason for the route. */
+export class ProposalReviewError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = 'ProposalReviewError';
+    this.code = code; // 'not-pending' | 'incomplete' | 'stale' | 'unknown-field'
+  }
+}
+
 /**
  * Record a reviewer's per-field decisions and apply what they accepted.
  *
- * THE ONLY PATH from a proposed value to a candidate record. The aggregate
- * decides what "accepted" means and refuses a second review; this function only
- * writes the resulting patch.
+ * THE ONLY PATH from a proposed value to a candidate record.
+ *
+ * The whole thing is ONE transaction — the proposal's new status, its field
+ * decisions and the candidate update commit together or not at all. A partial
+ * commit is the worst outcome available here: a proposal marked APPLIED whose
+ * values never reached the candidate is indistinguishable from a successful
+ * review, and nobody would ever look at it again.
  *
  * @param {number} proposalId
- * @param {Record<string, boolean>} decisions  field -> accept?
+ * @param {Record<string, boolean>} decisions  COMPLETE map: every pending field
  * @param {{ id: number, fullName?: string }} actor  the human responsible
+ * @param {{ expectedVersion?: number }} [opts]  optimistic concurrency guard
  */
-export async function reviewProposal(proposalId, decisions, actor) {
+export async function reviewProposal(proposalId, decisions, actor, opts = {}) {
   const Aggregate = await aggregate();
-  const row = get('SELECT * FROM candidate_proposal WHERE id=?', [proposalId]);
-  if (!row) return null;
-
-  const proposal = Aggregate.fromState(toState(row));
-  // Throws ProposalAlreadyResolvedError / UnknownProposalFieldError — the
-  // domain's rules, surfaced to the route unchanged.
-  proposal.review(decisions, { id: actor.id, name: actor.fullName ?? '' }, new Date());
-
-  const state = proposal.toState();
-  const patch = proposal.acceptedPatch();
 
   return tx(() => {
+    // Re-read INSIDE the transaction: a proposal resolved by someone else
+    // between the route's lookup and this write must lose, not overwrite.
+    const row = get('SELECT * FROM candidate_proposal WHERE id=?', [proposalId]);
+    if (!row) return null;
+
+    const state0 = toState(row);
+
+    if (state0.status !== 'PENDING') {
+      // Covers both "already reviewed" and "superseded by a newer parse".
+      throw new ProposalReviewError(
+        `This proposal is ${state0.status} and can no longer be reviewed.`, 'not-pending',
+      );
+    }
+
+    if (opts.expectedVersion !== undefined && Number(opts.expectedVersion) !== state0.version) {
+      throw new ProposalReviewError(
+        'This proposal changed since it was loaded. Reload it and review again.', 'stale',
+      );
+    }
+
+    // A COMPLETE decision map is required at this boundary. The aggregate
+    // treats an omitted field as REJECTED, which is the right default for a
+    // deliberate review but the wrong one for a truncated request — a dropped
+    // checkbox would silently discard a correct value.
+    const pendingFields = state0.fields.map((f) => f.field);
+    const missing = pendingFields.filter((f) => !(f in decisions));
+    if (missing.length > 0) {
+      throw new ProposalReviewError(
+        `A decision is required for every proposed field. Missing: ${missing.join(', ')}.`,
+        'incomplete',
+      );
+    }
+
+    const proposal = Aggregate.fromState(state0);
+    // Throws UnknownProposalFieldError for a field not on this proposal.
+    proposal.review(decisions, { id: actor.id, name: actor.fullName ?? '' }, new Date());
+
+    const state = proposal.toState();
+    const patch = proposal.acceptedPatch();
+
     run(
       'UPDATE candidate_proposal SET status=?, fields=?, reviewed_by=?, reviewed_at=?, version=? WHERE id=?',
       [state.status, JSON.stringify(state.fields), state.reviewedBy,
@@ -234,6 +278,9 @@ export async function reviewProposal(proposalId, decisions, actor) {
     const values = [];
     for (const [field, value] of Object.entries(patch)) {
       const column = COLUMN_BY_FIELD[field];
+      // Accepted, but the candidate table has nowhere to put it. Reported, not
+      // dropped: a reviewer who accepted a value is entitled to know it did not
+      // land anywhere.
       if (column === undefined) { unapplied.push(field); continue; }
       sets.push(`${column}=?`);
       values.push(value);
@@ -248,6 +295,7 @@ export async function reviewProposal(proposalId, decisions, actor) {
     return {
       id: state.id,
       status: state.status,
+      version: state.version,
       applied,
       unapplied,
       rejected: state.fields.filter((f) => f.decision === 'REJECTED').map((f) => f.field),
@@ -255,3 +303,11 @@ export async function reviewProposal(proposalId, decisions, actor) {
     };
   });
 }
+
+/**
+ * Which proposable fields the DEPLOYED candidate table can actually store.
+ *
+ * Exported so a test can assert the two lists have not drifted apart, and so the
+ * review response can name what it could not apply.
+ */
+export const PERSISTABLE_PROPOSAL_FIELDS = Object.keys(COLUMN_BY_FIELD);
