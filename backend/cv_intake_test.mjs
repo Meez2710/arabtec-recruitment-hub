@@ -61,6 +61,8 @@ const {
 } = await import('./src/lib/intake-store.js');
 const { proposalById } = await import('./src/lib/proposal-store.js');
 const { renderEvaluation } = await import('./src/lib/parsing/evaluation.js');
+const { classifyDuplicates } = await import('./src/lib/intake-store.js');
+const { CandidateDocuments } = await import('./src/lib/models.js');
 
 registry.resetParserRegistry();
 configureParsing();
@@ -453,6 +455,239 @@ await test('the qualitative evaluator emits no numeric score', () => {
   }
   assert.match(rendered, /Exceeds Requirements/);
   assert.equal(/\/100|\bscore\b|%/i.test(rendered), false, 'a numeric score reappeared');
+});
+
+/* --------------------- 8. deterministic duplicate identifiers -------------- */
+
+// One known candidate to match against, with a CV document on file.
+const known = Candidates.create({
+  candidateNo: Candidates.nextNo(),
+  fullName: 'Known Person',
+  email: 'known.person@example.test',
+  phone: '+20 100 999 8877',
+  linkedinUrl: 'https://www.linkedin.com/in/knownperson/',
+  createdBy: 1,
+});
+CandidateDocuments.add({
+  candidateId: known.id, docType: 'cv', fileName: 'known.pdf',
+  fileHash: 'sha256-known-cv', uploadedBy: 1,
+});
+
+const classify = (accepted, hash = null) => classifyDuplicates(new Map(Object.entries(accepted)), hash);
+
+await test('an exact email match blocks', () => {
+  const { exact } = classify({ fullName: 'Someone Else', email: 'KNOWN.PERSON@example.test' });
+  assert.equal(exact.length, 1);
+  assert.equal(exact[0].kind, 'exact');
+  assert.deepEqual(exact[0].matchedFields, ['email']);
+});
+
+await test('an exact normalized phone match blocks', () => {
+  // Different punctuation and spacing; the same digits. The existing dedup
+  // scheme compares digits exactly, so this is what "normalized" means here.
+  const { exact } = classify({ fullName: 'Someone Else', phone: '+20-(100)-999.8877' });
+  assert.equal(exact.length, 1);
+  assert.equal(exact[0].kind, 'exact');
+  assert.deepEqual(exact[0].matchedFields, ['phone']);
+});
+
+await test('an exact normalized LinkedIn match blocks', () => {
+  // No scheme, no www, no trailing slash, different case.
+  const { exact } = classify({ fullName: 'Someone Else', linkedinUrl: 'LinkedIn.com/in/KnownPerson' });
+  assert.equal(exact.length, 1);
+  assert.equal(exact[0].kind, 'exact');
+  assert.deepEqual(exact[0].matchedFields, ['linkedinUrl']);
+});
+
+await test('an exact document-hash match blocks', () => {
+  const { exact } = classify({ fullName: 'Someone Else' }, 'sha256-known-cv');
+  assert.equal(exact.length, 1);
+  assert.equal(exact[0].kind, 'exact');
+  assert.deepEqual(exact[0].matchedFields, ['documentHash']);
+});
+
+await test('several identifiers matching are reported on one match', () => {
+  const { exact } = classify({
+    fullName: 'Known Person',
+    email: 'known.person@example.test',
+    phone: '+20 (100) 999 8877',
+  }, 'sha256-known-cv');
+  assert.equal(exact.length, 1, 'the same candidate was reported more than once');
+  assert.deepEqual([...exact[0].matchedFields].sort(), ['documentHash', 'email', 'phone']);
+});
+
+await test('a name-only match is potential and never blocks', async () => {
+  const { exact, potential } = classify({ fullName: 'Known Person' });
+  assert.deepEqual(exact, [], 'a name-only match was classified as exact');
+  assert.equal(potential.length, 1);
+  assert.equal(potential[0].kind, 'potential');
+  assert.deepEqual(potential[0].matchedFields, ['fullName']);
+
+  // And it really does not block: the conversion succeeds.
+  const intake = createIntake({
+    fileName: 'namesake.txt',
+    fields: [{ field: 'fullName', value: 'Known Person', confidence: 0.75, evidence: 'x' }],
+    createdBy: 1,
+  });
+  const before = countCandidates();
+  const result = await reviewIntake(intake.id, { fullName: true }, REVIEWER);
+  assert.equal(result.status, 'CONVERTED', 'a namesake blocked the conversion');
+  assert.equal(countCandidates(), before + 1);
+  assert.ok(result.potentialMatches.some((m) => m.id === known.id),
+    'the namesake was not reported back');
+});
+
+await test('the existing override converts past an exact match', async () => {
+  const intake = createIntake({
+    fileName: 'override.txt',
+    fields: [
+      { field: 'fullName', value: 'Override Person', confidence: 0.75, evidence: 'x' },
+      { field: 'email', value: 'known.person@example.test', confidence: 0.75, evidence: 'y' },
+    ],
+    createdBy: 1,
+  });
+  await assert.rejects(
+    () => reviewIntake(intake.id, { fullName: true, email: true }, REVIEWER),
+    (e) => e.code === 'duplicate' && e.detail.blocked === true && e.detail.overridable === true,
+  );
+  assert.equal(intakeById(intake.id).status, 'PENDING', 'the blocked intake was consumed');
+
+  const before = countCandidates();
+  const result = await reviewIntake(intake.id, { fullName: true, email: true }, REVIEWER,
+    { overrideDuplicate: true });
+  assert.equal(result.status, 'CONVERTED');
+  assert.equal(countCandidates(), before + 1);
+});
+
+await test('the duplicate payload carries no presentation terminology', async () => {
+  const intake = createIntake({
+    fileName: 'terms.txt',
+    fields: [
+      { field: 'fullName', value: 'Terms Person', confidence: 0.75, evidence: 'x' },
+      { field: 'phone', value: '+20 100 999 8877', confidence: 0.75, evidence: 'y' },
+    ],
+    createdBy: 1,
+  });
+  let error = null;
+  try {
+    await reviewIntake(intake.id, { fullName: true, phone: true }, REVIEWER);
+  } catch (e) { error = e; }
+  assert.ok(error && error.code === 'duplicate');
+  const payload = JSON.stringify(error.detail).toLowerCase();
+  for (const word of ['red', 'amber', 'colour', 'color', 'severity', 'warning', 'danger', 'style']) {
+    assert.equal(payload.includes(word), false, `the payload mentions "${word}"`);
+  }
+});
+
+/* --------------------- 9. evaluation dispatch safety ----------------------- */
+//
+// The route dispatches evaluation AFTER res.json(), so these assert the
+// preconditions the route depends on: what reviewIntake returns, and when.
+
+await test('a rolled-back review yields nothing to dispatch on', async () => {
+  const poison = createIntake({
+    fileName: 'poison2.txt',
+    requestId: 1,
+    fields: [
+      { field: 'fullName', value: 'Rollback Person', confidence: 0.75, evidence: 'x' },
+      { field: 'skills', value: 'not-an-array', confidence: 0.75, evidence: 'y' },
+    ],
+    createdBy: 1,
+  });
+  let result = null;
+  try {
+    result = await reviewIntake(poison.id, { fullName: true, skills: true }, REVIEWER,
+      { overrideDuplicate: true });
+  } catch { /* expected */ }
+  // No result means the route never reaches its dispatch block.
+  assert.equal(result, null);
+  assert.equal(intakeById(poison.id).status, 'PENDING');
+  assert.equal(intakeById(poison.id).applicationId, null);
+});
+
+await test('a completed review reports the requestId the dispatch depends on', async () => {
+  const intake = createIntake({
+    fileName: 'dispatch.txt',
+    requestId: 1,
+    fields: [{ field: 'fullName', value: 'Dispatch Person', confidence: 0.75, evidence: 'x' }],
+    createdBy: 1,
+  });
+  const result = await reviewIntake(intake.id, { fullName: true }, REVIEWER,
+    { overrideDuplicate: true });
+  assert.equal(result.status, 'CONVERTED');
+  assert.equal(result.requestId, 1);
+  assert.ok(result.storedName === null || typeof result.storedName === 'string');
+  assert.ok(result.applicationId, 'no application to attach an evaluation to');
+});
+
+await test('a retried review of a converted intake dispatches nothing', async () => {
+  const intake = createIntake({
+    fileName: 'retry.txt',
+    requestId: 1,
+    fields: [{ field: 'fullName', value: 'Retry Person', confidence: 0.75, evidence: 'x' }],
+    createdBy: 1,
+  });
+  await reviewIntake(intake.id, { fullName: true }, REVIEWER, { overrideDuplicate: true });
+  // The second attempt throws before producing anything, so the route returns a
+  // conflict and never reaches its dispatch block.
+  await assert.rejects(
+    () => reviewIntake(intake.id, { fullName: true }, REVIEWER, { overrideDuplicate: true }),
+    /CONVERTED and can no longer be reviewed/,
+  );
+});
+
+await test('an intake with no requestId gives the route nothing to evaluate', async () => {
+  const intake = createIntake({
+    fileName: 'norequest.txt',
+    fields: [{ field: 'fullName', value: 'No Request Person', confidence: 0.75, evidence: 'x' }],
+    createdBy: 1,
+  });
+  const result = await reviewIntake(intake.id, { fullName: true }, REVIEWER,
+    { overrideDuplicate: true });
+  assert.equal(result.requestId, null, 'a requisition appeared from nowhere');
+  assert.equal(result.applicationId, null);
+});
+
+await test('a rejected field never reaches what the evaluator is given', async () => {
+  const intake = createIntake({
+    fileName: 'evidence.txt',
+    fields: [
+      { field: 'fullName', value: 'Evidence Person', confidence: 0.75, evidence: 'name line' },
+      { field: 'currentCompany', value: 'Rejected Employer', confidence: 0.5, evidence: 'employer line' },
+    ],
+    createdBy: 1,
+  });
+  const result = await reviewIntake(intake.id, { fullName: true, currentCompany: false },
+    REVIEWER, { overrideDuplicate: true });
+
+  // The evaluator reads the proposal's fields; a rejected one is marked REJECTED
+  // and its value is not on the candidate.
+  const proposal = proposalById(result.proposalId);
+  const company = proposal.fields.find((f) => f.field === 'currentCompany');
+  assert.equal(company.decision, 'REJECTED');
+  assert.equal(Candidates.byId(result.candidateId).current_company, null);
+});
+
+await test('an evaluation failure cannot undo a committed conversion', async () => {
+  const intake = createIntake({
+    fileName: 'evalfail.txt',
+    requestId: 1,
+    fields: [{ field: 'fullName', value: 'Eval Fail Person', confidence: 0.75, evidence: 'x' }],
+    createdBy: 1,
+  });
+  const result = await reviewIntake(intake.id, { fullName: true }, REVIEWER,
+    { overrideDuplicate: true });
+
+  // Whatever an asynchronous dispatch does afterwards, this is already durable.
+  const rejection = Promise.reject(new Error('evaluator unreachable'));
+  let caught = null;
+  await rejection.catch((e) => { caught = e; });
+  assert.equal(caught.message, 'evaluator unreachable');
+
+  assert.equal(intakeById(intake.id).status, 'CONVERTED');
+  assert.ok(Candidates.byId(result.candidateId));
+  assert.equal(proposalById(result.proposalId).status, 'APPLIED');
+  assert.ok(dbGet('SELECT id FROM application WHERE id=?', [result.applicationId]));
 });
 
 fs.rmSync(cvPath, { force: true });

@@ -14,7 +14,10 @@
 // aggregate unchanged, and it — not this file — decides what "accepted" means.
 
 import { get, all, run, tx } from './db.js';
-import { Applications, Candidates, Requests, StageHistory } from './models.js';
+import {
+  Applications, CandidateDocuments, Candidates, Requests, StageHistory,
+  normEmail, normLinkedin, normPhone,
+} from './models.js';
 import { loadAggregate, raiseProposalIn, reviewProposalIn } from './proposal-store.js';
 
 /** A conversion that cannot proceed. `code` picks the HTTP status at the route. */
@@ -133,17 +136,82 @@ export function checkRequest(requestId) {
   return { ok: true, request };
 }
 
-/** Case-insensitive text equality, ignoring surrounding space. */
-const sameText = (a, b) => typeof a === 'string' && typeof b === 'string'
-  && a.trim().toLowerCase() === b.trim().toLowerCase();
+/**
+ * Who else in the pool might be this person?
+ *
+ * TWO CLASSES, AND THE DIFFERENCE MATTERS.
+ *
+ *   exact     — a DETERMINISTIC identifier matched: the same normalized email,
+ *               phone, LinkedIn profile, or the byte-identical CV. These are
+ *               claims about identity, so they block a conversion.
+ *   potential — the names are the same. Two people are called Ahmed Hassan, so
+ *               this is a hint for a reviewer and never blocks anything.
+ *
+ * Normalization is the models layer's own, so a match found against `dedup_*`
+ * is reported against the field that actually matched.
+ *
+ * Returns FACTS ONLY. No severity, no styling, no wording for a screen — how an
+ * exact match is presented differently from a potential one is the UI's call.
+ */
+export function classifyDuplicates(accepted, fileHash = null) {
+  const email = accepted.get ? accepted.get('email') : accepted.email;
+  const phone = accepted.get ? accepted.get('phone') : accepted.phone;
+  const linkedinUrl = accepted.get ? accepted.get('linkedinUrl') : accepted.linkedinUrl;
+  const fullName = accepted.get ? accepted.get('fullName') : accepted.fullName;
 
-/** Phone equality on digits alone: "+20 100…" and "0100…" are one number. */
-const sameDigits = (a, b) => {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const left = a.replace(/\D/g, '');
-  const right = b.replace(/\D/g, '');
-  return left.length >= 7 && left.slice(-9) === right.slice(-9);
-};
+  /** candidateId -> { candidate, matchedFields } */
+  const byId = new Map();
+  const noteMatch = (candidate, field) => {
+    const entry = byId.get(candidate.id) ?? { candidate, matchedFields: [] };
+    if (!entry.matchedFields.includes(field)) entry.matchedFields.push(field);
+    byId.set(candidate.id, entry);
+  };
+
+  for (const row of Candidates.findDuplicates({ email, phone, linkedinUrl })) {
+    if (normEmail(email) !== null && normEmail(row.email) === normEmail(email)) {
+      noteMatch(row, 'email');
+    }
+    if (normPhone(phone) !== null && normPhone(row.phone) === normPhone(phone)) {
+      noteMatch(row, 'phone');
+    }
+    if (normLinkedin(linkedinUrl) !== null
+      && normLinkedin(row.linkedin_url) === normLinkedin(linkedinUrl)) {
+      noteMatch(row, 'linkedinUrl');
+    }
+  }
+
+  // The same bytes already on file for someone. Uses the existing document
+  // metadata — no new storage and no second hashing scheme.
+  if (fileHash) {
+    for (const doc of CandidateDocuments.byHash(fileHash)) {
+      const candidate = Candidates.byId(doc.candidate_id);
+      if (candidate) noteMatch(candidate, 'documentHash');
+    }
+  }
+
+  const exact = [...byId.values()].map(({ candidate, matchedFields }) => ({
+    id: candidate.id,
+    candidateNo: candidate.candidate_no,
+    fullName: candidate.full_name,
+    email: candidate.email,
+    matchedFields,
+    kind: 'exact',
+  }));
+
+  // Name-only matches, excluding anyone already matched on an identifier.
+  const potential = Candidates.byExactName(fullName)
+    .filter((row) => !byId.has(row.id))
+    .map((row) => ({
+      id: row.id,
+      candidateNo: row.candidate_no,
+      fullName: row.full_name,
+      email: row.email,
+      matchedFields: ['fullName'],
+      kind: 'potential',
+    }));
+
+  return { exact, potential };
+}
 
 /** List fields are stored as JSON arrays; everything else passes through. */
 const LIST_FIELDS = new Set(['skills', 'languages', 'certifications']);
@@ -227,47 +295,16 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
 
     /* ------------------------- duplicate detection ------------------------ */
 
-    if (opts.overrideDuplicate !== true) {
-      const duplicates = Candidates.findDuplicates({
-        email: accepted.get('email') ?? null,
-        phone: accepted.get('phone') ?? null,
-        linkedinUrl: accepted.get('linkedinUrl') ?? null,
-      });
-      if (duplicates.length > 0) {
-        // The intake is PRESERVED: a duplicate is a decision for a person, not
-        // a reason to discard a parsed CV.
-        //
-        // FACTS ONLY. Which fields matched, and whether the match is on an
-        // identity-grade field. No severity words, no colours — how an exact
-        // match is presented differently from a potential one is the UI's
-        // decision, not this layer's.
-        const matches = duplicates.map((d) => {
-          const matchedFields = [];
-          if (sameText(d.email, accepted.get('email'))) matchedFields.push('email');
-          if (sameDigits(d.phone, accepted.get('phone'))) matchedFields.push('phone');
-          if (sameText(d.linkedin_url, accepted.get('linkedinUrl'))) matchedFields.push('linkedinUrl');
-          return {
-            id: d.id,
-            candidateNo: d.candidate_no,
-            fullName: d.full_name,
-            email: d.email,
-            matchedFields,
-            // Email is an identity-grade match; a shared phone or profile link
-            // is common enough between real, distinct people to be only a hint.
-            kind: matchedFields.includes('email') ? 'exact' : 'potential',
-          };
-        });
-        throw new IntakeReviewError(
-          'A candidate with these contact details already exists.',
-          'duplicate',
-          {
-            matches,
-            // Conversion did not happen and will not until someone decides.
-            blocked: true,
-            overridable: true,
-          },
-        );
-      }
+    const { exact, potential } = classifyDuplicates(accepted, intake.fileHash);
+
+    if (exact.length > 0 && opts.overrideDuplicate !== true) {
+      // The intake is PRESERVED: a duplicate is a decision for a person, not a
+      // reason to discard a parsed CV.
+      throw new IntakeReviewError(
+        'A candidate with these details already exists.',
+        'duplicate',
+        { matches: exact, blocked: true, overridable: true },
+      );
     }
 
     /* ---------------------------- create + link --------------------------- */
@@ -352,6 +389,9 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
       requestId: intake.requestId,
       applied: reviewed ? reviewed.applied : [],
       rejected: reviewed ? reviewed.rejected : [],
+      // Name-only lookalikes. Reported, never blocking — the conversion already
+      // happened.
+      potentialMatches: potential,
       candidate: Candidates.byId(candidate.id),
       application,
       // The reviewed proposal, so the caller does not have to re-read it.

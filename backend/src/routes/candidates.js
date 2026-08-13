@@ -394,6 +394,8 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
       applicationId: result.applicationId,
       applied: result.applied,
       rejected: result.rejected,
+      // Name-only lookalikes. Non-blocking: the conversion already happened.
+      potentialMatches: result.potentialMatches ?? [],
       candidate: serialize(result.candidate, req.user, { withDetail: true }),
       application: result.application
         ? { id: result.application.id, applicationNo: result.application.application_no }

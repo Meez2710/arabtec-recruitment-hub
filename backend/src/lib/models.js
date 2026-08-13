@@ -632,9 +632,12 @@ export const RequestActivity = {
 };
 
 // ---------------- Phase 3: Candidates & Applications ----------------
-const normEmail = (e) => (e || '').toLowerCase().trim() || null;
-const normPhone = (p) => (p || '').replace(/[^0-9]/g, '') || null;
-const normLinkedin = (l) => (l || '').toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\/(www\.)?/, '') || null;
+// Exported so duplicate CLASSIFICATION uses the very same normalization the
+// dedup_* columns were written with. Two different notions of "the same email"
+// is how a match gets found and then reported against the wrong field.
+export const normEmail = (e) => (e || '').toLowerCase().trim() || null;
+export const normPhone = (p) => (p || '').replace(/[^0-9]/g, '') || null;
+export const normLinkedin = (l) => (l || '').toLowerCase().replace(/\/+$/, '').replace(/^https?:\/\/(www\.)?/, '') || null;
 
 /**
  * A candidate list field, stored as a JSON array in nullable TEXT.
@@ -778,6 +781,21 @@ export const Candidates = {
        nowISO(), id],
     );
     return this.byId(id);
+  },
+  /**
+   * Candidates sharing a name, case-insensitively.
+   *
+   * A NAME IS NOT AN IDENTIFIER. Two people are called Ahmed Hassan. This is a
+   * hint for a reviewer, never a reason to block a conversion, and callers must
+   * treat it as such.
+   */
+  byExactName(fullName) {
+    const name = (fullName || '').trim().toLowerCase();
+    if (name === '') return [];
+    return all(
+      "SELECT * FROM candidate WHERE LOWER(TRIM(full_name))=? AND candidate_state != 'merged'",
+      [name],
+    );
   },
   findDuplicates({ email, phone, linkedinUrl, excludeId = null }) {
     const de = normEmail(email), dp = normPhone(phone), dl = normLinkedin(linkedinUrl);
