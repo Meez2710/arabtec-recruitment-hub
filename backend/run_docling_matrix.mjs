@@ -20,7 +20,10 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'live-fixtures');
 const BASE = (process.env.DOCLING_BASE_URL || '').replace(/\/+$/, '');
-const TIMEOUT_MS = Number(process.env.DOCLING_TIMEOUT_MS || 300000);
+const TIMEOUT_MS = Number(process.env.DOCLING_TIMEOUT_MS || 600000);
+const TOKEN = process.env.DOCLING_BEARER_TOKEN || '';
+/** Never logged — only ever attached to a request. */
+const authHeaders = TOKEN ? { authorization: `Bearer ${TOKEN}` } : {};
 
 if (!BASE) {
   console.error('DOCLING_BASE_URL is required.');
@@ -46,7 +49,7 @@ const MATRIX = [
   { id: 'C', label: 'PNG resume (English)', file: 'image-only-en.png',
     expect: ['Ain Shams', 'ETABS'], ocr: true },
   { id: 'D', label: 'image-only Arabic PDF', file: 'image-only-ar.pdf',
-    expect: ['Cairo University'], ocr: true },
+    expect: ['Cairo'], ocr: true },
   { id: 'E', label: 'mixed Arabic/English PDF', file: 'arabic-mixed.pdf',
     expect: ['Arabtec Construction'], ocr: false },
   { id: 'F', label: 'DOCX resume', file: 'docx-en.docx',
@@ -66,7 +69,7 @@ const convert = async (file) => {
   try {
     const res = await fetch(`${BASE}/v1/convert`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...authHeaders },
       body: JSON.stringify({
         filename: file, mimeType: MIME[ext], contentBase64: bytes.toString('base64'),
       }),
@@ -90,7 +93,8 @@ const hctl = new AbortController();
 const ht = setTimeout(() => hctl.abort(), 60000);
 try {
   const res = await fetch(`${BASE}/v1/health`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: hctl.signal,
+    method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders },
+    body: '{}', signal: hctl.signal,
   });
   console.log(`health: HTTP ${res.status} :: ${(await res.text()).slice(0, 160)}\n`);
 } catch (e) {

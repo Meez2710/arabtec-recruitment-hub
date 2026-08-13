@@ -58,6 +58,8 @@ export interface SidecarDocument {
   readonly pages?: readonly string[];
   /** Layout elements in reading order. Absent on older sidecar builds. */
   readonly blocks?: readonly SidecarBlock[];
+  /** Which engine recognised the pixels, when the sidecar performed OCR. */
+  readonly ocrEngine?: string;
   readonly pageCount?: number;
   readonly detectedLanguages?: readonly string[];
   /** True when an OCR pass ran. Operational signal only. */
@@ -107,6 +109,14 @@ export interface SidecarOptions {
   /** Loopback or a private container network. Never a public host. */
   readonly baseUrl?: string;
   readonly timeoutMs?: number;
+  /**
+   * Bearer token for a sidecar that is not on loopback.
+   *
+   * Absent means no Authorization header, which is only safe when the network
+   * boundary is doing the work — see docs/DOCLING_SIDECAR_API.md. The moment
+   * the sidecar is reachable through a tunnel this must be set.
+   */
+  readonly bearerToken?: string;
   /** Refuse oversized uploads before spending a request. */
   readonly maxBytes?: number;
   readonly fetchImpl?: FetchLike;
@@ -126,6 +136,8 @@ export class DoclingSidecarClient {
 
   private readonly timeoutMs: number;
 
+  private readonly bearerToken: string | undefined;
+
   private readonly maxBytes: number;
 
   private readonly fetchImpl: FetchLike;
@@ -133,6 +145,7 @@ export class DoclingSidecarClient {
   constructor(opts: SidecarOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? SIDECAR_DEFAULTS.baseUrl).replace(/\/+$/, '');
     this.timeoutMs = opts.timeoutMs ?? SIDECAR_DEFAULTS.timeoutMs;
+    this.bearerToken = opts.bearerToken;
     this.maxBytes = opts.maxBytes ?? SIDECAR_DEFAULTS.maxBytes;
     this.fetchImpl = opts.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
   }
@@ -202,7 +215,12 @@ export class DoclingSidecarClient {
     try {
       const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          // Never logged: the client logs status codes and durations, never headers.
+          ...(this.bearerToken !== undefined && this.bearerToken !== ''
+            ? { authorization: `Bearer ${this.bearerToken}` } : {}),
+        },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });

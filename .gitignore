@@ -33,3 +33,9 @@ frontend/public/ats-full-review.html
 # Rendered live-test fixtures are generated on the host, not committed as binaries.
 backend/live-fixtures/*.pdf
 backend/live-fixtures/*.png
+
+# Local pilot secrets and venv — never committed.
+deploy/docling-sidecar/.env.local
+deploy/docling-sidecar/.venv/
+logs/
+deploy/docling-sidecar/__pycache__/
