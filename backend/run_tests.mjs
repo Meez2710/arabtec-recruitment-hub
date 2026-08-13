@@ -31,6 +31,7 @@ const SUITES = [
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider
   'cv_proposal_test.mjs',     // CV -> proposal -> approved fields -> candidate
   'cv_intake_test.mjs',       // CV -> pre-candidate intake -> review -> candidate
+  'intake_route_http_test.mjs', // HTTP: /candidates/intakes is not shadowed by /:id
   'fixture_probe_test.mjs',    // fixture determinism, before anything relies on it
   'bl21_test.mjs',             // BL-21/BL-23 headcount + seat reconciliation
   'reconciliation_test.mjs',   // BL-21/BL-23 seat reconciliation helper
