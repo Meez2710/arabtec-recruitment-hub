@@ -19,8 +19,8 @@ These are not synonyms and one never implies another.
 |---|---|
 | Document pipeline / routing / quality gate / reconciliation | Test-double verified |
 | Local parser (pdfjs + mammoth) | **Live-service verified** (in-process library, real PDFs) |
-| Docling sidecar | Code-integrated only |
-| OCR engine | Code-integrated only |
+| Docling sidecar | Code-integrated; live PDF/DOCX proven on RunPod 8 GB (pre-OCR-fix) |
+| OCR engine | Code-integrated; **OCR fix written and validated locally, NOT verified live** |
 | Ollama extraction | **Live-service verified** |
 | Ollama qualitative evaluation | **Live-service verified** |
 | Vision model | Not configured |
@@ -271,3 +271,21 @@ Health: `/api/health`. CV retrieval is authenticated (`candidate.view`).
 - It does not claim the parser is production-quality. Ten synthetic fixtures are not a benchmark.
 - It does not claim model quality. One 3B model on one fixture is an integration signal.
 - It does not claim durability of evaluation dispatch. It is explicitly best-effort.
+
+
+---
+
+## Addendum — 2026-08-13: OCR fix and the firewall block
+
+`deploy/docling-sidecar/app.py` now configures OCR explicitly (tesseract CLI,
+`eng`+`ara`, `force_full_page_ocr=False`, `InputFormat.IMAGE`, cached converter,
+corrected `ocrApplied`). It compiles and is preserved on this branch.
+
+It could **not** be verified live: a FortiGate appliance on the authoring network
+returns HTTP 403 *"FortiGuard Intrusion Prevention — Access Blocked, Category:
+Proxy Avoidance"* for `*.proxy.runpod.net`, and MITM-intercepts TLS. RunPod was
+not recreated, per instruction.
+
+The whole remaining verification is one command from an unfiltered network —
+see `backend/run_docling_matrix.mjs` and
+`docs/PARSING_LIVE_COMPLETION_REPORT.md`.

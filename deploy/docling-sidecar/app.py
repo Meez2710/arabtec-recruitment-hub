@@ -119,10 +119,7 @@ def convert(req: ConvertRequest) -> ConvertResponse:
             tmp_path = Path(tmp_dir) / f"{request_id}{suffix}"
             tmp_path.write_bytes(payload)
 
-            from docling.document_converter import DocumentConverter
-
-            converter = DocumentConverter()
-            result = converter.convert(str(tmp_path))
+            result = _converter().convert(str(tmp_path))
             document = result.document
 
             markdown = document.export_to_markdown()
@@ -184,7 +181,97 @@ def _pages_of(document: Any) -> list[str]:
     return []
 
 
+def _ocr_languages() -> list[str]:
+    """Tesseract language codes, matching the packs installed in the image.
+
+    English and Arabic are both installed (tesseract-ocr-eng, tesseract-ocr-ara).
+    Overridable so a deployment that adds a pack does not need a code change.
+    """
+    raw = os.environ.get("SIDECAR_OCR_LANGS", "eng,ara")
+    return [code.strip() for code in raw.split(",") if code.strip()]
+
+
+def _build_converter() -> Any:
+    """Docling with OCR configured EXPLICITLY.
+
+    A bare DocumentConverter() leaves the OCR engine at Docling's default, which
+    is not the tesseract this image installs - so an image-only document came
+    back with no text at all. Three things are set deliberately:
+
+      do_ocr=True              OCR is available at all.
+      TesseractCliOcrOptions   the CLI binary the Dockerfile installs, NOT the
+                               tesserocr Python binding, which is not a
+                               dependency of this service.
+      force_full_page_ocr=False OCR runs ONLY on regions with no text layer. A
+                               born-digital PDF keeps its exact native text and
+                               never pays for a recognition pass; the previous
+                               behaviour of the whole pipeline depended on this.
+    """
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import (
+        PdfPipelineOptions,
+        TesseractCliOcrOptions,
+    )
+    from docling.document_converter import (
+        DocumentConverter,
+        ImageFormatOption,
+        PdfFormatOption,
+    )
+
+    options = PdfPipelineOptions()
+    options.do_ocr = True
+    options.do_table_structure = True
+    options.ocr_options = TesseractCliOcrOptions(
+        lang=_ocr_languages(),
+        # Native text wins wherever it exists. This is what keeps OCR
+        # CONDITIONAL rather than universal.
+        force_full_page_ocr=False,
+    )
+
+    artifacts = os.environ.get("DOCLING_ARTIFACTS_PATH")
+    if artifacts:
+        options.artifacts_path = artifacts
+
+    # Images take the same pipeline: a PNG/JPEG resume is a page of pixels.
+    return DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=options),
+            InputFormat.IMAGE: ImageFormatOption(pipeline_options=options),
+        }
+    )
+
+
+_CONVERTER: Any = None
+
+
+def _converter() -> Any:
+    """One converter for the process.
+
+    Deliberately lazy: building it loads the layout, table and OCR models, and
+    doing that at import time would make the health endpoint lie about
+    readiness. Cached because rebuilding per request reloads every model.
+    """
+    global _CONVERTER  # noqa: PLW0603 - a process-wide cache is the point
+    if _CONVERTER is None:
+        _CONVERTER = _build_converter()
+    return _CONVERTER
+
+
 def _ocr_applied(result: Any) -> bool:
+    """Did any text on this document actually come from OCR?
+
+    Docling marks recognised cells `from_ocr`. The previous implementation read
+    `result.ocr_applied`, which Docling does not define, so this always reported
+    False - a digital PDF and a scanned one were indistinguishable downstream.
+    """
     with suppress(Exception):
-        return bool(getattr(result, "ocr_applied", False))
+        for page in getattr(result, "pages", None) or []:
+            for cell in getattr(page, "cells", None) or []:
+                if getattr(cell, "from_ocr", False):
+                    return True
+    with suppress(Exception):
+        for item, _level in result.document.iterate_items():
+            for prov in getattr(item, "prov", []) or []:
+                if getattr(prov, "from_ocr", False):
+                    return True
     return False
