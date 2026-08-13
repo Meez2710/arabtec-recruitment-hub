@@ -51,6 +51,8 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   },
 };
+// Expose the existing authenticated client to approved drop-in page modules.
+window.ARABTEC_API = api;
 
 /* ----------------------------- Helpers ----------------------------- */
 function initials(name) { return (name || '?').split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase(); }
@@ -108,7 +110,7 @@ function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }
   // pixels are unchanged; only the background was keyed to alpha. See docs note.
   // The `color` prop does not apply to a raster mark and is intentionally unused here.
   const mark = (
-    <img src="/logo-transparent.png" alt="Arabtec"
+    <img src="/arabtec-logo.svg" alt="Arabtec"
       style={{ width: size, maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
   );
   if (!withText) return mark;
@@ -377,6 +379,7 @@ const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view' },
   { key: 'requests', label: 'Hiring Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
   { key: 'candidates', label: 'Talent Pool', icon: 'user', perm: 'candidate.view' },
+  { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view' },
   { key: 'interviews', label: 'Interviews', icon: 'calendar', anyPerm: ['interview.view_all', 'interview.view_assigned'] },
   { key: 'offers', label: 'Offers', icon: 'doc', perm: 'offer.view' },
   { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
@@ -569,11 +572,13 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
 
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
 
+  const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
   const Page = {
     dashboard: <Dashboard user={user} onNavigate={setRoute} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} />,
     candidates: <CandidatesPage user={user} />,
+    candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <div className="error-banner">Candidate Review module failed to load.</div>,
     interviews: <InterviewsPage user={user} />,
     offers: <OffersPage user={user} />,
     users: can(user, 'user.manage')
@@ -2455,14 +2460,26 @@ function RequestsPage({ user }) {
   );
 }
 
-function RequestForm({ user, onClose, onSaved }) {
+// Create OR edit. `request` present => edit mode: prefill and PUT /requests/:id.
+// Edit mode deliberately shows ONLY the fields PUT /:id actually persists
+// (title, project, site, department, priority, custom fields). Rendering the
+// create-only intake fields here would let a recruiter type changes the API
+// silently discards.
+function RequestForm({ user, request, onClose, onSaved }) {
   const toast = useToast();
+  const editing = !!request;
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ title: '', projectId: '', siteId: '', departmentId: '', location: '', hiringManagerId: '', priority: 'medium', keyResponsibilities: '', keyRequirements: '' });
+  const [f, setF] = useState(editing
+    ? {
+      title: request.title || '', projectId: request.projectId ?? '', siteId: request.siteId ?? '',
+      departmentId: request.departmentId ?? '', location: request.location || '', hiringManagerId: '',
+      priority: request.priority || 'medium', keyResponsibilities: '', keyRequirements: '',
+    }
+    : { title: '', projectId: '', siteId: '', departmentId: '', location: '', hiringManagerId: '', priority: 'medium', keyResponsibilities: '', keyRequirements: '' });
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const customDefs = useCustomFields('request');
-  const [customVals, setCustomVals] = useState({});
+  const [customVals, setCustomVals] = useState(editing ? (request.customFields || {}) : {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   // UI-only: Site + Location are optional for the API, so they start collapsed to
   // reduce form density. Their values are still sent unchanged in the payload.
@@ -2473,6 +2490,18 @@ function RequestForm({ user, onClose, onSaved }) {
   async function save() {
     setBusy(true);
     try {
+      if (editing) {
+        // Only the keys PUT /requests/:id maps. Anything else would be ignored.
+        const patch = {
+          title: f.title, projectId: f.projectId, departmentId: f.departmentId,
+          siteId: f.siteId === '' ? null : f.siteId, priority: f.priority,
+          customFields: customVals,
+        };
+        const u = await api.put('/requests/' + request.id, patch);
+        toast('Request updated: ' + shortReqCode(u.request.ticketNo));
+        onSaved(u.request.id);
+        return;
+      }
       const body = { ...f, customFields: customVals };
       ['siteId', 'hiringManagerId'].forEach((k) => { if (body[k] === '') body[k] = null; });
       const r = await api.post('/requests', body);
@@ -2482,14 +2511,19 @@ function RequestForm({ user, onClose, onSaved }) {
       onSaved(r.request.id);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  if (!meta) return <Modal title="New Recruitment Request" onClose={onClose}><Skeleton /></Modal>;
+  const modalTitle = editing ? 'Edit Recruitment Request' : 'New Recruitment Request';
+  if (!meta) return <Modal title={modalTitle} onClose={onClose}><Skeleton /></Modal>;
   return (
-    <Modal title="New Recruitment Request" onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Creating…' : 'Create Request'}</button></>}>
-      <p className="muted" style={{ marginTop: 0 }}>Req ID and Req Date are generated automatically on creation.</p>
+    <Modal title={modalTitle} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy}>{busy ? (editing ? 'Saving…' : 'Creating…') : (editing ? 'Save Changes' : 'Create Request')}</button></>}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {editing
+          ? `${shortReqCode(request.ticketNo)} — editing headcount, grade or salary band after approval sends the request back for re-approval.`
+          : 'Req ID and Req Date are generated automatically on creation.'}
+      </p>
       <div className="form-grid">
         <div className="field full"><label>Position *</label><input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Site Engineer" /></div>
-        <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+        {!editing && <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>}
         <div className="field"><label>Department *</label><select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}><option value="">— Select —</option>{meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
         {/* Project stays the single required control (the API validates projectId).
             Site + Location are optional, so they live under "More location details"
@@ -2501,15 +2535,15 @@ function RequestForm({ user, onClose, onSaved }) {
           </button>
         </div>
         {moreLoc && <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
-        {moreLoc && <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>}
+        {moreLoc && !editing && <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>}
         <div className="field"><label>Priority</label><select value={f.priority} onChange={(e) => set('priority', e.target.value)}>{Object.keys(PRIORITY).map((p) => <option key={p}>{p}</option>)}</select></div>
-        <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>
-        <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>
+        {!editing && <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>}
+        {!editing && <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>}
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
-        <div className="field full"><label>Attachment (Job Description / spec)</label>
+        {!editing && <div className="field full"><label>Attachment (Job Description / spec)</label>
           <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           {file && <div className="muted" style={{ marginTop: 4 }}>Selected: {file.name}</div>}
-        </div>
+        </div>}
       </div>
     </Modal>
   );
@@ -2522,6 +2556,7 @@ function RequestDetail({ id, user, btns, onBack }) {
   const [tab, setTab] = useState('thread');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [action, setAction] = useState(null);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => { setReq((await api.get('/requests/' + id)).request); }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -2579,6 +2614,7 @@ function RequestDetail({ id, user, btns, onBack }) {
       {tab === 'timeline' && <TimelineTab req={req} />}
 
       {action && <Confirm title={action.title} message="Please provide a reason. This will be recorded in the audit trail." requireReason danger={action.danger} confirmLabel="Confirm" onConfirm={action.run} onClose={() => setAction(null)} />}
+      {editing && <RequestForm user={user} request={req} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
     </div>
   );
 }
