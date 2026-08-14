@@ -216,7 +216,7 @@ def convert(req: ConvertRequest, _: None = Depends(require_token)) -> ConvertRes
                 markdown=markdown or None,
                 text=text,
                 pages=pages or None,
-                pageCount=len(pages) if pages else 1,
+                pageCount=_page_count(document),
                 # Correct BY CONSTRUCTION: the native probe ran first and
                 # produced nothing usable, so this text came from pixels.
                 # Docling 2.55 discards per-cell OCR provenance, so reading it
@@ -262,11 +262,38 @@ def _reject(status: Status, reason: str) -> ConvertResponse:
 
 
 def _pages_of(document: Any) -> list[str]:
+    """
+    Per-page text, when the runtime can give it.
+
+    Docling 2.55.1 CANNOT: `export_to_text()` takes no `page_no` (verified
+    against the installed signature), so the previous implementation raised
+    TypeError on every call, the suppress() swallowed it, and this always
+    returned []. Recovering real per-page text means walking `document.texts`
+    and reading each item's `prov[].page_no` — a change to how blocks are
+    built, not to this helper. Until then this stays honest and empty; the
+    adapter already handles an empty `pages` by deriving structure from the
+    markdown.
+    """
+    return []
+
+
+def _page_count(document: Any) -> int:
+    """
+    How many pages the document really has.
+
+    Read from the runtime rather than inferred from `_pages_of`, which is
+    empty on 2.55.1 — inferring from it reported every multi-page document as
+    one page.
+    """
+    with suppress(Exception):
+        n = document.num_pages()
+        if isinstance(n, int) and n > 0:
+            return n
     with suppress(Exception):
         pages = getattr(document, "pages", None)
         if pages:
-            return [document.export_to_text(page_no=n) for n in sorted(pages)]
-    return []
+            return len(pages)
+    return 1
 
 
 def _ocr_languages() -> list[str]:

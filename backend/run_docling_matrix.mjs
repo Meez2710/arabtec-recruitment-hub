@@ -54,10 +54,17 @@ const MATRIX = [
     expect: ['Arabtec Construction'], ocr: false },
   { id: 'F', label: 'DOCX resume', file: 'docx-en.docx',
     expect: ['Layla Mansour', 'Ain Shams'], ocr: false },
-  { id: 'G', label: 'multi-page PDF', file: 'multipage-en.pdf',
+  // NOTE: `multipage-en.pdf` is single-page despite its name — it never tested
+  // multi-page handling. G keeps it (born-digital coverage) and I adds a real
+  // two-page scan, whose page-2 content is the only proof of multi-page OCR.
+  { id: 'G', label: 'born-digital PDF (2)', file: 'multipage-en.pdf',
     expect: ['Nadia Kamal', 'Primavera'], ocr: false },
   { id: 'H', label: 'prompt-injection CV', file: 'injection-en.pdf',
     expect: ['Omar Fathy'], ocr: false },
+  // Page-2 strings only. If multi-page OCR silently stopped after page 1 this
+  // is the fixture that would catch it.
+  { id: 'I', label: 'multi-page scanned PDF', file: 'multipage-scan-en.pdf',
+    expect: ['Cairo University', 'Primavera', 'PMP'], ocr: true },
 ];
 
 const convert = async (file) => {
