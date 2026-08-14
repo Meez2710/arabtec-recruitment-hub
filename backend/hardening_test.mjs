@@ -2,7 +2,12 @@
 process.env.DATABASE_URL = 'file:/tmp/arabtec_hard.db';
 process.env.PORT = '4276';
 import fs from 'node:fs';
+import { adminToken, ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';
 for (const f of ['/tmp/arabtec_hard.db', '/tmp/arabtec_hard.db-journal']) { try { fs.rmSync(f); } catch {} }
+// The seed no longer ships a fixed password and forces a first-login rotation;
+// adminToken() satisfies both. See test-support/admin-session.mjs.
+process.env.SEED_ADMIN_PASSWORD ||= ADMIN_BOOTSTRAP_PASSWORD;
+
 await import('./prisma/seed.js');
 await import('./src/server.js');
 await new Promise((r) => setTimeout(r, 800));
@@ -23,7 +28,7 @@ async function up(p, token, fn, content, fields = {}) {
 const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { method: 'POST', body: { email: e, password: p } })).json.token;
 
 (async () => {
-  const admin = await login('admin@arabtec.com', 'Admin@12345');
+  const admin = await adminToken(B);
   const t = await login('hr.manager@arabtec.com');
   const rec = await login('recruiter@arabtec.com');
   const recMgr = await login('rec.manager@arabtec.com');

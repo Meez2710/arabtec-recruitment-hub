@@ -2,7 +2,11 @@
 process.env.DATABASE_URL = process.env.PG_ENGINE ? '' : 'file:/tmp/arabtec_aui.db';
 process.env.PORT = process.env.PORT || '4360';
 import fs from 'node:fs';
+import { adminToken, ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';
 if (!process.env.PG_ENGINE) { for (const f of ['/tmp/arabtec_aui.db', '/tmp/arabtec_aui.db-journal']) { try { fs.rmSync(f); } catch {} } }
+// The seed no longer ships a fixed password and forces a first-login rotation;
+// adminToken() satisfies both. See test-support/admin-session.mjs.
+process.env.SEED_ADMIN_PASSWORD ||= ADMIN_BOOTSTRAP_PASSWORD;
 await import('./prisma/seed.js'); await import('./src/server.js');
 await new Promise((r) => setTimeout(r, 1100));
 const B = 'http://localhost:' + process.env.PORT;
@@ -12,7 +16,7 @@ const G = (p, t) => fetch(B + p, { headers: { Authorization: 'Bearer ' + t } }).
 async function up(p, t, fn, content) { const fd = new FormData(); fd.append('file', new Blob([content], { type: 'image/png' }), fn); const r = await fetch(B + p, { method: 'POST', headers: { Authorization: 'Bearer ' + t }, body: fd }); return { s: r.status, j: await r.json().catch(() => null) }; }
 
 (async () => {
-  const admin = (await J('/api/auth/login', { email: 'admin@arabtec.com', password: 'Admin@12345' }, null)).j.token;
+  const admin = await adminToken(B);
   const recruiter = (await J('/api/auth/login', { email: 'recruiter@arabtec.com', password: 'Arabtec@123' }, null)).j.token;
 
   console.log('\n— Buttons —');
@@ -41,7 +45,7 @@ async function up(p, t, fn, content) { const fd = new FormData(); fd.append('fil
   console.log('\n— Custom fields: candidate —');
   const cf1 = await J('/api/admin-ui/custom-fields/candidate', { label: 'Iqama Number', fieldType: 'text', required: true }, admin);
   c('create candidate custom field', cf1.s === 201);
-  const candMeta = (await J('/api/auth/login', { email: 'admin@arabtec.com', password: 'Admin@12345' }, null)).j.token;
+  const candMeta = await adminToken(B);
   const cand = await J('/api/candidates', { fullName: 'CF Cand', phone: '+9715' + Math.floor(Math.random() * 1e7), customFields: { iqama_number: 'ABC-123' } }, candMeta);
   c('candidate saves custom value', cand.s === 201);
   const cdet = await G('/api/candidates/' + cand.j.candidate.id, candMeta);

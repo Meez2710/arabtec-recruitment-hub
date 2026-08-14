@@ -1,4 +1,5 @@
 // Phase 1 API smoke test. Run against a running server.
+import { adminToken as signInAsAdmin } from './test-support/admin-session.mjs';
 const BASE = process.env.BASE || 'http://localhost:4055';
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') => {
@@ -20,9 +21,12 @@ async function api(path, { method = 'GET', token, body } = {}) {
   const badLogin = await api('/api/auth/login', { method: 'POST', body: { email: 'admin@arabtec.com', password: 'wrong' } });
   check('wrong password rejected (401)', badLogin.status === 401, `got ${badLogin.status}`);
 
-  const login = await api('/api/auth/login', { method: 'POST', body: { email: 'admin@arabtec.com', password: 'Admin@12345' } });
+  // Logs in AND satisfies the forced first-login rotation. Without the
+  // rotation every admin call below returns 403 PASSWORD_CHANGE_REQUIRED,
+  // which is not an RBAC failure. See test-support/admin-session.mjs.
+  const adminToken = await signInAsAdmin(BASE);
+  const login = await api('/api/auth/me', { token: adminToken });
   check('admin login (200)', login.status === 200, `got ${login.status}`);
-  const adminToken = login.json?.token;
   check('admin has system_admin role', login.json?.user?.roles?.includes('system_admin'));
   // Admin must hold the FULL permission catalogue. Assert ">= baseline" rather than
   // an exact count so adding a permission (e.g. MFA in Phase 1) doesn't falsely fail.
@@ -51,7 +55,12 @@ async function api(path, { method = 'GET', token, body } = {}) {
 
   const newUser = await api('/api/users', { method: 'POST', token: adminToken, body: {
     fullName: 'Test Engineer', email: `test_${Date.now()}@arabtec.com`, jobTitle: 'Site Engineer',
-    roleCodes: ['recruiter'], password: 'Arabtec@123',
+    // Must satisfy the live policy: 12+ chars, all four character classes, no
+    // deny-listed fragment ("arabtec" is one), and nothing drawn from the
+    // account holder's own name or email. The demo seed's `Arabtec@123`
+    // predates the policy and is written straight to a hash, so it never
+    // passes through it.
+    roleCodes: ['recruiter'], password: 'Qz9#vLpR!m4X',
   }});
   check('admin creates user (201)', newUser.status === 201, `got ${newUser.status}`);
   const newId = newUser.json?.user?.id;

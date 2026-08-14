@@ -136,6 +136,11 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
   const rows = Candidates.list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
   res.json({
     candidates: rows.map((c) => serialize(c, req.user)),   // unchanged key for compatibility
+    // Talent Pool tab counts. Deliberately whole-pool and unfiltered, so the
+    // tabs do not change as you page or filter. Dropped by accident when this
+    // handler gained pagination; `Candidates.screeningCounts()` was left with
+    // no caller.
+    screeningCounts: Candidates.screeningCounts(),
     pagination: {
       page, pageSize, total,
       totalPages: Math.max(Math.ceil(total / pageSize), 1),

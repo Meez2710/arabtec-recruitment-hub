@@ -3,7 +3,12 @@
 process.env.DATABASE_URL = 'file:/tmp/arabtec_p4qa.db';
 process.env.PORT = '4160';
 import fs from 'node:fs';
+import { adminToken, ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';
 for (const f of ['/tmp/arabtec_p4qa.db', '/tmp/arabtec_p4qa.db-journal']) { try { fs.rmSync(f); } catch {} }
+// The seed no longer ships a fixed password and forces a first-login rotation;
+// adminToken() satisfies both. See test-support/admin-session.mjs.
+process.env.SEED_ADMIN_PASSWORD ||= ADMIN_BOOTSTRAP_PASSWORD;
+
 await import('./prisma/seed.js');
 await import('./src/server.js');
 await new Promise((r) => setTimeout(r, 700));
@@ -29,12 +34,21 @@ async function approvedRequest(token, recMgr, requesterToken) {
 }
 async function linkApp(token, reqId, name, status = 'technical_interview') {
   const cand = await api('/api/candidates', { method: 'POST', token, body: { fullName: name, phone: '+2010' + Math.floor(Math.random() * 1e8) } });
-  const app = await api('/api/applications', { method: 'POST', token, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: status } });
-  return { candId: cand.json.candidate.id, appId: app.json.application.id };
+  // BL-03: an application may only be CREATED at an entry stage. Reaching a
+  // later stage is a move, with its own permission check and stage history —
+  // so this fixture walks it there instead of fabricating the state.
+  const app = await api('/api/applications', { method: 'POST', token, body: { candidateId: cand.json.candidate.id, requestId: reqId, initialStatus: 'shortlisted' } });
+  if (!app.json?.application) throw new Error(`application not created (HTTP ${app.status}): ${JSON.stringify(app.json)}`);
+  const appId = app.json.application.id;
+  if (status !== 'shortlisted') {
+    const moved = await api(`/api/applications/${appId}/move`, { method: 'POST', token, body: { status } });
+    if (moved.status !== 200) throw new Error(`could not move to ${status} (HTTP ${moved.status}): ${JSON.stringify(moved.json)}`);
+  }
+  return { candId: cand.json.candidate.id, appId };
 }
 
 (async () => {
-  const admin = await login('admin@arabtec.com', 'Admin@12345');
+  const admin = await adminToken(B);
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
   const recMgr = await login('rec.manager@arabtec.com');
