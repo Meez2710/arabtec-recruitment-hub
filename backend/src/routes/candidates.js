@@ -420,6 +420,18 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
         type: 'linked_to_request',
         note: `Linked to request ${result.requestId}`,
       });
+      // Same action and shape as a direct POST /applications. Without this an
+      // auditor filtering on `application.created` sees only the applications
+      // typed in by hand and none of the ones raised by a CV review.
+      if (result.applicationCreated) {
+        writeAudit(req, {
+          action: 'application.created', entityType: 'application', entityId: result.applicationId,
+          newValue: {
+            applicationNo: result.applicationNo, candidateId: result.candidateId,
+            requestId: result.requestId, status: 'sourced', source: 'cv_intake',
+          },
+        });
+      }
     }
 
     // Respond FIRST. Everything above has committed; the evaluation below is a

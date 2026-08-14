@@ -342,6 +342,7 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
     /* ------------------------- link to the requisition -------------------- */
 
     let application = null;
+    let applicationExisted = false;
     if (intake.requestId !== null) {
       // Re-validated HERE, not trusted from intake time: a requisition can be
       // closed between upload and review. Failing inside the transaction means
@@ -358,6 +359,7 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
       // pair. A fresh candidate cannot have one yet, but the check is the
       // contract and a retry must not create a second.
       const existing = Applications.existing(candidate.id, check.request.id);
+      applicationExisted = existing !== undefined && existing !== null;
       application = existing ?? Applications.create({
         applicationNo: Applications.nextNo(),
         candidateId: candidate.id,
@@ -392,6 +394,11 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
       candidateId: candidate.id,
       proposalId: proposal ? proposal.id : null,
       applicationId: application ? application.id : null,
+      // Reported so the route can audit the application the same way a direct
+      // POST /applications does; an auditor filtering on application.created
+      // must not miss the ones raised by a CV review.
+      applicationNo: application ? application.application_no : null,
+      applicationCreated: application !== null && !applicationExisted,
       requestId: intake.requestId,
       applied: reviewed ? reviewed.applied : [],
       rejected: reviewed ? reviewed.rejected : [],
