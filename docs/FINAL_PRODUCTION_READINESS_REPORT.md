@@ -1,245 +1,209 @@
 # Arabtec ATS — Final Production Readiness Report
 
-**Branch:** `readiness/final-gate` · **Date:** 2026-08-16
-**Deployable architecture:** Node/Express + PostgreSQL + **local Docling sidecar**.
-The RunPod Docling Serve transport is implemented, tested against stubs, and **disabled**.
+**Branch:** `readiness/final-gate` · **Date:** 2026-08-16 · **Mode:** release baseline
+**Deployable architecture:** Ubuntu · Node/Express · PostgreSQL · **local Docling sidecar** · Apache HTTPS
+
+# APPLICATION-READY · NOT YET DEPLOYABLE
 
 Nothing was pushed, merged or deployed. No real CV or PII was used at any point.
 
 ---
 
-## 0. Reading this report
+## Summary
 
-| Section | Question it answers |
+| Category | State |
 |---|---|
-| §1 Application-ready | Is the software itself finished and proven? |
-| §2 Current deployable architecture | What would we actually ship today? |
-| §3 RunPod migration pending | What is built but deliberately switched off? |
-| §4 Infrastructure blockers | What needs a machine, an account or money? |
-| §5 True production blockers | What actually stops go-live? |
-| §6 Smallest remaining work | The shortest path to deploying |
+| **CODE COMPLETE** | ✅ Yes. No code blocker, no security blocker. |
+| **INFRASTRUCTURE REQUIRED** | ⛔ 2 items — a host, and a rehearsed restore. |
+| **SECURITY / LEGAL SIGN-OFF** | ⛔ 2 items — HTTPS confirmation, retention window. |
+| **UAT REQUIRED** | ⛔ 14 scenarios, not yet run. |
 
-Blocker types: **CODE** · **INFRASTRUCTURE** · **SECURITY** · **OPERATIONAL** · **FUTURE**.
+Everything in the first row is finished and proven. Everything below it needs a machine, a
+decision, or a person — none of it is engineering work.
 
 ---
 
-## 1. APPLICATION-READY — verified
+## 1. CODE COMPLETE ✅
 
-**1.1 PostgreSQL is now genuinely verified.** Previously ⊘ SKIPPED and reported as a blocker.
-`embedded-postgres` was installed as a dev dependency and the full required gate ran against a
-**real PostgreSQL engine**:
+### 1.1 Test evidence (re-run at release)
 
 | Suite | Result |
 |---|---|
-| PostgreSQL transactions | **48/48** |
-| application-number race | 13/13 |
-| shared sequence | 22/22 |
-| BL-04 reopen concurrency | 15/15 |
-| reconciliation | 44/44 |
-| headcount race | 31/31 |
-| join race | 45/45 |
-| **Total** | **218 assertions, 0 failures** |
+| Full ATS runner (`npm test`) | **34 suites, 34 passed, 0 failed** |
+| Full ATS end-to-end, including real OCR | **48/48** |
+| **PostgreSQL required gate, real engine** | **218 assertions, 0 failed** |
+| Retention enforcement | **8/8** |
+| Docling adapter — sidecar (pre-existing) | 20/20, untouched |
+| Docling adapter — Serve transport | 20/20 |
+| Intake · Proposal · Parser seam · HTTP route | 35/35 · 16/16 · 13/13 · 9/9 |
+| Document smoke · Ollama | 23/23 · 25/25 |
+| Typecheck · Build | PASS · PASS |
+| Vitest domain | 740 passed, 82 failed, 9 skipped — all in the non-shipping TypeScript API layer |
 
-**1.2 Whole-application coverage.** Full runner **34/34**. End-to-end **48/48** — hiring request
-→ approval → assignment → intake → parsing → OCR → review → duplicate → candidate → application
-→ interview → feedback → offer → audit, with the database inspected at every step and a
-whole-database integrity sweep (no orphans, no duplicates, no empty candidates, no
-half-converted intakes, seat accounting correct).
+PostgreSQL detail: transactions 48 · application-number race 13 · shared sequence 22 · reopen
+concurrency 15 · reconciliation 44 · headcount race 31 · join race 45.
 
-**1.3 Retention is now enforced, not just reported.** `src/lib/retention.js` erases candidates
-whose window has lapsed, on a schedule. **Off by default** — erasure is irreversible and nobody
-should discover it running because they deployed. `RETENTION_DRY_RUN=true` reports what it would
-erase and touches nothing. Erasure clears personal fields and CV binaries but keeps the row as
-`candidate_state='erased'`, so audit trail, counts and foreign keys survive. 8/8 tests, and the
-negative assertions are the point: off unless opted in, dry run touches nothing, in-window
-candidates untouched, no personal data in the sweep log.
+### 1.2 What the application does correctly
 
-**1.4 Security.** Verified this pass:
+- The full pipeline — hiring request → approval → assignment → intake → parsing → OCR → review →
+  duplicate check → candidate → application → interview → feedback → offer → audit — verified
+  over real HTTP with the database inspected at every step.
+- **No candidate is created without a complete human review.** A failed conversion abstains and
+  raises no intake.
+- Whole-database integrity: no orphans, no duplicate applications, no empty candidates, no
+  half-converted intakes, seat accounting correct.
+- Document classes proven live on the sidecar: born-digital PDF, DOCX, scanned English, PNG,
+  **scanned Arabic**, two-page scan, mixed Arabic/English, prompt-injection CV.
 
-- `JWT_SECRET` required in production, boot **fails** without it; sessions revocable; password
-  change revokes every other session; cookie `httpOnly`/`sameSite=lax`/`secure` in prod.
-- 12-char password policy, all four character classes, deny-list, no name/email reuse; forced
-  first-login rotation covering every route by default; lockout after 5 attempts.
-- HSTS + `upgrade-insecure-requests` + frameguard + `noSniff` in production; `TRUST_PROXY=1` so
-  `req.ip` cannot be spoofed; CORS denies cross-origin in production unless allowlisted; JSON
-  body capped at 1 MB.
-- Uploads: 20 MB cap, extension allowlist (`.pdf .doc .docx .png .jpg .jpeg .txt`), stored under
-  a generated UUID name — **the caller's filename never touches disk**, so no traversal and no
-  leak into logs.
-- Error handler returns a generic message plus a request id; no stack, no internals.
-- Structured JSON request logs carry status, duration, requestId, userId — **no CV text, no
-  secrets**.
-- No secrets committed: `git ls-files` clean, 15 `sync:false` placeholders in `render.yaml`,
-  `.env.*` git-ignored, key files `-rw-------`.
-- Audit integrity: append-only writer, every row names an actor, and the E2E asserts an entry for
-  every stage including `application.created` from the CV-review path.
-- **A failed conversion never creates a candidate** — the parser abstains, no intake is raised,
-  and the E2E asserts it.
+### 1.3 Security — verified, not asserted
 
-**1.5 Fixed this pass.**
+`JWT_SECRET` required in production and boot fails without it · sessions revocable, password
+change revokes all others · cookies `httpOnly`/`sameSite=lax`/`secure` · 12-char password policy
+with four character classes, deny-list and no name/email reuse · forced first-login rotation
+covering every route by default · lockout after 5 failures · HSTS, `upgrade-insecure-requests`,
+frameguard, `noSniff` · `TRUST_PROXY=1` so `req.ip` cannot be spoofed · CORS denies cross-origin
+in production unless allowlisted · 1 MB JSON cap, 20 MB upload cap, extension allowlist, uploads
+stored under a generated UUID so **the caller's filename never touches disk** · generic error
+responses with a request id, no stack · structured JSON logs with **no CV text and no secrets** ·
+append-only audit with an actor on every row · no secrets in git.
+
+### 1.4 Fixed on this branch
 
 | | Type |
 |---|---|
-| `assertLocalHost` restored — was a commented-out no-op, so any `OLLAMA_BASE_URL` silently sent CV text off-machine. Now enforces local/private with an explicit `OLLAMA_ALLOW_REMOTE=true` opt-in. | SECURITY |
-| Process-global `NODE_TLS_REJECT_UNAUTHORIZED='0'` removed from `cv/ai-parser.js` and `reasoner.js` — while set, **every** outbound TLS connection skipped certificate verification. | SECURITY |
-| Upload rejection said "max 15MB" while the cap was 20 MB. Now derived from the constant. | CODE |
-| `/api/health/parsing` added — reports which parser is wired and the retention mode. Nothing surfaced Docling health before. | OPERATIONAL |
-| Retention enforcement (§1.3). | OPERATIONAL |
-| `screeningCounts`, `application.created` audit, sidecar `pageCount` — fixed earlier in this branch. | CODE |
+| `assertLocalHost` restored — was a commented-out no-op, so any `OLLAMA_BASE_URL` silently sent CV text off-machine | SECURITY |
+| Process-global `NODE_TLS_REJECT_UNAUTHORIZED='0'` removed — while set, every outbound TLS connection skipped verification | SECURITY |
+| Retention enforced on a schedule, off by default, with a dry-run mode | OPERATIONAL |
+| `/api/health/parsing` — nothing previously surfaced which document backend was wired | OPERATIONAL |
+| Upload rejection said "max 15MB" while the cap was 20 MB | CODE |
+| `screeningCounts` restored to the candidate list; `application.created` audited on the CV-review path; sidecar `pageCount` corrected; 14 stale admin fixtures repaired | CODE |
 
 ---
 
-## 2. CURRENT DEPLOYABLE ARCHITECTURE
+## 2. INFRASTRUCTURE REQUIRED ⛔
 
-```
-Browser ─ HTTPS ─ Express (Node)  ──  PostgreSQL
-                      │
-                      └── Docling sidecar on 127.0.0.1:8089  (Tesseract eng + ara)
-```
+| # | Item | Action | Owner |
+|---|---|---|---|
+| **I1** | **Linux host for the application and sidecar.** 4 GB RAM, 2 vCPU, 20 GB disk. The sidecar peaks at 759 MB; Render's 512 MB tier cannot host it. | Provision, then follow `docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md` §1–§6 | IT |
+| **I2** | **Restore rehearsal never performed.** The backup procedure is written and scheduled by the runbook, but no dump has ever been restored. A backup that has never been restored is a hope. | Run `scripts/pg-backup-restore-rehearsal.sh` **on the production DB host** — runbook §9.4. It needs `pg_dump`/`pg_restore`, which do not exist on the development machines; that is precisely why this could not be closed during development. | IT |
 
-- `DOCLING_BACKEND=sidecar` — the default, and the only backend that has passed a live matrix.
-- **Arabic OCR works on this path** (107 glyphs recovered from the genuine Arabic fixture).
-- Document classes verified live: born-digital PDF, DOCX, scanned English PDF, PNG, scanned
-  Arabic, two-page scan, mixed Arabic/English, prompt-injection CV.
-- Fallback: if the sidecar is unreachable the local pdfjs/mammoth parser takes over — born-digital
-  keeps working, scans abstain **explicitly** rather than silently returning nothing.
-- Measured: ~1 document / 5.8 s, 759 MB peak under 6-way load. Concurrency beyond ~20
-  simultaneous uploads trips the 120 s client timeout.
+**These two are the complete list of things that stop deployment.**
 
 ---
 
-## 3. RUNPOD MIGRATION — PENDING, DISABLED
+## 3. SECURITY / LEGAL SIGN-OFF ⛔
 
-Built and unit-tested; **not enabled and not verified end to end.**
+| # | Item | Action | Owner |
+|---|---|---|---|
+| **S1** | **HTTPS end to end.** The application sets HSTS and `upgrade-insecure-requests`; the certificate itself belongs to the platform. | Issue the certificate, confirm HTTP redirects to HTTPS, confirm the sidecar port is unreachable from outside — runbook §6, §7 | IT |
+| **S2** | **Retention window not signed off.** Default 24 months, and erasure is irreversible. Enforcement stays off until someone owns the number. | Legal confirms `retention_months`, then enable with a dry run first — runbook §10 | Legal / HR |
 
-- `DoclingTransport` interface; `DoclingServeClient`; parser takes an injected transport;
-  `DOCLING_BACKEND=serve` selects it. 40/40 adapter tests (the 20 pre-existing ones untouched).
-- Contract verified from the running image's own `/openapi.json` while it was up
-  (`docling-serve 1.12.0`, `docling 2.72.0`, `X-Api-Key` enforced).
-- English OCR, two-page provenance and `images_scale` were verified live before the endpoint went
-  away. **Arabic OCR failed** — no `ara` traineddata in the image.
-- Currently unreachable: `/health`, `/version` and `/openapi.json` all 404. RunPod credits
-  exhausted.
+---
 
-**Not verified, and not claimed:** the full 11-fixture matrix, the live end-to-end on the Serve
-backend, and Arabic on any RunPod image.
+## 4. UAT REQUIRED ⛔
 
-Before it may be enabled: `tesseract-ocr-ara` in the final image stage → matrix 11/11 →
-E2E 48/48 with `DOCLING_BACKEND=serve` → a data-protection decision about sending CVs to a
+14 scenarios in `docs/UAT_PLAN.md`, covering login and lockout, per-role permissions, hiring
+request, approval, recruiter assignment, born-digital intake, scanned English, **scanned Arabic**,
+unreadable file, review with accept/reject, duplicate, application → interview → feedback, offer,
+and audit/reporting.
+
+Four questions only the business can answer: Arabic OCR quality, field coverage, duplicate
+strictness, and whether the approval chain matches the real delegation of authority.
+
+---
+
+## 5. RUNPOD MIGRATION — BUILT, DISABLED, NOT VERIFIED
+
+Kept in the repository, switched off, and **not** part of this release.
+
+- `DoclingTransport` + `DoclingServeClient` + `DOCLING_BACKEND=serve`. 40/40 adapter tests.
+- Contract verified from the running image's `/openapi.json` (`docling-serve 1.12.0`,
+  `docling 2.72.0`, `X-Api-Key` enforced). English OCR, two-page provenance and `images_scale`
+  verified live before the endpoint became unavailable.
+- **Arabic OCR failed** — no `ara` traineddata in the image. **Not verified:** the full
+  11-fixture matrix, the live end-to-end, and Arabic on any RunPod image.
+
+Before it may ever be enabled: `tesseract-ocr-ara` in the final image stage → matrix 11/11 →
+end-to-end 48/48 with `DOCLING_BACKEND=serve` → a data-protection decision about sending CVs to a
 third-party GPU host.
 
----
-
-## 4. INFRASTRUCTURE BLOCKERS
-
-| # | Item | Type | Smallest action |
-|---|---|---|---|
-| I1 | **Backup not scheduled; restore never rehearsed.** The procedure exists; nothing runs it. | OPERATIONAL | Schedule the daily `pg_dump -Fc`, then run `./scripts/pg-backup-restore-rehearsal.sh` on the DB host — it dumps, restores to a throwaway DB, compares row counts and constraints, and fails loudly. **Cannot run here: `embedded-postgres` ships only the server, no `pg_dump`/`pg_restore` client binaries.** |
-| I2 | **Docling sidecar host.** Needs ~2 GB and stays on loopback. Render's 512 MB tier cannot host it. | INFRASTRUCTURE | Provision the 4 GB Linux host, or keep it beside the app on a VPS |
-| I3 | **TLS terminates at the platform.** HSTS and `upgrade-insecure-requests` are set; the certificate itself is the platform's. | INFRASTRUCTURE | Confirm the certificate and that HTTP redirects to HTTPS |
-| I4 | **Retention window not signed off.** Default 24 months. | OPERATIONAL | Legal confirms, then `RETENTION_ENFORCEMENT=true` (dry run first) |
-| I5 | **RunPod endpoint down / credits exhausted.** | INFRASTRUCTURE | Only blocks §3; does not block deployment |
-
----
-
-## 5. TRUE PRODUCTION BLOCKERS
-
-Things that genuinely stop go-live on the sidecar architecture:
-
-1. **I1 — no rehearsed restore.** The only item here that could cost data. A backup nobody has
-   restored is not a backup. **OPERATIONAL.**
-2. **I2 — the Docling host.** Without it there is no OCR; scanned CVs are refused (honestly, but
-   refused). **INFRASTRUCTURE.**
-
-**That is the complete list. No CODE blocker and no SECURITY blocker remains.**
-
-Everything else — I3, I4, I5, and §7 below — is either a confirmation step or does not block.
+`DOCLING_BACKEND=sidecar` is the default in code and is fixed in `deploy/production.env.example`.
 
 ---
 
 ## 6. ACCEPTABLE PRODUCTION LIMITATIONS
 
 1. **Mixed PDFs** — a healthy native text layer means embedded scanned images are not OCR'd.
-2. **Evidence page numbers on the sidecar path always read "page 1."** Text is complete; the page
-   label is wrong beyond page 1. The Serve transport fixes this when it is enabled.
-3. **Throughput** ~1 document / 5.8 s; bulk uploads queue. Fine for recruiter-paced work.
-4. **Arabic OCR accuracy is unmeasured** — recovery is proven, quality is a UAT judgement.
-5. **82 failing tests in the parallel TypeScript API layer** — permission-name drift in a stack
-   `render.yaml` never starts (`npm start` → `node src/server.js`). Non-shipping.
-6. **`embedded-postgres` is now a dev dependency** — it downloads a PostgreSQL distribution on
-   install. Acceptable for a real DB gate; note it for CI time.
+2. **Evidence page numbers on the sidecar path always read "page 1."** Text is complete; only the
+   label is wrong beyond page 1. The Serve transport fixes this if it is ever enabled.
+3. **Throughput ~1 document / 5.8 s**; bulk uploads queue. Fine for recruiter-paced work.
+4. **Arabic OCR accuracy is unmeasured** — recovery proven, quality is a UAT judgement (S2/UAT 8).
+5. **RPO 24 hours, RTO ~30 minutes** — daily dumps. Improving RPO needs WAL archiving or managed
+   PostgreSQL; a decision, not a defect.
+6. **82 failing tests in the parallel TypeScript API layer** — permission-name drift in a stack
+   production never starts (`npm start` → `node src/server.js`).
 
 ---
 
-## 7. FUTURE ENHANCEMENTS
+## 7. DEPENDENCY DECISION — `embedded-postgres`
 
-Resolve or delete the parallel TS API layer · mixed-document OCR · delete the legacy parser chain
-(defused, still present) · async Docling Serve endpoints · backfill page attribution on the
-sidecar path · a graded Arabic/English OCR accuracy corpus.
+**Test-only. Already correctly placed in `devDependencies`; no change required.**
 
----
-
-## 8. TEST RESULTS
-
-| Suite | Result |
-|---|---|
-| Full ATS runner (`npm test`) | **34 suites, 34 passed, 0 failed** |
-| Full ATS E2E (sidecar, incl. real OCR) | **48/48** |
-| **PostgreSQL required gate (real engine)** | **218 assertions, 0 failed** |
-| Retention enforcement (new) | **8/8** |
-| Docling adapter — sidecar (pre-existing) | 20/20 untouched |
-| Docling adapter — Serve transport | 20/20 |
-| Intake · Proposal · Parser seam · HTTP route | 35/35 · 16/16 · 13/13 · 9/9 |
-| Document smoke · Ollama | 23/23 · 25/25 |
-| Typecheck · Build | PASS · PASS |
-| Vitest domain | 740 passed, 82 failed (non-shipping TS API), 9 skipped |
-| RunPod live matrix / live E2E | **NOT RUN — endpoint unavailable** |
+- It is imported by exactly one file, `pg_tx_test.mjs`, and only when `PG_TEST_URL` is absent.
+  No runtime path touches it.
+- It stays rather than being removed: `pg_tx_test` refuses SQLite and PGlite by design — production
+  is PostgreSQL, and a transaction-affinity suite that runs on anything else proves nothing.
+  Without this package the gate reports SKIPPED, which it is careful to say is not a pass, and
+  PostgreSQL went unverified across three readiness reports for exactly that reason.
+- Cost: it downloads a PostgreSQL distribution on `npm ci --include=dev`, which adds CI time and
+  disk. That is the price of a database gate that means something.
+- **Production installs are unaffected** if you use `npm ci --omit=dev`. Note that the deployment
+  runbook uses `npm ci --include=dev` because the TypeScript build needs `tsc`; a stricter
+  two-stage build (`--include=dev` → `npm run build` → `npm prune --omit=dev`) would drop both
+  `typescript` and `embedded-postgres` from the running image. That is an optimisation, not a
+  requirement.
 
 ---
 
-## 9. ROLLBACK
+## 8. ROLLBACK
 
 Configuration only. No database migration, no candidate-data migration, no RunPod dependency.
 
-1. `DOCLING_BACKEND=sidecar` (default) — the Serve transport is never reached.
-2. Unset `DOCLING_BASE_URL` — local parser; scans abstain explicitly.
-3. Application: redeploy the previous commit. The schema is additive (`addColumnIfMissing`), so
-   an older build runs against a newer database.
-4. Database: restore the most recent dump — last resort, the only lossy step.
+| Scenario | Action | Data loss |
+|---|---|---|
+| Bad release | check out the previous tag, `npm ci --include=dev && npm run build`, restart | none — the schema is additive |
+| Sidecar misbehaving | `systemctl stop arabtec-docling` — the app falls back to the local parser; scans refused explicitly | none |
+| Parsing suspect | unset `DOCLING_BASE_URL`, restart | none |
+| Database corruption | restore from the daily dump | back to the last dump (RPO 24 h) |
 
 ---
 
-## 10. DEPLOYMENT CHECKLIST
+## 9. RELEASE ARTEFACTS
 
-- [ ] `DATABASE_URL` (PostgreSQL) and `JWT_SECRET` (32+ chars) set
-- [ ] `SEED_DEMO_DATA=false`; bootstrap admin password rotated at first login
-- [ ] `TRUST_PROXY=1`; `CORS_ORIGINS` set; HTTPS confirmed end to end (I3)
-- [ ] Docling sidecar running on loopback; `DOCLING_BACKEND=sidecar`
-- [ ] `SIDECAR_OCR_LANGS=eng,ara`, `SIDECAR_OCR_SCALE=4.0`
-- [ ] `/api/health`, `/api/health/db`, `/api/health/parsing` all green; alert on the last two
-- [ ] `UPLOAD_DIR` on persistent storage
-- [ ] Daily `pg_dump` scheduled **and one restore rehearsed** (I1)
-- [ ] Retention window signed off; dry run reviewed before `RETENTION_ENFORCEMENT=true` (I4)
-- [ ] `OLLAMA_ALLOW_REMOTE` unset
-- [ ] `DOCLING_BACKEND=serve` **not** set
-- [ ] UAT scenarios 1–14 signed off (`docs/UAT_PLAN.md`)
+| File | Purpose |
+|---|---|
+| `docs/PRODUCTION_DEPLOYMENT_RUNBOOK.md` | Ubuntu deployment, executable by an administrator with no project history |
+| `deploy/production.env.example` | production configuration template; every value marked SUPPLY / FIXED / TUNE |
+| `scripts/pg-backup-restore-rehearsal.sh` | dump → restore → compare → fail loudly on mismatch |
+| `docs/UAT_PLAN.md` | 14 human-verification scenarios |
+| `docs/PRODUCTION_RUNBOOK.md` | day-to-day operations |
+| `docs/DOCLING_SERVE_API.md` | verified RunPod contract, for the deferred migration |
 
 ---
 
-## 11. FINAL VERDICT
+## 10. FINAL VERDICT
 
 # APPLICATION-READY · NOT YET DEPLOYABLE
 
-The software is finished and proven: 34/34 suites, 48/48 end-to-end, **218 PostgreSQL assertions
-against a real engine**, two real security defects fixed, retention enforced, monitoring exposed.
-**No code blocker and no security blocker remains.**
+The software is finished. **No code blocker and no security blocker remains.**
 
-Two operational things stand between this and production, and neither is engineering work:
+Four external actions stand between this branch and production:
 
-1. **Rehearse a restore** (I1) — the script is written; it needs a host with the PostgreSQL
-   client binaries. Half a day, mostly waiting.
-2. **Provision the Docling host** (I2) — 4 GB Linux, sidecar on loopback.
+1. **I1 — provision the Linux host** (4 GB), then follow the deployment runbook.
+2. **I2 — rehearse one restore** on the production database host. The only item that could cost
+   data.
+3. **S1 — confirm HTTPS** end to end and that the sidecar port is not externally reachable.
+4. **S2 — legal signs off the retention window**, then enable enforcement after a dry run.
 
-Then confirm HTTPS (I3), get the retention window signed off (I4), and run UAT.
-
-**RunPod remains pending and disabled**, and nothing above depends on it.
+Then run UAT. None of the four is engineering work; all four are in the runbook with exact
+commands.
