@@ -45,6 +45,14 @@ rather than look at screenshots.
 The two share no database, no secret and no integration. Nothing done in this
 environment can reach production data, and no production credential is present.
 
+**What differs is the environment, not the product.** The application, the
+recruitment logic, the permissions and the audit trail are the same build as the
+full system; this environment differs only in hosting, data, and the absence of
+the Docling sidecar (§7). `docs/PILOT_README.md` §1.1 sets out the full
+comparison. So an auditor's findings about workflow, logic and usability apply
+directly to the real product — findings about speed or scanned-CV parsing do
+not.
+
 ---
 
 ## 3. Creating the environment (deploying engineer, one time)

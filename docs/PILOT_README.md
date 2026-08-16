@@ -25,6 +25,41 @@ internet exposure, and no production data should be loaded into it.
   Arabic/English OCR path.
 - **Talent Pool → Hiring Request linking** (new in this build).
 
+### 1.1 How the pilot differs from the full system
+
+**The pilot is not a cut-down product.** It is the same application, the same
+recruitment logic, the same permissions and the same audit trail as the full
+system — running in a smaller, disposable environment. What the pilot lacks is
+**infrastructure and one document-processing component**, not features.
+
+Identical in both: every screen and workflow, the requisition → approval →
+intake → review → candidate → application → interview → offer chain, the
+role-based permissions, the duplicate rules, the evidence-gated CV review, and
+the audit history.
+
+Different, and all of it environmental:
+
+| | Pilot | Full system |
+| --- | --- | --- |
+| Purpose | Demonstration and UAT | Live hiring |
+| Hosting | One local machine (or a free tier) | Provisioned Linux server |
+| Database | Local SQLite or a disposable PostgreSQL | Managed PostgreSQL |
+| Data | Synthetic only | Real candidate records |
+| Transport | Plain HTTP on localhost | HTTPS, real domain, reverse proxy |
+| Scanned / image-only CVs | **Not supported** — no Docling sidecar, so the local pdfjs/mammoth parser is used | Supported via the Docling sidecar and Arabic/English OCR |
+| AI extraction | Deterministic rules only | Optionally a private local model |
+| Email | Off — nothing is ever sent | SMTP configured |
+| Error tracking | Off | Sentry |
+| Backup / restore | None; treat the database as disposable | Scheduled, with a tested restore |
+| Accounts | Demo users, one shared password | Real accounts; no demo users seeded |
+| Database concurrency gates | Not run (need `PG_TEST_URL`) | Required before release |
+| Performance | Single process, tiny dataset | Sized instance |
+
+The practical consequence for anyone evaluating the pilot: **judge the workflow,
+the recruitment logic and the usability — those are real and final.** Do not
+judge speed, and do not conclude that scanned-CV parsing is broken; it is simply
+not deployed here (§5). The steps to close each gap are in §8.
+
 ---
 
 ## 2. Required environment variables
