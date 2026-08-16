@@ -32,17 +32,17 @@ c('admin logs in with bootstrap password (200)', login.status === 200, 'got ' + 
 c('login flags mustChangePassword=true', login.j?.mustChangePassword === true);
 const tok = login.j?.token;
 
-const wrong = await J('/api/auth/change-password', { currentPassword: 'nope', newPassword: 'NewPass#Aa1' }, tok);
+const wrong = await J('/api/auth/change-password', { currentPassword: 'nope', newPassword: 'NewPass#Aa1234' }, tok);
 c('wrong current password rejected (401)', wrong.status === 401, 'got ' + wrong.status);
 
 const short = await J('/api/auth/change-password', { currentPassword: 'BootStrap#Aa1', newPassword: 'x' }, tok);
 c('too-short new password rejected (400)', short.status === 400, 'got ' + short.status);
 
-const chg = await J('/api/auth/change-password', { currentPassword: 'BootStrap#Aa1', newPassword: 'NewPass#Aa1' }, tok);
+const chg = await J('/api/auth/change-password', { currentPassword: 'BootStrap#Aa1', newPassword: 'NewPass#Aa1234' }, tok);
 c('valid change succeeds (200)', chg.status === 200, 'got ' + chg.status);
 c('response clears mustChangePassword', chg.j?.mustChangePassword === false);
 
-const relogin = await J('/api/auth/login', { email: 'admin@arabtec.com', password: 'NewPass#Aa1' });
+const relogin = await J('/api/auth/login', { email: 'admin@arabtec.com', password: 'NewPass#Aa1234' });
 c('re-login with new password works (200)', relogin.status === 200, 'got ' + relogin.status);
 c('mustChangePassword now false', relogin.j?.mustChangePassword === false);
 
@@ -52,11 +52,12 @@ c('old password rejected after rotation (401)', oldpw.status === 401, 'got ' + o
 console.log('\n— C1.3 password policy (change-password) —');
 // admin is now on NewPass#Aa1; try weak new passwords via change-password.
 const tok2 = relogin.j?.token;
-const weak1 = await J('/api/auth/change-password', { currentPassword: 'NewPass#Aa1', newPassword: 'alllowercase' }, tok2);
+const weak1 = await J('/api/auth/change-password', { currentPassword: 'NewPass#Aa1234', newPassword: 'alllowercase' }, tok2);
 c('rejects <3 char classes (400)', weak1.status === 400, 'got ' + weak1.status);
-const weak2 = await J('/api/auth/change-password', { currentPassword: 'NewPass#Aa1', newPassword: 'password1' }, tok2);
+const weak2 = await J('/api/auth/change-password', { currentPassword: 'NewPass#Aa1234', newPassword: 'Password123!' }, tok2);
+// 'Password123!' is 12 chars with all four classes — only the deny-list can reject it.
 c('rejects common password (400)', weak2.status === 400, 'got ' + weak2.status);
-const strong = await J('/api/auth/change-password', { currentPassword: 'NewPass#Aa1', newPassword: 'Zx9$mQr2Lk' }, tok2);
+const strong = await J('/api/auth/change-password', { currentPassword: 'NewPass#Aa1234', newPassword: 'Zx9$mQr2Lk77' }, tok2);
 c('accepts a strong password (200)', strong.status === 200, 'got ' + strong.status);
 
 console.log('\n— C1.3 account lockout (5 failed attempts) —');
