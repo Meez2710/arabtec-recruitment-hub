@@ -10,23 +10,18 @@ rather than look at screenshots.
 
 ---
 
-## 1. Status
-
-> **The environment is prepared but NOT YET LIVE.**
-> Everything needed to bring it up is committed on `audit/arabtec-pilot-online`
-> and has been verified end to end locally. The final step — creating the Render
-> service — requires Render dashboard access, which the deploying engineer must
-> perform once. §3 is that step.
->
-> Fill in the URL below once the service is created. **Do not circulate this
-> document to an auditor until the URL is real.**
+## 1. Status — **LIVE**
 
 | | |
 | --- | --- |
-| **URL** | `https://arabtec-audit.onrender.com` *(expected name — confirm after creation)* |
+| **URL** | **https://arabtec-audit.onrender.com** |
 | **Branch** | `audit/arabtec-pilot-online` |
 | **Based on** | `pilot/arabtec-ats-v1` @ `b3018fa` |
-| **Database** | `arabtec-db-audit` — separate instance, synthetic data only |
+| **Database** | `arabtec-db-audit` (PostgreSQL) — separate instance, synthetic data only |
+| **Verified** | All pages load, critical workflow 17/17, HTTPS with HSTS/CSP |
+
+Free tier: the service **sleeps when idle** and the first request after a pause
+takes 30–60 seconds. Warm it before the auditor starts.
 
 ---
 
@@ -98,18 +93,36 @@ the first request. Warm it before the auditor starts.
 
 ## 4. How to sign in
 
-All audit accounts share the password **`Arabtec@123`**. These are throwaway
-credentials for a throwaway database holding invented data.
+### The auditor's account
+
+| | |
+| --- | --- |
+| **Email** | `recruiter@arabtec.com` |
+| **Password** | `Auditme@1618` |
+
+**Use this one.** It carries the complete recruitment permission set — including
+`request.approve`, so a single person can take a requisition from creation to
+offer without waiting for a second approver. It deliberately holds **no
+administrative rights**: `user.manage`, `role.manage`, `system.manage`,
+`app.manage_ui`, `button.manage` and `workflow.manage` are all withheld, so the
+auditor cannot alter users, roles or application configuration.
+
+One consequence worth knowing: **deleting a candidate is not available**, because
+in this product `candidate.delete` sits only on the system-administrator role.
+Granting it would have meant granting user and application administration too.
+
+### Other roles, for comparing what each may do
+
+These share the password **`Arabtec@123`**.
 
 | Role | Email | Use it to audit |
 | --- | --- | --- |
-| HR Manager | `hr.manager@arabtec.com` | The main recruiter workflow — start here |
-| Recruiter | `recruiter@arabtec.com` | Day-to-day sourcing and pipeline work |
-| Recruitment Manager | `rec.manager@arabtec.com` | Oversight and assignment |
-| HR Director | `hr.director@arabtec.com` | Approvals |
+| Recruiter | `rec.manager@arabtec.com` | Oversight and assignment |
+| HR Director | `hr.director@arabtec.com` | The approver's view |
 | Hiring Manager | `hiring.manager@arabtec.com` | The hiring-manager view of a request |
-| Interviewer | `interviewer@arabtec.com` | Interview feedback |
+| Interviewer | `interviewer@arabtec.com` | Interview feedback only |
 | Viewer | `viewer@arabtec.com` | Read-only — shows what permissions withhold |
+| HR Manager | `hr.manager@arabtec.com` | The original seeded manager account |
 
 `admin@arabtec.com` is the bootstrap administrator and is **forced to change its
 password at first sign-in** — every route returns `403 PASSWORD_CHANGE_REQUIRED`
