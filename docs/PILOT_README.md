@@ -27,11 +27,56 @@ internet exposure, and no production data should be loaded into it.
 
 ---
 
-## 2. Local startup
+## 2. Required environment variables
+
+Set these before starting. **Never commit real values and never echo them to a
+shared terminal or log.**
+
+### 2.1 ATS server (`backend/`)
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | **yes** | `file:./pilot.db` (SQLite) or `postgres://…` |
+| `JWT_SECRET` | **yes** | Session signing. 32+ random chars: `openssl rand -hex 32` |
+| `PORT` | yes for this pilot | `4173` — the documented pilot port |
+| `SEED_DEMO_DATA` | seeding only | `true` to create the demo users in §3.5 |
+| `SEED_ADMIN_PASSWORD` | seeding only | Bootstrap admin password; rotated at first sign-in |
+| `DOCLING_BASE_URL` | no | **Set = sidecar mode.** Unset = local pdfjs/mammoth parser |
+| `DOCLING_BEARER_TOKEN` | only if the sidecar sets one | Must be **identical** to the sidecar's value |
+| `DOCLING_TIMEOUT_MS` | no | Defaults to 120000 |
+| `DOCLING_PIPELINE_VERSION` | no | Recorded in extraction provenance |
+| `OCR_BASE_URL` | no | Separate HTTP OCR service. Unset = pages needing OCR are marked degraded, never silently empty |
+| `OCR_ENGINE`, `OCR_PATH`, `OCR_TIMEOUT_MS` | no | Only meaningful with `OCR_BASE_URL` |
+| `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | no | Unset = deterministic rules only, a complete and valid configuration |
+| `PG_NO_SSL` | PostgreSQL on localhost | `true` for a same-box PostgreSQL |
+
+### 2.2 Docling sidecar (`deploy/docling-sidecar/`)
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DOCLING_BEARER_TOKEN` | see below | Unset = **open service, loopback only**. Set = `Authorization: Bearer` enforced with a constant-time compare |
+| `SIDECAR_OCR_LANGS` | no | Defaults to `eng,ara` — the Arabic/English OCR path |
+| `SIDECAR_OCR_ENGINE` | no | Defaults to `tesseract` |
+| `SIDECAR_OCR_SCALE` | no | OCR rasterisation scale |
+| `SIDECAR_MAX_BYTES` | no | Upload ceiling, default 25 MB |
+| `SIDECAR_TIMEOUT_S` | no | Conversion timeout, default 120 s |
+| `SIDECAR_MIN_NATIVE_CHARS` | no | Below this a page is treated as needing OCR |
+| `SIDECAR_PIPELINE_VERSION` | no | Reported back as provenance |
+| `DOCLING_ARTIFACTS_PATH` | no | Pre-downloaded model artifacts |
+
+**On the token.** It is optional *only* because this pilot binds the sidecar to
+loopback. Leaving it unset makes the sidecar an unauthenticated service, so the
+moment it is reachable through a tunnel, a container network or any non-loopback
+interface, `DOCLING_BEARER_TOKEN` **must** be set — to the *same* value on both
+processes, or every conversion returns 401.
+
+---
+
+## 3. Local startup
 
 Three processes, in this order. All three run on the same machine.
 
-### 2.1 Database
+### 3.1 Database
 
 The pilot runs on either engine. **PostgreSQL** is closer to production:
 
@@ -53,7 +98,13 @@ Seed once (creates roles, permissions, demo org data and demo users):
 cd backend && SEED_DEMO_DATA=true SEED_ADMIN_PASSWORD='Admin@12345' npm run seed
 ```
 
-### 2.2 Docling sidecar
+### 3.2 Docling sidecar
+
+**Prerequisites — check these first, the sidecar cannot start without one:**
+
+- a container runtime (Docker, Podman or Colima), **or**
+- Python **3.10+** to run it natively. `requirements.txt` pins
+  `torch==2.9.1+cpu`, which publishes no wheels for Python 3.9 or older.
 
 ```bash
 cd deploy/docling-sidecar
@@ -64,9 +115,19 @@ docker run --rm -p 8089:8089 \
 ```
 
 The sidecar listens on **8089** and exposes `POST /v1/health` and
-`POST /v1/convert`.
+`POST /v1/convert`. Both are POST — a `GET /v1/health` returns 405 and is not
+a sign the service is down.
 
-### 2.3 ATS server
+Set `DOCLING_BEARER_TOKEN` here **and** on the ATS server, to the same value,
+or leave it unset on both. A mismatch fails every conversion with 401.
+
+**If no runtime is available**, leave `DOCLING_BASE_URL` unset on the ATS
+server. The pilot still runs on the local pdfjs/mammoth parser: born-digital
+PDF, DOCX and plain text still parse, and scanned/image-only input — already
+listed as open in §5 — remains unavailable. Report the missing runtime rather
+than substituting another parser.
+
+### 3.3 ATS server
 
 ```bash
 cd backend
@@ -83,13 +144,13 @@ npm run start:sqlite         # or `npm start` when DATABASE_URL is PostgreSQL
 loaded from `dist/` at runtime. A missing build is a deployment defect, not a
 reason to bypass review.
 
-### 2.4 Local URL
+### 3.4 Local URL
 
 ```
 http://localhost:4173
 ```
 
-### 2.5 Pilot sign-in
+### 3.5 Pilot sign-in
 
 Demo users are created only when `SEED_DEMO_DATA=true`:
 
@@ -112,14 +173,24 @@ be seeded on an internet-reachable host.
 
 ---
 
-## 3. Parsing configuration
+## 4. Parsing configuration
 
-`DOCLING_BASE_URL` pointing at the local sidecar is what selects sidecar mode.
+There is **no backend-selector flag**. `composeAI()` in
+`backend/src/api/composition-root.ts` branches on one variable:
 
-> **Naming note.** Earlier planning documents referred to a `DOCLING_BACKEND=sidecar`
-> switch. No such variable exists in the code. The backend is chosen by
-> `DOCLING_BASE_URL` (set = sidecar, unset = the local pdfjs/mammoth parser).
-> Setting `DOCLING_BACKEND` has no effect.
+```
+DOCLING_BASE_URL set    → DoclingDocumentParser (the sidecar)
+DOCLING_BASE_URL unset  → LocalDocumentParser  (pdfjs/mammoth)
+```
+
+`DOCLING_BEARER_TOKEN`, `DOCLING_TIMEOUT_MS` and `DOCLING_PIPELINE_VERSION` are
+read only when a base URL is present. Full list in §2.
+
+> **Naming correction.** Earlier planning documents referred to a
+> `DOCLING_BACKEND=sidecar` switch. **No such variable exists anywhere in this
+> codebase** — nothing reads it, and setting it has no effect whatsoever. Use
+> `DOCLING_BASE_URL` as above. Any document still saying `DOCLING_BACKEND`
+> is wrong and should be corrected at the source.
 
 RunPod is **not** used by this pilot. Leave `OLLAMA_BASE_URL` unset unless a
 private local Ollama is running; unset means deterministic rule-based
@@ -129,7 +200,7 @@ Never commit a real `.env`, `DOCLING_BEARER_TOKEN`, or `JWT_SECRET`.
 
 ---
 
-## 4. Parsing limitations — read before UAT
+## 5. Parsing limitations — read before UAT
 
 Do not present the parser as complete. Current honest status:
 
@@ -150,7 +221,7 @@ by loosening the evidence gate.
 
 ---
 
-## 5. Talent Pool → Hiring Request linking
+## 6. Talent Pool → Hiring Request linking
 
 A link **is an application**. The Talent Pool "Request" column calls the
 existing `POST /applications` with `{ candidateId, requestId }` under the
@@ -173,7 +244,7 @@ shown. There is no recommendation service, no embeddings, no model call.
 
 ---
 
-## 6. Pilot limitations
+## 7. Pilot limitations
 
 - **Pilot only.** Demonstration and UAT. Not production.
 - **Local infrastructure only.** Single machine, local database, local sidecar.
@@ -184,7 +255,7 @@ shown. There is no recommendation service, no embeddings, no model call.
 - **HTTPS / deployment pending.** Runs over plain HTTP on localhost. No TLS, no
   reverse proxy, no domain, no production CORS origin.
 - **UAT still required.** No formal UAT has been signed off against this build.
-- **Scanned/image-only OCR still open** (section 4).
+- **Scanned/image-only OCR still open** (section 5).
 - **Docling sidecar pins are unverified.** `deploy/docling-sidecar/requirements.txt`
   carries intended, not resolved, versions. Regenerate with `pip freeze` after
   the first successful build before relying on reproducible extraction.
@@ -201,7 +272,7 @@ candidate is on without opening each profile.
 
 ---
 
-## 7. When the production server is available
+## 8. When the production server is available
 
 1. Provision the Linux host, PostgreSQL instance and TLS certificate.
 2. Set real secrets outside git: `JWT_SECRET`, `DATABASE_URL`,
