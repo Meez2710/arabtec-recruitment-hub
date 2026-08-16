@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url';
 import { ensureSchema } from './lib/schema.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
+import { startRetentionEnforcement, getRetentionStatus } from './lib/retention.js';
 import { configureParsing } from './lib/parsing/composition.js';
+import { pipelineDescription } from './lib/parsing/pipeline-provider.js';
 import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import { securityHeaders, securityConfigSummary } from './lib/security-headers.js';
@@ -140,6 +142,16 @@ app.get('/api/health/watcher', (req, res) => {
   res.json(getWatcherStatus());
 });
 
+// READINESS, as opposed to liveness: what is wired and whether it answers.
+// Deliberately unauthenticated but factual-only — it names components and
+// states, never endpoints, tokens or document text. Monitoring needs to know
+// the document backend is reachable BEFORE a recruiter discovers it isn't.
+app.get('/api/health/parsing', async (req, res) => {
+  let parsing = { error: 'unavailable' };
+  try { parsing = await pipelineDescription(); } catch (e) { parsing = { error: String(e && e.message || e).slice(0, 200) }; }
+  res.json({ ok: !parsing.error, parsing, retention: getRetentionStatus() });
+});
+
 app.get('/api/health/db', (req, res) => {
   try { dbGet('SELECT 1 AS ok'); res.json({ ok: true, db: 'up' }); }
   catch (e) { res.status(503).json({ ok: false, db: 'down', error: String(e && e.message || e).slice(0, 300) }); }
@@ -246,6 +258,10 @@ app.listen(PORT, () => {
         startWatcher();
         console.log('   📁 CV inbox watcher started.\n');
       }
+      // Retention enforcement. A no-op unless RETENTION_ENFORCEMENT=true, and
+      // it says which mode it is in either way — silence about a data-protection
+      // control is itself a finding.
+      startRetentionEnforcement();
     } catch (e) {
       console.error('  ! Initialisation failed:', e.message);
       // Open the gate anyway so the operator can see real errors rather than 503s.

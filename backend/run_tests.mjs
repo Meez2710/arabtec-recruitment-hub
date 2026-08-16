@@ -33,6 +33,7 @@ const SUITES = [
   'cv_intake_test.mjs',       // CV -> pre-candidate intake -> review -> candidate
   'intake_route_http_test.mjs', // HTTP: /candidates/intakes is not shadowed by /:id
   'ats_e2e_test.mjs',         // request -> offer, every stage, DB + permissions + audit
+  'retention_test.mjs',       // GDPR/PDPL retention enforcement (off by default)
   'fixture_probe_test.mjs',    // fixture determinism, before anything relies on it
   'bl21_test.mjs',             // BL-21/BL-23 headcount + seat reconciliation
   'reconciliation_test.mjs',   // BL-21/BL-23 seat reconciliation helper

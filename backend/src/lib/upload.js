@@ -42,7 +42,13 @@ export function multipart(req, res, next) {
   let tooBig = false;
   req.on('data', (c) => { total += c.length; if (total > MAX_BYTES) { tooBig = true; } chunks.push(c); });
   req.on('end', () => {
-    if (tooBig) return res.status(413).json({ error: 'File too large (max 15MB).' });
+    // The number in the message is derived, not typed: it previously said
+    // 15MB while MAX_BYTES was 20MB, so a user was told the wrong limit.
+    if (tooBig) {
+      return res.status(413).json({
+        error: `File too large (max ${Math.floor(MAX_BYTES / (1024 * 1024))}MB).`,
+      });
+    }
     try {
       const body = Buffer.concat(chunks);
       const parts = splitBuffer(body, boundary);
