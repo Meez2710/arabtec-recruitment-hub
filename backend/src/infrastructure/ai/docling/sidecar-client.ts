@@ -131,7 +131,23 @@ export const SIDECAR_DEFAULTS = {
 /** The API contract version this client speaks. Bumped with the sidecar. */
 export const SIDECAR_API_VERSION = 'v1';
 
-export class DoclingSidecarClient {
+/**
+ * What the adapter needs from a Docling backend, and nothing more.
+ *
+ * The mapping boundary above this interface is engine-agnostic: it consumes
+ * `SidecarDocument` and knows nothing about which service produced it. Adding a
+ * backend means implementing these two methods, not touching the parser.
+ */
+export interface DoclingTransport {
+  convert(input: {
+    readonly filename: string;
+    readonly mimeType: string;
+    readonly bytes: Uint8Array;
+  }): Promise<SidecarDocument>;
+  health(): Promise<SidecarHealth>;
+}
+
+export class DoclingSidecarClient implements DoclingTransport {
   private readonly baseUrl: string;
 
   private readonly timeoutMs: number;

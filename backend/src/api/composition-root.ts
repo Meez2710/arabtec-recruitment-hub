@@ -38,14 +38,14 @@ import type { DocumentStore } from '../modules/talent/application/ports.js';
 import { DrizzleAITaskDispatcher } from '../infrastructure/ai/task-dispatcher.js';
 import { AITaskWorker } from '../infrastructure/ai/task-worker.js';
 import { DocumentUnderstandingPipeline } from '../infrastructure/ai/document/index.js';
-import { DoclingDocumentParser } from '../infrastructure/ai/docling/index.js';
+import { DoclingDocumentParser, DoclingServeClient } from '../infrastructure/ai/docling/index.js';
 import { LocalDocumentParser } from '../infrastructure/ai/local/local-document-parser.js';
 import { HttpOcrEngine } from '../infrastructure/ai/ocr/index.js';
 import { OllamaResumeExtractor } from '../infrastructure/ai/ollama/index.js';
 import { PlainTextDocumentParser } from '../infrastructure/ai/plain-text-parser.js';
 import { OllamaCompetencyEvaluator } from '../infrastructure/ai/evaluation/index.js';
 import type { CandidateEvaluator } from '../infrastructure/ai/evaluation/index.js';
-import type { AICapabilities, AITaskDispatcher } from '../modules/shared/kernel/ai/index.js';
+import type { AICapabilities, AITaskDispatcher, DocumentParser } from '../modules/shared/kernel/ai/index.js';
 import type { NotificationHub } from '../modules/shared/kernel/ports.js';
 import { AuditSubscriber } from './infrastructure/subscribers/audit-subscriber.js';
 import {
@@ -103,18 +103,64 @@ const readEnv = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
 export const composeAI = (env: NodeJS.ProcessEnv = process.env): AIComposition => {
   const doclingBaseUrl = readEnv(env, 'DOCLING_BASE_URL');
   const local = new LocalDocumentParser();
+  // Which Docling backend. Defaults to the sidecar — the backend that is
+  // already validated — so a rollback is unsetting one variable, never a
+  // deploy. See docs/DOCLING_SERVE_API.md.
+  const backend = (readEnv(env, 'DOCLING_BACKEND') ?? 'sidecar').toLowerCase();
+  const timeoutMs = readEnv(env, 'DOCLING_TIMEOUT_MS') !== undefined
+    ? Number(readEnv(env, 'DOCLING_TIMEOUT_MS')) : undefined;
+  const pipelineVersion = readEnv(env, 'DOCLING_PIPELINE_VERSION');
+
+  /**
+   * How many characters of native text a document already has.
+   *
+   * Docling Serve does not report whether it ran OCR, and asking it twice
+   * would mean two remote conversions per CV. The local parser already
+   * extracts a text layer from bytes we hold, so the question is answered
+   * here for free and the single remote call is made with the right OCR
+   * setting — which is what makes `ocrApplied` measured rather than assumed.
+   */
+  const nativeProbe = async (input: {
+    filename: string; mimeType: string; bytes: Uint8Array;
+  }): Promise<number | null> => {
+    if (input.mimeType.startsWith('image/')) return 0;
+    const probed = await local.parse({ documentId: input.filename, ...input });
+    if ('abstained' in probed) return null;
+    return probed.content.text.trim().length;
+  };
+
+  const serveParser = (): DocumentParser => new DoclingDocumentParser({
+    transport: new DoclingServeClient({
+      baseUrl: doclingBaseUrl as string,
+      ...(readEnv(env, 'DOCLING_SERVE_API_KEY') !== undefined
+        ? { apiKey: readEnv(env, 'DOCLING_SERVE_API_KEY') } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(readEnv(env, 'DOCLING_OCR_ENGINE') !== undefined
+        ? { ocrEngine: readEnv(env, 'DOCLING_OCR_ENGINE') } : {}),
+      ...(readEnv(env, 'DOCLING_OCR_LANGS') !== undefined
+        ? { ocrLanguages: String(readEnv(env, 'DOCLING_OCR_LANGS')).split(',').map((x) => x.trim()).filter(Boolean) }
+        : {}),
+      ...(readEnv(env, 'DOCLING_IMAGES_SCALE') !== undefined
+        ? { imagesScale: Number(readEnv(env, 'DOCLING_IMAGES_SCALE')) } : {}),
+      ...(pipelineVersion !== undefined ? { pipelineVersion } : {}),
+      nativeProbe,
+    }),
+    parserName: 'docling-serve',
+    ...(pipelineVersion !== undefined ? { pipelineVersion } : {}),
+  });
+
+  const sidecarParser = (): DocumentParser => new DoclingDocumentParser({
+    baseUrl: doclingBaseUrl as string,
+    // Read from the environment only; never hardcoded, never logged.
+    ...(readEnv(env, 'DOCLING_BEARER_TOKEN') !== undefined
+      ? { bearerToken: readEnv(env, 'DOCLING_BEARER_TOKEN') } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(pipelineVersion !== undefined ? { pipelineVersion } : {}),
+  });
+
   const layoutParser = doclingBaseUrl === undefined
     ? local
-    : new DoclingDocumentParser({
-      baseUrl: doclingBaseUrl,
-      // Read from the environment only; never hardcoded, never logged.
-      ...(readEnv(env, 'DOCLING_BEARER_TOKEN') !== undefined
-        ? { bearerToken: readEnv(env, 'DOCLING_BEARER_TOKEN') } : {}),
-      ...(readEnv(env, 'DOCLING_TIMEOUT_MS') !== undefined
-        ? { timeoutMs: Number(readEnv(env, 'DOCLING_TIMEOUT_MS')) } : {}),
-      ...(readEnv(env, 'DOCLING_PIPELINE_VERSION') !== undefined
-        ? { pipelineVersion: readEnv(env, 'DOCLING_PIPELINE_VERSION') } : {}),
-    });
+    : (backend === 'serve' ? serveParser() : sidecarParser());
 
   // Provider-neutral: swapping PaddleOCR for OpenOCR is these two variables.
   const ocrBaseUrl = readEnv(env, 'OCR_BASE_URL');
@@ -150,7 +196,9 @@ export const composeAI = (env: NodeJS.ProcessEnv = process.env): AIComposition =
     },
     ...(evaluator !== undefined ? { evaluator } : {}),
     description: {
-      layoutParser: doclingBaseUrl === undefined ? 'local-pdfjs-mammoth' : 'docling-sidecar',
+      layoutParser: doclingBaseUrl === undefined
+        ? 'local-pdfjs-mammoth'
+        : (backend === 'serve' ? 'docling-serve' : 'docling-sidecar'),
       fallbackParser: doclingBaseUrl === undefined ? 'none' : 'local-pdfjs-mammoth',
       ocrEngine: ocrEngine?.name ?? 'none',
       // Deterministic rules ALWAYS run. A model, when present, is a second

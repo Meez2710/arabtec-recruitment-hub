@@ -7,3 +7,6 @@
 export { DoclingDocumentParser } from './docling-document-parser.js';
 export type { DoclingParserOptions } from './docling-document-parser.js';
 export { SIDECAR_API_VERSION, SIDECAR_DEFAULTS } from './sidecar-client.js';
+export type { DoclingTransport } from './sidecar-client.js';
+export { DoclingServeClient, SERVE_DEFAULTS } from './docling-serve-client.js';
+export type { ServeOptions, NativeTextProbe } from './docling-serve-client.js';

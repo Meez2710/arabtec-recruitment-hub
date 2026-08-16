@@ -1,0 +1,133 @@
+{
+ "document": {
+  "filename": "contract-probe.pdf",
+  "md_content": "## ARABTEC PARSER CONTRACT TEST Page one of two. Synthetic document. No personal data.\n\nPage two of two. Second page marker: ZULU-77.",
+  "json_content": {
+   "schema_name": "DoclingDocument",
+   "version": "1.9.0",
+   "name": "contract-probe",
+   "origin": {
+    "mimetype": "application/pdf",
+    "binary_hash": 10129043345253078769,
+    "filename": "contract-probe.pdf",
+    "uri": null
+   },
+   "furniture": {
+    "self_ref": "#/furniture",
+    "parent": null,
+    "children": [],
+    "content_layer": "furniture",
+    "meta": null,
+    "name": "_root_",
+    "label": "unspecified"
+   },
+   "body": {
+    "self_ref": "#/body",
+    "parent": null,
+    "children": [
+     {
+      "$ref": "#/texts/0"
+     },
+     {
+      "$ref": "#/texts/1"
+     }
+    ],
+    "content_layer": "body",
+    "meta": null,
+    "name": "_root_",
+    "label": "unspecified"
+   },
+   "groups": [],
+   "texts": [
+    {
+     "self_ref": "#/texts/0",
+     "parent": {
+      "$ref": "#/body"
+     },
+     "children": [],
+     "content_layer": "body",
+     "meta": null,
+     "label": "section_header",
+     "prov": [
+      {
+       "page_no": 1,
+       "bbox": {
+        "l": 72.0,
+        "t": 710.052,
+        "r": 320.92,
+        "b": 653.102,
+        "coord_origin": "BOTTOMLEFT"
+       },
+       "charspan": [
+        0,
+        83
+       ]
+      }
+     ],
+     "orig": "ARABTEC PARSER CONTRACT TEST Page one of two. Synthetic document. No personal data.",
+     "text": "ARABTEC PARSER CONTRACT TEST Page one of two. Synthetic document. No personal data.",
+     "formatting": null,
+     "hyperlink": null,
+     "level": 1
+    },
+    {
+     "self_ref": "#/texts/1",
+     "parent": {
+      "$ref": "#/body"
+     },
+     "children": [],
+     "content_layer": "body",
+     "meta": null,
+     "label": "text",
+     "prov": [
+      {
+       "page_no": 2,
+       "bbox": {
+        "l": 72.0,
+        "t": 710.052,
+        "r": 270.408,
+        "b": 675.102,
+        "coord_origin": "BOTTOMLEFT"
+       },
+       "charspan": [
+        0,
+        45
+       ]
+      }
+     ],
+     "orig": "Page two of two. Second page marker: ZULU-77.",
+     "text": "Page two of two. Second page marker: ZULU-77.",
+     "formatting": null,
+     "hyperlink": null
+    }
+   ],
+   "pictures": [],
+   "tables": [],
+   "key_value_items": [],
+   "form_items": [],
+   "pages": {
+    "1": {
+     "size": {
+      "width": 595.0,
+      "height": 842.0
+     },
+     "page_no": 1
+    },
+    "2": {
+     "size": {
+      "width": 595.0,
+      "height": 842.0
+     },
+     "page_no": 2
+    }
+   }
+  },
+  "html_content": null,
+  "text_content": null,
+  "doctags_content": null
+ },
+ "status": "success",
+ "errors": [],
+ "processing_time": 2.1891803103499115,
+ "timings": {}
+}

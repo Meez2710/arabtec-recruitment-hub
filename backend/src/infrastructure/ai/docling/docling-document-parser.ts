@@ -26,7 +26,7 @@ import { AI_CAPABILITIES } from '../../../modules/shared/kernel/ai/index.js';
 import type { RawBlock } from '../document/structure-builder.js';
 import { blocksFromMarkdown, buildStructuredDocument } from '../document/structure-builder.js';
 import type {
-  SidecarBlock, SidecarDocument, SidecarOptions, SidecarStatus,
+  DoclingTransport, SidecarBlock, SidecarDocument, SidecarOptions, SidecarStatus,
 } from './sidecar-client.js';
 import { DoclingSidecarClient, SidecarError } from './sidecar-client.js';
 
@@ -86,6 +86,7 @@ const readTable = (block: SidecarBlock): DocumentTable | undefined => {
 const toStructure = (
   result: SidecarDocument,
   parserVersion: string,
+  parserName: string,
 ): StructuredDocument | undefined => {
   const source = result.blocks;
 
@@ -103,7 +104,7 @@ const toStructure = (
     return buildStructuredDocument({
       blocks: derived,
       provenance: {
-        parser: 'docling-sidecar',
+        parser: parserName,
         parserVersion,
         convertedAt: new Date(),
         ...(result.ocrApplied === true
@@ -140,7 +141,7 @@ const toStructure = (
   return buildStructuredDocument({
     blocks,
     provenance: {
-      parser: 'docling-sidecar',
+      parser: parserName,
       parserVersion,
       convertedAt: new Date(),
       ...(result.pipelineVersion !== undefined
@@ -163,6 +164,18 @@ const REJECTIONS: Record<Exclude<SidecarStatus, 'ok'>, string> = {
 
 export interface DoclingParserOptions extends SidecarOptions {
   /**
+   * The backend to talk to. Omit and the local sidecar client is built from
+   * these same options, which is the behaviour every existing caller relies on.
+   */
+  readonly transport?: DoclingTransport;
+  /**
+   * What provenance calls the engine. Defaults to the sidecar. A backend swap
+   * that kept this name would make `structure.provenance.parser` unable to say
+   * which engine produced a candidate's evidence, which is the one thing it
+   * exists for.
+   */
+  readonly parserName?: string;
+  /**
    * Pinned sidecar image/config identifier, recorded on every proposal.
    *
    * A proposal must be reproducible, and knowing the extraction model is not
@@ -173,20 +186,21 @@ export interface DoclingParserOptions extends SidecarOptions {
 }
 
 export class DoclingDocumentParser implements DocumentParser {
-  readonly modelId = 'docling-sidecar';
+  readonly modelId: string;
 
   /** Adapter revision. Bump on any behaviour change; see DocumentParser.version. */
   readonly version: string;
 
-  private readonly client: DoclingSidecarClient;
+  private readonly client: DoclingTransport;
 
   constructor(opts: DoclingParserOptions = {}) {
-    this.client = new DoclingSidecarClient(opts);
-    this.version = `docling-adapter/1.0.0+${opts.pipelineVersion ?? 'unpinned'}`;
+    this.client = opts.transport ?? new DoclingSidecarClient(opts);
+    this.modelId = opts.parserName ?? 'docling-sidecar';
+    this.version = `docling-adapter/1.1.0+${opts.pipelineVersion ?? 'unpinned'}`;
   }
 
   /** Exposed for the health endpoint. Never called on the parse path. */
-  health(): ReturnType<DoclingSidecarClient['health']> {
+  health(): ReturnType<DoclingTransport['health']> {
     return this.client.health();
   }
 
@@ -255,7 +269,7 @@ export class DoclingDocumentParser implements DocumentParser {
       : undefined;
 
     const language = result.detectedLanguages?.[0];
-    const structure = toStructure(result, this.version);
+    const structure = toStructure(result, this.version, this.modelId);
 
     return {
       content: {
