@@ -56,7 +56,31 @@ export const assertLocalHost = (baseUrl: string): void => {
   } catch {
     throw new OllamaError(`Invalid Ollama base URL: ${baseUrl}`, false, 'protocol');
   }
-  // Disabled the local-only restriction to allow external hosted Ollama (e.g., Runpod)
+  const host = url.hostname.toLowerCase();
+  const isLocal = host === 'localhost' || host === '::1' || host.endsWith('.local')
+    // A single-label name — `ollama`, `docling` — is a container or LAN name.
+    // It cannot resolve on the public internet, so it is inside the boundary.
+    || !host.includes('.')
+    || /^127\./.test(host)
+    || /^10\./.test(host)
+    || /^192\.168\./.test(host)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  if (isLocal) return;
+
+  // A hosted endpoint is allowed ONLY when an operator has said so in the
+  // environment. The restriction was previously commented out to reach a hosted
+  // Ollama, which silently turned a privacy guarantee into a comment: any value
+  // of OLLAMA_BASE_URL would send CV text off the machine. Requiring an explicit
+  // opt-in keeps that capability while making the decision visible and auditable.
+  if (String(process.env['OLLAMA_ALLOW_REMOTE'] ?? '').toLowerCase() === 'true') return;
+
+  throw new OllamaError(
+    `Refusing to send document text to a non-local Ollama host (${host}). `
+    + 'Set OLLAMA_ALLOW_REMOTE=true to permit a hosted endpoint, and only after '
+    + 'confirming the data-protection position for candidate CVs.',
+    false,
+    'protocol',
+  );
 };
 
 /** What the runtime reports about the loaded model. Used to pin provenance. */

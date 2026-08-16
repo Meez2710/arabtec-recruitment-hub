@@ -29,41 +29,35 @@ Requirements: ${jobRequest.requirements || ''}
     if (process.env.OLLAMA_BASE_URL) {
       const ollamaBase = process.env.OLLAMA_BASE_URL.replace(/\/$/, '');
       const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
-      const origTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      if (ollamaBase.includes('runpod.net')) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-      }
+      // TLS verification is NEVER disabled here. This block used to set
+      // NODE_TLS_REJECT_UNAUTHORIZED='0' for runpod.net hosts, which is a
+      // PROCESS-GLOBAL switch: while set, every outbound TLS connection in
+      // the app — SMTP, error reporting, anything — skipped certificate
+      // verification. A self-signed endpoint must be fixed at the endpoint.
       
       let res;
-      try {
-        res = await fetch(`${ollamaBase}/api/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: ollamaModel,
-            system: systemPrompt,
-            prompt: promptText.slice(0, 10000),
-            stream: false,
-            format: {
-              type: "object",
-              properties: {
-                score: { type: "number" },
-                recommendation: { type: "string" },
-                strengths: { type: "array", items: { type: "string" } },
-                weaknesses: { type: "array", items: { type: "string" } },
-                summary: { type: "string" }
-              },
-              required: ["score", "recommendation", "summary"]
+      res = await fetch(`${ollamaBase}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: ollamaModel,
+          system: systemPrompt,
+          prompt: promptText.slice(0, 10000),
+          stream: false,
+          format: {
+            type: "object",
+            properties: {
+              score: { type: "number" },
+              recommendation: { type: "string" },
+              strengths: { type: "array", items: { type: "string" } },
+              weaknesses: { type: "array", items: { type: "string" } },
+              summary: { type: "string" }
             },
-            options: { temperature: 0.1 }
-          })
-        });
-      } finally {
-        if (ollamaBase.includes('runpod.net')) {
-          if (origTls === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-          else process.env.NODE_TLS_REJECT_UNAUTHORIZED = origTls;
-        }
-      }
+            required: ["score", "recommendation", "summary"]
+          },
+          options: { temperature: 0.1 }
+        })
+      });
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Ollama API error (${res.status}): ${text}`);
