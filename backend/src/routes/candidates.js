@@ -41,6 +41,10 @@ function saveCustomFields(entity, recordId, body) {
 function serialize(c, user, { withDetail = false } = {}) {
   const seeSalary = canSalary(user);
   const owner = c.owner_recruiter_id ? Users.byId(c.owner_recruiter_id) : null;
+  // Read once and derive both the count and the compact link summary below.
+  // The count already cost this query; the summary is what the Talent Pool
+  // needs to show WHICH request a candidate is on without opening the profile.
+  const applications = Applications.forCandidate(c.id);
   const out = {
     id: c.id, candidateNo: c.candidate_no, fullName: c.full_name, email: c.email, phone: c.phone,
     nationality: c.nationality, location: c.location, linkedinUrl: c.linkedin_url,
@@ -64,7 +68,23 @@ function serialize(c, user, { withDetail = false } = {}) {
     ownerRecruiterId: c.owner_recruiter_id, createdAt: c.created_at, updatedAt: c.updated_at,
     salaryVisible: seeSalary,
     expectedSalary: seeSalary ? c.expected_salary : null,
-    applicationCount: Applications.forCandidate(c.id).length,
+    applicationCount: applications.length,
+    // Which requests this candidate is already on. Enough for the Talent Pool
+    // to render the link and route to the request, and to stop a recruiter
+    // re-linking a request they are already on — the same rule POST
+    // /applications enforces, surfaced before the click rather than after it.
+    links: applications.map((a) => {
+      const r = a.request_id ? Requests.byId(a.request_id) : null;
+      return {
+        applicationId: a.id,
+        applicationNo: a.application_no,
+        requestId: a.request_id,
+        ticketNo: r ? r.ticket_no : null,
+        requestTitle: r ? r.title : null,
+        requestStatus: r ? r.status : null,
+        status: a.status,
+      };
+    }),
     customFields: CustomFields.valuesFor('candidate', c.id),
   };
   if (withDetail) {

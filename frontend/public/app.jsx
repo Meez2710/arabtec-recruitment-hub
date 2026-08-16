@@ -577,7 +577,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     dashboard: <Dashboard user={user} onNavigate={setRoute} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} />,
-    candidates: <CandidatesPage user={user} />,
+    candidates: <CandidatesPage user={user} onNavigate={setRoute} />,
     candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <div className="error-banner">Candidate Review module failed to load.</div>,
     interviews: <InterviewsPage user={user} />,
     offers: <OffersPage user={user} />,
@@ -2394,6 +2394,19 @@ function RequestsPage({ user }) {
   const [creating, setCreating] = useState(false);
   const btns = useResolvedButtons();
 
+  // Opened from elsewhere (a Talent Pool request link), the same way the Ctrl+K
+  // palette opens a candidate: pending id when mounting fresh, event when the
+  // page is already mounted.
+  useEffect(() => {
+    if (window.__atsPendingRequestId) {
+      setSelectedId(window.__atsPendingRequestId);
+      window.__atsPendingRequestId = null;
+    }
+    function onOpen(e) { if (e.detail && e.detail.id) setSelectedId(e.detail.id); }
+    window.addEventListener('ats:open-request', onOpen);
+    return () => window.removeEventListener('ats:open-request', onOpen);
+  }, []);
+
   const load = useCallback(async () => {
     setData(null);
     const params = new URLSearchParams();
@@ -3877,7 +3890,189 @@ function Pager({ page, pageSize, total, totalPages, onPage, onPageSize }) {
   );
 }
 
-function CandidatesPage({ user }) {
+/* ---------------- Talent Pool → Hiring Request linking ----------------
+   A link IS an application: POST /applications { candidateId, requestId }.
+   No new relationship is introduced here — the same endpoint the pipeline
+   already uses, with the same `candidate.link` permission and the same rules
+   (a closed/cancelled/rejected/filled request refuses the link; one
+   application per candidate per request). */
+
+// Requests the backend will actually accept a link against. Mirrors the guard
+// in POST /applications rather than inventing a second notion of "open".
+const LINKABLE_BLOCKED = ['closed', 'cancelled', 'rejected', 'filled'];
+const isLinkable = (r) => !LINKABLE_BLOCKED.includes(r.status);
+
+/**
+ * A cheap, explainable suggestion from data the API already returned.
+ *
+ * Token overlap between the candidate's current position and the request
+ * title, with location as a weak tie-breaker. No service, no model — if the
+ * evidence is thin the caller simply shows the plain list.
+ */
+function suggestRequests(candidate, requests) {
+  const words = (s) => String(s || '').toLowerCase().match(/[a-z]{3,}/g) || [];
+  const stop = new Set(['and', 'for', 'the', 'senior', 'junior', 'lead', 'chief', 'head']);
+  const want = new Set(words(candidate.currentPosition).filter((w) => !stop.has(w)));
+  if (want.size === 0) return [];
+  return requests
+    .map((r) => {
+      const have = new Set(words(r.title).filter((w) => !stop.has(w)));
+      let score = [...want].filter((w) => have.has(w)).length;
+      if (score > 0 && candidate.location && r.location
+        && String(r.location).toLowerCase() === String(candidate.location).toLowerCase()) score += 0.5;
+      return { r, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((x) => x.r);
+}
+
+/** Navigate to a request's detail view from anywhere (mirrors the palette). */
+function openRequest(id, onNavigate) {
+  window.__atsPendingRequestId = id;
+  if (onNavigate) onNavigate('requests');
+  window.dispatchEvent(new CustomEvent('ats:open-request', { detail: { id } }));
+}
+
+function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [picked, setPicked] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const wrapRef = useRef(null);
+  const popRef = useRef(null);
+  const [anchor, setAnchor] = useState(null);
+  const links = candidate.links || [];
+
+  // Dismiss on an outside click or Escape. Deliberately NOT a full-screen
+  // scrim: a fixed scrim would paint over the popover and eat the very clicks
+  // it is meant to let through.
+  useEffect(() => {
+    if (!open) return undefined;
+    const inside = (t) => (wrapRef.current && wrapRef.current.contains(t))
+      || (popRef.current && popRef.current.contains(t));
+    const onDown = (e) => { if (!inside(e.target)) { setOpen(false); setError(''); } };
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); setError(''); } };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  // Anchor the popover to the button in viewport coordinates. It is rendered
+  // through a portal (below) because each table row is its own stacking
+  // context: a dropdown that overflows its cell is painted under the next
+  // row's controls no matter what z-index it carries.
+  useEffect(() => {
+    if (!open) { setAnchor(null); return undefined; }
+    const place = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const b = el.getBoundingClientRect();
+      const width = 320;
+      const left = Math.min(Math.max(8, b.left), window.innerWidth - width - 8);
+      // Flip above the control when there is not enough room below it.
+      const below = window.innerHeight - b.bottom;
+      const openUp = below < 300 && b.top > below;
+      setAnchor({ left, top: openUp ? undefined : b.bottom + 5, bottom: openUp ? window.innerHeight - b.top + 5 : undefined });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open]);
+
+  // Already linked: show the relationship and route to it. Never offer a second
+  // link to a request this candidate is already on — the API would 409.
+  if (links.length > 0) {
+    return (
+      <div className="rq-links">
+        {links.map((l) => (
+          <button key={l.applicationId} className="rq-link-chip"
+            title={`${l.ticketNo || 'Request'} — ${l.requestTitle || ''} (${l.status})`}
+            onClick={(e) => { e.stopPropagation(); openRequest(l.requestId, onNavigate); }}>
+            {shortReqCode(l.ticketNo) || 'Request'}
+            {l.requestTitle ? <span className="rq-link-sub">{l.requestTitle}</span> : null}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (!canLink) return <span className="muted">—</span>;
+
+  const linkedIds = new Set(links.map((l) => l.requestId));
+  const available = requests.filter((r) => isLinkable(r) && !linkedIds.has(r.id));
+  const suggested = suggestRequests(candidate, available);
+  const suggestedIds = new Set(suggested.map((r) => r.id));
+  const needle = q.trim().toLowerCase();
+  const match = (r) => !needle
+    || String(r.title || '').toLowerCase().includes(needle)
+    || String(r.ticketNo || '').toLowerCase().includes(needle);
+  const rest = available.filter((r) => !suggestedIds.has(r.id) && match(r));
+  const shownSuggested = suggested.filter(match);
+
+  async function confirm() {
+    if (!picked) return;
+    setBusy(true); setError('');
+    try {
+      const r = await api.post('/applications', { candidateId: candidate.id, requestId: picked });
+      toast(`Linked to ${shortReqCode(r.application?.ticketNo) || 'request'}`);
+      setOpen(false); setPicked(null); setQ('');
+      onLinked && onLinked();
+    } catch (e) {
+      // The real backend message: already applied, request not linkable, or a
+      // permission failure. Never a fabricated success, never a silent retry.
+      setError(e.message || 'Could not link this candidate.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rq-linkwrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
+      <button className="rq-link-btn" onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog" aria-expanded={open}>Link to Request ▾</button>
+      {open && anchor && ReactDOM.createPortal(
+        (
+          <div className="rq-pop" ref={popRef} style={{ left: anchor.left, top: anchor.top, bottom: anchor.bottom }}
+            role="dialog" aria-label={`Link ${candidate.fullName} to a hiring request`}>
+            <div className="rq-pop-head">Link to Request</div>
+            <input className="rq-pop-search" placeholder="Search requests…" value={q}
+              onChange={(e) => setQ(e.target.value)} autoFocus />
+            <div className="rq-pop-list">
+              {available.length === 0 && <div className="rq-pop-empty">No request is open for linking.</div>}
+              {shownSuggested.length > 0 && <div className="rq-pop-label">Suggested</div>}
+              {shownSuggested.map((r) => (
+                <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
+                  onClick={() => setPicked(r.id)}>
+                  <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
+                  <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
+                </button>
+              ))}
+              {rest.length > 0 && <div className="rq-pop-label">Available Requests</div>}
+              {rest.map((r) => (
+                <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
+                  onClick={() => setPicked(r.id)}>
+                  <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
+                  <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
+                </button>
+              ))}
+            </div>
+            {error && <div className="rq-pop-error">{error}</div>}
+            <div className="rq-pop-foot">
+              <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); setError(''); }}>Cancel</button>
+              <button className="btn btn-sm" disabled={!picked || busy} onClick={confirm}>
+                {busy ? 'Linking…' : 'Link'}
+              </button>
+            </div>
+          </div>
+        ), document.body)}
+    </div>
+  );
+}
+
+function CandidatesPage({ user, onNavigate }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
   const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '' });
@@ -3905,6 +4100,15 @@ function CandidatesPage({ user }) {
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1, hasMore: false });
   const [loadError, setLoadError] = useState(null);
   const btns = useResolvedButtons();
+  // Requests available for linking. Fetched once, and only for a user who may
+  // link — a recruiter without `candidate.link` is shown no control at all
+  // rather than a dropdown that would fail on submit.
+  const canLink = can(user, 'candidate.link');
+  const [linkRequests, setLinkRequests] = useState([]);
+  useEffect(() => {
+    if (!canLink) return;
+    api.get('/requests').then((r) => setLinkRequests(r.requests || [])).catch(() => setLinkRequests([]));
+  }, [canLink]);
 
   const load = useCallback(async () => {
     setCandidates(null); setLoadError(null);
@@ -4029,6 +4233,7 @@ function CandidatesPage({ user }) {
               <SortTh label="Company" col="company" sort={sort} onSort={toggleSort} />
               <SortTh label="Exp" col="experience" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
+              <th>Request</th>
               <th>Parse Quality</th>
               <th>Stage</th>
               <SortTh label="Recruiter" col="created" sort={sort} onSort={toggleSort} />
@@ -4051,6 +4256,10 @@ function CandidatesPage({ user }) {
                 <td className="cell-sub-only">{c.currentCompany || '—'}</td>
                 <td className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
                 <td className="cell-sub-only">{c.location || '—'}</td>
+                <td>
+                  <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
+                    onNavigate={onNavigate} onLinked={load} />
+                </td>
                 <td><ParseQuality status={c.parseStatus} confidence={c.parseConfidence} /></td>
                 <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td className="cell-sub-only">{c.ownerRecruiter?.name || '—'}</td>
