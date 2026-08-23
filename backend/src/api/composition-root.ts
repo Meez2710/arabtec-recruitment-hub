@@ -37,13 +37,9 @@ import { HiringPipelineLinkGateway } from './infrastructure/pipeline-link-gatewa
 import type { DocumentStore } from '../modules/talent/application/ports.js';
 import { DrizzleAITaskDispatcher } from '../infrastructure/ai/task-dispatcher.js';
 import { AITaskWorker } from '../infrastructure/ai/task-worker.js';
-import { DocumentUnderstandingPipeline } from '../infrastructure/ai/document/index.js';
-import { DoclingDocumentParser } from '../infrastructure/ai/docling/index.js';
-import { LocalDocumentParser } from '../infrastructure/ai/local/local-document-parser.js';
-import { HttpOcrEngine } from '../infrastructure/ai/ocr/index.js';
-import { OllamaResumeExtractor } from '../infrastructure/ai/ollama/index.js';
-import { PlainTextDocumentParser } from '../infrastructure/ai/plain-text-parser.js';
-import { OllamaCompetencyEvaluator } from '../infrastructure/ai/evaluation/index.js';
+import {
+  ClaudeDocumentParser, ClaudeResumeExtractor, claudeConfigFrom,
+} from '../infrastructure/ai/anthropic/index.js';
 import type { CandidateEvaluator } from '../infrastructure/ai/evaluation/index.js';
 import type { AICapabilities, AITaskDispatcher } from '../modules/shared/kernel/ai/index.js';
 import type { NotificationHub } from '../modules/shared/kernel/ports.js';
@@ -95,68 +91,45 @@ const readEnv = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
 /**
  * Compose the document pipeline and the model capabilities from the environment.
  *
- * Docling is the primary structured parser when a sidecar is configured; the
- * local pdfjs/mammoth parser is the fallback implementation of the SAME
- * `DocumentParser` port. Both sit behind `DocumentUnderstandingPipeline`, which
- * is itself a `DocumentParser` — so everything downstream sees one port.
+ * Claude is the ONLY reader. It parses the document (including scanned pages
+ * and Arabic) and extracts the résumé, so the Docling sidecar, the HTTP OCR
+ * engine, the local pdfjs/mammoth reader and the Ollama extractor are all gone
+ * — there is nothing left for a routing/reconciliation layer to decide.
  */
 export const composeAI = (env: NodeJS.ProcessEnv = process.env): AIComposition => {
-  const doclingBaseUrl = readEnv(env, 'DOCLING_BASE_URL');
-  const local = new LocalDocumentParser();
-  const layoutParser = doclingBaseUrl === undefined
-    ? local
-    : new DoclingDocumentParser({
-      baseUrl: doclingBaseUrl,
-      // Read from the environment only; never hardcoded, never logged.
-      ...(readEnv(env, 'DOCLING_BEARER_TOKEN') !== undefined
-        ? { bearerToken: readEnv(env, 'DOCLING_BEARER_TOKEN') } : {}),
-      ...(readEnv(env, 'DOCLING_TIMEOUT_MS') !== undefined
-        ? { timeoutMs: Number(readEnv(env, 'DOCLING_TIMEOUT_MS')) } : {}),
-      ...(readEnv(env, 'DOCLING_PIPELINE_VERSION') !== undefined
-        ? { pipelineVersion: readEnv(env, 'DOCLING_PIPELINE_VERSION') } : {}),
-    });
+  const config = claudeConfigFrom(env);
 
-  // Provider-neutral: swapping PaddleOCR for OpenOCR is these two variables.
-  const ocrBaseUrl = readEnv(env, 'OCR_BASE_URL');
-  const ocrEngine = ocrBaseUrl === undefined ? undefined : new HttpOcrEngine({
-    baseUrl: ocrBaseUrl,
-    engineName: readEnv(env, 'OCR_ENGINE') ?? 'http-ocr',
-    ...(readEnv(env, 'OCR_PATH') !== undefined ? { path: readEnv(env, 'OCR_PATH') } : {}),
-    ...(readEnv(env, 'OCR_TIMEOUT_MS') !== undefined
-      ? { timeoutMs: Number(readEnv(env, 'OCR_TIMEOUT_MS')) } : {}),
-  });
+  // No key is a COMPLETE configuration, not a degraded one. Nothing is wired,
+  // the intake route says so plainly, and no CV is silently half-read.
+  if (config === undefined) {
+    return {
+      capabilities: {},
+      description: {
+        layoutParser: 'none',
+        fallbackParser: 'none',
+        ocrEngine: 'none',
+        extractor: 'none',
+        evaluator: 'none',
+      },
+    };
+  }
 
-  const documentParser = new DocumentUnderstandingPipeline({
-    layoutParser,
-    textParser: new PlainTextDocumentParser(),
-    ...(layoutParser === local ? {} : { fallbackParser: local }),
-    ...(ocrEngine !== undefined ? { ocrEngine } : {}),
-  });
-
-  const ollamaBaseUrl = readEnv(env, 'OLLAMA_BASE_URL');
-  const model = readEnv(env, 'OLLAMA_MODEL') ?? 'llama3.2';
-  const resumeExtractor = ollamaBaseUrl === undefined ? undefined : new OllamaResumeExtractor({
-    baseUrl: ollamaBaseUrl, model,
-  });
-  const evaluator = ollamaBaseUrl === undefined ? undefined : new OllamaCompetencyEvaluator({
-    baseUrl: ollamaBaseUrl, model,
-  });
-
+  // ONE provider. There is deliberately no fallback chain: a second registered
+  // parser is a second production system nobody is watching, and a silent
+  // downgrade to a weaker reader is indistinguishable from a good parse.
   return {
     capabilities: {
-      documentParser,
-      ...(resumeExtractor !== undefined ? { resumeExtractor } : {}),
-      ...(ocrEngine !== undefined ? { ocrEngine } : {}),
+      documentParser: new ClaudeDocumentParser(config),
+      resumeExtractor: new ClaudeResumeExtractor(config),
     },
-    ...(evaluator !== undefined ? { evaluator } : {}),
     description: {
-      layoutParser: doclingBaseUrl === undefined ? 'local-pdfjs-mammoth' : 'docling-sidecar',
-      fallbackParser: doclingBaseUrl === undefined ? 'none' : 'local-pdfjs-mammoth',
-      ocrEngine: ocrEngine?.name ?? 'none',
-      // Deterministic rules ALWAYS run. A model, when present, is a second
-      // reader whose answers are located in the document — never a replacement.
-      extractor: resumeExtractor === undefined ? 'deterministic-rules' : `rules+${model}`,
-      evaluator: evaluator === undefined ? 'none' : model,
+      // Claude reads the document itself — pixels, Arabic and all — so there is
+      // no separate layout engine, no OCR service and no fallback reader left.
+      layoutParser: config.model,
+      fallbackParser: 'none',
+      ocrEngine: 'none (Claude reads scanned pages directly)',
+      extractor: config.model,
+      evaluator: 'none',
     },
   };
 };

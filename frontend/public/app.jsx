@@ -4230,14 +4230,10 @@ function CandidatesPage({ user, onNavigate }) {
             <thead><tr>
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              <SortTh label="Company" col="company" sort={sort} onSort={toggleSort} />
               <SortTh label="Exp" col="experience" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
-              <th>Request</th>
-              <th>Parse Quality</th>
+              <th className="th-request">Request</th>
               <th>Stage</th>
-              <SortTh label="Recruiter" col="created" sort={sort} onSort={toggleSort} />
-              <SortTh label="Added" col="created" sort={sort} onSort={toggleSort} />
               <th>CV</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
@@ -4252,18 +4248,17 @@ function CandidatesPage({ user, onNavigate }) {
                   </div>
                   {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
                 </td>
-                <td><span className="cell-strong">{c.currentPosition || '—'}</span></td>
-                <td className="cell-sub-only">{c.currentCompany || '—'}</td>
+                <td>
+                  <span className="cell-strong">{c.currentPosition || '—'}</span>
+                  {c.currentCompany ? <span className="cell-sub">{c.currentCompany}</span> : null}
+                </td>
                 <td className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
                 <td className="cell-sub-only">{c.location || '—'}</td>
                 <td>
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
                     onNavigate={onNavigate} onLinked={load} />
                 </td>
-                <td><ParseQuality status={c.parseStatus} confidence={c.parseConfidence} /></td>
                 <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
-                <td className="cell-sub-only">{c.ownerRecruiter?.name || '—'}</td>
-                <td className="cell-sub-only">{fmtDateShort(c.createdAt)}</td>
                 <td onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
                     ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Download CV'}

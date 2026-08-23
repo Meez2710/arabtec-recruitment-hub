@@ -291,6 +291,20 @@ export async function parseDocument(filePath) {
   const { capabilities } = await ai();
   const { documentParser, resumeExtractor } = capabilities;
 
+  // No reader is wired — this deployment has no ANTHROPIC_API_KEY. Say so
+  // instead of throwing: the upload is kept, the intake is raised, and a human
+  // is told exactly why nothing was read. TEMPORARY, because setting the key
+  // fixes it without touching the file.
+  if (documentParser === undefined) {
+    return remember(key, {
+      ok: false,
+      permanent: false,
+      reason: 'No CV reader is configured. Set ANTHROPIC_API_KEY and restart the server.',
+      rich: failedRich('No CV reader is configured.'),
+      fields: [],
+    });
+  }
+
   let bytes;
   try {
     bytes = new Uint8Array(fs.readFileSync(filePath));
