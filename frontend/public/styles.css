@@ -193,8 +193,11 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .login-note svg { flex: 0 0 auto; margin-top: 1px; opacity: .7; }
 /* Login CTA stays Arabtec red (approved design). Scoped so the internal UI
    primary button remains the neutral --action blue. */
-.login-card .btn { background: var(--brand); border-color: var(--brand-dark); }
-.login-card .btn:hover { background: var(--brand-dark); }
+/* Green, like every other primary action in the product. Red stays on the
+   brand artwork beside it, where it identifies Arabtec rather than inviting a
+   click — a red submit button reads as a destructive one. */
+.login-card .btn { background: var(--action); border-color: var(--action-dark); }
+.login-card .btn:hover { background: var(--action-dark); border-color: var(--action-dark); }
 .login-card .btn:focus-visible { box-shadow: var(--ring); }
 
 .field { margin-bottom: 16px; }
