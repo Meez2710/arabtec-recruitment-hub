@@ -15,8 +15,24 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROUTE = path.join(__dirname, 'src/routes/candidates.js');
 
+
+/* ------------------------------------------------------------------------- *
+ * Reading a CV needs a configured reader. Without ANTHROPIC_API_KEY there is
+ * no parser wired at all, so these assertions cannot be made — they are
+ * SKIPPED, loudly, and skipping is NOT a pass. CI deliberately holds no key:
+ * a required gate that spends money and depends on a third party's uptime on
+ * every push is not a gate, it is a flake. Run locally with a key set, or set
+ * one as a repository secret, to make this a real check.
+ * ------------------------------------------------------------------------- */
+const HAS_READER = String(process.env.ANTHROPIC_API_KEY || '').trim() !== '';
+
 let passed = 0;
 const failures = [];
+let skipped = 0;
+async function liveTest(name, fn) {
+  if (!HAS_READER) { skipped += 1; console.log(`  \u2298 ${name} — SKIPPED, no ANTHROPIC_API_KEY (not a pass)`); return; }
+  return test(name, fn);
+}
 async function test(name, fn) {
   try { await fn(); passed += 1; console.log(`  ✓ ${name}`); }
   catch (err) { failures.push({ name, err }); console.log(`  ✗ ${name}\n      ${err.message}`); }
@@ -128,7 +144,7 @@ await test('exactly one provider is active — selection replaces, never chains'
 
 /* ------------------- 3. the pipeline provider ----------------------------- */
 
-await test('the selected provider extracts evidence-bearing fields from a real CV', async () => {
+await liveTest('the selected provider extracts evidence-bearing fields from a real CV', async () => {
   registry.resetParserRegistry();
   configureParsing();
 
@@ -174,7 +190,7 @@ await test('the selected provider extracts evidence-bearing fields from a real C
   }
 });
 
-await test('a value the document does not contain is never persistable', async () => {
+await liveTest('a value the document does not contain is never persistable', async () => {
   registry.resetParserRegistry();
   configureParsing();
 

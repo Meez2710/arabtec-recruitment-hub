@@ -34,7 +34,13 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      # The JS parsing layer imports the compiled document pipeline from dist/.
+      # render.yaml builds before start; without this every CV suite fails with
+      # "The document pipeline is not built".
+      - name: Build the document pipeline
+        run: npm run build
 
       - name: Run core test suite
         run: npm test
@@ -60,7 +66,10 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Build the document pipeline
+        run: npm run build
 
       - name: Run full suite incl. legacy
         run: npm test
