@@ -4628,6 +4628,10 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
   const [dups, setDups] = useState([]);
   const [override, setOverride] = useState({ on: false, reason: '' });
   const [cvFile, setCvFile] = useState(null);
+  // Fields the CV genuinely did not state, after a parse. Shown rather than
+  // left blank, so an empty box is never ambiguous between "not in the CV" and
+  // "the reader missed it".
+  const [parseMissing, setParseMissing] = useState(null);
   const customDefs = useCustomFields('candidate');
   const [customVals, setCustomVals] = useState(candidate?.customFields || {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -4713,8 +4717,27 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
                 if (val('major')) set('major', val('major'));
                 if (val('graduationYear') != null) set('graduationYear', String(val('graduationYear')));
 
-                if (fields.length) toast(`CV parsed — ${fields.length} field${fields.length === 1 ? '' : 's'} drafted from ${fullName || 'the document'}. Review before saving.`);
-                else toast(result?.reason || 'Nothing could be read from this file.', 'error');
+                // Name what the CV did NOT give us. A field left blank is
+                // ambiguous — it could mean the reader missed it or the CV never
+                // said it — and a recruiter should not have to guess which.
+                const WANTED = [
+                  ['fullName', 'name'], ['email', 'email'], ['phone', 'phone'],
+                  ['location', 'location'], ['linkedinUrl', 'LinkedIn'],
+                  ['currentCompany', 'company'], ['currentPosition', 'position'],
+                  ['yearsExperience', 'years of experience'],
+                  ['university', 'university'], ['major', 'major'],
+                  ['graduationYear', 'graduation year'],
+                ];
+                const missing = WANTED.filter(([k]) => val(k) == null).map(([, label]) => label);
+                setParseMissing(missing);
+
+                if (fields.length) {
+                  toast(missing.length
+                    ? `CV parsed — ${fields.length} field${fields.length === 1 ? '' : 's'} drafted. Not stated in this CV: ${missing.join(', ')}.`
+                    : `CV parsed — every field found. Review before saving.`);
+                } else {
+                  toast(result?.reason || 'Nothing could be read from this file.', 'error');
+                }
               } catch (e) { toast('Parse failed: ' + e.message, 'error'); }
               setBusy(false);
             }} disabled={busy}>{busy ? 'Parsing…' : 'Parse CV'}</button>}
@@ -4722,6 +4745,14 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
           {cvFile
             ? <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Selected: {cvFile.name} — click Parse CV to auto-fill fields, then Save.</div>
             : <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Upload a CV and click Parse CV to auto-fill the form.</div>}
+          {parseMissing !== null && (
+            parseMissing.length === 0
+              ? <div className="parse-note parse-note-ok">Every field was found in this CV.</div>
+              : <div className="parse-note">
+                  <strong>Not provided in this CV:</strong> {parseMissing.join(' · ')}
+                  <small>These were not stated in the document — fill them in by hand if you have them.</small>
+                </div>
+          )}
         </div>
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
       </div>

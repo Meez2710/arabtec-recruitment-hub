@@ -113,8 +113,8 @@ await test('the default provider is the document pipeline', () => {
 await test('the legacy heuristic provider is no longer registered', () => {
   registry.resetParserRegistry();
   configureParsing();
-  // Exactly ONE production parsing path. The legacy files still exist on disk
-  // (removal is a later, separately verified step) but nothing can select them.
+  // Exactly ONE production parsing path. The legacy heuristic parser has been
+  // deleted outright, so there is no second implementation to drift back to
   assert.throws(() => registry.selectParser('legacy'), /unknown provider "legacy"/);
 });
 

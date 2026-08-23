@@ -147,3 +147,12 @@ input[type=search],input[type=date],select,textarea{font-family:var(--font)}
    token is what actually retypes the product. */
 :root{--font:"IBM Plex Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 body,button,input,select,textarea{font-family:var(--font)}
+
+/* What the CV did not say. A blank input is ambiguous — it could mean the
+   document omitted the value or the reader missed it — so the parse names the
+   difference explicitly instead of leaving the recruiter to guess. */
+.parse-note{margin-top:8px;padding:9px 11px;border:1px solid var(--border);border-left:3px solid var(--warning);
+  border-radius:7px;background:#fffdf7;font-size:11px;color:var(--text);display:grid;gap:3px}
+.parse-note strong{font-size:11px;color:var(--text-strong)}
+.parse-note small{font-size:10px;color:var(--muted)}
+.parse-note-ok{border-left-color:var(--action);background:var(--action-tint);color:var(--action-dark)}

@@ -16,7 +16,6 @@ import { isProposal } from '../../modules/shared/kernel/ai/index.js';
 import type { DocumentStore, EvidenceRef } from '../../modules/talent/index.js';
 import { isProposableField } from '../../modules/talent/index.js';
 import { structureOf } from './document/structure-builder.js';
-import { extractDeterministically } from './extraction/deterministic-extractor.js';
 import { locateDigits, locateValue } from './extraction/evidence-locator.js';
 import { crossValidate, validateField } from './extraction/validate.js';
 
@@ -191,6 +190,15 @@ const findEvidence = (
   value: unknown,
 ): readonly FieldEvidence[] => {
   if (field === 'phone') return locateDigits(structure, String(value).replace(/\D/g, ''));
+  if (field === 'yearsExperience') {
+    // A bare small integer matches almost anything — "14" is inside "2014", so
+    // locating the number alone produced a real value cited to an unrelated
+    // employment line. Only a phrase like "14 years" counts as the CV stating
+    // it; otherwise this falls through to the derived path, which says plainly
+    // that the figure was computed from the dates.
+    const n = String(value);
+    return [...locateValue(structure, `${n} year`, { limit: 1 })];
+  }
   if (Array.isArray(value)) {
     // A list is supported when its members are; locating the joined string
     // would fail on every CV that writes skills as bullets.
@@ -205,7 +213,22 @@ const findEvidence = (
 };
 
 /** Presentation weights. Agreement between two independent readers is earned. */
-const CONFIDENCE = { agreed: 0.9, deterministic: 0.75, ai: 0.5 } as const;
+const CONFIDENCE = { ai: 0.75, derived: 0.5 } as const;
+
+/**
+ * Fields a reader may legitimately DERIVE rather than copy.
+ *
+ * Total years of experience is normally not written anywhere on a CV — it is
+ * the span of the employment history, which a reader computes. Requiring it to
+ * be quoted verbatim, as the evidence gate does for every other field, meant it
+ * was withheld from essentially every CV that did not happen to print the
+ * sentence "12 years of experience".
+ *
+ * Deliberately a single field. The gate exists because an invented employer or
+ * qualification is a real harm; an arithmetic result over dates that ARE in the
+ * document is a different thing, and it carries a lower confidence to say so.
+ */
+const DERIVABLE: ReadonlySet<string> = new Set(['yearsExperience']);
 
 export interface BuildFieldsInput {
   readonly resume: ExtractedResume;
@@ -234,61 +257,39 @@ export const buildProposedFields = (input: BuildFieldsInput): {
   const fields: ProposedFieldInput[] = [];
   const withheld: WithheldField[] = [];
 
-  /* 1. the deterministic control — narrow, and it cites its own source block */
-  const ruled = new Map<string, { value: unknown; evidence: FieldEvidence }>();
-  for (const hit of extractDeterministically(structure)) {
-    ruled.set(hit.field, {
-      value: hit.value,
-      evidence: {
-        snippet: hit.block.text.slice(0, 240),
-        match: 'exact',
-        location: {
-          page: hit.block.page,
-          blockId: hit.block.id,
-          ...(hit.block.sectionId !== undefined ? { sectionId: hit.block.sectionId } : {}),
-        },
-      },
-    });
-  }
-
-  /* 2. the model's claims, as plain mapped values */
+  /* 1. the model's claims, as plain mapped values — the only reader now */
   const claimed = new Map(
     toProposedFields(input.resume, input.aiConfidence).map((f) => [f.field, f]),
   );
 
-  /* 3. judge each candidate field */
-  const considered = new Set([...ruled.keys(), ...claimed.keys()]);
+  /* 2. judge each claimed field */
   const accepted = new Map<string, unknown>();
 
-  for (const field of considered) {
+  for (const [field, claim] of claimed) {
     // The aggregate would drop a non-proposable field anyway; not raising it
     // keeps the review screen honest about what a reviewer can act on.
     if (!isProposableField(field)) continue;
 
-    const rule = ruled.get(field);
-    const claim = claimed.get(field);
-    const agree = rule !== undefined && claim !== undefined
-      && String(rule.value).trim().toLowerCase() === String(claim.value).trim().toLowerCase();
+    const value = claim.value;
+    if (value === undefined || value === null) continue;
 
-    // The rule wins on value where both spoke: it is narrower and it refused to
-    // guess. A disagreement is recorded rather than silently resolved.
-    const value = rule?.value ?? claim?.value;
-    if (value === undefined) continue;
+    const source: keyof typeof CONFIDENCE = 'ai';
 
-    const source: keyof typeof CONFIDENCE = agree
-      ? 'agreed'
-      : rule !== undefined ? 'deterministic' : 'ai';
-
-    if (rule !== undefined && claim !== undefined && !agree) {
-      withheld.push({
+    /* 2a. IS IT IN THE DOCUMENT? */
+    const evidence = findEvidence(structure, field, value);
+    if (evidence.length === 0 && DERIVABLE.has(field)) {
+      // Derived, not quoted: the dates this was computed from are in the
+      // document even though the total never appears as text. Proposed at
+      // reduced confidence, and labelled so the reviewer knows to check it
+      // rather than being shown a number with no visible source.
+      fields.push({
         field,
-        value: claim.value,
-        reason: 'the deterministic rules and the model read different values here',
+        value,
+        confidence: CONFIDENCE.derived,
+        evidence: 'Derived from the employment dates in this CV, not stated verbatim.',
       });
+      continue;
     }
-
-    /* 3a. IS IT IN THE DOCUMENT? */
-    const evidence = rule !== undefined ? [rule.evidence] : findEvidence(structure, field, value);
     if (evidence.length === 0) {
       // THE HALLUCINATION GATE. A value the document does not contain is not
       // proposed at all — not proposed with low confidence, not flagged for

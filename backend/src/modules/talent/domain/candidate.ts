@@ -45,9 +45,17 @@ export type DocumentType = (typeof DOCUMENT_TYPES)[number];
  * identifiers are decisions a person makes, and an extraction must never be able
  * to reach them however confident it is.
  */
+/*
+ * `noticePeriod` is deliberately NOT here. It is negotiated with the candidate
+ * at interview, not printed on a CV, so parsing it meant proposing a value read
+ * out of context for a recruiter to correct later. Expected salary, source and
+ * tags are absent for the same reason and always have been — they are recorded
+ * by the recruiter from the conversation, never inferred from the document.
+ * The field stays fully editable by hand; only extraction is barred from it.
+ */
 export const PROPOSABLE_FIELDS = [
   'fullName', 'email', 'phone', 'nationality', 'location', 'linkedinUrl',
-  'currentCompany', 'currentPosition', 'yearsExperience', 'noticePeriod',
+  'currentCompany', 'currentPosition', 'yearsExperience',
   'university', 'major', 'graduationYear', 'skills', 'languages', 'certifications',
 ] as const;
 export type ProposableField = (typeof PROPOSABLE_FIELDS)[number];

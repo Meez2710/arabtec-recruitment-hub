@@ -4,8 +4,6 @@
 // proposal builder here: the proposal aggregate is `CandidateProposal` in
 // modules/talent, and the handler is the one place that assembles fields for it.
 
-export { extractDeterministically } from './deterministic-extractor.js';
-export type { RuleHit } from './deterministic-extractor.js';
 
 export { locateDigits, locateValue } from './evidence-locator.js';
 export type { LocateOptions } from './evidence-locator.js';

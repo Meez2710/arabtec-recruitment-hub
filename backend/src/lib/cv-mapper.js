@@ -1,7 +1,7 @@
 // CV → candidate mapping.
 //
 // The ONLY place that knows both the parser's generic entity shape and the ATS
-// candidate columns. Parser modules under lib/cv/ stay database-agnostic; this
+// candidate columns. The parsing layer stays database-agnostic; this
 // adapter sits between them and the persistence layer.
 //
 // Extracted CV text is deliberately NOT mapped: the uploaded file is the single
