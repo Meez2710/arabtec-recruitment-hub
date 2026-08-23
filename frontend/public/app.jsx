@@ -3691,56 +3691,112 @@ function AssignModal({ recruiters, onClose, onAssign }) {
    (when provided) creates the candidate, the application, stage history, activity
    and audit entries, with duplicate detection. Files are sent one at a time so a
    single bad file can never abort the batch. */
+/**
+ * Run `worker` over `items` with at most `limit` in flight.
+ *
+ * WHY THIS EXISTS. Reading a CV is a model call measured in seconds, so a
+ * sequential loop over fifty files is a modal held open for several minutes.
+ * Workers pull from a shared cursor rather than being handed a fixed slice, so
+ * one slow scanned CV cannot leave the other workers idle.
+ *
+ * `limit` is deliberately small. The server applies one global rate limit
+ * (300 requests/minute across ALL API traffic, shared with dashboard polling),
+ * and every CV is one request — so the ceiling protects the rest of the app,
+ * not just this modal.
+ */
+async function runPool(items, limit, worker, shouldStop) {
+  let cursor = 0;
+  const next = async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      if (shouldStop && shouldStop()) return;
+      await worker(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next));
+}
+
+/** Matches backend/src/lib/upload.js — keep the two in step. */
+const UPLOAD_MAX_MB = 20;
+const UPLOAD_ACCEPT = '.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg';
+const UPLOAD_HINT = `Max ${UPLOAD_MAX_MB} MB per file · PDF, DOC, DOCX, TXT, PNG, JPG`;
+const IMPORT_CONCURRENCY = 5;
+
 function ImportCvsModal({ request, onClose, onDone }) {
   const toast = useToast();
   const [rows, setRows] = useState([]);      // [{ name, state, msg }]
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const cancelled = useRef(false);
 
   function pick(files) {
-    setRows(Array.from(files || []).map((f) => ({ file: f, name: f.name, state: 'pending', msg: '' })));
+    const picked = Array.from(files || []);
+    // Rejected here rather than at the server, so a 20 MB file does not spend a
+    // minute uploading only to come back 413.
+    setRows(picked.map((f) => (f.size > UPLOAD_MAX_MB * 1024 * 1024
+      ? { file: f, name: f.name, state: 'failed', msg: `Larger than ${UPLOAD_MAX_MB} MB` }
+      : { file: f, name: f.name, state: 'pending', msg: '' })));
     setDone(false);
   }
 
   async function run() {
     if (!rows.length || busy) return;
+    cancelled.current = false;
     setBusy(true);
-    let created = 0, dup = 0, failed = 0;
-    for (let i = 0; i < rows.length; i++) {
-      setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'importing' } : x)));
+    let queued = 0, failed = 0, skipped = 0;
+
+    const at = (i, patch) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+
+    await runPool(rows, IMPORT_CONCURRENCY, async (row, i) => {
+      if (row.state === 'failed') { failed++; return; }
+      at(i, { state: 'importing' });
       try {
-        // requestId is what makes the backend link the candidate to THIS request.
-        const res = await api.uploadTo('/candidates/parse-cv', rows[i].file, { requestId: request.id });
-        const c = res?.candidate;
-        if (c?.duplicate) {
-          dup++;
-          setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'duplicate', msg: c.fullName ? `Existing: ${c.fullName} (${c.candidateNo})` : 'Already in talent pool' } : x)));
-        } else if (c) {
-          created++;
-          setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'created', msg: `${c.fullName || 'Candidate'} · ${c.candidateNo}${res.application ? '' : ' (not linked)'}` } : x)));
+        // requestId records which requisition the CV arrived against. It does
+        // NOT create an application — there is no candidate until a human has
+        // reviewed the intake.
+        const res = await api.uploadTo('/candidates/parse-cv', row.file, { requestId: request.id });
+        const intake = res?.intake;
+        if (intake) {
+          queued++;
+          const n = intake.fields?.length || 0;
+          at(i, { state: 'queued', msg: `${n} field${n === 1 ? '' : 's'} read · awaiting review` });
         } else {
-          failed++;
-          setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'failed', msg: 'No text could be extracted' } : x)));
+          // A real answer, not a crash: the reader looked and could support
+          // nothing. The upload is kept and the reason is the server's own.
+          skipped++;
+          at(i, { state: 'skipped', msg: res?.reason || 'Nothing could be read from this file' });
         }
       } catch (e) {
         failed++;
-        setRows((r) => r.map((x, j) => (j === i ? { ...x, state: 'failed', msg: e.message || 'Import failed' } : x)));
+        at(i, { state: 'failed', msg: e.message || 'Import failed' });
       }
-    }
+    }, () => cancelled.current);
+
     setBusy(false); setDone(true);
-    toast(`Import finished — ${created} added, ${dup} duplicate, ${failed} failed`, failed && !created ? 'error' : 'success');
+    const stopped = cancelled.current;
+    toast(
+      `${stopped ? 'Import stopped' : 'Import finished'} — ${queued} awaiting review, ${skipped} unreadable, ${failed} failed`,
+      failed && !queued ? 'error' : 'success',
+    );
     onDone();   // refresh the pipeline behind the modal; modal stays open with results
   }
 
-  const LABEL = { pending: 'Pending', importing: 'Importing…', created: 'Created', duplicate: 'Duplicate', failed: 'Failed' };
-  const TONE = { created: 'var(--success)', duplicate: 'var(--warning)', failed: 'var(--critical)' };
+  const LABEL = {
+    pending: 'Pending', importing: 'Reading…', queued: 'Awaiting review',
+    skipped: 'Unreadable', failed: 'Failed',
+  };
+  const TONE = { queued: 'var(--success)', skipped: 'var(--warning)', failed: 'var(--critical)' };
+  const doneCount = rows.filter((r) => r.state !== 'pending' && r.state !== 'importing').length;
 
   return (
     <Modal title="Import CVs to this Request" onClose={onClose} wide
       footer={<>
-        <button className="btn btn-ghost" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
+        <button className="btn btn-ghost" onClick={() => { if (busy) { cancelled.current = true; } else { onClose(); } }}>
+          {busy ? 'Stop' : (done ? 'Close' : 'Cancel')}
+        </button>
         <button className="btn" onClick={run} disabled={busy || !rows.length || done}>
-          {busy ? 'Importing…' : `Import ${rows.length || ''}`.trim()}
+          {busy ? `Reading ${doneCount}/${rows.length}…` : `Import ${rows.length || ''}`.trim()}
         </button>
       </>}>
       <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
@@ -3748,15 +3804,21 @@ function ImportCvsModal({ request, onClose, onDone }) {
       </p>
       <div className="field">
         <label>CV files</label>
-        <input type="file" multiple accept=".pdf,.doc,.docx,.txt" disabled={busy}
+        <input type="file" multiple accept={UPLOAD_ACCEPT} disabled={busy}
           onChange={(e) => pick(e.target.files)} />
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          Each CV will be parsed and added to this request as a candidate.
+          {UPLOAD_HINT} · up to {IMPORT_CONCURRENCY} read at once
+        </div>
+        {/* Says what actually happens. Each CV becomes a PENDING intake for
+            Candidate Review; no candidate and no application exists until a
+            human has confirmed the fields. */}
+        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+          Each CV is read and queued for Candidate Review. No candidate is created until you approve it.
         </div>
       </div>
       {rows.length > 0 && (
         <table className="table" style={{ marginTop: 6 }}>
-          <thead><tr><th>File</th><th style={{ width: 110 }}>Status</th><th>Details</th></tr></thead>
+          <thead><tr><th>File</th><th style={{ width: 130 }}>Status</th><th>Details</th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i}>

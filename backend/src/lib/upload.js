@@ -42,7 +42,7 @@ export function multipart(req, res, next) {
   let tooBig = false;
   req.on('data', (c) => { total += c.length; if (total > MAX_BYTES) { tooBig = true; } chunks.push(c); });
   req.on('end', () => {
-    if (tooBig) return res.status(413).json({ error: 'File too large (max 15MB).' });
+    if (tooBig) return res.status(413).json({ error: 'File too large (max 20MB).' });
     try {
       const body = Buffer.concat(chunks);
       const parts = splitBuffer(body, boundary);
