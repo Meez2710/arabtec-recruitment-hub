@@ -39,7 +39,22 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 .card.red-top,.ticket-header-card{border-top:3px solid #d8232a}.ticket-header-card:before{display:none}
 .card-head{min-height:54px;padding:13px 17px}.card-head h3{font-size:14px}.card-pad{padding:17px 18px}
 .btn{min-height:35px;padding:0 13px;font-size:12px;border-radius:8px;background:#238356;border-color:#238356}.btn:hover{background:#0f5c34;border-color:#0f5c34}
-.btn-secondary{background:#fff;color:#2e373c;border-color:#b9c0c4}.btn-secondary:hover{background:#f5f7f7;border-color:#8c969b}
+.btn-secondary{background:#fff;color:#2e373c;border-color:#b9c0c4}
+/* Variant rules that this overlay must restate.
+   `.btn` here and `.btn-ghost` in styles.css are both single-class selectors, so
+   they carry IDENTICAL specificity (0,1,0) and the later stylesheet wins. This
+   file loads second, so every ghost and navy button silently took the solid
+   green `.btn` fill while keeping its own muted text colour — 46 buttons at
+   roughly 1.9:1 contrast against the 4.5:1 AA floor, most visibly the "Screen"
+   action on a candidate card. Restating them here is the fix that matches how
+   .btn-secondary/.btn-success/.btn-danger are already handled below. */
+.btn-ghost{background:transparent;border-color:transparent;color:var(--ink-soft);box-shadow:none}
+.btn-ghost:hover{background:var(--surface-2);border-color:var(--line);color:var(--text-strong)}
+.btn-navy{background:var(--brand-primary);border-color:var(--brand-primary);color:#fff}
+.btn-navy:hover{background:var(--brand-primary-dark);border-color:var(--brand-primary-dark)}
+.btn-outline-blue{background:#fff;color:var(--action);border-color:var(--action-tint-bd)}
+.btn-outline-blue:hover{background:var(--action-tint)}
+.btn-danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn-secondary:hover{background:#f5f7f7;border-color:#8c969b}
 .btn-success{background:#238356;border-color:#238356}.btn-danger{color:#d8232a;background:#fff;border-color:rgba(157,24,39,.42)}.btn-danger:hover{background:#fff0f2;border-color:#d8232a}.btn-danger-solid{background:#d8232a;border-color:#d8232a}
 .toolbar{padding:10px;margin-bottom:14px}.toolbar input,.toolbar select{height:34px;padding:0 10px;font-size:11px}
 .table thead th,table thead th{font-size:9px;letter-spacing:.06em;padding:10px 11px;background:#f7f8f8;color:#7b858a}.table tbody td,table tbody td{font-size:11px;padding:11px}.cell-strong{font-size:11.5px}.cell-sub,.cell-sub-only{font-size:10px}
