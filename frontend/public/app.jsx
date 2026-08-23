@@ -3532,8 +3532,8 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
     setResumeBusy(true);
     try {
       const r = await api.post(`/candidates/${c.id}/reparse`, {});
-      const n = (r.filled || []).length;
-      toast(n ? `Re-parsed — ${n} field${n === 1 ? '' : 's'} filled` : 'Re-parsed — nothing new found');
+      const n = r.proposal?.fields?.length || 0;
+      toast(n ? `Re-parsed — ${n} field${n === 1 ? '' : 's'} proposed for review` : 'Re-parsed — nothing could be read from this file');
       onChanged && onChanged();
     } catch (err) { toast(err.message, 'error'); } finally { setResumeBusy(false); }
   }
@@ -4694,21 +4694,27 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
               setBusy(true);
               try {
                 const result = await api.uploadTo('/candidates/parse-cv', cvFile);
-                const p = result.parsed;
-                if (p) {
-                  if (p.full_name) set('fullName', p.full_name);
-                  if (p.email) set('email', p.email);
-                  if (p.phone) set('phone', p.phone);
-                  if (p.location) set('location', p.location);
-                  if (p.current_company) set('currentCompany', p.current_company);
-                  if (p.current_position) set('currentPosition', p.current_position);
-                  if (p.years_experience) set('yearsExperience', String(p.years_experience));
-                  if (p.university) set('university', p.university);
-                  if (p.major) set('major', p.major);
-                  if (p.graduation_year) set('graduationYear', String(p.graduation_year));
-                  
-                  toast('CV parsed: ' + (p.full_name || 'fields extracted'));
-                }
+                // /parse-cv creates a PENDING intake — nothing is written to any
+                // candidate. `intake.fields` is the evidence-gated proposal: the
+                // same array Candidate Review later shows, read here instead to
+                // draft this form. The human still confirms by clicking Save.
+                const fields = result?.intake?.fields || [];
+                const val = (name) => fields.find((x) => x.field === name)?.value;
+                const fullName = val('fullName');
+                if (fullName) set('fullName', fullName);
+                if (val('email')) set('email', val('email'));
+                if (val('phone')) set('phone', val('phone'));
+                if (val('location')) set('location', val('location'));
+                if (val('linkedinUrl')) set('linkedinUrl', val('linkedinUrl'));
+                if (val('currentCompany')) set('currentCompany', val('currentCompany'));
+                if (val('currentPosition')) set('currentPosition', val('currentPosition'));
+                if (val('yearsExperience') != null) set('yearsExperience', String(val('yearsExperience')));
+                if (val('university')) set('university', val('university'));
+                if (val('major')) set('major', val('major'));
+                if (val('graduationYear') != null) set('graduationYear', String(val('graduationYear')));
+
+                if (fields.length) toast(`CV parsed — ${fields.length} field${fields.length === 1 ? '' : 's'} drafted from ${fullName || 'the document'}. Review before saving.`);
+                else toast(result?.reason || 'Nothing could be read from this file.', 'error');
               } catch (e) { toast('Parse failed: ' + e.message, 'error'); }
               setBusy(false);
             }} disabled={busy}>{busy ? 'Parsing…' : 'Parse CV'}</button>}
@@ -4733,8 +4739,8 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
     setBusy(true);
     try {
       const r = await api.post(`/candidates/${c.id}/reparse`, {});
-      const n = (r.filled || []).length;
-      toast(n ? `Re-parsed — ${n} field${n === 1 ? '' : 's'} filled` : 'Re-parsed — nothing new found');
+      const n = r.proposal?.fields?.length || 0;
+      toast(n ? `Re-parsed — ${n} field${n === 1 ? '' : 's'} proposed for review` : 'Re-parsed — nothing could be read from this file');
       onChanged && onChanged();
     } catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
   }

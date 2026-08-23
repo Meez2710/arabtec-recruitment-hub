@@ -512,7 +512,13 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
 router.post('/inbox-scan', requirePermission('candidate.add'), async (req, res) => {
   const inboxDir = process.env.CV_INBOX || path.resolve(process.cwd(), '../../cv_inbox');
   if (!fs.existsSync(inboxDir)) {
-    return res.status(400).json({ error: 'CV inbox folder not found.', path: inboxDir });
+    // Render's free tier has no persistent disk — CV_INBOX has nowhere durable
+    // to point to, so this is an environment limitation, not a broken feature.
+    // Say so, and name the path that works in this environment right now.
+    return res.status(400).json({
+      error: 'No CV inbox is configured for this environment. Use "Bulk Upload CVs" instead — it needs no folder on disk.',
+      path: inboxDir,
+    });
   }
   const requestId = req.body?.requestId ? Number(req.body.requestId) : null;
   const imported = [];
