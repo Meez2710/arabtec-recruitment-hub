@@ -20,6 +20,7 @@ const FIELD_MAP = {
   email: 'email',
   phone: 'phone',
   location: 'location',
+  linkedin_url: 'linkedinUrl',
   current_company: 'currentCompany',
   current_position: 'currentPosition',
   years_experience: 'yearsExperience',

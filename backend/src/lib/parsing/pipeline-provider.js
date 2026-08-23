@@ -144,6 +144,7 @@ const ENTITY_KEY = {
   email: 'email',
   phone: 'phone',
   location: 'location',
+  linkedinUrl: 'linkedin_url',
   currentCompany: 'current_company',
   currentPosition: 'current_position',
   yearsExperience: 'years_experience',
@@ -153,7 +154,7 @@ const ENTITY_KEY = {
 };
 
 const GROUPS = {
-  personal: ['full_name', 'email', 'phone', 'location'],
+  personal: ['full_name', 'email', 'phone', 'location', 'linkedin_url'],
   employment: ['current_company', 'current_position', 'years_experience', 'role_applied'],
   education: ['university', 'major', 'graduation_year', 'degree'],
 };

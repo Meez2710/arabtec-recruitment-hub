@@ -31,6 +31,8 @@ const SYSTEM = [
   '- List employment most recent first.',
   '- totalYearsExperience is a number the CV supports, or null. Do not compute',
   '  it from dates unless the dates are unambiguous.',
+  '- linkedinUrl is the profile URL as printed, or null. Do not construct one',
+  '  from a name.',
   '- Give names, employers and institutions exactly as written, in their own',
   '  script. Do not translate or transliterate Arabic.',
   '- uncertainFields lists the names of any fields you were unsure about, so a',
@@ -51,7 +53,7 @@ const SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
-    'fullName', 'email', 'phone', 'location', 'headline', 'totalYearsExperience',
+    'fullName', 'email', 'phone', 'location', 'linkedinUrl', 'headline', 'totalYearsExperience',
     'skills', 'employment', 'education', 'languages', 'certifications', 'uncertainFields',
   ],
   properties: {
@@ -59,6 +61,7 @@ const SCHEMA = {
     email: nullableString,
     phone: nullableString,
     location: nullableString,
+    linkedinUrl: nullableString,
     headline: nullableString,
     totalYearsExperience: nullableNumber,
     skills: stringArray,
@@ -120,6 +123,7 @@ const toResume = (raw: Record<string, unknown>): ExtractedResume => ({
   ...(defined(str(raw['email'])) ? { email: str(raw['email']) as string } : {}),
   ...(defined(str(raw['phone'])) ? { phone: str(raw['phone']) as string } : {}),
   ...(defined(str(raw['location'])) ? { location: str(raw['location']) as string } : {}),
+  ...(defined(str(raw['linkedinUrl'])) ? { linkedinUrl: str(raw['linkedinUrl']) as string } : {}),
   ...(defined(str(raw['headline'])) ? { headline: str(raw['headline']) as string } : {}),
   ...(defined(num(raw['totalYearsExperience']))
     ? { totalYearsExperience: num(raw['totalYearsExperience']) as number } : {}),

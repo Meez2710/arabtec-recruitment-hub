@@ -132,6 +132,7 @@ export const toProposedFields = (
   add('email', resume.email);
   add('phone', resume.phone);
   add('location', resume.location);
+  add('linkedinUrl', resume.linkedinUrl);
   add('yearsExperience', resume.totalYearsExperience);
   add('skills', resume.skills);
   add('languages', resume.languages);

@@ -102,6 +102,8 @@ export interface ExtractedResume {
   readonly email?: string;
   readonly phone?: string;
   readonly location?: string;
+  /** Feeds duplicate detection as well as the record, so it is worth asking for. */
+  readonly linkedinUrl?: string;
   readonly headline?: string;
   readonly totalYearsExperience?: number;
   readonly skills: readonly string[];
