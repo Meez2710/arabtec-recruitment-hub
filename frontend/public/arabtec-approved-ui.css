@@ -115,3 +115,9 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
    looked up rather than scanned. */
 .th-request{min-width:190px}
 .table tbody td .cell-sub{display:block;color:var(--muted);margin-top:1px}
+
+/* Bulk CV upload call-to-action. The limit sits UNDER the button rather than in
+   the modal alone: a recruiter picking fifty files should know the ceiling
+   before the file dialog, not after a rejected upload. */
+.upload-cta{display:inline-grid;justify-items:stretch;gap:2px}
+.upload-cta-hint{font-size:9px;color:var(--muted);letter-spacing:.01em;white-space:nowrap;text-align:center}

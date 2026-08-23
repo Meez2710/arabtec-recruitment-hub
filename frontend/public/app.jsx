@@ -3724,6 +3724,9 @@ const UPLOAD_HINT = `Max ${UPLOAD_MAX_MB} MB per file · PDF, DOC, DOCX, TXT, PN
 const IMPORT_CONCURRENCY = 5;
 
 function ImportCvsModal({ request, onClose, onDone }) {
+  // `request` is optional. From the Talent Pool there is no requisition to
+  // record the CV against, and /parse-cv accepts that — requestId only notes
+  // which requisition the CV arrived against, it never creates an application.
   const toast = useToast();
   const [rows, setRows] = useState([]);      // [{ name, state, msg }]
   const [busy, setBusy] = useState(false);
@@ -3755,7 +3758,8 @@ function ImportCvsModal({ request, onClose, onDone }) {
         // requestId records which requisition the CV arrived against. It does
         // NOT create an application — there is no candidate until a human has
         // reviewed the intake.
-        const res = await api.uploadTo('/candidates/parse-cv', row.file, { requestId: request.id });
+        const res = await api.uploadTo('/candidates/parse-cv', row.file,
+          request ? { requestId: request.id } : {});
         const intake = res?.intake;
         if (intake) {
           queued++;
@@ -3790,7 +3794,7 @@ function ImportCvsModal({ request, onClose, onDone }) {
   const doneCount = rows.filter((r) => r.state !== 'pending' && r.state !== 'importing').length;
 
   return (
-    <Modal title="Import CVs to this Request" onClose={onClose} wide
+    <Modal title={request ? "Import CVs to this Request" : "Import CVs"} onClose={onClose} wide
       footer={<>
         <button className="btn btn-ghost" onClick={() => { if (busy) { cancelled.current = true; } else { onClose(); } }}>
           {busy ? 'Stop' : (done ? 'Close' : 'Cancel')}
@@ -3799,9 +3803,11 @@ function ImportCvsModal({ request, onClose, onDone }) {
           {busy ? `Reading ${doneCount}/${rows.length}…` : `Import ${rows.length || ''}`.trim()}
         </button>
       </>}>
-      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
-        <strong>{shortReqCode(request.ticketNo)}</strong>{request.title ? ` · ${request.title}` : ''}
-      </p>
+      {request && (
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
+          <strong>{shortReqCode(request.ticketNo)}</strong>{request.title ? ` · ${request.title}` : ''}
+        </p>
+      )}
       <div className="field">
         <label>CV files</label>
         <input type="file" multiple accept={UPLOAD_ACCEPT} disabled={busy}
@@ -4140,6 +4146,7 @@ function CandidatesPage({ user, onNavigate }) {
   const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '' });
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [view, setView] = useState('board'); // board | table
 
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
@@ -4240,6 +4247,12 @@ function CandidatesPage({ user, onNavigate }) {
         actions={<>
           <ViewToggle value={view} onChange={setView} options={[['board', 'Cards'], ['table', 'Table']]} />
           {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>{btns.add_candidate.label}</button>}
+          {btns.add_candidate?.visible && (
+            <span className="upload-cta">
+              <button className="btn btn-secondary" onClick={() => setImportOpen(true)}>Bulk Upload CVs</button>
+              <small className="upload-cta-hint">{UPLOAD_HINT}</small>
+            </span>
+          )}
           {btns.import_candidates?.visible && <button className="btn btn-secondary" onClick={async () => {
             const busy = toast;
             try { const r = await api.post('/candidates/inbox-scan', {}); toast(`Imported ${r.imported} CVs from inbox.${r.skipped ? ' Skipped ' + r.skipped + '.' : ''}`); load(); } catch (e) { toast('Scan failed: ' + e.message, 'error'); }
@@ -4371,6 +4384,7 @@ function CandidatesPage({ user, onNavigate }) {
           totalPages={pageInfo.totalPages} onPage={setPage} onPageSize={setPageSize} />
       )}
       {creating && <CandidateForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
+      {importOpen && <ImportCvsModal onClose={() => setImportOpen(false)} onDone={load} />}
     </div>
   );
 }
