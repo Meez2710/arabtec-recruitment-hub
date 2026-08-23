@@ -147,14 +147,30 @@ const ROLE_NAMES = {
 function applyBranding(b) {
   if (!b) return;
   const r = document.documentElement.style;
+  // WHAT BRANDING MAY DRIVE, AND WHAT IT MAY NOT.
+  //
+  // These are written as INLINE styles on <html>, so they beat every rule in
+  // every stylesheet — including the Arabtec design system. That is correct for
+  // a tenant's own colours and wrong for everything else, because the seeded
+  // rows predate the design system and still hold its previous defaults: a
+  // system font stack, 6px/8px radii, and off-palette status colours. Left in
+  // the map they silently reverted the design system at runtime, which is why
+  // the product kept rendering in the old typeface however the CSS was edited.
+  //
+  // Same reasoning the line below already applies to --bg, generalised.
   const map = {
     primary_color: '--primary', secondary_color: '--secondary', accent_color: '--accent',
-    surface_color: '--surface', text_dark: '--text-dark',
-    text_gray: '--text-gray', border_color: '--border', button_color: '--button',
-    success_color: '--success', warning_color: '--warning', critical_color: '--critical',
-    font_family: '--font', border_radius: '--radius', card_radius: '--card-radius',
+    button_color: '--button',
   };
   for (const [k, cssVar] of Object.entries(map)) if (b[k]) r.setProperty(cssVar, b[k]);
+  // Typography, geometry, neutrals and status colours belong to the design
+  // system. Status colours especially: a configurable "success" that is not
+  // green is not branding, it is a defect. Cleared rather than ignored, so a
+  // value stored by an older build stops applying on the next load.
+  for (const owned of ['--font', '--radius', '--card-radius', '--surface',
+    '--text-dark', '--text-gray', '--border', '--success', '--warning', '--critical']) {
+    r.removeProperty(owned);
+  }
   // Page background (--bg) is OWNED BY THE STYLESHEET (warm off-white #f6f3ec).
   // We deliberately do NOT let branding's background_color drive it: legacy/stale
   // rows carry cool greys/whites (e.g. #f6f7f9) that made the page look grey.
@@ -266,6 +282,51 @@ function StatusBadge({ status }) {
   const map = { active: 'success', inactive: 'critical', invited: 'warning', planned: 'info', on_hold: 'warning', closed: 'soft' };
   return <Badge variant={map[status] || 'soft'}>{status}</Badge>;
 }
+/**
+ * Collect a short free-text reason before a destructive action.
+ *
+ * Replaces window.prompt(), which was used for exactly this. Three problems
+ * with the native dialog: it cannot be styled, it blocks the whole tab, and
+ * Chrome suppresses repeated dialogs from the same page — so a recruiter
+ * rejecting several candidates in a row silently stops being asked, and the
+ * call goes out with no reason and comes back 400.
+ */
+function ReasonModal({ title, label, confirmLabel, placeholder, onClose, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => { if (ref.current) ref.current.focus(); }, []);
+  const ok = reason.trim().length > 0;
+
+  async function confirm() {
+    if (!ok || busy) return;
+    setBusy(true);
+    try { await onConfirm(reason.trim()); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal title={title} onClose={onClose}
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancel</button>
+        <button className="btn btn-danger" onClick={confirm} disabled={!ok || busy}>
+          {busy ? 'Working…' : (confirmLabel || 'Confirm')}
+        </button>
+      </>}>
+      <div className="field">
+        <label htmlFor="reason-input">{label}</label>
+        <textarea id="reason-input" ref={ref} rows={3} value={reason}
+          placeholder={placeholder || 'This is recorded on the candidate and is visible to the team.'}
+          onChange={(e) => setReason(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) confirm(); }} />
+        {/* Stated, not enforced by a silent disable with no explanation. */}
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          A reason is required. It is stored with the decision so the call can be explained later.
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function Modal({ title, children, onClose, footer, wide }) {
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -4086,10 +4147,11 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked })
     if (!picked) return;
     setBusy(true); setError('');
     try {
-      const r = await api.post('/applications', { candidateId: candidate.id, requestId: picked });
-      toast(`Linked to ${shortReqCode(r.application?.ticketNo) || 'request'}`);
+      // The parent owns the candidate list, so it owns the optimistic update and
+      // its rollback. This cell only reports the intent and renders the outcome.
+      const req = available.find((r) => r.id === picked) || null;
+      await onLinked(candidate.id, req);
       setOpen(false); setPicked(null); setQ('');
-      onLinked && onLinked();
     } catch (e) {
       // The real backend message: already applied, request not linkable, or a
       // permission failure. Never a fabricated success, never a silent retry.
@@ -4174,6 +4236,13 @@ function CandidatesPage({ user, onNavigate }) {
   // rather than a dropdown that would fail on submit.
   const canLink = can(user, 'candidate.link');
   const [linkRequests, setLinkRequests] = useState([]);
+  // F2: selection for bulk actions. A Set because membership is the only query.
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkUnfit, setBulkUnfit] = useState(false);
+  const [unfitFor, setUnfitFor] = useState(null);
+  const [bulkRequestId, setBulkRequestId] = useState('');
+
   useEffect(() => {
     if (!canLink) return;
     api.get('/requests').then((r) => setLinkRequests(r.requests || [])).catch(() => setLinkRequests([]));
@@ -4226,6 +4295,95 @@ function CandidatesPage({ user, onNavigate }) {
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
   // Filtering happens server-side; `shown` is simply the current page.
   const shown = candidates || [];
+
+  /** A links[] entry shaped like the one GET /candidates builds server-side. */
+  function linkEntry(request, application) {
+    return {
+      applicationId: application?.id ?? null,
+      applicationNo: application?.applicationNo ?? null,
+      requestId: request?.id ?? null,
+      ticketNo: request?.ticketNo ?? null,
+      requestTitle: request?.title ?? null,
+      requestStatus: request?.status ?? null,
+      status: application?.status ?? 'sourced',
+      pending: application === undefined,
+    };
+  }
+
+  const patchCandidate = useCallback((id, fn) => {
+    setCandidates((cs) => (cs === null ? cs : cs.map((c) => (c.id === id ? fn(c) : c))));
+  }, []);
+
+  /**
+   * Link one candidate, optimistically.
+   *
+   * The chip appears before the request returns and is removed again if the
+   * server refuses. Linking is safe to treat this way because it is reversible
+   * and a failure is immediately visible; screening deliberately is NOT — a
+   * candidate showing "Fit" after a failed write is a data-integrity problem in
+   * a system whose whole design is human-confirmed values behind an evidence
+   * gate.
+   *
+   * Rethrows so the caller can surface the server's own message.
+   */
+  const linkCandidate = useCallback(async (candidateId, request) => {
+    const requestId = request?.id;
+    patchCandidate(candidateId, (c) => ({ ...c, links: [...(c.links || []), linkEntry(request, undefined)] }));
+    try {
+      const r = await api.post('/applications', { candidateId, requestId });
+      patchCandidate(candidateId, (c) => ({
+        ...c,
+        links: (c.links || []).map((l) => (l.requestId === requestId && l.pending
+          ? linkEntry(request, r.application) : l)),
+      }));
+      return r;
+    } catch (e) {
+      // Roll back exactly the provisional entry, never a real one.
+      patchCandidate(candidateId, (c) => ({
+        ...c, links: (c.links || []).filter((l) => !(l.requestId === requestId && l.pending)),
+      }));
+      throw e;
+    }
+  }, [patchCandidate]);
+
+  const linkOne = useCallback(async (candidateId, request) => {
+    const r = await linkCandidate(candidateId, request);
+    toast(`Linked to ${shortReqCode(r.application?.ticketNo) || shortReqCode(request?.ticketNo) || 'request'}`);
+  }, [linkCandidate, toast]);
+
+  /* ---------------------------- bulk actions ---------------------------- */
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+  function toggleSel(id) {
+    setSelected((sel) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleAllShown(on) {
+    setSelected(on ? new Set(shown.map((c) => c.id)) : new Set());
+  }
+
+  /** Fan out one call per candidate. There is no bulk endpoint; the cap keeps
+      a fifty-row selection from spending the global rate budget at once. */
+  async function bulkRun(label, worker) {
+    setBulkBusy(true);
+    const ids = [...selected];
+    let ok = 0; const failures = [];
+    await runPool(ids, 5, async (id) => {
+      try { await worker(id); ok++; } catch (e) { failures.push(e.message || 'failed'); }
+    });
+    setBulkBusy(false);
+    clearSelection();
+    if (failures.length === 0) toast(`${label} ${ok} candidate${ok === 1 ? '' : 's'}`);
+    else toast(`${label} ${ok}; ${failures.length} could not be done — ${failures[0]}`, ok ? 'warning' : 'error');
+    load();
+  }
+
+  async function bulkLink() {
+    const request = linkRequests.find((r) => String(r.id) === String(bulkRequestId));
+    if (!request) return;
+    await bulkRun(`Linked to ${shortReqCode(request.ticketNo)} —`,
+      (id) => linkCandidate(id, request));
+    setBulkRequestId('');
+  }
 
   async function setScreening(id, status, reason) {
     try {
@@ -4290,6 +4448,42 @@ function CandidatesPage({ user, onNavigate }) {
         </div>
       )}
 
+      {/* Bulk actions. Linking fifty candidates one popover at a time is three
+          clicks each; this is the same work in one. Only shown in Table view,
+          because that is the view a recruiter works in volume. */}
+      {view === 'table' && selected.size > 0 && (
+        <div className="bulk-bar">
+          <strong>{selected.size} selected</strong>
+          {canLink && (
+            <>
+              <select value={bulkRequestId} onChange={(e) => setBulkRequestId(e.target.value)}
+                aria-label="Hiring request to link to" disabled={bulkBusy}>
+                <option value="">Link to request…</option>
+                {linkRequests.filter(isLinkable).map((r) => (
+                  <option key={r.id} value={r.id}>{shortReqCode(r.ticketNo)} · {r.title}</option>
+                ))}
+              </select>
+              <button className="btn btn-sm" disabled={bulkBusy || !bulkRequestId} onClick={bulkLink}>
+                {bulkBusy ? 'Working…' : 'Link'}
+              </button>
+            </>
+          )}
+          {canScreen && (
+            <>
+              <button className="btn btn-sm" disabled={bulkBusy}
+                onClick={() => bulkRun('Marked fit —', (id) => api.post(`/candidates/${id}/screening`, { status: 'fit' }))}>
+                Mark fit
+              </button>
+              <button className="btn btn-danger btn-sm" disabled={bulkBusy} onClick={() => setBulkUnfit(true)}>
+                Mark unfit
+              </button>
+            </>
+          )}
+          <div className="spacer" />
+          <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={clearSelection}>Clear</button>
+        </div>
+      )}
+
       {loadError ? (
         <div className="card"><Empty icon="⚠" title="Could not load candidates" text={loadError}
           action={<button className="btn" onClick={load}>Retry</button>} /></div>
@@ -4303,6 +4497,12 @@ function CandidatesPage({ user, onNavigate }) {
         <div className="card flush">
           <table className="table">
             <thead><tr>
+              <th className="th-sel">
+                <input type="checkbox" aria-label="Select all on this page"
+                  checked={shown.length > 0 && shown.every((c) => selected.has(c.id))}
+                  ref={(el) => { if (el) el.indeterminate = selected.size > 0 && !shown.every((c) => selected.has(c.id)); }}
+                  onChange={(e) => toggleAllShown(e.target.checked)} />
+              </th>
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
               <SortTh label="Exp" col="experience" sort={sort} onSort={toggleSort} />
@@ -4312,7 +4512,12 @@ function CandidatesPage({ user, onNavigate }) {
               <th>CV</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
-              <tr key={c.id} className="row-link" onClick={() => setSelectedId(c.id)}>
+              <tr key={c.id} className={'row-link' + (selected.has(c.id) ? ' row-selected' : '')}
+                onClick={() => setSelectedId(c.id)}>
+                <td className="th-sel" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" aria-label={`Select ${c.fullName}`}
+                    checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
+                </td>
                 <td>
                   <div className="idcell">
                     <span className="idcell-av">{initials(c.fullName)}</span>
@@ -4331,7 +4536,7 @@ function CandidatesPage({ user, onNavigate }) {
                 <td className="cell-sub-only">{c.location || '—'}</td>
                 <td>
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
-                    onNavigate={onNavigate} onLinked={load} />
+                    onNavigate={onNavigate} onLinked={linkOne} />
                 </td>
                 <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -4365,7 +4570,7 @@ function CandidatesPage({ user, onNavigate }) {
                 <div className="cc-actions" onClick={(e) => e.stopPropagation()}>
                   {scOf(c) === 'new' && <button className="btn btn-ghost btn-sm" onClick={() => setScreening(c.id, 'screening')}>Screen</button>}
                   <button className="btn btn-sm" onClick={() => setScreening(c.id, 'fit')}>Mark fit</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => { const r = prompt('Reason this candidate is unfit:'); if (r) setScreening(c.id, 'unfit', r); }}>Unfit</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => setUnfitFor(c)}>Unfit</button>
                 </div>
               )}
               <div className="cc-foot">
@@ -4382,6 +4587,24 @@ function CandidatesPage({ user, onNavigate }) {
       {candidates && shown.length > 0 && (
         <Pager page={page} pageSize={pageSize} total={pageInfo.total}
           totalPages={pageInfo.totalPages} onPage={setPage} onPageSize={setPageSize} />
+      )}
+      {unfitFor && (
+        <ReasonModal title={`Mark ${unfitFor.fullName} unfit`}
+          label="Reason this candidate is unfit"
+          confirmLabel="Mark unfit"
+          onClose={() => setUnfitFor(null)}
+          onConfirm={async (reason) => { const c = unfitFor; setUnfitFor(null); await setScreening(c.id, 'unfit', reason); }} />
+      )}
+      {bulkUnfit && (
+        <ReasonModal title={`Mark ${selected.size} candidate${selected.size === 1 ? '' : 's'} unfit`}
+          label="Reason this candidate is unfit"
+          confirmLabel="Mark unfit"
+          onClose={() => setBulkUnfit(false)}
+          onConfirm={async (reason) => {
+            setBulkUnfit(false);
+            await bulkRun('Marked unfit —',
+              (id) => api.post(`/candidates/${id}/screening`, { status: 'unfit', reason }));
+          }} />
       )}
       {creating && <CandidateForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
       {importOpen && <ImportCvsModal onClose={() => setImportOpen(false)} onDone={load} />}

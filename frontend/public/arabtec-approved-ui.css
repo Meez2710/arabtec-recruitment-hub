@@ -121,3 +121,29 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
    before the file dialog, not after a rejected upload. */
 .upload-cta{display:inline-grid;justify-items:stretch;gap:2px}
 .upload-cta-hint{font-size:9px;color:var(--muted);letter-spacing:.01em;white-space:nowrap;text-align:center}
+
+/* Bulk selection. The bar reuses the .bulk-bar styling that already existed in
+   styles.css but had never been rendered by anything. */
+.bulk-bar{margin-bottom:12px;font-size:12px}
+.bulk-bar select{height:30px;border-radius:7px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;padding:0 8px;font:inherit;font-size:11.5px;max-width:280px}
+.bulk-bar select option{color:var(--text)}
+.bulk-bar .spacer{flex:1}
+.th-sel{width:34px;padding-left:12px!important;padding-right:0!important}
+.th-sel input{cursor:pointer}
+tr.row-selected>td{background:var(--action-tint)}
+
+/* Form controls inherit the app typeface.
+   styles.css sets font-size on .field controls but never font-family, and the
+   browser default for <textarea> is monospace (unlike <input>) — so every
+   free-text box in the product, including every rejection reason, rendered in
+   Courier while the label above it was IBM Plex. */
+.field input,.field select,.field textarea,.toolbar input,.toolbar select,
+input[type=text],input[type=email],input[type=password],input[type=number],
+input[type=search],input[type=date],select,textarea{font-family:var(--font)}
+.field textarea{line-height:1.5;resize:vertical}
+
+/* Typeface, restated last so it cannot be lost to ordering.
+   The base sheet applies font-family: var(--font) to body, so overriding the
+   token is what actually retypes the product. */
+:root{--font:"IBM Plex Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+body,button,input,select,textarea{font-family:var(--font)}
