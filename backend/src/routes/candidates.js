@@ -352,6 +352,14 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
       report: toImportReport(entities, { fileName: req.uploadedFile.originalName }),
     });
   } catch (e) {
+    // The catch block sends its own response, so this never reaches the
+    // server's unhandled-error logger — the exception was visible ONLY in the
+    // response body, never in Render logs. Log it here so the next failure is
+    // diagnosable from the log stream alone.
+    console.error(JSON.stringify({
+      level: 'error', msg: 'parse-cv.exception', requestId: req.requestId,
+      error: e.message, stack: e.stack,
+    }));
     res.status(500).json({ error: 'CV parsing failed.', detail: e.message });
   }
 });

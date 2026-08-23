@@ -13,6 +13,7 @@ import { ensureSchema } from './lib/schema.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
 import { configureParsing } from './lib/parsing/composition.js';
+import { pipelineDescription } from './lib/parsing/pipeline-provider.js';
 import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import { securityHeaders, securityConfigSummary } from './lib/security-headers.js';
@@ -138,6 +139,18 @@ app.get('/api/health', (req, res) => {
 });
 app.get('/api/health/watcher', (req, res) => {
   res.json(getWatcherStatus());
+});
+
+// Read-only: what composeAI() actually wired from this process's environment.
+// No other endpoint answers "is Claude really configured, or did the build
+// silently fall back to something else" — this exists to make that visible
+// from outside the process rather than guessed at from response timing.
+app.get('/api/health/parsing', async (req, res) => {
+  try {
+    res.json(await pipelineDescription());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/health/db', (req, res) => {
