@@ -67,14 +67,15 @@ services:
         sync: false
       - key: MAIL_FROM_NAME
         sync: false
-      # AI CV parsing (leave unset to fall back to the heuristic parser):
-      - key: DEEPSEEK_API_KEY
-        sync: false
-      - key: DEEPSEEK_BASE_URL
-        sync: false
-      - key: DEEPSEEK_MODEL
-        sync: false
+      # CV reading. Claude reads the document itself — scanned pages and Arabic
+      # included — so there is no sidecar, no OCR service and no local model to
+      # configure. Unset the key and no reader is wired: uploads are kept and the
+      # intake says so, rather than being parsed badly by something else.
       - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional. Defaults to claude-opus-5. claude-haiku-4-5 is ~5x cheaper and
+      # faster, at some accuracy cost — worth it for high-volume inbox scanning.
+      - key: ANTHROPIC_MODEL
         sync: false
       # Uploads / CV watcher (set a persistent path once on VPS/Coolify):
       - key: UPLOAD_DIR
