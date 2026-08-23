@@ -107,6 +107,42 @@ async function main(opts = {}) {
     upsertById[roleCode] = u.id;
   }
   log(`${sampleUsers.length} sample users (password: Arabtec@123)`);
+
+  // ---- ONLINE AUDIT ACCOUNT (audit environment only) ----------------------
+  // One account an external auditor can run the WHOLE recruitment workflow
+  // from, without needing a second person to approve and without touching
+  // administration. Opt-in: absent AUDIT_RECRUITER_PASSWORD this block does
+  // nothing, so production and the local pilot are unaffected.
+  //
+  // The password is read from the environment and never committed. It still
+  // has to satisfy the live password policy — the app validates it wherever it
+  // is set through the UI, and a value that fails there would strand the
+  // auditor at first sign-in.
+  //
+  // Roles, deliberately: recruiter + recruitment_manager + hr_manager. That is
+  // the full recruitment set including request.approve, so one person can take
+  // a requisition end to end. system_admin is NOT granted, which is what keeps
+  // user.manage, role.manage, system.manage, app.manage_ui and button.manage
+  // out of the auditor's hands.
+  const auditPass = process.env.AUDIT_RECRUITER_PASSWORD;
+  if (auditPass) {
+    const auditEmail = process.env.AUDIT_RECRUITER_EMAIL || 'recruiter@arabtec.com';
+    const hash = await bcrypt.hash(auditPass, rounds);
+    let au = get('SELECT * FROM users WHERE email=?', [auditEmail]);
+    if (!au) {
+      run(`INSERT INTO users (employee_no,full_name,email,job_title,password_hash,status) VALUES (?,?,?,?,?,?)`,
+        ['EMP-0010', 'Audit Recruiter', auditEmail, 'Recruiter (Audit)', hash, 'active']);
+      au = get('SELECT * FROM users WHERE email=?', [auditEmail]);
+    } else {
+      // Reuse the seeded recruiter rather than colliding with it.
+      run('UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?', [hash, au.id]);
+    }
+    for (const code of ['recruiter', 'recruitment_manager', 'hr_manager']) {
+      const r = get('SELECT id FROM role WHERE code=?', [code]);
+      if (r) run('INSERT OR IGNORE INTO user_role (user_id,role_id) VALUES (?,?)', [au.id, r.id]);
+    }
+    log(`audit account ready: ${auditEmail} (recruiter + recruitment_manager + hr_manager; no admin)`);
+  }
   } else {
     log('Skipped sample users (production / admin-only seed).');
   }

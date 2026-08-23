@@ -10,6 +10,7 @@ process.env.SEED_DEMO_DATA = 'true';
 process.env.SMTP_TRANSPORT = 'json';           // dry-run transport
 process.env.MAIL_FROM = 'career@arabtecegy.com';
 import fs from 'node:fs';
+import { adminToken } from './test-support/admin-session.mjs';
 for (const f of [DBF, DBF + '-journal']) { try { fs.rmSync(f); } catch {} }
 await import('./prisma/seed.js');
 await import('./src/server.js');
@@ -24,7 +25,9 @@ const J = async (p, body, token) => {
   return { status: r.status, j };
 };
 
-const admin = (await J('/api/auth/login', { email: 'admin@arabtec.com', password: 'BootStrap#Aa1' })).j.token;
+// Logging in is not enough: the bootstrap admin is blocked from every route
+// until the forced rotation is done. See test-support/admin-session.mjs.
+const admin = await adminToken(B, { bootstrap: 'BootStrap#Aa1' });
 const recruiter = (await J('/api/auth/login', { email: 'recruiter@arabtec.com', password: 'Arabtec@123' })).j.token;
 
 console.log('\n— Email status & test endpoints —');

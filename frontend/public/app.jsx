@@ -51,6 +51,8 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   },
 };
+// Expose the existing authenticated client to approved drop-in page modules.
+window.ARABTEC_API = api;
 
 /* ----------------------------- Helpers ----------------------------- */
 function initials(name) { return (name || '?').split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase(); }
@@ -108,7 +110,7 @@ function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }
   // pixels are unchanged; only the background was keyed to alpha. See docs note.
   // The `color` prop does not apply to a raster mark and is intentionally unused here.
   const mark = (
-    <img src="/logo-transparent.png" alt="Arabtec"
+    <img src="/arabtec-logo.svg" alt="Arabtec"
       style={{ width: size, maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
   );
   if (!withText) return mark;
@@ -377,6 +379,7 @@ const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view' },
   { key: 'requests', label: 'Hiring Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
   { key: 'candidates', label: 'Talent Pool', icon: 'user', perm: 'candidate.view' },
+  { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view' },
   { key: 'interviews', label: 'Interviews', icon: 'calendar', anyPerm: ['interview.view_all', 'interview.view_assigned'] },
   { key: 'offers', label: 'Offers', icon: 'doc', perm: 'offer.view' },
   { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
@@ -569,11 +572,13 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
 
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
 
+  const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
   const Page = {
     dashboard: <Dashboard user={user} onNavigate={setRoute} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} />,
-    candidates: <CandidatesPage user={user} />,
+    candidates: <CandidatesPage user={user} onNavigate={setRoute} />,
+    candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <div className="error-banner">Candidate Review module failed to load.</div>,
     interviews: <InterviewsPage user={user} />,
     offers: <OffersPage user={user} />,
     users: can(user, 'user.manage')
@@ -2389,6 +2394,19 @@ function RequestsPage({ user }) {
   const [creating, setCreating] = useState(false);
   const btns = useResolvedButtons();
 
+  // Opened from elsewhere (a Talent Pool request link), the same way the Ctrl+K
+  // palette opens a candidate: pending id when mounting fresh, event when the
+  // page is already mounted.
+  useEffect(() => {
+    if (window.__atsPendingRequestId) {
+      setSelectedId(window.__atsPendingRequestId);
+      window.__atsPendingRequestId = null;
+    }
+    function onOpen(e) { if (e.detail && e.detail.id) setSelectedId(e.detail.id); }
+    window.addEventListener('ats:open-request', onOpen);
+    return () => window.removeEventListener('ats:open-request', onOpen);
+  }, []);
+
   const load = useCallback(async () => {
     setData(null);
     const params = new URLSearchParams();
@@ -2455,14 +2473,26 @@ function RequestsPage({ user }) {
   );
 }
 
-function RequestForm({ user, onClose, onSaved }) {
+// Create OR edit. `request` present => edit mode: prefill and PUT /requests/:id.
+// Edit mode deliberately shows ONLY the fields PUT /:id actually persists
+// (title, project, site, department, priority, custom fields). Rendering the
+// create-only intake fields here would let a recruiter type changes the API
+// silently discards.
+function RequestForm({ user, request, onClose, onSaved }) {
   const toast = useToast();
+  const editing = !!request;
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ title: '', projectId: '', siteId: '', departmentId: '', location: '', hiringManagerId: '', priority: 'medium', keyResponsibilities: '', keyRequirements: '' });
+  const [f, setF] = useState(editing
+    ? {
+      title: request.title || '', projectId: request.projectId ?? '', siteId: request.siteId ?? '',
+      departmentId: request.departmentId ?? '', location: request.location || '', hiringManagerId: '',
+      priority: request.priority || 'medium', keyResponsibilities: '', keyRequirements: '',
+    }
+    : { title: '', projectId: '', siteId: '', departmentId: '', location: '', hiringManagerId: '', priority: 'medium', keyResponsibilities: '', keyRequirements: '' });
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const customDefs = useCustomFields('request');
-  const [customVals, setCustomVals] = useState({});
+  const [customVals, setCustomVals] = useState(editing ? (request.customFields || {}) : {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   // UI-only: Site + Location are optional for the API, so they start collapsed to
   // reduce form density. Their values are still sent unchanged in the payload.
@@ -2473,6 +2503,18 @@ function RequestForm({ user, onClose, onSaved }) {
   async function save() {
     setBusy(true);
     try {
+      if (editing) {
+        // Only the keys PUT /requests/:id maps. Anything else would be ignored.
+        const patch = {
+          title: f.title, projectId: f.projectId, departmentId: f.departmentId,
+          siteId: f.siteId === '' ? null : f.siteId, priority: f.priority,
+          customFields: customVals,
+        };
+        const u = await api.put('/requests/' + request.id, patch);
+        toast('Request updated: ' + shortReqCode(u.request.ticketNo));
+        onSaved(u.request.id);
+        return;
+      }
       const body = { ...f, customFields: customVals };
       ['siteId', 'hiringManagerId'].forEach((k) => { if (body[k] === '') body[k] = null; });
       const r = await api.post('/requests', body);
@@ -2482,14 +2524,19 @@ function RequestForm({ user, onClose, onSaved }) {
       onSaved(r.request.id);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  if (!meta) return <Modal title="New Recruitment Request" onClose={onClose}><Skeleton /></Modal>;
+  const modalTitle = editing ? 'Edit Recruitment Request' : 'New Recruitment Request';
+  if (!meta) return <Modal title={modalTitle} onClose={onClose}><Skeleton /></Modal>;
   return (
-    <Modal title="New Recruitment Request" onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Creating…' : 'Create Request'}</button></>}>
-      <p className="muted" style={{ marginTop: 0 }}>Req ID and Req Date are generated automatically on creation.</p>
+    <Modal title={modalTitle} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy}>{busy ? (editing ? 'Saving…' : 'Creating…') : (editing ? 'Save Changes' : 'Create Request')}</button></>}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {editing
+          ? `${shortReqCode(request.ticketNo)} — editing headcount, grade or salary band after approval sends the request back for re-approval.`
+          : 'Req ID and Req Date are generated automatically on creation.'}
+      </p>
       <div className="form-grid">
         <div className="field full"><label>Position *</label><input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Site Engineer" /></div>
-        <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+        {!editing && <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>}
         <div className="field"><label>Department *</label><select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}><option value="">— Select —</option>{meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
         {/* Project stays the single required control (the API validates projectId).
             Site + Location are optional, so they live under "More location details"
@@ -2501,15 +2548,15 @@ function RequestForm({ user, onClose, onSaved }) {
           </button>
         </div>
         {moreLoc && <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
-        {moreLoc && <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>}
+        {moreLoc && !editing && <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>}
         <div className="field"><label>Priority</label><select value={f.priority} onChange={(e) => set('priority', e.target.value)}>{Object.keys(PRIORITY).map((p) => <option key={p}>{p}</option>)}</select></div>
-        <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>
-        <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>
+        {!editing && <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>}
+        {!editing && <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>}
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
-        <div className="field full"><label>Attachment (Job Description / spec)</label>
+        {!editing && <div className="field full"><label>Attachment (Job Description / spec)</label>
           <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           {file && <div className="muted" style={{ marginTop: 4 }}>Selected: {file.name}</div>}
-        </div>
+        </div>}
       </div>
     </Modal>
   );
@@ -2522,6 +2569,7 @@ function RequestDetail({ id, user, btns, onBack }) {
   const [tab, setTab] = useState('thread');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [action, setAction] = useState(null);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => { setReq((await api.get('/requests/' + id)).request); }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -2579,6 +2627,7 @@ function RequestDetail({ id, user, btns, onBack }) {
       {tab === 'timeline' && <TimelineTab req={req} />}
 
       {action && <Confirm title={action.title} message="Please provide a reason. This will be recorded in the audit trail." requireReason danger={action.danger} confirmLabel="Confirm" onConfirm={action.run} onClose={() => setAction(null)} />}
+      {editing && <RequestForm user={user} request={req} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
     </div>
   );
 }
@@ -3841,7 +3890,189 @@ function Pager({ page, pageSize, total, totalPages, onPage, onPageSize }) {
   );
 }
 
-function CandidatesPage({ user }) {
+/* ---------------- Talent Pool → Hiring Request linking ----------------
+   A link IS an application: POST /applications { candidateId, requestId }.
+   No new relationship is introduced here — the same endpoint the pipeline
+   already uses, with the same `candidate.link` permission and the same rules
+   (a closed/cancelled/rejected/filled request refuses the link; one
+   application per candidate per request). */
+
+// Requests the backend will actually accept a link against. Mirrors the guard
+// in POST /applications rather than inventing a second notion of "open".
+const LINKABLE_BLOCKED = ['closed', 'cancelled', 'rejected', 'filled'];
+const isLinkable = (r) => !LINKABLE_BLOCKED.includes(r.status);
+
+/**
+ * A cheap, explainable suggestion from data the API already returned.
+ *
+ * Token overlap between the candidate's current position and the request
+ * title, with location as a weak tie-breaker. No service, no model — if the
+ * evidence is thin the caller simply shows the plain list.
+ */
+function suggestRequests(candidate, requests) {
+  const words = (s) => String(s || '').toLowerCase().match(/[a-z]{3,}/g) || [];
+  const stop = new Set(['and', 'for', 'the', 'senior', 'junior', 'lead', 'chief', 'head']);
+  const want = new Set(words(candidate.currentPosition).filter((w) => !stop.has(w)));
+  if (want.size === 0) return [];
+  return requests
+    .map((r) => {
+      const have = new Set(words(r.title).filter((w) => !stop.has(w)));
+      let score = [...want].filter((w) => have.has(w)).length;
+      if (score > 0 && candidate.location && r.location
+        && String(r.location).toLowerCase() === String(candidate.location).toLowerCase()) score += 0.5;
+      return { r, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((x) => x.r);
+}
+
+/** Navigate to a request's detail view from anywhere (mirrors the palette). */
+function openRequest(id, onNavigate) {
+  window.__atsPendingRequestId = id;
+  if (onNavigate) onNavigate('requests');
+  window.dispatchEvent(new CustomEvent('ats:open-request', { detail: { id } }));
+}
+
+function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [picked, setPicked] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const wrapRef = useRef(null);
+  const popRef = useRef(null);
+  const [anchor, setAnchor] = useState(null);
+  const links = candidate.links || [];
+
+  // Dismiss on an outside click or Escape. Deliberately NOT a full-screen
+  // scrim: a fixed scrim would paint over the popover and eat the very clicks
+  // it is meant to let through.
+  useEffect(() => {
+    if (!open) return undefined;
+    const inside = (t) => (wrapRef.current && wrapRef.current.contains(t))
+      || (popRef.current && popRef.current.contains(t));
+    const onDown = (e) => { if (!inside(e.target)) { setOpen(false); setError(''); } };
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); setError(''); } };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  // Anchor the popover to the button in viewport coordinates. It is rendered
+  // through a portal (below) because each table row is its own stacking
+  // context: a dropdown that overflows its cell is painted under the next
+  // row's controls no matter what z-index it carries.
+  useEffect(() => {
+    if (!open) { setAnchor(null); return undefined; }
+    const place = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const b = el.getBoundingClientRect();
+      const width = 320;
+      const left = Math.min(Math.max(8, b.left), window.innerWidth - width - 8);
+      // Flip above the control when there is not enough room below it.
+      const below = window.innerHeight - b.bottom;
+      const openUp = below < 300 && b.top > below;
+      setAnchor({ left, top: openUp ? undefined : b.bottom + 5, bottom: openUp ? window.innerHeight - b.top + 5 : undefined });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open]);
+
+  // Already linked: show the relationship and route to it. Never offer a second
+  // link to a request this candidate is already on — the API would 409.
+  if (links.length > 0) {
+    return (
+      <div className="rq-links">
+        {links.map((l) => (
+          <button key={l.applicationId} className="rq-link-chip"
+            title={`${l.ticketNo || 'Request'} — ${l.requestTitle || ''} (${l.status})`}
+            onClick={(e) => { e.stopPropagation(); openRequest(l.requestId, onNavigate); }}>
+            {shortReqCode(l.ticketNo) || 'Request'}
+            {l.requestTitle ? <span className="rq-link-sub">{l.requestTitle}</span> : null}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (!canLink) return <span className="muted">—</span>;
+
+  const linkedIds = new Set(links.map((l) => l.requestId));
+  const available = requests.filter((r) => isLinkable(r) && !linkedIds.has(r.id));
+  const suggested = suggestRequests(candidate, available);
+  const suggestedIds = new Set(suggested.map((r) => r.id));
+  const needle = q.trim().toLowerCase();
+  const match = (r) => !needle
+    || String(r.title || '').toLowerCase().includes(needle)
+    || String(r.ticketNo || '').toLowerCase().includes(needle);
+  const rest = available.filter((r) => !suggestedIds.has(r.id) && match(r));
+  const shownSuggested = suggested.filter(match);
+
+  async function confirm() {
+    if (!picked) return;
+    setBusy(true); setError('');
+    try {
+      const r = await api.post('/applications', { candidateId: candidate.id, requestId: picked });
+      toast(`Linked to ${shortReqCode(r.application?.ticketNo) || 'request'}`);
+      setOpen(false); setPicked(null); setQ('');
+      onLinked && onLinked();
+    } catch (e) {
+      // The real backend message: already applied, request not linkable, or a
+      // permission failure. Never a fabricated success, never a silent retry.
+      setError(e.message || 'Could not link this candidate.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rq-linkwrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
+      <button className="rq-link-btn" onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog" aria-expanded={open}>Link to Request ▾</button>
+      {open && anchor && ReactDOM.createPortal(
+        (
+          <div className="rq-pop" ref={popRef} style={{ left: anchor.left, top: anchor.top, bottom: anchor.bottom }}
+            role="dialog" aria-label={`Link ${candidate.fullName} to a hiring request`}>
+            <div className="rq-pop-head">Link to Request</div>
+            <input className="rq-pop-search" placeholder="Search requests…" value={q}
+              onChange={(e) => setQ(e.target.value)} autoFocus />
+            <div className="rq-pop-list">
+              {available.length === 0 && <div className="rq-pop-empty">No request is open for linking.</div>}
+              {shownSuggested.length > 0 && <div className="rq-pop-label">Suggested</div>}
+              {shownSuggested.map((r) => (
+                <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
+                  onClick={() => setPicked(r.id)}>
+                  <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
+                  <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
+                </button>
+              ))}
+              {rest.length > 0 && <div className="rq-pop-label">Available Requests</div>}
+              {rest.map((r) => (
+                <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
+                  onClick={() => setPicked(r.id)}>
+                  <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
+                  <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
+                </button>
+              ))}
+            </div>
+            {error && <div className="rq-pop-error">{error}</div>}
+            <div className="rq-pop-foot">
+              <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); setError(''); }}>Cancel</button>
+              <button className="btn btn-sm" disabled={!picked || busy} onClick={confirm}>
+                {busy ? 'Linking…' : 'Link'}
+              </button>
+            </div>
+          </div>
+        ), document.body)}
+    </div>
+  );
+}
+
+function CandidatesPage({ user, onNavigate }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
   const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '' });
@@ -3869,6 +4100,15 @@ function CandidatesPage({ user }) {
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1, hasMore: false });
   const [loadError, setLoadError] = useState(null);
   const btns = useResolvedButtons();
+  // Requests available for linking. Fetched once, and only for a user who may
+  // link — a recruiter without `candidate.link` is shown no control at all
+  // rather than a dropdown that would fail on submit.
+  const canLink = can(user, 'candidate.link');
+  const [linkRequests, setLinkRequests] = useState([]);
+  useEffect(() => {
+    if (!canLink) return;
+    api.get('/requests').then((r) => setLinkRequests(r.requests || [])).catch(() => setLinkRequests([]));
+  }, [canLink]);
 
   const load = useCallback(async () => {
     setCandidates(null); setLoadError(null);
@@ -3990,13 +4230,10 @@ function CandidatesPage({ user }) {
             <thead><tr>
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              <SortTh label="Company" col="company" sort={sort} onSort={toggleSort} />
               <SortTh label="Exp" col="experience" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
-              <th>Parse Quality</th>
+              <th className="th-request">Request</th>
               <th>Stage</th>
-              <SortTh label="Recruiter" col="created" sort={sort} onSort={toggleSort} />
-              <SortTh label="Added" col="created" sort={sort} onSort={toggleSort} />
               <th>CV</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
@@ -4011,14 +4248,17 @@ function CandidatesPage({ user }) {
                   </div>
                   {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
                 </td>
-                <td><span className="cell-strong">{c.currentPosition || '—'}</span></td>
-                <td className="cell-sub-only">{c.currentCompany || '—'}</td>
+                <td>
+                  <span className="cell-strong">{c.currentPosition || '—'}</span>
+                  {c.currentCompany ? <span className="cell-sub">{c.currentCompany}</span> : null}
+                </td>
                 <td className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
                 <td className="cell-sub-only">{c.location || '—'}</td>
-                <td><ParseQuality status={c.parseStatus} confidence={c.parseConfidence} /></td>
+                <td>
+                  <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
+                    onNavigate={onNavigate} onLinked={load} />
+                </td>
                 <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
-                <td className="cell-sub-only">{c.ownerRecruiter?.name || '—'}</td>
-                <td className="cell-sub-only">{fmtDateShort(c.createdAt)}</td>
                 <td onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
                     ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Download CV'}

@@ -186,7 +186,13 @@ export class AITaskWorker {
       documentId: input.documentId,
       generation: outcome.generation,
       fields: outcome.fields.map((f) => ({
-        field: f.field, value: f.value, confidence: f.confidence, evidence: f.evidence,
+        field: f.field,
+        value: f.value,
+        confidence: f.confidence,
+        evidence: f.evidence,
+        // The structured citation travels with the value, so the review screen
+        // can show a reviewer the page and block it was read from.
+        ...(f.evidenceRef !== undefined ? { evidenceRef: f.evidenceRef } : {}),
       })),
     }, ctx);
 

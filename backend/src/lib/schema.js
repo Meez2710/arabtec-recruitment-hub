@@ -355,6 +355,78 @@ export function ensureSchema() {
     uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Field values a CV parse SUGGESTED, awaiting a human.
+  --
+  -- A NEW table. Nothing about the candidate table changes: a proposal points at
+  -- a candidate and holds values that have NOT been applied to it. That is the
+  -- whole point - an extraction writes here, never to the candidate row, and a
+  -- person accepting a field is what moves it across.
+  --
+  -- The fields and generation columns are JSON text, read and written whole and
+  -- never queried by key, so they need no columns of their own on either engine.
+  CREATE TABLE IF NOT EXISTS candidate_proposal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    candidate_id INTEGER NOT NULL REFERENCES candidate(id) ON DELETE CASCADE,
+    origin TEXT NOT NULL,                               -- 'resume.extract', 'bulk.import', …
+    task_id TEXT NOT NULL DEFAULT '',
+    model_id TEXT NOT NULL DEFAULT '',
+    document_id TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING',             -- PENDING|APPLIED|REJECTED|SUPERSEDED
+    generation TEXT,                                    -- JSON: how it was produced
+    fields TEXT NOT NULL DEFAULT '[]',                  -- JSON: [{field,value,confidence,evidence,evidenceRef,decision}]
+    reviewed_by INTEGER REFERENCES users(id),
+    reviewed_at TEXT,
+    version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- A CV parsed BEFORE any candidate exists.
+  --
+  -- The gap this fills: POST /parse-cv uploads a CV for someone who is not in
+  -- the system yet, so there is no candidate to hang a proposal on - and
+  -- creating one first would be exactly the unreviewed write this design
+  -- forbids. An intake holds the parse until a person approves it; only then is
+  -- a candidate created.
+  --
+  -- A pre-candidate envelope, NOT a second proposal model. The fields it stores
+  -- are the same shape the CandidateProposal aggregate consumes, and on
+  -- approval they are handed to that aggregate unchanged.
+  CREATE TABLE IF NOT EXISTS candidate_intake (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'PENDING',             -- PENDING|CONVERTED|REJECTED|SUPERSEDED
+    -- The stored upload, so the reviewer can open the original CV.
+    stored_name TEXT,
+    file_name TEXT,
+    mime_type TEXT,
+    file_hash TEXT,
+    origin TEXT NOT NULL DEFAULT 'resume.extract',
+    task_id TEXT NOT NULL DEFAULT '',
+    model_id TEXT NOT NULL DEFAULT '',
+    document_id TEXT,
+    generation TEXT,                                    -- JSON: ProposalGeneration
+    fields TEXT NOT NULL DEFAULT '[]',                  -- JSON: proposed fields + decisions
+    -- Set only after a successful conversion; the candidate this became.
+    -- The requisition this CV was submitted against, when the uploader named
+    -- one. Carried through review; no application exists until then.
+    --
+    -- Plain INTEGERs, not foreign keys: this table is created before
+    -- recruitment_request and application in this script, and Postgres rejects
+    -- a forward REFERENCES. The intake is a staging record whose links are
+    -- resolved in application code, so a constraint here buys nothing.
+    request_id INTEGER,
+    candidate_id INTEGER REFERENCES candidate(id) ON DELETE SET NULL,
+    proposal_id INTEGER,
+    application_id INTEGER,
+    reason TEXT,                                        -- why it was rejected or could not convert
+    created_by INTEGER REFERENCES users(id),
+    reviewed_by INTEGER REFERENCES users(id),
+    reviewed_at TEXT,
+    version INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS application (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     application_no TEXT UNIQUE NOT NULL,
@@ -602,7 +674,19 @@ export function ensureSchema() {
     'CREATE INDEX IF NOT EXISTS idx_candidate_screening ON candidate(screening_status)',
     'CREATE INDEX IF NOT EXISTS idx_candidate_parse_status ON candidate(parse_status)',
     'CREATE INDEX IF NOT EXISTS idx_candidate_state ON candidate(candidate_state)',
+    // Proposal lookups are always "the pending one for this candidate".
+    'CREATE INDEX IF NOT EXISTS idx_proposal_candidate ON candidate_proposal(candidate_id, status)',
+    'CREATE INDEX IF NOT EXISTS idx_intake_status ON candidate_intake(status, created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_intake_hash ON candidate_intake(file_hash)',
   ]) { try { run(stmt); } catch {} }  // candidate — HR-leadership-requested fields
+  // Proposable list fields. Nullable TEXT holding a JSON array, which is the
+  // convention `tags` already uses on this table — no new storage idea, and no
+  // existing row changes meaning: NULL keeps reading as "not stated".
+  addColumnIfMissing('candidate_intake', 'request_id', 'INTEGER');
+  addColumnIfMissing('candidate_intake', 'application_id', 'INTEGER');
+  addColumnIfMissing('candidate', 'skills', 'TEXT');
+  addColumnIfMissing('candidate', 'languages', 'TEXT');
+  addColumnIfMissing('candidate', 'certifications', 'TEXT');
   addColumnIfMissing('candidate', 'employer', 'TEXT');
   addColumnIfMissing('candidate', 'current_project', 'TEXT');
   addColumnIfMissing('candidate', 'graduation_year', 'INTEGER');

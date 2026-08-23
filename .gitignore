@@ -2,6 +2,9 @@ node_modules/
 **/node_modules/
 coverage/
 **/coverage/
+# Compiled TypeScript. Produced by `npm run build` at deploy time; committing it
+# would let a stale build ship alongside changed sources.
+backend/dist/
 *.log
 .env
 .env.*
@@ -27,3 +30,12 @@ backend/launch_check.mjs
 
 # Local static ATS review mockup; reference copy is stored under docs/ui-review/
 frontend/public/ats-full-review.html
+# Rendered live-test fixtures are generated on the host, not committed as binaries.
+backend/live-fixtures/*.pdf
+backend/live-fixtures/*.png
+
+# Local pilot secrets and venv — never committed.
+deploy/docling-sidecar/.env.local
+deploy/docling-sidecar/.venv
+logs/
+deploy/docling-sidecar/__pycache__/

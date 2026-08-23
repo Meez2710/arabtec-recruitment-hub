@@ -10,13 +10,13 @@
 // a `.js` specifier back to `.ts`. `moduleResolution: bundler` accepts both, so
 // this is contained to this folder and nothing else changes.
 
-export * from './hiring';
-export * from './interview';
-export * from './offer';
-export * from './platform';
-export * from './talent';
-export * from './ai';
-export * from './matching';
+export * from './hiring.js';
+export * from './interview.js';
+export * from './offer.js';
+export * from './platform.js';
+export * from './talent.js';
+export * from './ai.js';
+export * from './matching.js';
 
 /**
  * Named sequences for business identifiers.

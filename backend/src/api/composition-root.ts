@@ -37,6 +37,10 @@ import { HiringPipelineLinkGateway } from './infrastructure/pipeline-link-gatewa
 import type { DocumentStore } from '../modules/talent/application/ports.js';
 import { DrizzleAITaskDispatcher } from '../infrastructure/ai/task-dispatcher.js';
 import { AITaskWorker } from '../infrastructure/ai/task-worker.js';
+import {
+  ClaudeDocumentParser, ClaudeResumeExtractor, claudeConfigFrom,
+} from '../infrastructure/ai/anthropic/index.js';
+import type { CandidateEvaluator } from '../infrastructure/ai/evaluation/index.js';
 import type { AICapabilities, AITaskDispatcher } from '../modules/shared/kernel/ai/index.js';
 import type { NotificationHub } from '../modules/shared/kernel/ports.js';
 import { AuditSubscriber } from './infrastructure/subscribers/audit-subscriber.js';
@@ -56,6 +60,79 @@ import { DrizzleMatchingReadModel } from './infrastructure/queries/matching-read
 import type { MatchingReadModel } from './queries/matching-ports.js';
 import { DrizzleSearchReadModel } from './infrastructure/queries/search-read-model.js';
 import type { SearchReadModel } from './queries/search-ports.js';
+
+/* ------------------------- AI capabilities from env ------------------------ */
+//
+// Building the AI capabilities is a wiring decision, so it lives HERE with every
+// other wiring decision rather than in a process entry point. Both entry points
+// call this: `api/main.ts` and, through the compiled output, the deployed
+// `src/server.js` parser provider. One definition, one answer to "which engine
+// read this CV?".
+
+export interface AIComposition {
+  readonly capabilities: AICapabilities;
+  /** Absent when no model is configured. Evaluation is optional, not required. */
+  readonly evaluator?: CandidateEvaluator;
+  /** What was selected. For the startup log and the health endpoint. */
+  readonly description: {
+    readonly layoutParser: string;
+    readonly fallbackParser: string;
+    readonly ocrEngine: string;
+    readonly extractor: string;
+    readonly evaluator: string;
+  };
+}
+
+const readEnv = (env: NodeJS.ProcessEnv, key: string): string | undefined => {
+  const value = env[key];
+  return value === undefined || value.trim() === '' ? undefined : value.trim();
+};
+
+/**
+ * Compose the document pipeline and the model capabilities from the environment.
+ *
+ * Claude is the ONLY reader. It parses the document (including scanned pages
+ * and Arabic) and extracts the résumé, so the Docling sidecar, the HTTP OCR
+ * engine, the local pdfjs/mammoth reader and the Ollama extractor are all gone
+ * — there is nothing left for a routing/reconciliation layer to decide.
+ */
+export const composeAI = (env: NodeJS.ProcessEnv = process.env): AIComposition => {
+  const config = claudeConfigFrom(env);
+
+  // No key is a COMPLETE configuration, not a degraded one. Nothing is wired,
+  // the intake route says so plainly, and no CV is silently half-read.
+  if (config === undefined) {
+    return {
+      capabilities: {},
+      description: {
+        layoutParser: 'none',
+        fallbackParser: 'none',
+        ocrEngine: 'none',
+        extractor: 'none',
+        evaluator: 'none',
+      },
+    };
+  }
+
+  // ONE provider. There is deliberately no fallback chain: a second registered
+  // parser is a second production system nobody is watching, and a silent
+  // downgrade to a weaker reader is indistinguishable from a good parse.
+  return {
+    capabilities: {
+      documentParser: new ClaudeDocumentParser(config),
+      resumeExtractor: new ClaudeResumeExtractor(config),
+    },
+    description: {
+      // Claude reads the document itself — pixels, Arabic and all — so there is
+      // no separate layout engine, no OCR service and no fallback reader left.
+      layoutParser: config.model,
+      fallbackParser: 'none',
+      ocrEngine: 'none (Claude reads scanned pages directly)',
+      extractor: config.model,
+      evaluator: 'none',
+    },
+  };
+};
 
 export interface CompositionOptions {
   readonly config?: PlatformConfig;

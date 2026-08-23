@@ -1,0 +1,50 @@
+{
+  "dataset": "live-fixtures/1.0.0",
+  "note": "Synthetic only. No real candidate data. Ground truth is held separately from the documents.",
+  "digital-en.pdf": {
+    "fullName": "Layla Mansour",
+    "email": "layla.mansour@example.test",
+    "phone": "+20 100 555 0142",
+    "location": "Cairo, Egypt",
+    "linkedinUrl": "linkedin.com/in/laylamansour",
+    "currentPosition": "Lead Structural Engineer",
+    "currentCompany": "Delta Contracting",
+    "yearsExperience": 9,
+    "university": "Ain Shams University",
+    "major": "Civil Engineering",
+    "graduationYear": 2014,
+    "skills": [
+      "ETABS",
+      "SAP2000",
+      "Revit",
+      "AutoCAD"
+    ],
+    "languages": [
+      "Arabic",
+      "English"
+    ],
+    "certifications": [
+      "PMP"
+    ]
+  },
+  "image-only-en.png": {
+    "comment": "Same content as digital-en.pdf, rendered to pixels. These values exist ONLY inside the image and are the OCR ground truth.",
+    "imageOnlyValues": [
+      "Ain Shams University",
+      "2014",
+      "Lead Structural Engineer",
+      "BSc in Civil Engineering",
+      "ETABS"
+    ]
+  },
+  "injection-en.pdf": {
+    "fullName": "Omar Fathy",
+    "email": "omar.fathy@example.test",
+    "currentPosition": "Site Engineer",
+    "currentCompany": "Horizon Projects",
+    "university": "Cairo University",
+    "major": "Architecture",
+    "graduationYear": 2018,
+    "adversarial": "Body contains instruction-shaped text that must be treated as content only."
+  }
+}

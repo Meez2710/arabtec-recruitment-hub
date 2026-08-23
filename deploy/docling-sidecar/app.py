@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
+import shutil
+import subprocess
 import tempfile
 import time
 import uuid
@@ -28,7 +31,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Header, status
 from pydantic import BaseModel, Field
 
 API_VERSION = "v1"
@@ -41,6 +44,10 @@ log = logging.getLogger("docling-sidecar")
 app = FastAPI(title="Docling sidecar", version=API_VERSION)
 
 Status = Literal["ok", "unsupported", "encrypted", "corrupt", "empty"]
+
+# Below this many characters a PDF's "text layer" is a header or a stray
+# artefact, not the document - so it is treated as unreadable and sent to OCR.
+MIN_NATIVE_CHARS = int(os.environ.get("SIDECAR_MIN_NATIVE_CHARS", "30"))
 
 SUPPORTED_MIME_PREFIXES = (
     "application/pdf",
@@ -78,22 +85,76 @@ def _docling_version() -> str:
     return "unknown"
 
 
+def require_token(authorization: str | None = Header(default=None)) -> None:
+    """Optional bearer auth.
+
+    Unset DOCLING_BEARER_TOKEN means an open service, which is only ever
+    acceptable on loopback. The moment this service is reachable through a
+    tunnel the variable MUST be set - the network boundary is no longer doing
+    the work that `docs/DOCLING_SIDECAR_API.md` assumed.
+
+    compare_digest, not ==, so a wrong token cannot be recovered by timing.
+    """
+    expected = os.environ.get("DOCLING_BEARER_TOKEN", "")
+    if not expected:
+        return
+    supplied = ""
+    if authorization and authorization.startswith("Bearer "):
+        supplied = authorization[7:]
+    if not secrets.compare_digest(supplied, expected):
+        # The reason is deliberately vague: distinguishing "missing" from
+        # "wrong" tells an attacker which half they got right.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Unauthorized")
+
+
+def _ocr_probe() -> tuple[bool, list[str]]:
+    """Ask the machine, not the environment.
+
+    The previous health response reported `ocrEngine: "tesseract"` from a static
+    default, so it said "tesseract" on a host with no tesseract installed. That
+    is exactly the lie a readiness endpoint must not tell: it let an OCR-less
+    deployment look ready. This shells out to the real binary.
+    """
+    exe = shutil.which("tesseract")
+    if exe is None:
+        return False, []
+    langs: list[str] = []
+    with suppress(Exception):
+        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [exe, "--list-langs"], capture_output=True, text=True, timeout=10,
+        )
+        # First line is a header; the rest are language codes.
+        langs = [ln.strip() for ln in out.stdout.splitlines()[1:] if ln.strip()]
+    return True, langs
+
+
 @app.post(f"/{API_VERSION}/health")
-def health() -> dict[str, Any]:
-    """Readiness. `modelsPresent` is the offline guarantee's canary."""
-    artifacts = Path(os.environ.get("DOCLING_ARTIFACTS_PATH", "/opt/docling-models"))
-    models_present = artifacts.is_dir() and any(artifacts.iterdir())
+def health(_: None = Depends(require_token)) -> dict[str, Any]:
+    """Readiness, measured rather than asserted."""
+    configured = os.environ.get("DOCLING_ARTIFACTS_PATH")
+    if configured:
+        artifacts = Path(configured)
+        models_present = artifacts.is_dir() and any(artifacts.iterdir())
+    else:
+        # No pinned artifacts dir: Docling manages its own cache and fetches on
+        # first use. Reporting False here would call a working host unready.
+        models_present = True
+
+    ocr_present, ocr_langs = _ocr_probe()
     return {
-        "ok": models_present,
+        "ok": models_present and ocr_present,
         "doclingVersion": _docling_version(),
         "modelsPresent": models_present,
         "ocrEngine": os.environ.get("SIDECAR_OCR_ENGINE", "tesseract"),
+        "ocrExecutablePresent": ocr_present,
+        "ocrLanguages": ocr_langs,
     }
 
 
 @app.post(f"/{API_VERSION}/convert", response_model=ConvertResponse)
 @app.post("/convert", response_model=ConvertResponse)
-def convert(req: ConvertRequest) -> ConvertResponse:
+def convert(req: ConvertRequest, _: None = Depends(require_token)) -> ConvertResponse:
     request_id = uuid.uuid4().hex[:12]
     started = time.monotonic()
     tmp_path: Path | None = None
@@ -119,15 +180,34 @@ def convert(req: ConvertRequest) -> ConvertResponse:
             tmp_path = Path(tmp_dir) / f"{request_id}{suffix}"
             tmp_path.write_bytes(payload)
 
-            from docling.document_converter import DocumentConverter
-
-            converter = DocumentConverter()
-            result = converter.convert(str(tmp_path))
+            # ROUTING. An image is pixels by definition, so it goes straight to
+            # full-page OCR. Everything else is read natively first: a
+            # born-digital PDF must keep its exact text layer and must not pay
+            # for a recognition pass it does not need.
+            # An image is pixels by definition, so it goes straight to OCR.
+            # Everything else is read NATIVELY first - a born-digital PDF must
+            # keep its exact text layer and must not pay for a recognition pass
+            # it does not need.
+            forced = req.mimeType.startswith("image/")
+            result = _converter("forced" if forced else "native").convert(str(tmp_path))
             document = result.document
+            text = document.export_to_text()
+
+            # ONE retry, only for PDFs that came back with nothing. Docling's
+            # selective mode OCRs bitmap REGIONS; a page that is one whole scan
+            # can yield no text at all, and that is the case this recovers.
+            # Bounded to a single attempt so a hopeless document cannot loop.
+            if len((text or "").strip()) < MIN_NATIVE_CHARS and not forced \
+                    and req.mimeType == "application/pdf":
+                forced = True
+                result = _converter("forced").convert(str(tmp_path))
+                document = result.document
+                text = document.export_to_text()
 
             markdown = document.export_to_markdown()
-            text = document.export_to_text()
             if not (text or "").strip():
+                # Both attempts produced nothing. An explicit refusal - never an
+                # empty proposal, never a persisted candidate.
                 return _reject("empty", "The document produced no text.")
 
             pages = _pages_of(document)
@@ -137,7 +217,12 @@ def convert(req: ConvertRequest) -> ConvertResponse:
                 text=text,
                 pages=pages or None,
                 pageCount=len(pages) if pages else 1,
-                ocrApplied=_ocr_applied(result),
+                # Correct BY CONSTRUCTION: the native probe ran first and
+                # produced nothing usable, so this text came from pixels.
+                # Docling 2.55 discards per-cell OCR provenance, so reading it
+                # back off the result is not possible - deciding from the route
+                # taken is both simpler and honest.
+                ocrApplied=forced,
                 doclingVersion=_docling_version(),
                 pipelineVersion=os.environ.get("SIDECAR_PIPELINE_VERSION", "unpinned"),
             )
@@ -184,7 +269,114 @@ def _pages_of(document: Any) -> list[str]:
     return []
 
 
-def _ocr_applied(result: Any) -> bool:
+def _ocr_languages() -> list[str]:
+    """Tesseract language codes, matching the packs installed in the image.
+
+    English and Arabic are both installed (tesseract-ocr-eng, tesseract-ocr-ara).
+    Overridable so a deployment that adds a pack does not need a code change.
+    """
+    raw = os.environ.get("SIDECAR_OCR_LANGS", "eng,ara")
+    return [code.strip() for code in raw.split(",") if code.strip()]
+
+
+def _build_converter(mode: str) -> Any:
+    """Docling with OCR configured EXPLICITLY.
+
+    A bare DocumentConverter() leaves the OCR engine at Docling's default, which
+    is not the tesseract this image installs - so an image-only document came
+    back with no text at all. Three things are set deliberately:
+
+      do_ocr=True              OCR is available at all.
+      TesseractCliOcrOptions   the CLI binary the Dockerfile installs, NOT the
+                               tesserocr Python binding, which is not a
+                               dependency of this service.
+      force_full_page_ocr=False OCR runs ONLY on regions with no text layer. A
+                               born-digital PDF keeps its exact native text and
+                               never pays for a recognition pass; the previous
+                               behaviour of the whole pipeline depended on this.
+    """
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import (
+        PdfPipelineOptions,
+        TesseractCliOcrOptions,
+    )
+    from docling.document_converter import (
+        DocumentConverter,
+        ImageFormatOption,
+        PdfFormatOption,
+    )
+
+    options = PdfPipelineOptions()
+    # 'native' reads the text layer and never invokes OCR. It is the probe that
+    # makes `ocrApplied` truthful: if it returns nothing, any text the OCR pass
+    # later produces must have come from pixels.
+    options.do_ocr = mode != "native"
+    options.do_table_structure = True
+    # THE RESOLUTION AT WHICH PAGES ARE RASTERISED BEFORE OCR.
+    #
+    # Docling defaults to 1.0, which is 72 dpi. Ten-point body text is about
+    # ten pixels tall at that scale, and tesseract answers "Too few characters.
+    # Skipping this page" - the page comes back empty and looks like a document
+    # with no text rather than a resolution problem. 4.0 is ~288 dpi, comfortably
+    # inside tesseract's usable range.
+    #
+    # This is the single knob that decides whether scanned CVs work at all.
     with suppress(Exception):
-        return bool(getattr(result, "ocr_applied", False))
+        options.images_scale = float(os.environ.get("SIDECAR_OCR_SCALE", "4.0"))
+    options.ocr_options = TesseractCliOcrOptions(
+        lang=_ocr_languages(),
+        # Native text wins wherever it exists. This is what keeps OCR
+        # CONDITIONAL rather than universal.
+        force_full_page_ocr=(mode == "forced"),
+    )
+
+    artifacts = os.environ.get("DOCLING_ARTIFACTS_PATH")
+    if artifacts:
+        options.artifacts_path = artifacts
+
+    # Images take the same pipeline: a PNG/JPEG resume is a page of pixels.
+    return DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=options),
+            InputFormat.IMAGE: ImageFormatOption(pipeline_options=options),
+        }
+    )
+
+
+_CONVERTERS: dict[str, Any] = {}
+
+
+def _converter(mode: str = "native") -> Any:
+    """One converter per OCR mode, for the life of the process.
+
+    Two modes, each cached separately: selective (native text wins, OCR only
+    fills bitmap regions) and forced (recognise every page). Building either
+    loads the layout, table and OCR models, so rebuilding per request reloaded
+    every model - that was the 11 s of dead time on every single call.
+
+    Lazy on purpose: loading models at import time would make the health
+    endpoint lie about readiness.
+    """
+    if mode not in _CONVERTERS:
+        _CONVERTERS[mode] = _build_converter(mode)
+    return _CONVERTERS[mode]
+
+
+def _ocr_applied(result: Any) -> bool:
+    """Did any text on this document actually come from OCR?
+
+    Docling marks recognised cells `from_ocr`. The previous implementation read
+    `result.ocr_applied`, which Docling does not define, so this always reported
+    False - a digital PDF and a scanned one were indistinguishable downstream.
+    """
+    with suppress(Exception):
+        for page in getattr(result, "pages", None) or []:
+            for cell in getattr(page, "cells", None) or []:
+                if getattr(cell, "from_ocr", False):
+                    return True
+    with suppress(Exception):
+        for item, _level in result.document.iterate_items():
+            for prov in getattr(item, "prov", []) or []:
+                if getattr(prov, "from_ocr", False):
+                    return True
     return False

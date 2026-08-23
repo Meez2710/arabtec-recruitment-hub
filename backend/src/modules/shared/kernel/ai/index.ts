@@ -10,6 +10,18 @@ export type {
   AITaskDispatcher, AITaskHandle, AITaskRequest, AITaskState,
 } from './contracts.js';
 
+export { COMPETENCY_LEVELS } from './evidence.js';
+export type {
+  BlockKind, CanonicalSection, DocumentBlock, DocumentPage, DocumentProvenance,
+  DocumentSection, DocumentTable, EvidenceMatch, ExtractionMethod, FieldEvidence,
+  LayoutBox, OcrEngine, OcrLine, OcrPageOutcome, OcrPageRequest, OcrPageResult,
+  OcrStatus, SourceLocation, StructuredDocument, TableCell,
+} from './document.js';
+
+export type {
+  CandidateEvaluation, CompetencyAssessment, CompetencyLevel,
+} from './evidence.js';
+
 export type {
   AICapabilities, AnalyzedJobDescription, CandidateMatch, CandidateMatcher,
   CandidateRankingService, DocumentParser, EmbeddingVector, ExtractedEducation,

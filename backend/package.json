@@ -19,6 +19,7 @@
     "test:domain:watch": "vitest",
     "test:domain:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
     "reconcile": "tsx src/infrastructure/tools/reconcile/run.ts",
     "test:pg": "vitest run --no-file-parallelism",
     "test:pg:legacy": "node pg_tx_test.mjs",
@@ -28,6 +29,7 @@
     "api:dev": "tsx watch src/api/main.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "@types/multer": "^2.2.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",

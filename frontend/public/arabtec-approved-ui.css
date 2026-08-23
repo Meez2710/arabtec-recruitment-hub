@@ -1,0 +1,102 @@
+/* Arabtec ATS approved UI — direct implementation overlay.
+   Visual truth: Arabtec design system. Greenhouse is used only for compact ATS interaction patterns. */
+:root{
+  --brand:#d8232a;--brand-dark:#b7000f;--brand-tint:#ffedea;--brand-tint-bd:#efd0d5;
+  --brand-primary:#238356;--brand-primary-dark:#0f5c34;--brand-primary-tint:#eaf5ef;
+  --brand-secondary:#111315;--brand-accent:#d8232a;
+  --action:#238356;--action-dark:#0f5c34;--action-tint:#eaf5ef;--action-tint-bd:#c2ded0;
+  --action-primary:#238356;--action-primary-hover:#0f5c34;--action-primary-tint:#eaf5ef;
+  --action-success:#238356;--action-success-hover:#0f5c34;--action-success-tint:#eaf5ef;
+  --app-bg:#f4f5f7;--bg:#f4f5f7;--card-bg:#fff;--surface:#fff;--surface-2:#fafafb;
+  --border:#e4e6ea;--border-soft:#edeef1;--line:#e4e6ea;--line-strong:#cbd2d6;
+  --text:#4a4d53;--text-strong:#16181d;--ink:#16181d;--ink-soft:#465157;--muted:#6b7078;
+  --danger:#d8232a;--danger-hover:#b7000f;--danger-tint:#fff0f2;--warning:#8a5a00;
+  --info:#245566;--font:"IBM Plex Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;--font-arabic:"IBM Plex Sans Arabic","IBM Plex Sans",system-ui,Arial,sans-serif;--ease:cubic-bezier(.2,0,0,1);--dur-fast:120ms;--dur:160ms;
+  --radius:8px;--card-radius:14px;--sidebar-w:232px;--ring-action:0 0 0 3px rgba(35,131,86,.18);
+  --shadow-card:0 1px 2px rgba(22,24,29,.04);--shadow-pop:0 4px 16px rgba(22,24,29,.08);
+}
+body{font-size:13px;line-height:1.42;background:var(--app-bg)}
+.shell{grid-template-columns:var(--sidebar-w) minmax(0,1fr)}
+.sidebar{background:#111315;color:#fff;border-right:1px solid #26292b;position:relative}
+.sidebar-head{min-height:72px;padding:14px 18px;border-bottom:1px solid #2b2f31;position:relative}
+.sidebar-head:after{content:"";position:absolute;left:18px;right:18px;bottom:-1px;height:2px;background:linear-gradient(90deg,#d8232a 0 44px,transparent 44px)}
+.side-mark{width:44px;height:38px}.side-mark img{max-width:44px!important;width:44px!important;max-height:38px!important;object-fit:contain}
+.side-txt strong{font-size:14px}.side-txt span{font-size:10px;color:#a9b0b4}
+.nav{padding:14px 10px}.nav-section{font-size:9.5px;color:#788086;letter-spacing:.11em;padding:16px 12px 6px}
+.nav-item{padding:9px 12px;border-radius:8px;color:#dce1e3;font-size:12.5px;border-left:0;position:relative}
+.nav-item:hover{background:rgba(255,255,255,.06)}
+.nav-item.active{background:rgba(35,131,86,.24);color:#fff;border-left:0}
+.nav-item.active:before{content:"";position:absolute;left:-10px;width:3px;height:28px;border-radius:0 4px 4px 0;background:#238356}
+.nav-item.active .nav-icon{color:#7fdfbf}
+.topbar{height:72px;background:#fff;border-top:3px solid #d8232a;border-bottom:1px solid var(--border);padding:0 28px;gap:18px;backdrop-filter:none}
+.gsearch{height:38px;max-width:440px;background:#fafbfb;border-color:var(--border);font-size:11.5px}
+.avatar{width:36px;height:36px;background:#238356}.profile-name{font-size:12px}.profile-role{font-size:10px}
+.content{position:relative;isolation:isolate;padding:22px 28px 38px;overflow:hidden;min-height:calc(100vh - 72px)}
+.content:before{content:"";position:fixed;right:34px;bottom:18px;width:min(46vw,560px);height:380px;z-index:-1;background:url('/arabtec-watermark.webp') no-repeat right bottom/contain;opacity:.043;pointer-events:none}
+.content>*{position:relative;z-index:1}
+.page-head{margin-bottom:18px}.page-head .page-title,.dash-head .page-title{font-size:23px;line-height:30px;font-weight:700}.page-sub{font-size:12px}.breadcrumb,.page-head .breadcrumb{font-size:10.5px}
+.card,.toolbar,.ticket-header-card{background:#fff;border:1px solid var(--border);box-shadow:var(--shadow-card)}
+.card.red-top,.ticket-header-card{border-top:3px solid #d8232a}.ticket-header-card:before{display:none}
+.card-head{min-height:54px;padding:13px 17px}.card-head h3{font-size:14px}.card-pad{padding:17px 18px}
+.btn{min-height:35px;padding:0 13px;font-size:12px;border-radius:8px;background:#238356;border-color:#238356}.btn:hover{background:#0f5c34;border-color:#0f5c34}
+.btn-secondary{background:#fff;color:#2e373c;border-color:#b9c0c4}.btn-secondary:hover{background:#f5f7f7;border-color:#8c969b}
+.btn-success{background:#238356;border-color:#238356}.btn-danger{color:#d8232a;background:#fff;border-color:rgba(157,24,39,.42)}.btn-danger:hover{background:#fff0f2;border-color:#d8232a}.btn-danger-solid{background:#d8232a;border-color:#d8232a}
+.toolbar{padding:10px;margin-bottom:14px}.toolbar input,.toolbar select{height:34px;padding:0 10px;font-size:11px}
+.table thead th,table thead th{font-size:9px;letter-spacing:.06em;padding:10px 11px;background:#f7f8f8;color:#7b858a}.table tbody td,table tbody td{font-size:11px;padding:11px}.cell-strong{font-size:11.5px}.cell-sub,.cell-sub-only{font-size:10px}
+.badge,.status-chip,.meta-chip,.chip,.src-chip{font-size:10px}.status-chip{height:23px}.status-chip.sourcing,.status-chip.progress,.status-chip.reopened{background:#eaf5ef;border-color:#c2ded0;color:#0f5c34}
+.tabbar,.profile-tabs{background:#fff}.tabbar-btn,.profile-tab{font-size:11.5px;padding:12px}.tabbar-btn.active,.profile-tab.active{color:#0f5c34;border-bottom-color:#238356}
+.dash-kpi-row{gap:14px}.dash-kpi{padding:15px 16px}.dash-kpi:before{background:#d8232a}.dash-kpi-label{font-size:10px}.dash-kpi-val{font-size:25px}.dash-kpi-hint{font-size:10px}
+.rq-rail{background:#d8232a}.code-pill{background:#eaf5ef;color:#0f5c34}.rq-title{font-size:14px}.rq-meta dt{font-size:9.5px}.rq-meta dd{font-size:11.5px}
+.profile-header{padding:17px 18px}.profile-header .ph-avatar{background:#238356}.profile-header .ph-name{font-size:18px}.profile-header .ph-headline{font-size:11.5px}
+.kan-head{border-top:3px solid #d8232a}.pcard-name{font-size:12px}.pcard-role,.pcard-facts .fact{font-size:10px}
+/* Candidate Intake Review */
+.intake-page-head{align-items:flex-end}.intake-queue{overflow:hidden;border-top:3px solid #d8232a}.intake-list-state{padding:56px 24px;text-align:center;color:var(--muted);display:grid;gap:5px}.intake-list-state strong{font-size:14px;color:var(--text-strong)}
+.intake-list-row{width:100%;display:grid;grid-template-columns:38px 1fr auto;gap:11px;align-items:center;padding:12px 17px;border:0;border-bottom:1px solid var(--border-soft);background:#fff;text-align:left;color:var(--text);font:inherit}.intake-list-row:hover,.intake-list-row.active{background:#f2faf7}.intake-avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#238356;color:#fff;font-size:10px;font-weight:750}.intake-list-copy{display:grid;min-width:0}.intake-list-copy strong{font-size:12px;color:var(--text-strong)}.intake-list-copy small{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.intake-state{font-size:9px;font-weight:750;color:#775100;background:#fff7df;padding:4px 8px;border-radius:999px}
+.intake-review-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:16px}.intake-review-head h1{font-size:23px;margin:6px 0 2px;color:var(--text-strong)}.intake-review-head p{font-size:11px;color:var(--muted);margin:0}.intake-head-actions{display:flex;gap:8px}.intake-back{border:0;background:none;padding:0;color:#0f5c34;font-size:11px;font-weight:700}
+.intake-banner{border:1px solid var(--border);border-left-width:4px;border-radius:9px;padding:11px 13px;margin:0 0 14px;font-size:11px;background:#fff;display:grid;gap:3px}.intake-banner strong{font-size:11.5px}.intake-banner.info{border-left-color:#245566;background:#f0f8fc}.intake-banner.warning{border-left-color:#8a5a00;background:#fff8e6;color:#775100}.intake-banner.danger{border-left-color:#d8232a;background:#fff3f4;color:#b7000f}.duplicate-match{display:inline-flex;margin:5px 6px 0 0;padding:3px 7px;border-radius:999px;background:rgba(255,255,255,.76);border:1px solid currentColor;font-size:9px}
+.review-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}.review-summary>div{background:#fff;border:1px solid var(--border);border-radius:9px;padding:12px 14px;border-left:3px solid #d8232a}.review-summary strong{display:block;font-size:19px;color:var(--text-strong)}.review-summary span{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.review-panel{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}.review-panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;border-bottom:1px solid var(--border)}.review-panel-head h2{font-size:14px;margin:0}.review-panel-head p{font-size:10px;color:var(--muted);margin:2px 0 0}
+.review-table-wrap{overflow:auto}.review-table{width:100%;border-collapse:collapse;table-layout:fixed}.review-table th{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#7b858a;background:#f7f8f8;padding:10px;text-align:left}.review-table th:nth-child(1){width:18%}.review-table th:nth-child(2){width:24%}.review-table th:nth-child(3){width:39%}.review-table th:nth-child(4){width:19%}.review-table td{padding:10px;border-bottom:1px solid var(--border-soft);vertical-align:top;font-size:10.5px}.review-table td>strong{display:block;font-size:10.5px;color:var(--text-strong)}.review-table td>small{display:block;font-size:8.5px;color:var(--muted);margin-top:3px}.parsed-value{font-weight:650;color:#252c30;overflow-wrap:anywhere}.evidence-quote{color:#536067;font-size:10px;line-height:1.42}.evidence-cell small{display:block;font-size:8.5px;color:#245566;margin-top:4px}.decision-select,.review-edit{width:100%;height:32px;border:1px solid var(--border);border-radius:7px;background:#fff;padding:0 8px;font:inherit;font-size:10.5px}.decision-accept{background:#fbfefc}.decision-reject{background:#fffafb}.decision-edit{background:#fffdf7}
+.override-check{display:flex;gap:9px;align-items:flex-start;margin-top:12px;padding:12px 14px;border:1px solid #e1b2b8;border-radius:9px;background:#fff6f7}.override-check span{display:grid}.override-check strong{font-size:11px;color:#b7000f}.override-check small{font-size:9.5px;color:var(--muted)}
+.review-submit{position:sticky;bottom:0;margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 -6px 22px rgba(17,19,21,.06)}.review-submit span{font-size:10.5px;color:var(--muted)}
+.intake-modal-backdrop{position:fixed;inset:0;z-index:200;background:rgba(17,19,21,.48);display:grid;place-items:center;padding:20px}.intake-modal{width:min(460px,100%);background:#fff;border-radius:12px;padding:20px;box-shadow:var(--shadow-pop)}.intake-modal h3{margin:0 0 5px}.intake-modal p{font-size:11px;color:var(--muted)}.intake-modal textarea{width:100%;min-height:90px;border:1px solid var(--border);border-radius:8px;padding:10px;font:inherit}.intake-modal>div{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+@media(max-width:1000px){.content{padding:18px}.review-table{min-width:820px}.review-summary{grid-template-columns:1fr}.intake-review-head{align-items:flex-start;flex-direction:column}.topbar{padding:0 16px}}
+
+/* Talent Pool → Hiring Request linking. Reuses the approved palette: green is
+   the action, blue is the navigable relationship, red only for the failure. */
+.rq-links{display:flex;flex-wrap:wrap;gap:4px}
+.rq-link-chip{display:grid;gap:1px;text-align:left;border:1px solid #cfe3ef;background:#E9F4FA;color:#245566;border-radius:7px;padding:4px 8px;font:inherit;font-size:10px;font-weight:700;cursor:pointer}
+.rq-link-chip:hover{border-color:#245566}
+.rq-link-chip:focus-visible{outline:2px solid #245566;outline-offset:1px}
+.rq-link-sub{font-weight:500;font-size:9px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rq-linkwrap{position:relative;display:inline-block}
+.rq-link-btn{border:1px dashed #b7c3c9;background:#fff;color:#0f5c34;border-radius:7px;padding:5px 9px;font:inherit;font-size:10.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.rq-link-btn:hover{border-color:#238356;background:#E7F5F0}
+.rq-link-btn:focus-visible{outline:2px solid #238356;outline-offset:1px}
+.rq-pop{position:fixed;z-index:400;width:320px;max-width:78vw;background:#fff;border:1px solid var(--border);border-radius:11px;box-shadow:var(--shadow-pop);overflow:hidden;cursor:default}
+.rq-pop-head{padding:10px 12px;border-bottom:1px solid var(--border);font-size:11.5px;font-weight:750;color:var(--text-strong);border-top:3px solid #d8232a}
+.rq-pop-search{width:calc(100% - 20px);margin:10px;height:30px;border:1px solid var(--border);border-radius:7px;padding:0 9px;font:inherit;font-size:11px}
+.rq-pop-search:focus-visible{outline:2px solid #238356;outline-offset:-1px}
+.rq-pop-list{max-height:230px;overflow:auto;padding:0 6px 6px}
+.rq-pop-label{font-size:8.5px;text-transform:uppercase;letter-spacing:.07em;color:#7b858a;padding:7px 6px 3px;font-weight:750}
+.rq-pop-item{display:grid;gap:1px;width:100%;text-align:left;border:1px solid transparent;background:none;border-radius:7px;padding:6px 7px;font:inherit;cursor:pointer}
+.rq-pop-item strong{font-size:10.5px;color:var(--text-strong);font-weight:650}
+.rq-pop-item small{font-size:9px;color:var(--muted)}
+.rq-pop-item:hover{background:#f2faf7}
+.rq-pop-item.picked{background:#E7F5F0;border-color:#238356}
+.rq-pop-item:focus-visible{outline:2px solid #238356;outline-offset:-1px}
+.rq-pop-empty{padding:18px 8px;text-align:center;font-size:10.5px;color:var(--muted)}
+.rq-pop-error{margin:0 10px 8px;padding:7px 9px;border-radius:7px;background:#fff3f4;border:1px solid #e1b2b8;color:#b7000f;font-size:10px}
+.rq-pop-foot{display:flex;justify-content:flex-end;gap:7px;padding:9px 10px;border-top:1px solid var(--border);background:#fcfdfd}
+
+
+/* Arabic runs in the Arabic face — names and employers are shown as written. */
+[lang="ar"],[dir="rtl"]{font-family:var(--font-arabic)}
+
+/* Talent Pool, trimmed to what a recruiter scans: identity, role, reach, and
+   the one action that moves work forward. Company folds under the position —
+   an employer is context for a role, not a column to read down. Parse quality,
+   owning recruiter and added-date live in the candidate drawer, where they are
+   looked up rather than scanned. */
+.th-request{min-width:190px}
+.table tbody td .cell-sub{display:block;color:var(--muted);margin-top:1px}

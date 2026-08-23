@@ -20,6 +20,7 @@ const FIELD_MAP = {
   email: 'email',
   phone: 'phone',
   location: 'location',
+  linkedin_url: 'linkedinUrl',
   current_company: 'currentCompany',
   current_position: 'currentPosition',
   years_experience: 'yearsExperience',
@@ -40,16 +41,22 @@ export function flattenEntities(parsed) {
  * @param {boolean} [opts.includeUncertain=false]  persist `uncertain` values too
  * @returns {{ payload: object, skipped: string[], persisted: string[] }}
  */
-export function toCandidatePayload(parsed, { includeUncertain = false } = {}) {
+export function toCandidatePayload(parsed, { includeUncertain = false, verifiedOnly = false } = {}) {
   const fields = flattenEntities(parsed);
   const payload = {};
   const persisted = [];
   const skipped = [];
 
+  // `verifiedOnly` is the CV-import setting. A `likely` value is one only the
+  // MODEL read — located in the document and well-formed, but with no
+  // independent rule agreeing — so it goes to a proposal for a human instead of
+  // straight onto the record. Every other caller keeps the original threshold.
+  const allowed = verifiedOnly ? new Set(['verified']) : PERSISTABLE;
+
   for (const [entity, column] of Object.entries(FIELD_MAP)) {
     const f = fields[entity];
     if (!f || f.value == null || f.value === '') { skipped.push(entity); continue; }
-    const trusted = PERSISTABLE.has(f.validation) || (includeUncertain && f.validation === 'uncertain');
+    const trusted = allowed.has(f.validation) || (includeUncertain && f.validation === 'uncertain');
     if (!trusted) { skipped.push(entity); continue; }
     payload[column] = f.value;
     persisted.push(entity);
