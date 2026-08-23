@@ -48,7 +48,8 @@ export function validateConfig() {
   // CV reading. There is no heuristic parser to fall back to any more, so an
   // unset key does not degrade parsing — it means no CV is read at all. That is
   // a much louder condition and the warning has to say so.
-  if (!present('ANTHROPIC_API_KEY') && isProd) {
+  const hasAiKey = present('ANTHROPIC_API_KEY');
+  if (!hasAiKey && isProd) {
     warnings.push('ANTHROPIC_API_KEY is unset — no CV reader is wired. Uploads will be kept but nothing will be parsed.');
   }
 
