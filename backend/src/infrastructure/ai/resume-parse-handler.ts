@@ -216,6 +216,30 @@ const findEvidence = (
 const CONFIDENCE = { ai: 0.75, derived: 0.5 } as const;
 
 /**
+ * The block a derived value was computed from.
+ *
+ * Total years of experience is arithmetic over the employment dates, so the
+ * citation for it is the place those dates are printed. Tries each employment
+ * period in turn — earliest first, since that is the one that sets the span —
+ * and falls back to the employer name, which is always on the same line as its
+ * dates on a CV.
+ */
+const derivationAnchor = (
+  structure: StructuredDocument,
+  resume: ExtractedResume,
+): FieldEvidence | null => {
+  const jobs = [...resume.employment].reverse(); // earliest first
+  for (const job of jobs) {
+    for (const needle of [job.from, job.to, job.employer]) {
+      if (needle === undefined || String(needle).trim() === '') continue;
+      const hit = locateValue(structure, String(needle), { limit: 1 });
+      if (hit.length > 0 && hit[0] !== undefined) return hit[0];
+    }
+  }
+  return null;
+};
+
+/**
  * Fields a reader may legitimately DERIVE rather than copy.
  *
  * Total years of experience is normally not written anywhere on a CV — it is
@@ -278,15 +302,26 @@ export const buildProposedFields = (input: BuildFieldsInput): {
     /* 2a. IS IT IN THE DOCUMENT? */
     const evidence = findEvidence(structure, field, value);
     if (evidence.length === 0 && DERIVABLE.has(field)) {
-      // Derived, not quoted: the dates this was computed from are in the
-      // document even though the total never appears as text. Proposed at
-      // reduced confidence, and labelled so the reviewer knows to check it
-      // rather than being shown a number with no visible source.
+      // Derived, not quoted. The total never appears as text, but the dates it
+      // was computed FROM do — so cite those. A reviewer checking a derived
+      // number needs to land on the employment history, not on a bare
+      // assertion, and every proposed field carries a source block for exactly
+      // that reason.
+      const anchor = derivationAnchor(structure, input.resume);
+      if (anchor === null) {
+        // Nothing in the document supports the arithmetic either. That is the
+        // hallucination gate's case, not a derivation.
+        withheld.push({
+          field, value, reason: 'the value could not be located in the document',
+        });
+        continue;
+      }
       fields.push({
         field,
         value,
         confidence: CONFIDENCE.derived,
-        evidence: 'Derived from the employment dates in this CV, not stated verbatim.',
+        evidence: `Derived from the employment dates in this CV, not stated verbatim. ${anchor.snippet}`.trim(),
+        evidenceRef: refOf(anchor),
       });
       continue;
     }

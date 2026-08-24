@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
   Projects, Sites, Departments, BusinessUnits, Users, SystemSettings, Posts, Applications,
+  Candidates,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -10,6 +11,7 @@ import { reconcileSeatsForHeadcount, ReconcileConflict } from '../lib/seat-recon
 import { multipart, streamFile } from '../lib/upload.js';
 import { REQ, reqNorm, REQ_LABELS } from '../lib/stages.js';
 import { notifyUser, notifyByPermission } from '../lib/notify.js';
+import { suggestCandidates } from '../lib/ai/recruiter-ai.js';
 import fs from 'node:fs';
 
 /**
@@ -590,5 +592,101 @@ router.get('/:id/attachment', (req, res) => {
   if (!r.attachment_path) return res.status(404).json({ error: 'No attachment.' });
   streamFile(r.attachment_path, res, r.attachment_name || 'attachment');
 });
+
+
+/* ---------------- AI CANDIDATE SUGGESTIONS ---------------- */
+
+/**
+ * Shortlist candidates from the talent pool for this requisition.
+ *
+ * READ-ONLY AND ADVISORY. This writes nothing: it ranks rows that already
+ * exist, and a recruiter still has to link anyone it surfaces through the
+ * normal POST /applications path, with the normal permission and duplicate
+ * rules. A bad shortlist is visibly bad and costs a scroll; that is why this
+ * is allowed to reason where the CV parser is not.
+ */
+router.post('/:id/suggest-candidates', requirePermission('candidate.view'), async (req, res) => {
+  const r = Requests.byId(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Request not found.' });
+
+  const limit = Math.min(Math.max(parseInt(req.body?.limit, 10) || 10, 1), 25);
+
+  // Candidates already on this requisition are not suggestions — proposing
+  // someone a recruiter linked last week wastes the shortlist.
+  const linked = new Set(Applications.forRequest(r.id).map((a) => a.candidate_id));
+
+  // POOL_CEILING keeps one call bounded. Each summary is ~40 tokens, so this is
+  // roughly 12k tokens of candidates — well inside the window, and honest about
+  // being a cap rather than silently reading the first N rows.
+  const POOL_CEILING = 300;
+  const pool = Candidates.list({ limit: POOL_CEILING, sort: 'created', dir: 'desc' })
+    .filter((c) => !linked.has(c.id) && c.candidate_state !== 'merged')
+    .map((c) => ({
+      id: c.id,
+      fullName: c.full_name,
+      currentPosition: c.current_position,
+      currentCompany: c.current_company,
+      yearsExperience: c.years_experience,
+      location: c.location,
+      university: c.university,
+      major: c.major,
+      skills: c.skills ? (() => { try { return JSON.parse(c.skills); } catch { return []; } })() : [],
+    }));
+
+  let outcome;
+  try {
+    outcome = await suggestCandidates({
+      id: r.id,
+      title: r.title,
+      location: r.location,
+      keyRequirements: r.key_requirements,
+      keyResponsibilities: r.key_responsibilities,
+      requiredSkills: r.required_skills ? (() => { try { return JSON.parse(r.required_skills); } catch { return []; } })() : [],
+    }, pool, limit);
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', msg: 'suggest-candidates.exception',
+      requestId: req.requestId, error: e.message, stack: e.stack }));
+    return res.status(500).json({ error: 'Could not produce a shortlist.', detail: e.message });
+  }
+
+  if (!outcome.ok) {
+    // A reason, not a stack trace: the panel shows this to the recruiter.
+    return res.status(503).json({ error: outcome.reason, suggestions: [] });
+  }
+
+  // Join back to the candidate so the panel can render a row without a second
+  // round trip, and so a stale id cannot render as a blank line.
+  const suggestions = outcome.matches.map((m) => {
+    const c = Candidates.byId(m.candidateId);
+    if (!c) return null;
+    return {
+      candidateId: c.id,
+      candidateNo: c.candidate_no,
+      fullName: c.full_name,
+      currentPosition: c.current_position,
+      currentCompany: c.current_company,
+      yearsExperience: c.years_experience,
+      location: c.location,
+      score: m.score,
+      reason: m.reason,
+      missingRequirements: m.missingRequirements,
+    };
+  }).filter(Boolean);
+
+  writeAudit(req, {
+    action: 'request.candidates_suggested', entityType: 'request', entityId: r.id,
+    newValue: { considered: pool.length, returned: suggestions.length, model: outcome.model },
+  });
+
+  res.json({
+    suggestions,
+    considered: pool.length,
+    // Stated, not hidden: a recruiter should know the shortlist was drawn from
+    // a capped pool rather than the whole database.
+    poolCapped: pool.length >= POOL_CEILING,
+    model: outcome.model,
+  });
+});
+
 
 export default router;

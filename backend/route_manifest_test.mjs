@@ -46,6 +46,10 @@ const EXPECTED = [
   ['GET', '/meta/form'],
   ['POST', '/:id/attachment'],
   ['GET', '/:id/attachment'],
+  // Advisory shortlist. Read-only: it ranks existing candidates and writes
+  // nothing — linking still goes through POST /applications with its own
+  // permission, duplicate and request-status rules.
+  ['POST', '/:id/suggest-candidates'],
 ];
 
 const manifest = (router) => router.stack

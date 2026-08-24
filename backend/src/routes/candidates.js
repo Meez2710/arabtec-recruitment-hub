@@ -21,6 +21,7 @@ import {
 import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
+import { interpretSearch } from '../lib/ai/recruiter-ai.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -166,6 +167,54 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
       totalPages: Math.max(Math.ceil(total / pageSize), 1),
       hasMore: page * pageSize < total,
     },
+  });
+});
+
+
+/* ---------------- SMART SEARCH ---------------- */
+
+/**
+ * Natural-language candidate search.
+ *
+ * Claude only TRANSLATES the sentence into the filters GET /api/candidates
+ * already accepts; the search itself is the same SQL as every other listing,
+ * with the same scoping. So this cannot return a row the recruiter could not
+ * already reach, and a misread query is a visibly odd result set rather than a
+ * silent permission hole.
+ *
+ * `interpretation` is returned so the recruiter can see what was understood —
+ * a search that quietly reinterprets the question is worse than one that gets
+ * it wrong out loud.
+ *
+ * Registered BEFORE `/:id`, or Express would read "smart-search" as an id.
+ */
+router.get('/smart-search', requirePermission('candidate.view'), async (req, res) => {
+  const query = String(req.query.q || '').trim();
+  if (query === '') return res.status(400).json({ error: 'A search query is required.' });
+  if (query.length > 400) return res.status(400).json({ error: 'Search query is too long.' });
+
+  let outcome;
+  try {
+    outcome = await interpretSearch(query);
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', msg: 'smart-search.exception',
+      requestId: req.requestId, error: e.message, stack: e.stack }));
+    return res.status(500).json({ error: 'Search failed.', detail: e.message });
+  }
+  if (!outcome.ok) return res.status(503).json({ error: outcome.reason });
+
+  const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 1), 200);
+  const filters = outcome.filters;
+  const total = Candidates.count(filters);
+  const rows = Candidates.list({ ...filters, limit: pageSize, offset: 0 });
+
+  res.json({
+    candidates: rows.map((c) => serialize(c, req.user)),
+    interpretation: outcome.interpretation,
+    // Echoed so the UI can show them as removable chips, exactly like a filter
+    // the recruiter typed by hand.
+    filters,
+    pagination: { page: 1, pageSize, total, totalPages: Math.max(Math.ceil(total / pageSize), 1), hasMore: total > pageSize },
   });
 });
 
