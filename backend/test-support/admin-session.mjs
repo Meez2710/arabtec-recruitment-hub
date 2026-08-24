@@ -62,15 +62,34 @@ export async function adminToken(base, opts = {}) {
     ?? ADMIN_BOOTSTRAP_PASSWORD;
 
   let login = await post(base, '/api/auth/login', { email: ADMIN_EMAIL, password: bootstrap });
+  const bootstrapStatus = login.status;
 
   // Already rotated by an earlier call in this suite.
   if (login.status !== 200) {
     login = await post(base, '/api/auth/login', { email: ADMIN_EMAIL, password: ADMIN_ROTATED_PASSWORD });
   }
   if (login.status !== 200 || !login.json?.token) {
+    // Say enough to diagnose this from a CI log alone. This has failed
+    // intermittently across many suites at once, and the previous message —
+    // just the second status — could not distinguish "wrong password" from
+    // "account locked by an earlier assertion" from "seeded with a different
+    // password", which are three different bugs with the same symptom.
+    const locked = login.status === 423;
+    const limited = login.status === 429;
     throw new Error(
-      `admin login failed (HTTP ${login.status}). The seed uses SEED_ADMIN_PASSWORD; `
-      + 'set it before importing prisma/seed.js, or pass { bootstrap }.',
+      `admin login failed for ${ADMIN_EMAIL}.\n`
+      + `  bootstrap attempt : HTTP ${bootstrapStatus}\n`
+      + `  rotated attempt   : HTTP ${login.status}${login.json?.error ? ' — ' + login.json.error : ''}\n`
+      + `  DATABASE_URL      : ${process.env.DATABASE_URL || '(unset — shared default file)'}\n`
+      + `  SEED_ADMIN_PASSWORD set: ${process.env.SEED_ADMIN_PASSWORD ? 'yes' : 'NO'}\n`
+      + (locked
+        ? '  DIAGNOSIS: the account is LOCKED. An earlier assertion in this suite '
+          + 'exhausted the failed-login threshold; the lockout outlives it.'
+        : limited
+          ? '  DIAGNOSIS: rate limited (>20 login attempts in 15 minutes from this IP).'
+          : '  DIAGNOSIS: neither the bootstrap nor the rotated password matched, so '
+            + 'this database was seeded with a third value, or a test changed the '
+            + 'admin password and did not restore it.'),
     );
   }
 

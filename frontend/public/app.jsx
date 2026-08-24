@@ -4350,7 +4350,14 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked })
 function CandidatesPage({ user, onNavigate }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
-  const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '' });
+  const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '', currentPosition: '', university: '' });
+  // Plain-English search. It does not hold its own result list: it fills the
+  // filters above and lets the existing load() run, so paging, tabs, sorting
+  // and the table stay exactly as they were and the recruiter can hand-edit
+  // whatever the model chose.
+  const [ask, setAsk] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [askedAs, setAskedAs] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -4428,6 +4435,7 @@ function CandidatesPage({ user, onNavigate }) {
   const FILTER_LABELS = {
     q: 'Search', location: 'Location', currentCompany: 'Company',
     minExp: 'Min exp', maxExp: 'Max exp', tag: 'Tag',
+    currentPosition: 'Role', university: 'University',
   };
   const activeFilters = Object.entries(filters)
     .filter(([k, v]) => v && FILTER_LABELS[k])
@@ -4436,7 +4444,34 @@ function CandidatesPage({ user, onNavigate }) {
   const clearAllFilters = () => {
     setFilters((f) => Object.fromEntries(Object.keys(f).map((k) => [k, ''])));
     setScreenTab('all');
+    setAskedAs(null); setAsk('');
   };
+
+  /**
+   * Ask in plain English.
+   *
+   * The server translates the sentence into these same filters and returns what
+   * it understood. Applying them to the existing state — rather than rendering a
+   * separate result list — is what keeps this honest: the recruiter sees the
+   * filters it chose, in the boxes they already use, and can correct any of them.
+   */
+  async function runAsk() {
+    const query = ask.trim();
+    if (!query || asking) return;
+    setAsking(true);
+    try {
+      const r = await api.get('/candidates/smart-search?q=' + encodeURIComponent(query));
+      setFilters((f) => ({
+        ...Object.fromEntries(Object.keys(f).map((k) => [k, ''])),
+        ...Object.fromEntries(Object.entries(r.filters || {}).map(([k, v]) => [k, v == null ? '' : String(v)])),
+      }));
+      setScreenTab(r.filters?.screeningStatus || 'all');
+      setPage(1);
+      setAskedAs(r.interpretation || '');
+    } catch (e) {
+      toast(e.message || 'Could not run that search.', 'error');
+    } finally { setAsking(false); }
+  }
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
   // Filtering happens server-side; `shown` is simply the current page.
   const shown = candidates || [];
@@ -4561,6 +4596,22 @@ function CandidatesPage({ user, onNavigate }) {
             try { const r = await api.post('/candidates/inbox-scan', {}); toast(`Imported ${r.imported} CVs from inbox.${r.skipped ? ' Skipped ' + r.skipped + '.' : ''}`); load(); } catch (e) { toast('Scan failed: ' + e.message, 'error'); }
           }}>Scan CV Inbox</button>}
         </>} />
+      <div className="toolbar ask-bar">
+        <input className="ask-input" placeholder="Ask in plain English — e.g. quantity surveyors in Riyadh with 10+ years"
+          value={ask} disabled={asking}
+          onChange={(e) => setAsk(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') runAsk(); }} />
+        <button className="btn" onClick={runAsk} disabled={asking || !ask.trim()}>
+          {asking ? 'Searching…' : 'Ask'}
+        </button>
+      </div>
+      {askedAs !== null && (
+        <div className="ask-note">
+          <span className="ask-note-label">Understood as</span>
+          <span>{askedAs || 'no constraints — showing everyone'}</span>
+          <button className="btn btn-ghost btn-sm" onClick={clearAllFilters}>Clear</button>
+        </div>
+      )}
       <div className="toolbar">
         <input placeholder="Search name / id / company / email…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 240 }} />
         <input placeholder="Location" value={filters.location} onChange={(e) => setFilters((f) => ({ ...f, location: e.target.value }))} style={{ width: 120 }} />

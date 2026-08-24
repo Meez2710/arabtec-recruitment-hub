@@ -168,3 +168,15 @@ body,button,input,select,textarea{font-family:var(--font)}
 .score-weak{background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
 .miss-list{display:flex;flex-wrap:wrap;gap:4px;max-width:260px}
 .chip-warn{background:#fff6e6;color:#8a5a00;border:1px solid #f0dcb4}
+
+/* Plain-English search. Sits above the filter row and fills it, rather than
+   replacing it — a recruiter should be able to see and correct whatever the
+   model chose, in the boxes they already know. */
+.ask-bar{gap:8px}
+.ask-input{flex:1;min-width:260px}
+.ask-note{display:flex;align-items:center;gap:10px;margin:-4px 0 12px;padding:8px 12px;
+  border:1px solid var(--action-tint-bd);background:var(--action-tint);
+  border-radius:var(--radius);font-size:12.5px;color:var(--text-strong)}
+.ask-note-label{font-weight:700;color:var(--action-dark);text-transform:uppercase;
+  font-size:9.5px;letter-spacing:.06em;white-space:nowrap}
+.ask-note .btn{margin-left:auto}
