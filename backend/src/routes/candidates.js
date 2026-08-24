@@ -363,6 +363,9 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
         file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
         report: toImportReport(entities, { fileName: req.uploadedFile.originalName }),
         reason: parsed.reason || 'No candidate field could be supported by the document.',
+        // Still shown even when nothing was proposable: a recruiter should see
+        // WHAT was read and rejected, not just that nothing survived.
+        preview: parsed.preview ?? [],
       });
     }
 
@@ -399,6 +402,9 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
       // provenance: nothing downstream branches on it.
       document: documentProvenance(parsed),
       report: toImportReport(entities, { fileName: req.uploadedFile.originalName }),
+      // EVERY field the reader saw — accepted, rejected (with why), or never
+      // stated in the CV at all. Never persisted; for the review screen only.
+      preview: parsed.preview ?? [],
     });
   } catch (e) {
     // The catch block sends its own response, so this never reaches the
@@ -920,7 +926,7 @@ async function parseAndPropose(candidateId, storedName, req) {
     });
   }
 
-  return { meta, entities, proposal };
+  return { meta, entities, proposal, preview: parsed.preview ?? [] };
 }
 
 
@@ -935,11 +941,13 @@ router.post('/:id/resume', requirePermission('candidate.edit'), multipart, async
   // upload — the file is already stored and is the source of truth.
   let report = null;
   let proposal = null;
+  let preview = [];
   try {
     const r = await parseAndPropose(c.id, req.uploadedFile.storedName, req);
     report = toImportReport(r.entities, { fileName: req.uploadedFile.originalName, candidateNo: c.candidate_no });
     // No candidate field was written. What the CV says is waiting for a person.
     proposal = r.proposal;
+    preview = r.preview;
     CandidateDocuments.add({
       candidateId: c.id, docType: 'cv', fileName: req.uploadedFile.originalName,
       fileHash: fileHash(uploadPath(req.uploadedFile.storedName)), uploadedBy: req.user.id,
@@ -955,6 +963,9 @@ router.post('/:id/resume', requirePermission('candidate.edit'), multipart, async
     report,
     // PENDING. Nothing here has touched the candidate record.
     proposal,
+    // EVERY field the reader saw — accepted, rejected (with why), or never
+    // stated in the CV at all. Never persisted; for the review screen only.
+    preview,
   });
 });
 
@@ -979,6 +990,9 @@ router.post('/:id/reparse', requirePermission('candidate.edit'), async (req, res
       // overwrite until a person accepts something.
       proposal: r.proposal,
       report: toImportReport(r.entities, { fileName: c.resume_name || c.resume_path, candidateNo: c.candidate_no }),
+      // EVERY field the reader saw — accepted, rejected (with why), or never
+      // stated in the CV at all. Never persisted; for the review screen only.
+      preview: r.preview,
     });
   } catch (e) {
     Candidates.setParseMeta?.(c.id, { parseStatus: 'failed', parseConfidence: 0, parsedAt: new Date().toISOString() });

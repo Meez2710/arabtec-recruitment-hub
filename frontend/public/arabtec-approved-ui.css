@@ -77,6 +77,17 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 .intake-modal-backdrop{position:fixed;inset:0;z-index:200;background:rgba(17,19,21,.48);display:grid;place-items:center;padding:20px}.intake-modal{width:min(460px,100%);background:#fff;border-radius:12px;padding:20px;box-shadow:var(--shadow-pop)}.intake-modal h3{margin:0 0 5px}.intake-modal p{font-size:11px;color:var(--muted)}.intake-modal textarea{width:100%;min-height:90px;border:1px solid var(--border);border-radius:8px;padding:10px;font:inherit}.intake-modal>div{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
 @media(max-width:1000px){.content{padding:18px}.review-table{min-width:820px}.review-summary{grid-template-columns:1fr}.intake-review-head{align-items:flex-start;flex-direction:column}.topbar{padding:0 16px}}
 
+/* Full extraction preview — every field a CV parse saw, accepted or not. */
+.preview-panel{margin-top:14px}.parse-preview-panel{margin-top:12px}.parse-preview-head{font-size:10.5px;font-weight:650;color:var(--text-strong);margin-bottom:6px}
+.preview-table th:nth-child(1){width:26%}.preview-table th:nth-child(2){width:44%}.preview-table th:nth-child(3){width:30%}
+.preview-section-row td{background:#f7f8f8;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#7b858a;font-weight:700;padding:7px 10px}
+.preview-status-badge{display:inline-block;padding:2px 7px;border-radius:999px;font-size:9px;font-weight:700;white-space:nowrap}
+.preview-status-badge.preview-status-verified{background:var(--action-tint);color:var(--action-dark)}
+.preview-status-badge.preview-status-likely{background:#fff8e6;color:#8a5a00}
+.preview-status-badge.preview-status-rejected{background:var(--danger-tint);color:var(--danger-hover)}
+.preview-status-badge.preview-status-not_stated{background:#f2f3f4;color:var(--muted)}
+.preview-table td small{display:block;font-size:8.5px;color:var(--muted);margin-top:3px}
+
 /* Talent Pool → Hiring Request linking. Reuses the approved palette: green is
    the action, blue is the navigable relationship, red only for the failure. */
 .rq-links{display:flex;flex-wrap:wrap;gap:4px}

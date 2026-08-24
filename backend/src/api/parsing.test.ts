@@ -19,7 +19,7 @@ import { StaticPrincipalResolver } from './auth/principal.js';
 import type { Principal } from './auth/principal.js';
 import { InMemoryDocumentStore } from '../modules/talent/infrastructure/document-store.js';
 import { PlainTextDocumentParser } from '../infrastructure/ai/plain-text-parser.js';
-import { toProposedFields } from '../infrastructure/ai/resume-parse-handler.js';
+import { buildExtractionPreview, toProposedFields } from '../infrastructure/ai/resume-parse-handler.js';
 import { AI_CAPABILITIES } from '../modules/shared/kernel/ai/index.js';
 import type {
   AIOutcome, ExtractedResume, ResumeExtractor,
@@ -363,6 +363,74 @@ describe('extraction mapping', () => {
     }), 0.9);
     expect(fields.map((f) => f.field)).not.toContain('graduationYear');
     expect(fields.find((f) => f.field === 'university')?.value).toBe('X');
+  });
+});
+
+/* --------------------- 3b. the full extraction preview --------------------- */
+
+describe('extraction preview — every field, none silently missing', () => {
+  const resumeOf = (over: Partial<ExtractedResume> = {}): ExtractedResume => {
+    const outcome = extracted(over);
+    return 'content' in outcome ? outcome.content : ({} as ExtractedResume);
+  };
+
+  // Contains every value the default stub resume claims, so evidence location
+  // succeeds for all of them except where a test deliberately breaks it.
+  const FULL_CV_TEXT = [
+    'Ahmed Hassan', 'ahmed.hassan@example.com', '+201001234567', 'Cairo',
+    'Old Co', 'Junior Engineer',
+    'Orascom', 'Site Engineer',
+    'Cairo University', 'Civil Engineering', '2015',
+    'AutoCAD', 'Primavera', 'Arabic', 'English', 'PMP',
+  ].join('\n');
+
+  const input = (over: Partial<ExtractedResume> = {}) => ({
+    resume: resumeOf({
+      employment: [
+        { employer: 'Old Co', title: 'Junior Engineer' },
+        { employer: 'Orascom', title: 'Site Engineer', current: true },
+      ],
+      ...over,
+    }),
+    document: { text: FULL_CV_TEXT, pageCount: 1, pages: [FULL_CV_TEXT] },
+    aiConfidence: 0.9,
+    parser: 'test-parser',
+    parserVersion: '1',
+  });
+
+  it('marks a field the CV never states as not_stated rather than omitting the row', () => {
+    const rows = buildExtractionPreview(input());
+    // The stub resume never sets a headline — the extraction schema captures
+    // one, but nothing maps it to a candidate column, so buildProposedFields
+    // never touches it either.
+    expect(rows.find((r) => r.field === 'headline')).toMatchObject({
+      status: 'not_stated', value: null,
+    });
+  });
+
+  it('marks a hallucinated value as rejected, with a reason, instead of dropping the row', () => {
+    const rows = buildExtractionPreview(input({ email: 'ghost@nowhere.example' }));
+    const email = rows.find((r) => r.field === 'email');
+    expect(email?.status).toBe('rejected');
+    expect(email?.value).toBe('ghost@nowhere.example');
+    expect(email?.reason).toBeTruthy();
+  });
+
+  it('lists every employment entry, not only the one mapped to a candidate column', () => {
+    const rows = buildExtractionPreview(input());
+    const history = rows.filter((r) => r.section === 'Employment history');
+    expect(history).toHaveLength(2);
+    expect(history.every((r) => r.status === 'verified')).toBe(true);
+    expect(history[0]?.value).toContain('Old Co');
+    expect(history[1]?.value).toContain('Orascom');
+  });
+
+  it('never lists the same known field twice', () => {
+    const rows = buildExtractionPreview(input());
+    const known = rows
+      .filter((r) => r.section !== 'Employment history' && r.section !== 'Education history')
+      .map((r) => r.field);
+    expect(new Set(known).size).toBe(known.length);
   });
 });
 

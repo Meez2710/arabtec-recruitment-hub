@@ -303,6 +303,7 @@ export async function parseDocument(filePath) {
       reason: 'No CV reader is configured. Set ANTHROPIC_API_KEY and restart the server.',
       rich: failedRich('No CV reader is configured.'),
       fields: [],
+      preview: [],
     });
   }
 
@@ -315,6 +316,7 @@ export async function parseDocument(filePath) {
       reason: `The document could not be read from storage: ${error.message}`,
       rich: failedRich('The document could not be read from storage.'),
       fields: [],
+      preview: [],
     });
   }
 
@@ -330,6 +332,7 @@ export async function parseDocument(filePath) {
       permanent: parsed.permanent,
       rich: failedRich(parsed.reason),
       fields: [],
+      preview: [],
     });
   }
 
@@ -356,13 +359,20 @@ export async function parseDocument(filePath) {
 
   // THE VALIDATION SPLIT. Evidence is located in the document and deterministic
   // rules judge the value; neither consults the extractor's own confidence.
-  const { fields, withheld } = handler.buildProposedFields({
+  const gateInput = {
     resume: extracted,
     document: parsed.content,
     aiConfidence,
     parser: 'document-pipeline',
     parserVersion: documentParser.version ?? 'unversioned',
-  });
+  };
+  const { fields, withheld } = handler.buildProposedFields(gateInput);
+
+  // EVERY field the reader could have surfaced, not just the ones that became
+  // a candidate proposal — so a recruiter sees what was found and rejected
+  // (and why), instead of a field just being absent with no trace of it ever
+  // having been read. Never used for persistence; see buildExtractionPreview.
+  const preview = handler.buildExtractionPreview(gateInput);
 
   const structure = parsed.content.structure ?? { sections: [], pages: [], ocrApplied: false, degradedPages: [] };
 
@@ -371,6 +381,7 @@ export async function parseDocument(filePath) {
     reason: fields.length > 0 ? null : 'No candidate field could be supported by the document.',
     fields,
     withheld,
+    preview,
     parsed: parsed.content,
     documentId: filename,
     generation,

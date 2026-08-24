@@ -115,6 +115,46 @@
         `${m.candidateNo || m.id || 'Candidate'} · ${(m.matchedFields || ['fullName']).join(', ')}`)));
   }
 
+  const PREVIEW_STATUS_LABEL = {
+    verified: 'Verified', likely: 'Likely (AI only)', rejected: 'Rejected', not_stated: 'Not stated in CV',
+  };
+
+  /**
+   * EVERY field the reader saw for this CV — not just the ones that made it
+   * onto the accept/reject table below. A field that is simply absent from a
+   * parse is indistinguishable from one the reader missed; this table exists
+   * so that distinction is never silent. Read-only: nothing here can be
+   * accepted or rejected — that stays exclusively the job of ReviewTable.
+   */
+  function ExtractionPreviewTable({ rows }) {
+    if (!rows || !rows.length) return null;
+    const sections = [];
+    for (const r of rows) if (!sections.includes(r.section)) sections.push(r.section);
+    return h('div', { className: 'preview-panel' },
+      h('div', { className: 'review-panel-head' },
+        h('div', null,
+          h('h2', null, 'Full extraction preview'),
+          h('p', null, 'Every field the reader looked for in this CV. Nothing here is editable or '
+            + 'persisted — it exists so a missing field is never a silent gap.'))),
+      h('div', { className: 'review-table-wrap' }, h('table', { className: 'review-table preview-table' },
+        h('thead', null, h('tr', null, h('th', null, 'Field'), h('th', null, 'Value'), h('th', null, 'Status'))),
+        h('tbody', null, sections.flatMap((section) => [
+          h('tr', { key: `h-${section}`, className: 'preview-section-row' },
+            h('td', { colSpan: 3 }, section)),
+          ...rows.filter((r) => r.section === section).map((r) => h('tr', {
+            key: r.field, className: `preview-status-row-${r.status}`,
+          },
+          h('td', null, r.label),
+          h('td', null, r.value == null
+            ? h('span', { className: 'muted' }, '—')
+            : h('span', { className: 'parsed-value' }, r.value)),
+          h('td', null,
+            h('span', { className: `preview-status-badge preview-status-${r.status}` },
+              PREVIEW_STATUS_LABEL[r.status] || r.status),
+            r.reason ? h('small', null, r.reason) : null))),
+        ])))));
+  }
+
   function ReviewTable({ fields, decisions, setDecision }) {
     return h('div', { className: 'review-table-wrap' }, h('table', { className: 'review-table' },
       h('thead', null, h('tr', null,
@@ -162,7 +202,7 @@
     }, `${parts.join(' · ')}. Check each value against the original before accepting it.`);
   }
 
-  function IntakeDetail({ id, onConverted, onBack, provenance }) {
+  function IntakeDetail({ id, onConverted, onBack, provenance, preview }) {
     const [intake, setIntake] = useState(null);
     const [decisions, setDecisions] = useState({});
     const [busy, setBusy] = useState(false);
@@ -282,6 +322,8 @@
             h('button', { className: 'btn btn-secondary', onClick: () => setAll('ACCEPT') }, 'Accept all'))),
         h(ReviewTable, { fields, decisions, setDecision })),
 
+      preview ? h(ExtractionPreviewTable, { rows: preview }) : null,
+
       blocked && conflict.overridable
         ? h('label', { className: 'override-check' },
           h('input', { type: 'checkbox', checked: override, onChange: (e) => setOverride(e.target.checked) }),
@@ -331,6 +373,9 @@
     // Document-stage provenance for the intake just uploaded. Response-only —
     // the intake record itself stores no parser metadata.
     const [source, setSource] = useState(null);
+    // Full extraction preview for the intake just uploaded — same reason as
+    // `source`: computed at parse time, never persisted on the intake record.
+    const [preview, setPreview] = useState(null);
     const fileRef = useRef(null);
 
     const load = useCallback(async () => {
@@ -344,7 +389,7 @@
       const file = e.target.files && e.target.files[0];
       e.target.value = '';
       if (!file) return;
-      setUploading(true); setError(''); setNotice(null); setResult(null); setSource(null);
+      setUploading(true); setError(''); setNotice(null); setResult(null); setSource(null); setPreview(null);
       try {
         const r = await api().upload('/candidates/parse-cv', file);
         if (!r.intake) {
@@ -361,9 +406,14 @@
                 : 'Upload a text-based PDF or DOCX, ')
               + 'or add the candidate manually.',
           });
+          // Still worth showing: even when nothing cleared the evidence gate,
+          // the full preview says what the reader saw and why each field was
+          // rejected, rather than leaving the recruiter with only "nothing".
+          if (r.preview && r.preview.length) setPreview({ rows: r.preview, intakeId: null });
           return;
         }
         setSource(r.document ? { ...r.document, intakeId: r.intake.id } : null);
+        if (r.preview) setPreview({ rows: r.preview, intakeId: r.intake.id });
         await load();
         setActive(r.intake.id);
       } catch (err) {

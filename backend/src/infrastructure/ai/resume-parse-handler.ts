@@ -375,6 +375,174 @@ export const buildProposedFields = (input: BuildFieldsInput): {
   };
 };
 
+/* --------------------------- the full extraction preview ------------------- */
+//
+// WHAT THIS IS FOR. `buildProposedFields` above answers one question per field:
+// "may this be written to a candidate?" A recruiter reviewing a parse has a
+// different question: "what did the reader see, for EVERY field, and why did a
+// field I can see in the CV not show up on the review screen?" A field that
+// silently never appears is indistinguishable from a field the reader missed —
+// this function exists so that distinction is never silent.
+//
+// ADDITIVE AND READ-ONLY. It reuses `buildProposedFields`'s own verdicts for
+// every field that IS a candidate proposal, so the preview can never disagree
+// with what the review screen actually offers. It adds rows `buildProposedFields`
+// has no reason to produce — a headline the schema captures but no candidate
+// column exists for, and every employment/education entry beyond the one that
+// maps to a column — using the same evidence search, at a lower bar (no
+// LABEL_LIMITS sentence check), because nothing here is ever persisted.
+
+export type PreviewStatus = 'verified' | 'likely' | 'rejected' | 'not_stated';
+
+export interface PreviewRow {
+  readonly section: string;
+  readonly field: string;
+  readonly label: string;
+  /** Human-formatted, or null when the CV never stated this at all. */
+  readonly value: string | null;
+  readonly status: PreviewStatus;
+  /** Why a value is 'rejected', or a caveat on a 'likely'/'verified' one. */
+  readonly reason?: string;
+  readonly evidence?: string;
+}
+
+const formatValue = (value: unknown): string => (
+  Array.isArray(value) ? value.join(', ') : String(value)
+);
+
+/** "(from–to)", "(from–Present)", or "" when the CV gave no dates at all. */
+const fmtPeriod = (from?: string, to?: string, current?: boolean): string => {
+  if (from === undefined && to === undefined && current !== true) return '';
+  return ` (${from ?? '?'}–${current === true ? 'Present' : (to ?? '?')})`;
+};
+
+/** A scalar the proposal stage never sees at all — judged directly here. */
+const judgeUnproposed = (
+  structure: StructuredDocument, section: string, field: string, label: string,
+  raw: string | undefined,
+): PreviewRow => {
+  if (raw === undefined || raw.trim() === '') {
+    return { section, field, label, value: null, status: 'not_stated' };
+  }
+  const evidence = locateValue(structure, raw, { limit: 1 });
+  return evidence.length > 0
+    ? { section, field, label, value: raw, status: 'verified', evidence: evidence[0]?.snippet }
+    : {
+      section, field, label, value: raw, status: 'rejected',
+      reason: 'not found in the document as written',
+    };
+};
+
+const KNOWN_ROWS: ReadonlyArray<readonly [string, string, string]> = [
+  ['Personal', 'fullName', 'Full name'],
+  ['Personal', 'email', 'Email'],
+  ['Personal', 'phone', 'Phone'],
+  ['Personal', 'location', 'Location'],
+  ['Personal', 'linkedinUrl', 'LinkedIn'],
+  ['Current role', 'currentCompany', 'Company'],
+  ['Current role', 'currentPosition', 'Position'],
+  ['Current role', 'yearsExperience', 'Years of experience'],
+  ['Education', 'university', 'University'],
+  ['Education', 'major', 'Major / field of study'],
+  ['Education', 'graduationYear', 'Graduation year'],
+  ['Skills & languages', 'skills', 'Skills'],
+  ['Skills & languages', 'languages', 'Languages'],
+  ['Skills & languages', 'certifications', 'Certifications'],
+];
+
+/**
+ * Every field a parse could possibly surface, with no omissions.
+ *
+ * Three kinds of row, assembled in this order:
+ *   1. The fields `buildProposedFields` judges — its own verdict, verbatim, so
+ *      this table and the review screen can never say different things about
+ *      the same field.
+ *   2. `headline` — captured by the extraction schema, mapped to no candidate
+ *      column, so `buildProposedFields` never touches it. Judged the same way,
+ *      by itself, so it stops disappearing without a trace.
+ *   3. Every employment and education entry beyond the one row 1 already
+ *      covers (current role, first-listed education) — the rest of a career
+ *      history that exists in the document and in `resume`, but that no
+ *      candidate column has room for.
+ */
+export const buildExtractionPreview = (input: BuildFieldsInput): readonly PreviewRow[] => {
+  const { resume } = input;
+  const { fields, withheld } = buildProposedFields(input);
+  const structure = structureOf(
+    input.document, input.parser ?? 'unknown-parser', input.parserVersion ?? 'unversioned',
+  );
+
+  const accepted = new Map(fields.map((f) => [f.field, f]));
+  const rejected = new Map(withheld.map((w) => [w.field, w]));
+
+  const rows: PreviewRow[] = KNOWN_ROWS.map(([section, field, label]) => {
+    const win = accepted.get(field);
+    if (win !== undefined) {
+      return {
+        section, field, label, value: formatValue(win.value),
+        status: win.confidence >= CONFIDENCE.ai ? 'verified' : 'likely',
+        ...(win.evidence !== null ? { evidence: win.evidence } : {}),
+      };
+    }
+    const lose = rejected.get(field);
+    if (lose !== undefined) {
+      return {
+        section, field, label, value: formatValue(lose.value), status: 'rejected', reason: lose.reason,
+      };
+    }
+    return { section, field, label, value: null, status: 'not_stated' };
+  });
+
+  rows.push(judgeUnproposed(structure, 'Personal', 'headline', 'Headline', resume.headline));
+
+  if (resume.employment.length === 0) {
+    rows.push({
+      section: 'Employment history', field: 'employment', label: 'Employment history',
+      value: null, status: 'not_stated',
+    });
+  } else {
+    resume.employment.forEach((job, i) => {
+      const label = resume.employment.length === 1 ? 'Role' : `Role ${i + 1} of ${resume.employment.length}`;
+      const value = `${job.employer} — ${job.title}${fmtPeriod(job.from, job.to, job.current)}`;
+      const evidence = locateValue(structure, job.employer, { limit: 1 });
+      rows.push(evidence.length > 0
+        ? {
+          section: 'Employment history', field: `employment[${i}]`, label, value,
+          status: 'verified', evidence: evidence[0]?.snippet,
+        }
+        : {
+          section: 'Employment history', field: `employment[${i}]`, label, value,
+          status: 'rejected', reason: 'the employer could not be located in the document',
+        });
+    });
+  }
+
+  if (resume.education.length === 0) {
+    rows.push({
+      section: 'Education history', field: 'education', label: 'Education history',
+      value: null, status: 'not_stated',
+    });
+  } else {
+    resume.education.forEach((ed, i) => {
+      const label = resume.education.length === 1 ? 'Entry' : `Entry ${i + 1} of ${resume.education.length}`;
+      const value = [ed.institution, ed.qualification, ed.field].filter(Boolean).join(' — ')
+        + fmtPeriod(ed.from, ed.to, ed.current);
+      const evidence = locateValue(structure, ed.institution, { limit: 1 });
+      rows.push(evidence.length > 0
+        ? {
+          section: 'Education history', field: `education[${i}]`, label, value,
+          status: 'verified', evidence: evidence[0]?.snippet,
+        }
+        : {
+          section: 'Education history', field: `education[${i}]`, label, value,
+          status: 'rejected', reason: 'the institution could not be located in the document',
+        });
+    });
+  }
+
+  return rows;
+};
+
 /**
  * Run the parse pipeline for one task.
  *

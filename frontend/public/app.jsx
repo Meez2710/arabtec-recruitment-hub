@@ -4808,6 +4808,51 @@ function CandidatesPage({ user, onNavigate }) {
   );
 }
 
+const PARSE_PREVIEW_STATUS_LABEL = {
+  verified: 'Verified', likely: 'Likely (AI only)', rejected: 'Rejected', not_stated: 'Not stated in CV',
+};
+
+/**
+ * EVERY field the reader saw for a parsed CV — not just the ones this form
+ * auto-fills. A field that is simply blank is indistinguishable from one the
+ * reader missed; this table exists so that distinction is never silent. Purely
+ * informational: nothing here writes to the form, that stays the recruiter's.
+ */
+function ParsePreviewTable({ rows }) {
+  if (!rows || !rows.length) return null;
+  const sections = [];
+  for (const r of rows) if (!sections.includes(r.section)) sections.push(r.section);
+  return (
+    <div className="parse-preview-panel">
+      <div className="parse-preview-head">Full extraction preview — every field the reader looked for</div>
+      <div className="review-table-wrap">
+        <table className="review-table preview-table">
+          <thead><tr><th>Field</th><th>Value</th><th>Status</th></tr></thead>
+          <tbody>
+            {sections.map((section) => (
+              <React.Fragment key={section}>
+                <tr className="preview-section-row"><td colSpan={3}>{section}</td></tr>
+                {rows.filter((r) => r.section === section).map((r) => (
+                  <tr key={r.field} className={`preview-status-row-${r.status}`}>
+                    <td>{r.label}</td>
+                    <td>{r.value == null ? <span className="muted">—</span> : <span className="parsed-value">{r.value}</span>}</td>
+                    <td>
+                      <span className={`preview-status-badge preview-status-${r.status}`}>
+                        {PARSE_PREVIEW_STATUS_LABEL[r.status] || r.status}
+                      </span>
+                      {r.reason ? <small>{r.reason}</small> : null}
+                    </td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function CandidateForm({ user, candidate, onClose, onSaved }) {
   const toast = useToast();
   const isNew = !candidate;
@@ -4828,6 +4873,11 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
   // left blank, so an empty box is never ambiguous between "not in the CV" and
   // "the reader missed it".
   const [parseMissing, setParseMissing] = useState(null);
+  // EVERY field the reader saw for the parsed CV — accepted, rejected (with
+  // why), or never stated. This form only auto-fills the columns above; the
+  // full table is what makes a rejected-but-real value visible instead of
+  // silently absent.
+  const [parsePreview, setParsePreview] = useState(null);
   const customDefs = useCustomFields('candidate');
   const [customVals, setCustomVals] = useState(candidate?.customFields || {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -4892,8 +4942,10 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
             <input type="file" onChange={(e) => setCvFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ flex: 1 }} />
             {cvFile && isNew && <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={async () => {
               setBusy(true);
+              setParsePreview(null);
               try {
                 const result = await api.uploadTo('/candidates/parse-cv', cvFile);
+                setParsePreview(result?.preview && result.preview.length ? result.preview : null);
                 // /parse-cv creates a PENDING intake — nothing is written to any
                 // candidate. `intake.fields` is the evidence-gated proposal: the
                 // same array Candidate Review later shows, read here instead to
@@ -4949,6 +5001,7 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
                   <small>These were not stated in the document — fill them in by hand if you have them.</small>
                 </div>
           )}
+          <ParsePreviewTable rows={parsePreview} />
         </div>
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
       </div>
