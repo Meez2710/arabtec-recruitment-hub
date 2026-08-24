@@ -156,3 +156,15 @@ body,button,input,select,textarea{font-family:var(--font)}
 .parse-note strong{font-size:11px;color:var(--text-strong)}
 .parse-note small{font-size:10px;color:var(--muted)}
 .parse-note-ok{border-left-color:var(--action);background:var(--action-tint);color:var(--action-dark)}
+
+/* AI shortlist. Three score bands rather than a colour ramp: a recruiter reads
+   "worth opening / maybe / probably not", and a gradient does not say that.
+   Green is the product's action colour and is earned here — it means a
+   candidate who could be shortlisted today. */
+.score-badge{display:inline-grid;place-items:center;min-width:34px;height:24px;padding:0 6px;
+  border-radius:7px;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.score-strong{background:var(--action-tint);color:var(--action-dark);border:1px solid var(--action-tint-bd)}
+.score-fair{background:#fff6e6;color:#8a5a00;border:1px solid #f0dcb4}
+.score-weak{background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+.miss-list{display:flex;flex-wrap:wrap;gap:4px;max-width:260px}
+.chip-warn{background:#fff6e6;color:#8a5a00;border:1px solid #f0dcb4}

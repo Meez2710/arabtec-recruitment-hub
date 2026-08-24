@@ -2624,6 +2624,149 @@ function RequestForm({ user, request, onClose, onSaved }) {
 }
 
 /* ----------------------------- Request Detail (tabs) ----------------------------- */
+/* ---------------- AI shortlist ----------------
+   Advisory only. This ranks candidates who are ALREADY in the pool and writes
+   nothing; linking one still goes through POST /applications, with the same
+   permission, duplicate and request-status rules as every other link. A poor
+   shortlist costs a scroll — that is why it is allowed to be wrong out loud. */
+
+function ScoreBadge({ score }) {
+  // Three bands, not a gradient: a recruiter reads "worth opening / maybe /
+  // probably not", and a continuous colour ramp does not say that.
+  const tone = score >= 85 ? 'strong' : score >= 60 ? 'fair' : 'weak';
+  return <span className={'score-badge score-' + tone} title={`Match score ${score} of 100`}>{score}</span>;
+}
+
+function AiShortlistTab({ request, user }) {
+  const toast = useToast();
+  const [state, setState] = useState('idle');   // idle | loading | done | error
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [linking, setLinking] = useState(() => new Set());
+  const [linked, setLinked] = useState(() => new Set());
+  const canLink = user.permissions.includes('candidate.link');
+
+  async function run() {
+    setState('loading'); setError('');
+    try {
+      const r = await api.post(`/requests/${request.id}/suggest-candidates`, { limit: 10 });
+      setData(r); setState('done');
+    } catch (e) {
+      // The server sends its own reason (no AI configured, rate limited, …).
+      setError(e.message || 'Could not produce a shortlist.'); setState('error');
+    }
+  }
+
+  async function link(s) {
+    if (!canLink || linking.has(s.candidateId) || linked.has(s.candidateId)) return;
+    setLinking((n) => new Set(n).add(s.candidateId));
+    try {
+      const r = await api.post('/applications', { candidateId: s.candidateId, requestId: request.id });
+      setLinked((n) => new Set(n).add(s.candidateId));
+      toast(`${s.fullName} linked to ${shortReqCode(r.application?.ticketNo) || 'this request'}`);
+    } catch (e) {
+      // Already applied, request not linkable, or no permission — the backend's
+      // own words, never a fabricated success.
+      toast(e.message || 'Could not link this candidate.', 'error');
+    } finally {
+      setLinking((n) => { const c = new Set(n); c.delete(s.candidateId); return c; });
+    }
+  }
+
+  if (state === 'idle') {
+    return (
+      <div className="card card-pad">
+        <Empty icon="✨" title="Find candidates for this request"
+          text="Claude reads this requisition and ranks your talent pool against it, with a reason for each suggestion. Nothing is changed until you link someone."
+          action={<button className="btn" onClick={run}>Suggest candidates</button>} />
+      </div>
+    );
+  }
+  if (state === 'loading') {
+    return (
+      <div className="card card-pad">
+        <p className="muted" style={{ margin: 0 }}>Reading the requisition and comparing it against the talent pool…</p>
+        <ListSkeleton rows={4} />
+      </div>
+    );
+  }
+  if (state === 'error') {
+    return (
+      <div className="card card-pad">
+        <Empty icon="⚠" title="No shortlist" text={error}
+          action={<button className="btn btn-secondary" onClick={run}>Try again</button>} />
+      </div>
+    );
+  }
+
+  const list = data?.suggestions || [];
+  return (
+    <div>
+      <div className="toolbar">
+        <span className="muted" style={{ fontSize: 12.5 }}>
+          {list.length} suggestion{list.length === 1 ? '' : 's'} from {data.considered} candidate{data.considered === 1 ? '' : 's'}
+          {data.poolCapped ? ' (most recent 300)' : ''}
+        </span>
+        <div className="spacer" />
+        <button className="btn btn-ghost btn-sm" onClick={run}>Refresh</button>
+      </div>
+
+      {list.length === 0 ? (
+        <div className="card card-pad">
+          <Empty icon="🔍" title="Nobody in the pool fits this request yet"
+            text="An empty shortlist is a real answer — it means no current candidate evidences what this role asks for. Import CVs or widen the requirements." />
+        </div>
+      ) : (
+        <div className="card flush">
+          <table className="table">
+            <thead><tr>
+              <th style={{ width: 56 }}>Match</th>
+              <th>Candidate</th>
+              <th>Why</th>
+              <th>Not evidenced</th>
+              <th style={{ width: 96 }}></th>
+            </tr></thead>
+            <tbody>
+              {list.map((s) => (
+                <tr key={s.candidateId}>
+                  <td><ScoreBadge score={s.score} /></td>
+                  <td>
+                    <span className="cell-strong">{s.fullName}</span>
+                    <span className="cell-sub">{s.candidateNo}</span>
+                    <span className="cell-sub">
+                      {[s.currentPosition, s.currentCompany].filter(Boolean).join(' · ') || '—'}
+                      {s.yearsExperience != null ? ` · ${s.yearsExperience}y` : ''}
+                      {s.location ? ` · ${s.location}` : ''}
+                    </span>
+                  </td>
+                  <td className="cell-sub-only" style={{ maxWidth: 320 }}>{s.reason}</td>
+                  <td>
+                    {s.missingRequirements?.length
+                      ? <div className="miss-list">{s.missingRequirements.map((m, i) => <span key={i} className="chip chip-warn">{m}</span>)}</div>
+                      : <span className="muted">—</span>}
+                  </td>
+                  <td>
+                    {linked.has(s.candidateId)
+                      ? <span className="muted">Linked</span>
+                      : canLink
+                        ? <button className="btn btn-sm" disabled={linking.has(s.candidateId)} onClick={() => link(s)}>
+                            {linking.has(s.candidateId) ? 'Linking…' : 'Link'}
+                          </button>
+                        : <span className="muted">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+        Suggestions are advisory and were produced by {data.model}. Nothing here has changed a candidate record.
+      </p>
+    </div>
+  );
+}
+
 function RequestDetail({ id, user, btns, onBack }) {
   const toast = useToast();
   const [req, setReq] = useState(null);
@@ -2649,7 +2792,8 @@ function RequestDetail({ id, user, btns, onBack }) {
   // Conversation-first ticket: the thread is the main view (like an email thread);
   // request details collapse at the top; everything else stays a tab away.
   const TABS = [
-    ['thread', 'Conversation'], ['pipeline', 'Candidates'], ['jd', 'Details'], ['timeline', 'Activity'],
+    ['thread', 'Conversation'], ['pipeline', 'Candidates'], ['suggest', 'AI Shortlist'],
+    ['jd', 'Details'], ['timeline', 'Activity'],
   ];
 
   return (
@@ -2684,6 +2828,7 @@ function RequestDetail({ id, user, btns, onBack }) {
 
       {tab === 'thread' && <TicketThread req={req} user={user} />}
       {tab === 'pipeline' && <RequestPipeline request={req} user={user} btns={btns} />}
+      {tab === 'suggest' && <AiShortlistTab request={req} user={user} />}
       {tab === 'jd' && <JDTab req={req} />}
       {tab === 'timeline' && <TimelineTab req={req} />}
 
