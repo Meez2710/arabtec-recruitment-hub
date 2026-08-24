@@ -37,12 +37,69 @@ const tokens = (value: string): string[] => comparisonKey(value)
   .split(' ')
   .filter((token) => token.length > 1);
 
+/**
+ * Abbreviations a person writes interchangeably with the full word on a CV.
+ * `comparisonKey` already runs first, so keys here are lowercase/unaccented.
+ */
+const TOKEN_ALIASES: Readonly<Record<string, string>> = {
+  st: 'street', rd: 'road', ave: 'avenue', blvd: 'boulevard', apt: 'apartment',
+  univ: 'university', co: 'company', corp: 'corporation', ltd: 'limited',
+  intl: 'international', dept: 'department', mgmt: 'management', natl: 'national',
+  assoc: 'association', inst: 'institute', tech: 'technology',
+};
+const canonToken = (token: string): string => TOKEN_ALIASES[token] ?? token;
+
+/**
+ * Bounded edit distance. Capped, not a general string-diff: this only ever
+ * compares two short CV tokens, so the cost is trivial and a huge mismatch in
+ * length is rejected before the DP table is even built.
+ */
+const editDistance = (a: string, b: string): number => {
+  if (a === b) return 0;
+  const al = a.length; const bl = b.length;
+  if (Math.abs(al - bl) > 2) return 3;
+  const prev = new Array<number>(bl + 1);
+  const curr = new Array<number>(bl + 1);
+  for (let j = 0; j <= bl; j += 1) prev[j] = j;
+  for (let i = 1; i <= al; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= bl; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min((prev[j] ?? 0) + 1, (curr[j - 1] ?? 0) + 1, (prev[j - 1] ?? 0) + cost);
+    }
+    for (let j = 0; j <= bl; j += 1) prev[j] = curr[j] ?? 0;
+  }
+  return prev[bl] ?? 3;
+};
+
+/**
+ * Whether a value's token is close enough to count as present.
+ *
+ * A CV is typed by hand, not proofread: "Moataz" becomes "Moataz" one line and
+ * "Moatz" the next, "Street" becomes "St.". Demanding a byte-exact token is how
+ * a real value fails a document search that a person would call obviously
+ * successful. The tolerance grows with the word's length — never for a word of
+ * 3 letters or fewer, where any edit is nearly every other short word — so this
+ * forgives a typo without starting to accept an unrelated word.
+ */
+const tokenMatches = (wanted: string, available: ReadonlySet<string>): boolean => {
+  const target = canonToken(wanted);
+  if (available.has(target)) return true;
+  const budget = target.length >= 7 ? 2 : target.length >= 4 ? 1 : 0;
+  if (budget === 0) return false;
+  for (const candidate of available) {
+    if (Math.abs(candidate.length - target.length) > budget) continue;
+    if (editDistance(target, candidate) <= budget) return true;
+  }
+  return false;
+};
+
 /** Share of the VALUE's tokens present in the block. Asymmetric on purpose. */
 const coverage = (value: string, blockText: string): number => {
   const wanted = tokens(value);
   if (wanted.length === 0) return 0;
-  const available = new Set(tokens(blockText));
-  const found = wanted.filter((token) => available.has(token)).length;
+  const available = new Set(tokens(blockText).map(canonToken));
+  const found = wanted.filter((token) => tokenMatches(token, available)).length;
   return found / wanted.length;
 };
 
@@ -135,24 +192,34 @@ export const locateDigits = (
   if (wanted.length < 6) return [];
   const blocks = options.blocks ?? structure.blocks;
   const limit = options.limit ?? 2;
-  const found: FieldEvidence[] = [];
 
-  for (const block of blocks) {
-    const text = normalizeText(block.text);
-    // normalizeText has already folded Arabic-Indic digits to ASCII, so a
-    // number written "٠١٠٠١٢٣٤٥٦٧" is findable here.
-    const stripped = text.replace(/\D/g, '');
-    // Compare on the last 9 significant digits, the same unit `normalizePhone`
-    // uses for matching, so "+20 100…" and "0100…" are one number.
-    const tail = wanted.slice(-9);
-    if (!stripped.includes(tail)) continue;
+  // Compare on the last 9 significant digits first — the same unit
+  // `normalizePhone` uses, so "+20 100…" and "0100…" are one number. A CV's own
+  // formatting is not always that clean: "(+2010) 00098205" merges a country
+  // code into the area code, a leading zero gets swallowed, a digit is misread
+  // near the front of a long number. None of that touches the LAST 7 digits of
+  // a real phone number, and a 7-digit tail is still far too specific to
+  // collide with an unrelated number inside one document — so it is tried only
+  // when the stricter 9-digit window finds nothing at all.
+  for (const tailLen of [9, 7]) {
+    if (wanted.length < tailLen) continue;
+    const tail = wanted.slice(-tailLen);
+    const found: FieldEvidence[] = [];
+    for (const block of blocks) {
+      const text = normalizeText(block.text);
+      // normalizeText has already folded Arabic-Indic digits to ASCII, so a
+      // number written "٠١٠٠١٢٣٤٥٦٧" is findable here.
+      const stripped = text.replace(/\D/g, '');
+      if (!stripped.includes(tail)) continue;
 
-    const match = /[+\d][\d\s()\-.]{6,}/.exec(text);
-    const start = match?.index ?? 0;
-    found.push(evidenceFor(
-      block, 'normalized', snippetAround(text, start, match?.[0].length ?? 0),
-    ));
-    if (found.length >= limit) break;
+      const match = /[+\d][\d\s()\-.]{6,}/.exec(text);
+      const start = match?.index ?? 0;
+      found.push(evidenceFor(
+        block, 'normalized', snippetAround(text, start, match?.[0].length ?? 0),
+      ));
+      if (found.length >= limit) return found;
+    }
+    if (found.length > 0) return found;
   }
-  return found;
+  return [];
 };

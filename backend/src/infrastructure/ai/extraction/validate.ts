@@ -46,15 +46,28 @@ const NOT_A_NAME = /[@/\\<>{}[\]()0-9]|https?:|www\./i;
 const wordCount = (value: string): number => value.split(/\s+/).filter(Boolean).length;
 
 /** Fields whose value is a short label, not a sentence. */
+// Every limit below is a ceiling on a LABEL, not a sentence detector by word
+// count alone — that job belongs to `crossValidate`'s company/position-equality
+// check, which catches an unsplit sentence regardless of how these numbers are
+// tuned. These exist to reject a genuine run-on ("Quantity Surveyor at Pyramid
+// Cost Consultants since 2021, promoted twice"), so they stay well under a
+// sentence's length while giving real long names, titles and addresses room —
+// a MENA person or institution name routinely carries 3-5 name parts, a
+// construction-industry job title routinely carries a qualifier ("Senior
+// Project Manager — Façade & MEP"), and a street address is not a label at all.
 const LABEL_LIMITS: Record<string, { readonly maxChars: number; readonly maxWords: number }> = {
-  fullName: { maxChars: 80, maxWords: 6 },
-  location: { maxChars: 120, maxWords: 10 },
-  currentCompany: { maxChars: 120, maxWords: 10 },
-  currentPosition: { maxChars: 120, maxWords: 10 },
-  university: { maxChars: 150, maxWords: 12 },
-  major: { maxChars: 100, maxWords: 8 },
-  degree: { maxChars: 100, maxWords: 8 },
-  headline: { maxChars: 200, maxWords: 20 },
+  fullName: { maxChars: 90, maxWords: 8 },
+  // A real MENA street address — building number, street, district/square,
+  // city, country — routinely runs 12-16 words (e.g. "5- Abn El Moataz
+  // Street, EL Hegaz Square, Heliopolis, Cairo, Egypt" is 11). 10 was
+  // rejecting correctly-read addresses as if they were prose.
+  location: { maxChars: 180, maxWords: 16 },
+  currentCompany: { maxChars: 140, maxWords: 12 },
+  currentPosition: { maxChars: 140, maxWords: 12 },
+  university: { maxChars: 170, maxWords: 14 },
+  major: { maxChars: 120, maxWords: 10 },
+  degree: { maxChars: 120, maxWords: 10 },
+  headline: { maxChars: 220, maxWords: 24 },
 };
 
 /**
