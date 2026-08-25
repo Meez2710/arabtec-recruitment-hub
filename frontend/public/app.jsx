@@ -4360,6 +4360,8 @@ function CandidatesPage({ user, onNavigate }) {
   const [askedAs, setAskedAs] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
+  // AI-parsing add-candidate flow — independent of `creating` (manual entry).
+  const [parsingCv, setParsingCv] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [view, setView] = useState('board'); // board | table
 
@@ -4422,6 +4424,44 @@ function CandidatesPage({ user, onNavigate }) {
   // Any change to the query must return to page 1, otherwise the user can land on
   // an out-of-range page and see an empty table.
   useEffect(() => { setPage(1); }, [filters, screenTab, pageSize, sort]);
+
+  // Hooks, not just callbacks: every one of these must run on EVERY render, so
+  // they live before the early return below. Declaring them after it (as this
+  // file used to) meant the hook count dropped the instant selectedId became
+  // truthy — mid-render, on the transition into this very branch — which is
+  // the textbook "Rendered fewer hooks than expected" crash. Pre-existing;
+  // found while verifying the CV-parsing changes, fixed here as a pure
+  // reorder — no behavior, naming or logic changed.
+  const patchCandidate = useCallback((id, fn) => {
+    setCandidates((cs) => (cs === null ? cs : cs.map((c) => (c.id === id ? fn(c) : c))));
+  }, []);
+
+  const linkCandidate = useCallback(async (candidateId, request) => {
+    const requestId = request?.id;
+    patchCandidate(candidateId, (c) => ({ ...c, links: [...(c.links || []), linkEntry(request, undefined)] }));
+    try {
+      const r = await api.post('/applications', { candidateId, requestId });
+      patchCandidate(candidateId, (c) => ({
+        ...c,
+        links: (c.links || []).map((l) => (l.requestId === requestId && l.pending
+          ? linkEntry(request, r.application) : l)),
+      }));
+      return r;
+    } catch (e) {
+      // Roll back exactly the provisional entry, never a real one.
+      patchCandidate(candidateId, (c) => ({
+        ...c, links: (c.links || []).filter((l) => !(l.requestId === requestId && l.pending)),
+      }));
+      throw e;
+    }
+  }, [patchCandidate]);
+
+  const linkOne = useCallback(async (candidateId, request) => {
+    const r = await linkCandidate(candidateId, request);
+    toast(`Linked to ${shortReqCode(r.application?.ticketNo) || shortReqCode(request?.ticketNo) || 'request'}`);
+  }, [linkCandidate, toast]);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
 
   if (selectedId) return <CandidateProfile id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
 
@@ -4490,50 +4530,8 @@ function CandidatesPage({ user, onNavigate }) {
     };
   }
 
-  const patchCandidate = useCallback((id, fn) => {
-    setCandidates((cs) => (cs === null ? cs : cs.map((c) => (c.id === id ? fn(c) : c))));
-  }, []);
-
-  /**
-   * Link one candidate, optimistically.
-   *
-   * The chip appears before the request returns and is removed again if the
-   * server refuses. Linking is safe to treat this way because it is reversible
-   * and a failure is immediately visible; screening deliberately is NOT — a
-   * candidate showing "Fit" after a failed write is a data-integrity problem in
-   * a system whose whole design is human-confirmed values behind an evidence
-   * gate.
-   *
-   * Rethrows so the caller can surface the server's own message.
-   */
-  const linkCandidate = useCallback(async (candidateId, request) => {
-    const requestId = request?.id;
-    patchCandidate(candidateId, (c) => ({ ...c, links: [...(c.links || []), linkEntry(request, undefined)] }));
-    try {
-      const r = await api.post('/applications', { candidateId, requestId });
-      patchCandidate(candidateId, (c) => ({
-        ...c,
-        links: (c.links || []).map((l) => (l.requestId === requestId && l.pending
-          ? linkEntry(request, r.application) : l)),
-      }));
-      return r;
-    } catch (e) {
-      // Roll back exactly the provisional entry, never a real one.
-      patchCandidate(candidateId, (c) => ({
-        ...c, links: (c.links || []).filter((l) => !(l.requestId === requestId && l.pending)),
-      }));
-      throw e;
-    }
-  }, [patchCandidate]);
-
-  const linkOne = useCallback(async (candidateId, request) => {
-    const r = await linkCandidate(candidateId, request);
-    toast(`Linked to ${shortReqCode(r.application?.ticketNo) || shortReqCode(request?.ticketNo) || 'request'}`);
-  }, [linkCandidate, toast]);
-
   /* ---------------------------- bulk actions ---------------------------- */
 
-  const clearSelection = useCallback(() => setSelected(new Set()), []);
   function toggleSel(id) {
     setSelected((sel) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
@@ -4584,7 +4582,12 @@ function CandidatesPage({ user, onNavigate }) {
         sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
         actions={<>
           <ViewToggle value={view} onChange={setView} options={[['board', 'Cards'], ['table', 'Table']]} />
-          {btns.add_candidate?.visible && <button className="btn" onClick={() => setCreating(true)}>{btns.add_candidate.label}</button>}
+          {btns.add_candidate?.visible && <button className="btn" onClick={() => setParsingCv(true)}>Parse CV</button>}
+          {btns.add_candidate?.visible && (
+            <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => setCreating(true)} title="Enter a candidate by hand, no CV reading">
+              Add manually
+            </button>
+          )}
           {btns.add_candidate?.visible && (
             <span className="upload-cta">
               <button className="btn btn-secondary" onClick={() => setImportOpen(true)}>Bulk Upload CVs</button>
@@ -4803,6 +4806,7 @@ function CandidatesPage({ user, onNavigate }) {
           }} />
       )}
       {creating && <CandidateForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
+      {parsingCv && <ParseCvModal onClose={() => setParsingCv(false)} onSaved={(id) => { setParsingCv(false); load(); setSelectedId(id); }} />}
       {importOpen && <ImportCvsModal onClose={() => setImportOpen(false)} onDone={load} />}
     </div>
   );
@@ -4853,6 +4857,225 @@ function ParsePreviewTable({ rows }) {
   );
 }
 
+/**
+ * The original file next to the parsed table, so a recruiter can check a
+ * value against the source without leaving this screen. Zoom is a CSS scale
+ * on the preview element — enough to read a page clearly; it does not
+ * re-render the PDF at higher resolution.
+ */
+function CvFilePreview({ fileUrl, fileName, mimeType }) {
+  const [zoom, setZoom] = useState(1);
+  const zoomOut = () => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)));
+  const zoomIn = () => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)));
+  const isPdf = mimeType === 'application/pdf';
+  const isImage = !!mimeType && mimeType.startsWith('image/');
+  return (
+    <div className="parse-review-cv">
+      <div className="parse-review-cv-toolbar">
+        <span className="parse-review-cv-name" title={fileName || ''}>{fileName || 'Original CV'}</span>
+        {(isPdf || isImage) && fileUrl && (
+          <div className="parse-review-zoom">
+            <button type="button" onClick={zoomOut} aria-label="Zoom out">−</button>
+            <span>{Math.round(zoom * 100)}%</span>
+            <button type="button" onClick={zoomIn} aria-label="Zoom in">+</button>
+          </div>
+        )}
+      </div>
+      <div className="parse-review-cv-viewport">
+        {!fileUrl ? (
+          <div className="parse-review-cv-empty">No file to preview.</div>
+        ) : isPdf ? (
+          <iframe title="Original CV" src={fileUrl} className="parse-review-cv-frame" style={{ transform: `scale(${zoom})` }} />
+        ) : isImage ? (
+          <img src={fileUrl} alt={fileName || 'CV'} className="parse-review-cv-image" style={{ transform: `scale(${zoom})` }} />
+        ) : (
+          <div className="parse-review-cv-empty">
+            Inline preview isn't available for this file type.
+            <div style={{ marginTop: 10 }}>
+              <a href={fileUrl} download={fileName || 'cv'} className="btn btn-secondary">Download {fileName || 'file'}</a>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The interstitial between "Parse CV" and the editable form: every field the
+ * reader saw, sized to actually be read, next to the document it came from.
+ * Nothing here writes anything — `onContinue` reveals the existing
+ * auto-filled form (untouched) for the recruiter's final edits and Save.
+ */
+/**
+ * The result screen: every field the reader saw, next to the document it
+ * came from, with ONE save action.
+ *
+ * `intake` is the PENDING record `/parse-cv` already raised — accepting every
+ * one of its fields via the existing intake-review endpoint is what actually
+ * creates the candidate. This calls no new backend logic; it is the same path
+ * `intake-review.jsx`'s "Accept all" uses, just entered from Talent Pool.
+ */
+function CvParseReviewOverlay({ rows, intake, fileUrl, fileName, mimeType, onSaved, onCancel }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  const sections = [];
+  for (const r of rows) if (!sections.includes(r.section)) sections.push(r.section);
+  const needsRecheck = rows.filter((r) => r.status === 'likely' || r.status === 'rejected').map((r) => r.label);
+  const notFound = rows.filter((r) => r.status === 'not_stated').map((r) => r.label);
+  const canSave = !!(intake && intake.fields && intake.fields.length > 0);
+
+  async function save() {
+    if (!canSave || saving) return;
+    setSaving(true);
+    try {
+      const decisions = Object.fromEntries(intake.fields.map((f) => [f.field, true]));
+      const r = await api.post(`/candidates/intakes/${intake.id}/review`, { decisions, version: intake.version });
+      if (r.candidate) {
+        toast(`Candidate created: ${r.candidate.candidateNo}`);
+        onSaved(r.candidate.id);
+      } else {
+        toast('Could not create the candidate from this review.', 'error');
+      }
+    } catch (e) {
+      toast(e.message || 'Could not save this candidate.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="parse-review-panel">
+        <div className="parse-review-head">
+          <h3>Parsed CV — review before saving</h3>
+          <button className="icon-btn" onClick={onCancel} aria-label="Close">✕</button>
+        </div>
+        <div className="parse-review-body">
+          <div className="parse-review-results">
+            <table className="parse-review-table">
+              <tbody>
+                {sections.map((section) => (
+                  <React.Fragment key={section}>
+                    <tr className="parse-review-section-row"><td colSpan={2}>{section}</td></tr>
+                    {rows.filter((r) => r.section === section).map((r) => (
+                      <tr key={r.field} title={r.reason || ''}>
+                        <td>{r.label}</td>
+                        <td>{r.value == null ? '—' : r.value}</td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+            {(needsRecheck.length > 0 || notFound.length > 0) && (
+              <div className="parse-review-footnote">
+                {needsRecheck.length > 0 && <div><strong>Needs a second look:</strong> {needsRecheck.join(' · ')}</div>}
+                {notFound.length > 0 && <div><strong>Not found in this CV:</strong> {notFound.join(' · ')}</div>}
+                {!canSave && <div><strong>Nothing here could be confirmed well enough to save automatically.</strong> Close this and use "Add manually" instead.</div>}
+              </div>
+            )}
+          </div>
+          <CvFilePreview fileUrl={fileUrl} fileName={fileName} mimeType={mimeType} />
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn" onClick={save} disabled={!canSave || saving}>{saving ? 'Saving…' : 'Save candidate'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The primary "add candidate" entry point: pick a CV, watch it get read, then
+ * save straight from the reviewed result. No manual fields anywhere in this
+ * component — manual entry is CandidateForm, reached from its own smaller
+ * button. Owns its own file/parse state rather than sharing CandidateForm's,
+ * since the two are now fully independent flows.
+ */
+function ParseCvModal({ onClose, onSaved }) {
+  const toast = useToast();
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { preview, intake } once parsed
+  const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
+
+  async function parse() {
+    if (!file || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.uploadTo('/candidates/parse-cv', file);
+      if (r?.preview?.length) {
+        setResult({ preview: r.preview, intake: r.intake });
+      } else {
+        toast(r?.reason || 'Nothing could be read from this file.', 'error');
+      }
+    } catch (e) {
+      toast('Parse failed: ' + e.message, 'error');
+    }
+    setBusy(false);
+  }
+
+  if (result) {
+    return (
+      <CvParseReviewOverlay
+        rows={result.preview}
+        intake={result.intake}
+        fileUrl={fileUrl}
+        fileName={file?.name}
+        mimeType={file?.type}
+        onSaved={onSaved}
+        onCancel={onClose}
+      />
+    );
+  }
+
+  return (
+    <Modal title="Parse CV" onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn" onClick={parse} disabled={!file || busy}>{busy ? 'Parsing…' : 'Parse CV'}</button></>}>
+      <div className="field full"><label>CV / Résumé</label>
+        <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ width: '100%' }} />
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          {file ? `Selected: ${file.name} — click Parse CV to read it.` : 'Upload a CV. The reader finds the fields; you review and save on the next screen.'}
+        </div>
+      </div>
+      {busy && <ParsingStatusLine />}
+    </Modal>
+  );
+}
+
+/** What the pipeline is genuinely doing, in the order it genuinely does it. */
+const PARSE_STEPS = [
+  'Reading the document…',
+  'Identifying candidate details…',
+  'Extracting work history and education…',
+  'Verifying every field against the source…',
+  'Finalizing the results…',
+];
+
+/**
+ * Cosmetic only — cycles through PARSE_STEPS while the two parse calls are in
+ * flight, so a 10-20 second wait reads as active, specific work instead of a
+ * frozen button. Loops on the last step if the real call runs long, rather
+ * than inventing a fake ETA.
+ */
+function ParsingStatusLine() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => Math.min(s + 1, PARSE_STEPS.length - 1)), 2600);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="parsing-status-line">
+      <span className="parsing-status-dot" />
+      {PARSE_STEPS[step]}
+    </div>
+  );
+}
+
 function CandidateForm({ user, candidate, onClose, onSaved }) {
   const toast = useToast();
   const isNew = !candidate;
@@ -4868,16 +5091,9 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [dups, setDups] = useState([]);
   const [override, setOverride] = useState({ on: false, reason: '' });
+  // Manual entry only — AI parsing is a separate entry point (ParseCvModal).
+  // A CV picked here is just a file to store alongside a hand-typed record.
   const [cvFile, setCvFile] = useState(null);
-  // Fields the CV genuinely did not state, after a parse. Shown rather than
-  // left blank, so an empty box is never ambiguous between "not in the CV" and
-  // "the reader missed it".
-  const [parseMissing, setParseMissing] = useState(null);
-  // EVERY field the reader saw for the parsed CV — accepted, rejected (with
-  // why), or never stated. This form only auto-fills the columns above; the
-  // full table is what makes a rejected-but-real value visible instead of
-  // silently absent.
-  const [parsePreview, setParsePreview] = useState(null);
   const customDefs = useCustomFields('candidate');
   const [customVals, setCustomVals] = useState(candidate?.customFields || {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -4911,7 +5127,7 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
   }
   const blockSave = isNew && dups.length && !override.reason.trim();
   return (
-    <Modal title={isNew ? 'Add Candidate' : 'Edit Candidate'} onClose={onClose} wide
+    <Modal title={isNew ? 'Add candidate manually' : 'Edit Candidate'} onClose={onClose} wide
       footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || blockSave}>{busy ? 'Saving…' : 'Save'}</button></>}>
       {dups.length > 0 && (
         <div className="error-banner">
@@ -4937,71 +5153,11 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
         <div className="field"><label>Source</label><select value={f.source} onChange={(e) => set('source', e.target.value)}><option value="">—</option>{(meta?.sources || []).map((s) => <option key={s}>{s}</option>)}</select></div>
         {meta?.canSeeSalary && <div className="field"><label>Expected Salary</label><input type="number" value={f.expectedSalary} onChange={(e) => set('expectedSalary', e.target.value)} /></div>}
         <div className="field full"><label>Tags (comma-separated)</label><input value={f.tags} onChange={(e) => set('tags', e.target.value)} placeholder="mechanical, senior, hvac" /></div>
-        <div className="field full"><label>CV / Résumé</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type="file" onChange={(e) => setCvFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ flex: 1 }} />
-            {cvFile && isNew && <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={async () => {
-              setBusy(true);
-              setParsePreview(null);
-              try {
-                const result = await api.uploadTo('/candidates/parse-cv', cvFile);
-                setParsePreview(result?.preview && result.preview.length ? result.preview : null);
-                // /parse-cv creates a PENDING intake — nothing is written to any
-                // candidate. `intake.fields` is the evidence-gated proposal: the
-                // same array Candidate Review later shows, read here instead to
-                // draft this form. The human still confirms by clicking Save.
-                const fields = result?.intake?.fields || [];
-                const val = (name) => fields.find((x) => x.field === name)?.value;
-                const fullName = val('fullName');
-                if (fullName) set('fullName', fullName);
-                if (val('email')) set('email', val('email'));
-                if (val('phone')) set('phone', val('phone'));
-                if (val('location')) set('location', val('location'));
-                if (val('linkedinUrl')) set('linkedinUrl', val('linkedinUrl'));
-                if (val('currentCompany')) set('currentCompany', val('currentCompany'));
-                if (val('currentPosition')) set('currentPosition', val('currentPosition'));
-                if (val('yearsExperience') != null) set('yearsExperience', String(val('yearsExperience')));
-                if (val('university')) set('university', val('university'));
-                if (val('major')) set('major', val('major'));
-                if (val('graduationYear') != null) set('graduationYear', String(val('graduationYear')));
-
-                // Name what the CV did NOT give us. A field left blank is
-                // ambiguous — it could mean the reader missed it or the CV never
-                // said it — and a recruiter should not have to guess which.
-                const WANTED = [
-                  ['fullName', 'name'], ['email', 'email'], ['phone', 'phone'],
-                  ['location', 'location'], ['linkedinUrl', 'LinkedIn'],
-                  ['currentCompany', 'company'], ['currentPosition', 'position'],
-                  ['yearsExperience', 'years of experience'],
-                  ['university', 'university'], ['major', 'major'],
-                  ['graduationYear', 'graduation year'],
-                ];
-                const missing = WANTED.filter(([k]) => val(k) == null).map(([, label]) => label);
-                setParseMissing(missing);
-
-                if (fields.length) {
-                  toast(missing.length
-                    ? `CV parsed — ${fields.length} field${fields.length === 1 ? '' : 's'} drafted. Not stated in this CV: ${missing.join(', ')}.`
-                    : `CV parsed — every field found. Review before saving.`);
-                } else {
-                  toast(result?.reason || 'Nothing could be read from this file.', 'error');
-                }
-              } catch (e) { toast('Parse failed: ' + e.message, 'error'); }
-              setBusy(false);
-            }} disabled={busy}>{busy ? 'Parsing…' : 'Parse CV'}</button>}
+        <div className="field full"><label>CV / Résumé (optional)</label>
+          <input type="file" onChange={(e) => setCvFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ width: '100%' }} />
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+            {cvFile ? `Selected: ${cvFile.name} — stored with this record, not read.` : 'Stored with the record for reference. Not read — use Parse CV from Talent Pool to have the AI read a CV.'}
           </div>
-          {cvFile
-            ? <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Selected: {cvFile.name} — click Parse CV to auto-fill fields, then Save.</div>
-            : <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>Upload a CV and click Parse CV to auto-fill the form.</div>}
-          {parseMissing !== null && (
-            parseMissing.length === 0
-              ? <div className="parse-note parse-note-ok">Every field was found in this CV.</div>
-              : <div className="parse-note">
-                  <strong>Not provided in this CV:</strong> {parseMissing.join(' · ')}
-                  <small>These were not stated in the document — fill them in by hand if you have them.</small>
-                </div>
-          )}
-          <ParsePreviewTable rows={parsePreview} />
         </div>
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />
       </div>
