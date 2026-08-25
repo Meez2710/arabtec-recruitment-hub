@@ -31,6 +31,12 @@ function buildCSP() {
     'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
     'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
     'img-src': ["'self'", 'data:', 'blob:'],
+    // The CV preview panel shows the picked file via an iframe pointed at a
+    // blob: URL (URL.createObjectURL on the File object). Without this,
+    // frame-src falls back to default-src 'self', which does not match
+    // blob: — the iframe loads nothing, silently, no console error a user
+    // would notice.
+    'frame-src': ["'self'", 'blob:'],
     'connect-src': ["'self'"],
     'object-src': ["'none'"],
     'frame-ancestors': ["'none'"],
