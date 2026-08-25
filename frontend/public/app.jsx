@@ -4362,6 +4362,46 @@ function CandidatesPage({ user, onNavigate }) {
   const [creating, setCreating] = useState(false);
   // AI-parsing add-candidate flow — independent of `creating` (manual entry).
   const [parsingCv, setParsingCv] = useState(false);
+  // What ParseCvModal should open showing: null = fresh file picker, or a
+  // backgrounded/tracked job to resume. Separate from bgParseJob below so the
+  // primary "Parse CV" button always starts fresh even while one job is
+  // already tracked in the background.
+  const [resumeJob, setResumeJob] = useState(null);
+  // The one parse allowed to run in the background at a time — set when
+  // ParseCvModal's "Continue in background" hands off a job id, cleared on
+  // save/dismiss. { jobId, fileName, file, status: 'processing'|'ready', result }
+  const [bgParseJob, setBgParseJob] = useState(null);
+
+  // Light poll for a backgrounded parse — only while the modal watching it is
+  // CLOSED. ParseCvModal polls for itself while it's open; polling from both
+  // places at once would just double the requests for nothing.
+  useEffect(() => {
+    if (!bgParseJob || bgParseJob.status !== 'processing' || parsingCv) return undefined;
+    let cancelled = false;
+    const check = async () => {
+      let j;
+      try { j = await api.get(`/candidates/parse-cv-async/${bgParseJob.jobId}`); }
+      catch { return; } // transient — the next tick tries again
+      if (cancelled || j.status === 'processing') return;
+      if (j.status === 'error') {
+        toast(j.message || 'Background parse failed.', 'error');
+        setBgParseJob(null);
+        return;
+      }
+      const r = j.payload;
+      if (r?.preview?.length) {
+        toast(`${bgParseJob.fileName || 'CV'} is parsed — click to review.`);
+        setBgParseJob((b) => (b && b.jobId === bgParseJob.jobId
+          ? { ...b, status: 'ready', result: { preview: r.preview, intake: r.intake } } : b));
+      } else {
+        toast(r?.reason || 'Nothing could be read from that CV.', 'error');
+        setBgParseJob(null);
+      }
+    };
+    const t = setInterval(check, 4000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [bgParseJob?.jobId, bgParseJob?.status, parsingCv, toast]);
+
   const [importOpen, setImportOpen] = useState(false);
   const [view, setView] = useState('board'); // board | table
 
@@ -4582,7 +4622,18 @@ function CandidatesPage({ user, onNavigate }) {
         sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
         actions={<>
           <ViewToggle value={view} onChange={setView} options={[['board', 'Cards'], ['table', 'Table']]} />
-          {btns.add_candidate?.visible && <button className="btn" onClick={() => setParsingCv(true)}>Parse CV</button>}
+          {btns.add_candidate?.visible && (
+            <button className="btn" onClick={() => { setResumeJob(null); setParsingCv(true); }}>Parse CV</button>
+          )}
+          {bgParseJob && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => { setResumeJob(bgParseJob); setParsingCv(true); }}
+              title={bgParseJob.status === 'ready' ? 'Parsing finished — open to review and save' : 'Still reading — click to check on it'}
+            >
+              {bgParseJob.status === 'ready' ? `✓ ${bgParseJob.fileName || 'CV'} ready` : `${bgParseJob.fileName || 'CV'} — parsing…`}
+            </button>
+          )}
           {btns.add_candidate?.visible && (
             <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => setCreating(true)} title="Enter a candidate by hand, no CV reading">
               Add manually
@@ -4806,7 +4857,19 @@ function CandidatesPage({ user, onNavigate }) {
           }} />
       )}
       {creating && <CandidateForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
-      {parsingCv && <ParseCvModal onClose={() => setParsingCv(false)} onSaved={(id) => { setParsingCv(false); load(); setSelectedId(id); }} />}
+      {parsingCv && (
+        <ParseCvModal
+          job={resumeJob}
+          onClose={() => { setParsingCv(false); setResumeJob(null); }}
+          onBackground={(j) => { setBgParseJob({ ...j, status: 'processing', result: null }); setParsingCv(false); setResumeJob(null); }}
+          onSaved={(id) => {
+            setParsingCv(false); setResumeJob(null);
+            // Saving the job being tracked in the background clears the pill.
+            setBgParseJob((b) => (resumeJob && b?.jobId === resumeJob.jobId ? null : b));
+            load(); setSelectedId(id);
+          }}
+        />
+      )}
       {importOpen && <ImportCvsModal onClose={() => setImportOpen(false)} onDone={load} />}
     </div>
   );
@@ -4993,29 +5056,69 @@ function CvParseReviewOverlay({ rows, intake, fileUrl, fileName, mimeType, onSav
  * component — manual entry is CandidateForm, reached from its own smaller
  * button. Owns its own file/parse state rather than sharing CandidateForm's,
  * since the two are now fully independent flows.
+ *
+ * THE BIG LEVER: parsing runs on the server via /parse-cv-async, which
+ * answers immediately with a job id instead of holding the request open for
+ * the two Claude calls (10-20s). This component polls that job — but the
+ * point isn't the polling, it's that the job keeps running on the server
+ * whether or not anything is polling it. "Continue in background" hands the
+ * job id (and the picked file, so the CV preview still works later) up to
+ * CandidatesPage and closes this modal; CandidatesPage's own light poll picks
+ * up from there and surfaces a pill when it's ready, so the recruiter is
+ * never stuck watching a spinner they can't walk away from.
+ *
+ * `job` (optional): { jobId, fileName, file, status, result } handed back
+ * down when reopening a backgrounded parse — `result` already present means
+ * CandidatesPage's own poll finished it, so this skips straight to review.
  */
-function ParseCvModal({ onClose, onSaved }) {
+function ParseCvModal({ onClose, onSaved, onBackground, job }) {
   const toast = useToast();
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState(job?.file ?? null);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null); // { preview, intake } once parsed
+  const [result, setResult] = useState(job?.result ?? null); // { preview, intake } once parsed
+  const [jobId, setJobId] = useState(job?.jobId ?? null);
+  const cancelledRef = useRef(false);
+  useEffect(() => () => { cancelledRef.current = true; }, []);
   const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
+
+  async function pollJob(id) {
+    for (;;) {
+      if (cancelledRef.current) return;
+      let j;
+      try {
+        j = await api.get(`/candidates/parse-cv-async/${id}`);
+      } catch (e) {
+        if (!cancelledRef.current) { toast('Lost track of that parse: ' + e.message, 'error'); setBusy(false); }
+        return;
+      }
+      if (cancelledRef.current) return;
+      if (j.status === 'processing') { await new Promise((r) => setTimeout(r, 2000)); continue; }
+      if (j.status === 'error') { toast(j.message || 'Parse failed.', 'error'); setBusy(false); return; }
+      const r = j.payload;
+      if (r?.preview?.length) setResult({ preview: r.preview, intake: r.intake });
+      else toast(r?.reason || 'Nothing could be read from this file.', 'error');
+      setBusy(false);
+      return;
+    }
+  }
+
+  // Resume a job handed down from CandidatesPage — once, on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (job?.jobId && !job.result) { setBusy(true); pollJob(job.jobId); } }, []);
 
   async function parse() {
     if (!file || busy) return;
     setBusy(true);
     try {
-      const r = await api.uploadTo('/candidates/parse-cv', file);
-      if (r?.preview?.length) {
-        setResult({ preview: r.preview, intake: r.intake });
-      } else {
-        toast(r?.reason || 'Nothing could be read from this file.', 'error');
-      }
+      const started = await api.uploadTo('/candidates/parse-cv-async', file);
+      if (!started?.jobId) { toast('Could not start parsing.', 'error'); setBusy(false); return; }
+      setJobId(started.jobId);
+      pollJob(started.jobId);
     } catch (e) {
       toast('Parse failed: ' + e.message, 'error');
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   if (result) {
@@ -5034,15 +5137,27 @@ function ParseCvModal({ onClose, onSaved }) {
 
   return (
     <Modal title="Parse CV" onClose={onClose}
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn" onClick={parse} disabled={!file || busy}>{busy ? 'Parsing…' : 'Parse CV'}</button></>}>
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        {busy && jobId && (
+          <button className="btn btn-secondary" onClick={() => onBackground({ jobId, fileName: file?.name, file })}>
+            Continue in background
+          </button>
+        )}
+        {!busy && <button className="btn" onClick={parse} disabled={!file}>Parse CV</button>}
+      </>}>
       <div className="field full"><label>CV / Résumé</label>
-        <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ width: '100%' }} />
+        <input type="file" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ width: '100%' }} />
         <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
           {file ? `Selected: ${file.name} — click Parse CV to read it.` : 'Upload a CV. The reader finds the fields; you review and save on the next screen.'}
         </div>
       </div>
       {busy && <ParsingStatusLine />}
+      {busy && (
+        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+          You don't have to wait here — "Continue in background" keeps this reading and lets you get back to work; you'll see it ready in Talent Pool.
+        </div>
+      )}
     </Modal>
   );
 }

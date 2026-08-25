@@ -15,6 +15,7 @@ import { rejection as rejectionTpl } from '../lib/email_templates.js';
 import { getParser } from '../lib/parsing/registry.js';
 import { evaluateAgainstRequest } from '../lib/parsing/evaluation.js';
 import { parseDocument, reviewableFields } from '../lib/parsing/pipeline-provider.js';
+import { createJob, completeJob, failJob, getJob } from '../lib/parsing/jobs.js';
 import {
   checkRequest, createIntake, intakeById, pendingIntakes, reviewIntake, rejectIntake,
 } from '../lib/intake-store.js';
@@ -417,6 +418,87 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
     }));
     res.status(500).json({ error: 'CV parsing failed.', detail: e.message });
   }
+});
+
+// ---------------- ASYNC PARSE (the two Claude calls off the request) ----------------
+//
+// WHY A SEPARATE ROUTE, NOT A CHANGED ONE. /parse-cv above is used exactly as
+// written by Candidate Review's own upload and by Bulk Upload CVs — changing
+// its response shape to "returns a job id" would break both. This is instead
+// an additional entry point: same read, same createIntake(), same audit
+// trail, just not held open on the two Claude calls that make it slow. Only
+// the new "Parse CV" primary flow (ParseCvModal) calls it.
+router.post('/parse-cv-async', requirePermission('candidate.add'), multipart, (req, res) => {
+  if (!req.uploadedFile) return res.status(400).json({ error: 'CV file is required.' });
+  const filePath = uploadPath(req.uploadedFile.storedName);
+  const requestId = req.fields?.requestId ? Number(req.fields.requestId) : null;
+  if (requestId !== null) {
+    const check = checkRequest(requestId);
+    if (!check.ok) {
+      return res.status(409).json({ error: check.reason, code: 'request-ineligible', requestId });
+    }
+  }
+
+  const jobId = createJob();
+  res.status(202).json({ jobId });
+
+  // NOT AWAITED. The response above has already gone out — this is the exact
+  // same read-and-propose work /parse-cv does inline, just running after the
+  // request that started it has already finished.
+  (async () => {
+    try {
+      const parsed = await parseDocument(filePath);
+      const hash = fileHash(filePath);
+
+      if (!parsed.ok || parsed.fields.length === 0) {
+        completeJob(jobId, {
+          intake: null,
+          file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
+          reason: parsed.reason || 'No candidate field could be supported by the document.',
+          preview: parsed.preview ?? [],
+        });
+        return;
+      }
+
+      const intake = createIntake({
+        storedName: req.uploadedFile.storedName,
+        fileName: req.uploadedFile.originalName,
+        mimeType: req.uploadedFile.mimeType || null,
+        fileHash: hash,
+        origin: 'resume.extract',
+        modelId: parsed.generation?.modelId ?? '',
+        documentId: parsed.documentId,
+        generation: parsed.generation,
+        fields: parsed.fields,
+        ...(requestId !== null ? { requestId } : {}),
+        createdBy: req.user.id,
+      });
+
+      writeAudit(req, {
+        action: 'candidate.intake_created', entityType: 'candidate_intake',
+        entityId: intake.id,
+        newValue: { fileName: req.uploadedFile.originalName, fields: intake.fields.length, requestId },
+      });
+
+      completeJob(jobId, {
+        intake,
+        file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
+        document: documentProvenance(parsed),
+        preview: parsed.preview ?? [],
+      });
+    } catch (e) {
+      console.error(JSON.stringify({
+        level: 'error', msg: 'parse-cv-async.exception', jobId, error: e.message, stack: e.stack,
+      }));
+      failJob(jobId, 'CV parsing failed.');
+    }
+  })();
+});
+
+router.get('/parse-cv-async/:jobId', requirePermission('candidate.add'), (req, res) => {
+  const job = getJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired.' });
+  res.json(job);
 });
 
 /* ---------------- PRE-CANDIDATE INTAKES (review before creation) ---------------- */
