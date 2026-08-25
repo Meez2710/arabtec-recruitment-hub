@@ -341,8 +341,10 @@ export async function parseDocument(filePath) {
   let extracted = EMPTY_RESUME;
   let aiConfidence = 0;
   let generation = null;
+  let extractLatencyMs = null;
   if (resumeExtractor !== undefined) {
     const outcome = await resumeExtractor.extract(parsed.content);
+    extractLatencyMs = outcome.provenance?.latencyMs ?? null;
     if (!('abstained' in outcome)) {
       extracted = outcome.content;
       aiConfidence = outcome.confidence;
@@ -356,6 +358,18 @@ export async function parseDocument(filePath) {
       };
     }
   }
+
+  // The two Claude calls' own timings, already computed by each adapter and
+  // otherwise discarded before reaching anywhere visible. One line per parse
+  // is enough to see which of the two calls actually owns the wait, instead
+  // of guessing from the total.
+  console.log(JSON.stringify({
+    level: 'info', msg: 'cv_parse.timing', fileName: filename,
+    parseMs: parsed.provenance?.latencyMs ?? null,
+    extractMs: extractLatencyMs,
+    totalMs: (parsed.provenance?.latencyMs ?? 0) + (extractLatencyMs ?? 0),
+    model: documentParser.version ?? null,
+  }));
 
   // THE VALIDATION SPLIT. Evidence is located in the document and deterministic
   // rules judge the value; neither consults the extractor's own confidence.

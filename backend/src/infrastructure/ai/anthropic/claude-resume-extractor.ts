@@ -176,7 +176,12 @@ export class ClaudeResumeExtractor implements ResumeExtractor {
         model: this.config.model,
         max_tokens: 8_000,
         system: SYSTEM,
-        output_config: { format: { type: 'json_schema', schema: SCHEMA as unknown as Record<string, unknown> } },
+        // Extraction is schema-constrained lookup over text the parser already
+        // read, not judgement — the same reason the parser call uses 'low'.
+        output_config: {
+          effort: 'low',
+          format: { type: 'json_schema', schema: SCHEMA as unknown as Record<string, unknown> },
+        },
         messages: [{ role: 'user', content: `<cv>\n${body}\n</cv>` }],
       });
     } catch (error) {
