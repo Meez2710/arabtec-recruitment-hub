@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="Arabtec">
+  <!-- A favicon is drawn into a SQUARE box. The full logo file is 600x396, so a
+       browser either letterboxes it or squashes it — which is why the tab icon
+       looked distorted. This file is 1:1 and carries the mark only (no wordmark,
+       which is unreadable at 16px), centred with its own aspect ratio intact. -->
+  <g transform="translate(8 15.4) scale(0.10367)" fill="#D01827">
+    <path d="M150 0 L223 0 L223 118 L73 263 L73 320 L0 320 L0 205 Z"/>
+    <path d="M313 0 L240 0 L240 118 L390 263 L390 320 L463 320 L463 205 Z"/>
+  </g>
+</svg>

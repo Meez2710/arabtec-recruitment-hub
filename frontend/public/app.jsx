@@ -607,14 +607,359 @@ function CommandPalette({ open, onClose, onPick }) {
   );
 }
 
+/* Counts shown on the sidebar and used by the dashboard.
+   Fetched ONCE per session in the Shell and handed down, so the dashboard does
+   not repeat the same `/dashboard` call a moment later. Every figure is already
+   role-scoped by the API. */
+function useWorkCounts(user) {
+  const [counts, setCounts] = useState({ dash: null, intakes: null });
+  const reload = useCallback(() => {
+    const jobs = [
+      can(user, 'dashboard.view') ? api.get('/dashboard').catch(() => null) : Promise.resolve(null),
+      can(user, 'candidate.view') ? api.get('/candidates/intakes').catch(() => null) : Promise.resolve(null),
+    ];
+    Promise.all(jobs).then(([dash, intake]) => {
+      setCounts({ dash: dash || null, intakes: intake ? (intake.intakes || []).length : null });
+    });
+  }, [user.id]);
+  useEffect(reload, [reload]);
+  return [counts, reload];
+}
+function navCount(key, counts) {
+  const d = counts.dash;
+  if (key === 'candidateReview') return counts.intakes || null;
+  if (!d) return null;
+  if (key === 'interviews') return d.kpis.upcomingInterviews || null;
+  if (key === 'offers') {
+    const n = (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((s, o) => s + o.count, 0);
+    return n || null;
+  }
+  if (key === 'requests') return d.kpis.openRequests || null;
+  return null;
+}
+
+/* ============================== ANYHELP ====================================
+   One floating dock, two tabs, both wired to real backends.
+
+   TEAM — the hiring-request conversation, `/api/thread/request/:id`. This is the
+     SAME thread the request page renders, with the same server-side rules: you
+     may read it if you can view the request, and post only if you are a
+     participant. The dock does not create a second messaging subsystem, and it
+     never shows a message as sent until the server has returned it. The backend
+     scopes a conversation to a hiring request, so the dock asks which request
+     when the page you are on is not already one.
+
+   ANYHELP — the assistant, wired to the product's existing Anthropic-backed
+     endpoints. A full audit of every branch in this repository (see the report
+     accompanying this change) found exactly two AI HTTP surfaces on main:
+
+        GET  /api/candidates/smart-search?q=…          → plain-English talent search
+        POST /api/requests/:id/suggest-candidates      → AI shortlist for a request
+
+     There is NO conversational endpoint, on main or on any feature branch, so
+     the dock does not pretend there is one: free text is routed to whichever of
+     the two real capabilities fits, and everything shown comes back from the
+     server. When neither fits, the dock says so in a clearly-labelled UI notice
+     rather than generating an answer.
+
+     Both endpoints run under the caller's own token and re-use the same scoping
+     and salary rules as every other listing, so the assistant cannot surface a
+     record the user could not already open. The dock renders results as text
+     nodes (never HTML), and it holds no write capability at all — which is why
+     there is no "confirm this action" step to fake.
+
+   TO CONNECT A REAL CONVERSATIONAL BACKEND: implement `anyhelpAsk` below against
+   the new endpoint and return the same shape. Nothing else in this component
+   needs to change; the status vocabulary already covers proposed/confirming/
+   executing/done/failed for a backend that can act.
+   ========================================================================= */
+const ANYHELP_TEAM_NOTE = 'Team chat is the hiring-request conversation. It is stored on the request, so what is said here stays on the record.';
+const ANYHELP_AI_NOTE = 'anyhelp reads. It searches the talent pool in plain English and ranks candidates against a request. It cannot change records, stages, salary or approvals.';
+
+function anyhelpTime(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/* The assistant's single transport. Returns
+     { role, text, items? }            → an answer the server produced, or
+     throws                            → the server's own refusal / failure.
+   Every branch here calls a real endpoint. Nothing is generated locally except
+   the two explicitly-labelled "not available" notices. */
+async function anyhelpAsk(text, { user, requestId }) {
+  const wantsShortlist = /shortlist|suggest|rank|who (should|could) (i|we)|best candidates?/i.test(text);
+
+  if (wantsShortlist && requestId) {
+    if (!can(user, 'candidate.view')) {
+      return { role: 'Not available', kind: 'system', text: 'Your role cannot view candidates, so a shortlist is not something anyhelp can show you.' };
+    }
+    const r = await api.post(`/requests/${requestId}/suggest-candidates`, { limit: 5 });
+    const items = (r.suggestions || []).map((s) => ({
+      title: s.fullName,
+      sub: [s.score != null ? `Score ${s.score}` : null, s.currentPosition, s.currentCompany, s.reason]
+        .filter(Boolean).join(' · '),
+    }));
+    return {
+      role: 'AI shortlist', kind: 'ai', items,
+      text: items.length
+        ? `${items.length} candidate${items.length === 1 ? '' : 's'} from your talent pool, ranked against this request`
+          + (r.poolCapped ? ', drawn from a capped pool rather than the whole database' : '')
+          + '. Nothing is linked until you link it on the request itself.'
+        : 'The shortlist ran against your talent pool and matched nobody for this request. An empty answer is a real answer.',
+    };
+  }
+
+  if (!can(user, 'candidate.view')) {
+    return { role: 'Not available', kind: 'system', text: 'Your role cannot search the talent pool, and there is no other assistant capability connected yet.' };
+  }
+  const r = await api.get('/candidates/smart-search?q=' + encodeURIComponent(text) + '&pageSize=5');
+  const items = (r.candidates || []).map((c) => ({
+    title: c.fullName,
+    sub: [c.currentPosition, c.currentCompany, c.location,
+      c.yearsExperience != null ? `${c.yearsExperience}y` : null].filter(Boolean).join(' · ') || '—',
+  }));
+  const total = r.pagination ? r.pagination.total : items.length;
+  return {
+    role: 'Talent pool search', kind: 'ai', items,
+    text: (r.interpretation ? `Read as: ${r.interpretation}. ` : '')
+      + (items.length
+        ? `${total} match${total === 1 ? '' : 'es'} in the talent pool${total > items.length ? `, showing the first ${items.length}` : ''}.`
+        : 'Nobody in the talent pool matches that.'),
+  };
+}
+
+/* The backend's own words beat a generic sentence: a 503 "AI is not configured"
+   is far more useful to a recruiter than "something went wrong". */
+function serverReason(e) {
+  const detail = e && e.data && e.data.detail;
+  return [e && e.message, detail && detail !== e.message ? detail : null].filter(Boolean).join(' — ')
+    || 'That request failed. Nothing was changed.';
+}
+
+function AnyhelpDock({ user, route, context, onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState('anyhelp');
+  const [draft, setDraft] = useState('');
+  // Explicit status vocabulary, so the dock can never imply an outcome the
+  // backend has not reported: idle | thinking | sending | failed.
+  const [status, setStatus] = useState('idle');
+
+  const [thread, setThread] = useState({ state: 'idle', posts: [], error: '' });
+  const [aiLog, setAiLog] = useState([]);
+  // Team chat is per hiring request. When the page is not a request, the user
+  // picks one from the requests they can already see — no new visibility.
+  const [pickable, setPickable] = useState(null);
+  const [pickedId, setPickedId] = useState(null);
+
+  const threadRef = useRef(null);
+  const dockRef = useRef(null);
+  const fabRef = useRef(null);
+  const contextRequestId = context && context.requestId;
+  const requestId = contextRequestId || pickedId;
+  const canSeeRequests = can(user, 'request.view_all') || can(user, 'request.view_own');
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onKey(e) { if (e.key === 'Escape') { setOpen(false); if (fabRef.current) fabRef.current.focus(); } }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && dockRef.current) { const t = dockRef.current.querySelector('textarea, button'); if (t) t.focus(); }
+  }, [open]);
+
+  // A request opened on the page always wins over one picked in the dock.
+  useEffect(() => { if (contextRequestId) setPickedId(null); }, [contextRequestId]);
+
+  const loadThread = useCallback(() => {
+    if (!requestId) { setThread({ state: 'idle', posts: [], error: '' }); return; }
+    setThread((t) => ({ ...t, state: 'loading' }));
+    api.get(`/thread/request/${requestId}`)
+      .then((r) => setThread({ state: 'ready', posts: r.posts || [], error: '' }))
+      .catch((e) => setThread({ state: 'error', posts: [], error: serverReason(e) }));
+  }, [requestId]);
+
+  useEffect(() => { if (open && tab === 'team') loadThread(); }, [open, tab, loadThread]);
+
+  // Only fetch the picker list when it is actually needed.
+  useEffect(() => {
+    if (!open || tab !== 'team' || requestId || pickable || !canSeeRequests) return;
+    api.get('/requests?pageSize=25')
+      .then((r) => setPickable(r.requests || []))
+      .catch(() => setPickable([]));
+  }, [open, tab, requestId, pickable, canSeeRequests]);
+
+  useEffect(() => { const el = threadRef.current; if (el) el.scrollTop = el.scrollHeight; }, [thread.posts, aiLog, tab, open, status]);
+
+  async function sendTeam(text) {
+    setStatus('sending');
+    try {
+      // The post is rendered only from the server's response — never optimistically.
+      await api.post(`/thread/request/${requestId}`, { body: text });
+      setDraft('');
+      const r = await api.get(`/thread/request/${requestId}`);
+      setThread({ state: 'ready', posts: r.posts || [], error: '' });
+      setStatus('idle');
+    } catch (e) {
+      // The draft is kept so nothing the user typed is lost on a refusal.
+      setThread((t) => ({ ...t, error: serverReason(e) }));
+      setStatus('failed');
+    }
+  }
+
+  async function sendAnyhelp(text) {
+    setAiLog((l) => [...l, { who: user.fullName, role: 'You', time: anyhelpTime(), text, kind: 'mine' }]);
+    setDraft('');
+    setStatus('thinking');
+    try {
+      const answer = await anyhelpAsk(text, { user, requestId: contextRequestId });
+      setAiLog((l) => [...l, { who: 'anyhelp', time: anyhelpTime(), ...answer }]);
+      setStatus('idle');
+    } catch (e) {
+      setAiLog((l) => [...l, { who: 'anyhelp', role: 'Failed', kind: 'failed', time: anyhelpTime(), text: serverReason(e) }]);
+      setStatus('failed');
+    }
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text || status === 'thinking' || status === 'sending') return;
+    if (tab === 'team') sendTeam(text); else sendAnyhelp(text);
+  }
+
+  const busy = status === 'thinking' || status === 'sending';
+  const teamPosts = (thread.posts || []).filter((p) => p.type === 'message' || p.type === 'system');
+  const contextLine = requestId && !contextRequestId
+    ? { title: 'Team conversation', meta: 'On the hiring request you picked' }
+    : { title: context.title, meta: context.meta };
+
+  return (
+    <>
+      <button ref={fabRef} type="button" className={'anyhelp-fab' + (open ? ' is-open' : '')}
+        onClick={() => setOpen(true)} aria-expanded={open} aria-controls="anyhelp-dock"
+        aria-label="Open anyhelp">
+        <span className="anyhelp-fab-mark" aria-hidden="true">a</span>
+        <span className="anyhelp-fab-copy"><strong>anyhelp</strong><small>Team + AI</small></span>
+      </button>
+
+      {open && (
+        <aside id="anyhelp-dock" ref={dockRef} className="anyhelp-dock" role="dialog" aria-label="anyhelp">
+          <header className="anyhelp-head">
+            <div><p className="anyhelp-kicker">anyhelp</p>
+              <strong>{tab === 'team' ? 'Team conversation' : 'Assistant'}</strong></div>
+            <button className="icon-btn" onClick={() => { setOpen(false); if (fabRef.current) fabRef.current.focus(); }} aria-label="Close anyhelp">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </header>
+
+          <div className="anyhelp-context">
+            <span>{contextLine.title}</span>
+            <small>{contextLine.meta}</small>
+          </div>
+
+          <div className="anyhelp-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'team'} className={tab === 'team' ? 'on' : ''}
+              onClick={() => setTab('team')}>Team</button>
+            <button role="tab" aria-selected={tab === 'anyhelp'} className={tab === 'anyhelp' ? 'on' : ''}
+              onClick={() => setTab('anyhelp')}>anyhelp</button>
+          </div>
+
+          <div className="anyhelp-notice">{tab === 'team' ? ANYHELP_TEAM_NOTE : ANYHELP_AI_NOTE}</div>
+
+          <div className="anyhelp-thread" ref={threadRef}>
+            {tab === 'team' ? (
+              !requestId ? (
+                <div className="anyhelp-empty">
+                  <p style={{ margin: '0 0 10px' }}>Team chat lives on a hiring request. Pick the one you want to talk about.</p>
+                  {!canSeeRequests ? <span>Your role does not include hiring requests.</span>
+                    : pickable == null ? <span>Loading your requests…</span>
+                      : !pickable.length ? <span>You have no hiring requests to talk about yet.</span>
+                        : (
+                          <>
+                            <label className="sr-only" htmlFor="anyhelp-request">Hiring request</label>
+                            <select id="anyhelp-request" value="" onChange={(e) => setPickedId(Number(e.target.value) || null)}>
+                              <option value="">Choose a hiring request…</option>
+                              {pickable.map((r) => (
+                                <option key={r.id} value={r.id}>{shortReqCode(r.ticketNo)} · {r.title}</option>
+                              ))}
+                            </select>
+                          </>
+                        )}
+                </div>
+              ) : thread.state === 'loading' ? <div className="anyhelp-empty">Loading the conversation…</div>
+                : thread.state === 'error' ? (
+                  <div className="anyhelp-msg failed"><div className="anyhelp-who"><b>Not loaded</b></div>
+                    <p>{thread.error}</p>
+                    <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={loadThread}>Try again</button></div>
+                ) : !teamPosts.length ? <div className="anyhelp-empty">No messages on this request yet. Say the first thing.</div>
+                  : teamPosts.map((p) => (
+                    <article key={p.id} className={'anyhelp-msg' + (p.author && p.author.id === user.id ? ' mine' : '') + (p.type === 'system' ? ' system' : '')}>
+                      <div className="anyhelp-who"><b>{(p.author && p.author.name) || 'System'}</b>
+                        <span>{ROLE_NAMES[p.author && p.author.role] || (p.author && p.author.role) || ''} · {anyhelpTime(p.createdAt)}</span></div>
+                      <p>{p.body}</p>
+                    </article>
+                  ))
+            ) : (
+              aiLog.length === 0
+                ? <div className="anyhelp-empty">
+                  Ask in plain English — “quantity surveyors in Cairo with 8+ years”.
+                  {contextRequestId ? ' With a hiring request open you can also ask for a shortlist.' : ''}
+                </div>
+                : aiLog.map((m, i) => (
+                  <article key={i} className={'anyhelp-msg ' + (m.kind === 'mine' ? 'mine' : m.kind === 'ai' ? 'ai' : m.kind)}>
+                    <div className="anyhelp-who"><b>{m.who}</b><span>{m.role} · {m.time}</span></div>
+                    <p>{m.text}</p>
+                    {m.items && m.items.length > 0 && (
+                      <>
+                        <ul className="anyhelp-results">
+                          {m.items.map((it, j) => <li key={j}><strong>{it.title}</strong><small>{it.sub}</small></li>)}
+                        </ul>
+                        <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => onNavigate('candidates')}>Open Talent Pool</button>
+                      </>
+                    )}
+                  </article>
+                ))
+            )}
+            {status === 'thinking' && <div className="anyhelp-status" aria-live="polite">anyhelp is reading your talent pool…</div>}
+            {status === 'sending' && <div className="anyhelp-status" aria-live="polite">Sending…</div>}
+            {tab === 'team' && status === 'failed' && thread.error && (
+              <div className="anyhelp-status failed" aria-live="assertive">Not sent — {thread.error}</div>
+            )}
+          </div>
+
+          <form className="anyhelp-composer" onSubmit={submit}>
+            <label className="sr-only" htmlFor="anyhelp-input">Message anyhelp</label>
+            <textarea id="anyhelp-input" rows="2" value={draft} onChange={(e) => setDraft(e.target.value)}
+              disabled={busy || (tab === 'team' && !requestId)}
+              placeholder={tab === 'team'
+                ? (requestId ? 'Message the team on this request…' : 'Pick a hiring request first…')
+                : 'Ask anyhelp about your talent pool…'} />
+            <button className="btn" type="submit" disabled={busy || !draft.trim() || (tab === 'team' && !requestId)}>
+              {busy ? 'Working…' : 'Send'}
+            </button>
+          </form>
+        </aside>
+      )}
+    </>
+  );
+}
+
+/* ----------------------------- Shell ----------------------------- */
 function Shell({ user, branding, onLogout, refreshBranding }) {
   // Self-service password change, reachable from the user menu.
   const [pwdOpen, setPwdOpen] = useState(false);
   const [route, setRoute] = useState('dashboard');
   const [collapsed, setCollapsed] = useState(branding?.sidebar_mode === 'collapsed');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);   // drawer, <=900px
+  const [moreOpen, setMoreOpen] = useState(false);             // bottom-sheet "More"
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const density = branding?.table_density || 'comfortable';
+  const [counts] = useWorkCounts(user);
+  const persona = personaFor(user);
+  const roleCode = primaryRole(user);
 
   // Ctrl/Cmd+K from anywhere. Ignored while typing in a field so it never steals
   // a keystroke from a form the recruiter is filling in.
@@ -631,14 +976,20 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Any route change closes the mobile chrome, so a drawer never survives a jump.
+  const go = useCallback((r) => { setRoute(r); setMobileNavOpen(false); setMoreOpen(false); }, []);
+
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
+  const navItems = visibleNav.filter((n) => !n.section);
+  // Five-item bottom bar: the four most-used sections this role can reach, plus More.
+  const primaryMobile = navItems.slice(0, 4);
 
   const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
   const Page = {
-    dashboard: <Dashboard user={user} onNavigate={setRoute} />,
+    dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} />,
-    candidates: <CandidatesPage user={user} onNavigate={setRoute} />,
+    candidates: <CandidatesPage user={user} onNavigate={go} />,
     candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <div className="error-banner">Candidate Review module failed to load.</div>,
     interviews: <InterviewsPage user={user} />,
     offers: <OffersPage user={user} />,
@@ -655,34 +1006,67 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     workflow: <WorkflowPage user={user} />,
     system: <SystemPage user={user} />,
     audit: <AuditPage user={user} />,
-  }[route] || <Dashboard user={user} onNavigate={setRoute} />;
+  }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} />;
+
+  // What anyhelp is looking at. Kept deliberately small: the dock never claims
+  // more context than the page actually has. RequestDetail publishes the open
+  // request id, which is what turns the Team tab into a real thread.
+  const [ctx, setCtx] = useState({ id: null, label: null });
+  useEffect(() => {
+    const sync = () => setCtx({ id: window.__atsOpenRequestId || null, label: window.__atsOpenRequestLabel || null });
+    sync();
+    window.addEventListener('ats:context', sync);
+    return () => window.removeEventListener('ats:context', sync);
+  }, [route]);
+  const anyhelpContext = {
+    requestId: ctx.id,
+    title: ctx.id
+      ? (ctx.label || 'Hiring request')
+      : ((NAV.find((n) => n.key === route) || {}).label || 'Workspace'),
+    meta: ROLE_SCOPE[roleCode] || 'Access follows your role.',
+  };
 
   return (
-    <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '240px' }}>
-      <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
+    <div className="shell" style={{ '--sidebar-w': collapsed ? '72px' : '236px' }}>
+      {mobileNavOpen && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
+      <aside className={'sidebar' + (collapsed ? ' collapsed' : '') + (mobileNavOpen ? ' mobile-open' : '')}>
         <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
-          <span className="side-mark"><Logo size={22} /></span>
+          <span className="side-mark"><Logo size={30} /></span>
           {!collapsed && (
             <span className="side-txt">
-              <strong>{branding?.app_name || 'Arabtec Hub'}</strong>
-              <span>{branding?.company_name || 'Recruitment'}</span>
+              <strong>{branding?.app_name || 'Arabtec'}</strong>
+              <span>Recruitment Hub</span>
             </span>
           )}
         </div>
-        <nav className="nav">
-          {visibleNav.map((n, i) => n.section
-            ? (!collapsed && <div key={'s' + i} className="nav-section">{n.section}</div>)
-            : (
-              <button key={n.key} className={'nav-item' + (route === n.key ? ' active' : '')} onClick={() => setRoute(n.key)} title={n.label}>
-                <span className="nav-icon"><Icon name={n.icon} size={17} /></span>{!collapsed && <span>{n.label}</span>}
+        <nav className="nav" aria-label="Main navigation">
+          {visibleNav.map((n, i) => {
+            if (n.section) return !collapsed && <div key={'s' + i} className="nav-section">{n.section}</div>;
+            const c = navCount(n.key, counts);
+            return (
+              <button key={n.key} className={'nav-item' + (route === n.key ? ' active' : '')}
+                onClick={() => go(n.key)} title={n.label} aria-current={route === n.key ? 'page' : undefined}>
+                <span className="nav-icon"><Icon name={n.icon} size={17} /></span>
+                {!collapsed && <span>{n.label}</span>}
+                {!collapsed && c ? <span className="nav-count">{c}</span> : null}
               </button>
-            ))}
+            );
+          })}
         </nav>
+        {!collapsed && (
+          <div className="scope-card">
+            <strong>{ROLE_NAMES[roleCode] || roleCode} scope</strong>
+            <p>{ROLE_SCOPE[roleCode] || 'Access follows your role'}. Access is enforced by your role, not by this menu.</p>
+          </div>
+        )}
       </aside>
 
       <div className="main">
         <header className="topbar">
-          <button className="icon-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
+          <button className="icon-btn menu-btn" onClick={() => setMobileNavOpen(true)} title="Open menu" aria-label="Open menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+          </button>
+          <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
           </button>
           <div className="tb-brand">
@@ -699,12 +1083,12 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             <span className="kbd">Ctrl K</span>
           </button>
           <div className="spacer" />
-          <NotificationBell onNavigate={setRoute} />
+          <NotificationBell onNavigate={go} />
           <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
             <div className="avatar">{initials(user.fullName)}</div>
             <div>
               <div className="profile-name">{user.fullName}</div>
-              <div className="profile-role">{ROLE_NAMES[user.roles[0]] || user.roles[0]}</div>
+              <div className="profile-role">{ROLE_NAMES[roleCode] || roleCode}</div>
             </div>
             {menuOpen && (
               <div className="menu" onClick={(e) => e.stopPropagation()}>
@@ -724,7 +1108,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             )}
           </div>
         </header>
-        <main className={'content density-' + density}>{Page}</main>
+        <main id="main-content" className={'content density-' + density} tabIndex="-1">{Page}</main>
 
         {pwdOpen && (
           <Modal title="Change password" onClose={() => setPwdOpen(false)}>
@@ -740,18 +1124,49 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             // this up on mount (pending id) or live (event) if already mounted.
             window.__atsPendingCandidateId = c.id;
             setPaletteOpen(false);
-            setRoute('candidates');
+            go('candidates');
             window.dispatchEvent(new CustomEvent('ats:open-candidate', { detail: { id: c.id } }));
           }}
         />
       </div>
+
+      {/* Five-item bottom navigation. Below 900px this replaces the sidebar; the
+          sidebar itself becomes the drawer behind the menu button. */}
+      <nav className="mobile-nav" aria-label="Primary">
+        {primaryMobile.map((n) => (
+          <button key={n.key} className={route === n.key ? 'active' : ''} onClick={() => go(n.key)}
+            aria-current={route === n.key ? 'page' : undefined}>
+            <Icon name={n.icon} size={18} />
+            <span>{n.label}</span>
+          </button>
+        ))}
+        <button className={moreOpen ? 'active' : ''} onClick={() => setMoreOpen((o) => !o)} aria-expanded={moreOpen}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+          <span>More</span>
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div className="more-sheet" role="dialog" aria-label="All sections">
+          <div className="nav-section">All available sections</div>
+          <div className="more-grid">
+            {navItems.map((n) => (
+              <button key={n.key} className={route === n.key ? 'active' : ''} onClick={() => go(n.key)}>{n.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
     </div>
   );
 }
 
 /* ----------------------------- Dashboard ----------------------------- */
 /* ---- tiny inline-SVG chart helpers (no external libraries) ---- */
-const CHART_COLORS = ['#005B96', '#00A3E0', '#2E7D32', '#F59E0B', '#C62828', '#1976D2', '#6B7280', '#003A63'];
+// Approved palette: one green ramp, amber for "waiting", red for "over".
+// Blue is not an accent in this design system.
+const CHART_COLORS = ['#008064', '#00664F', '#4E9C88', '#8A5A00', '#E09600', '#D01827', '#6F6A64', '#8A867F'];
 function BarChart({ data, height = 160 }) {
   const items = data.filter((d) => d.count > 0);
   if (!items.length) return <Empty icon="📊" text="No data yet." />;
@@ -794,10 +1209,13 @@ function Funnel({ data }) {
 
 // Canonical pipeline stage → swatch color, for the inline funnel mini-bar and reports.
 // Grouped by phase so the bar reads left→right as candidates progress.
+// Approved palette: the pipeline reads as one green ramp that deepens as a
+// candidate advances, amber where the process is waiting on a person, red at
+// the end. Blue carried no meaning here and is retired.
 const STAGE_COLORS = {
-  sourced: '#9aa3ad', matched: '#2160a6', shortlisted: '#00A3E0', interviewing: '#1976D2',
-  waiting_feedback: '#F59E0B', issuing_offer: '#d98324', offer_sent: '#b7791f', joined: '#1d6e3e',
-  unmatched: '#c7ccd2', on_hold: '#6a4ca6', rejected: '#c0392b', offer_declined: '#a93b34',
+  sourced: '#8A867F', matched: '#4E9C88', shortlisted: '#008064', interviewing: '#00664F',
+  waiting_feedback: '#E09600', issuing_offer: '#8A5A00', offer_sent: '#8A5A00', joined: '#00664F',
+  unmatched: '#C7C4BF', on_hold: '#6F6A64', rejected: '#D01827', offer_declined: '#B01420',
 };
 const FUNNEL_ORDER = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
 
@@ -840,9 +1258,9 @@ function FunnelMini({ pipeline }) {
 // Presentation only. Every number rendered here comes from the existing
 // GET /dashboard response; nothing is fabricated or extrapolated.
 const APP_STAGE_COLORS = {
-  sourced: '#9AA3AD', screening: '#2160A6', interview_hr: '#00A3E0',
-  interview_technical: '#1976D2', offer: '#B7791F', hired: '#1D6E3E',
-  rejected: '#C0392B', offer_declined: '#A93B34',
+  sourced: '#8A867F', screening: '#4E9C88', interview_hr: '#008064',
+  interview_technical: '#00664F', offer: '#8A5A00', hired: '#00664F',
+  rejected: '#D01827', offer_declined: '#B01420',
 };
 
 function DashKpi({ label, value, unit, hint, icon, tone }) {
@@ -926,169 +1344,625 @@ function DashListRow({ tone, icon, title, meta, right }) {
   );
 }
 
-function Dashboard({ user, onNavigate }) {
-  const [d, setD] = useState(null);
-  const [err, setErr] = useState(null);
-  useEffect(() => {
-    if (!can(user, 'dashboard.view')) { setErr('You do not have access to the dashboard.'); return; }
-    api.get('/dashboard').then(setD).catch((e) => setErr(e.message));
-  }, []);
+/* ===========================================================================
+   ROLE-BASED DASHBOARDS
+   ---------------------------------------------------------------------------
+   The approved mockup ships five personas. Production has nine real roles, and
+   the REAL role is what selects the dashboard — the mockup's persona picker was
+   a prototype control and is deliberately not shipped.
 
-  const firstName = (user.fullName || '').split(' ')[0];
-  const now = new Date();
-  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
-  const dateLine = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+   This mapping is PRESENTATION ONLY. It decides which composition a user sees;
+   it grants nothing. Every figure still comes from an endpoint that scopes
+   itself server-side from the caller's permissions (`/dashboard` returns
+   scope:'all' or scope:'own'; `/requests` and `/interviews` filter the same
+   way), so hiding a card can never be the thing that keeps data private.
+   =========================================================================== */
+const PERSONA_BY_ROLE = {
+  system_admin: 'director',        // full permissions → the widest real view
+  hr_director: 'director',
+  hr_manager: 'manager',
+  recruitment_manager: 'manager',
+  recruiter: 'recruiter',
+  hiring_manager: 'recruiter',     // own-scope, action-led
+  project_manager: 'recruiter',
+  interviewer: 'interviewer',
+  viewer: 'executive',             // read-only, org-wide, no candidate identity
+};
+// Highest-privilege role wins when a user holds more than one.
+const ROLE_RANK = ['system_admin', 'hr_director', 'hr_manager', 'recruitment_manager',
+  'recruiter', 'project_manager', 'hiring_manager', 'interviewer', 'viewer'];
+function primaryRole(user) {
+  const held = user?.roles || [];
+  return ROLE_RANK.find((r) => held.includes(r)) || held[0] || 'viewer';
+}
+function personaFor(user) { return PERSONA_BY_ROLE[primaryRole(user)] || 'recruiter'; }
 
-  function Head({ sub, actions }) {
-    return (
-      <div className="dash-head">
-        <div>
-          <div className="dash-eyebrow">{dateLine} · Recruitment workspace</div>
-          <h1 className="page-title">{greeting}, {firstName}</h1>
-          <p className="page-sub">{sub}</p>
-        </div>
-        <div className="dash-actions">{actions}</div>
+/* What this role can reach, in the user's own words. Shown in the sidebar so a
+   recruiter is never left guessing why a list looks short. */
+const ROLE_SCOPE = {
+  system_admin: 'Full platform configuration and governance',
+  hr_director: 'Hiring plan, approvals and governance',
+  hr_manager: 'Recruitment policy, approvals and offer management',
+  recruitment_manager: 'All recruitment operations',
+  recruiter: 'Own requests and linked candidates',
+  hiring_manager: 'Own requests, shortlists and interview feedback',
+  project_manager: 'Project headcount and project visibility',
+  interviewer: 'Assigned interviews only',
+  viewer: 'Read-only reporting visibility',
+};
+
+// ---- Shared dashboard pieces (presentation only) ---------------------------
+function DashHead({ eyebrow, title, sub, actions }) {
+  return (
+    <div className="dash-head">
+      <div>
+        <div className="dash-eyebrow">{eyebrow}</div>
+        <h1 className="page-title">{title}</h1>
+        <p className="page-sub">{sub}</p>
       </div>
-    );
+      <div className="dash-actions">{actions}</div>
+    </div>
+  );
+}
+
+function KpiCard({ label, value, meta, tone }) {
+  return (
+    <div className={'dash-kpi' + (tone ? ' ' + tone : '')}>
+      <span className="dash-kpi-label">{label}</span>
+      <div className="dash-kpi-val">{value}</div>
+      <div className="dash-kpi-hint">{meta}</div>
+    </div>
+  );
+}
+
+/* One row of "what is waiting on you": the signal, what it is, why it matters,
+   and the single action that moves it. Never decorative — every row navigates
+   to the record it names. */
+function ActionItem({ tone, title, meta, why, cta, onCta }) {
+  return (
+    <div className="action-item">
+      <span className={'signal ' + tone} />
+      <div className="action-copy">
+        <strong>{title}</strong>
+        <span>{meta}</span>
+        {why && <em className={tone}>{why}</em>}
+      </div>
+      {cta && <button className="btn btn-sm" onClick={onCta}>{cta}</button>}
+    </div>
+  );
+}
+
+function EventCard({ tone, title, meta }) {
+  return <div className={'event' + (tone ? ' ' + tone : '')}><strong>{title}</strong><span>{meta}</span></div>;
+}
+
+function RoleRow({ r, onOpen }) {
+  const h = r.health || {};
+  const tone = h.level === 'red' ? 'risk' : h.level === 'amber' ? 'warn' : 'good';
+  const filled = r.headcount ? Math.round((r.headcountFilled / r.headcount) * 100) : 0;
+  return (
+    <div className="role-row">
+      <div>
+        <span className="cell-title">{r.title}</span>
+        <span className="cell-meta">{shortReqCode(r.ticketNo)} · {(r.project || {}).name || 'No project'}</span>
+      </div>
+      <div><Badge variant={tone === 'risk' ? 'critical' : tone === 'warn' ? 'warning' : 'success'}>{h.label || '—'}</Badge></div>
+      <div>
+        <span className="progress"><span style={{ width: filled + '%' }} /></span>
+        <span className="cell-meta">{r.headcountFilled} of {r.headcount} seats · {(r.pipeline || {}).total || 0} in pipeline</span>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <span className="idle">{h.daysOpen == null ? '—' : h.daysOpen + 'd'}</span>
+        {onOpen && <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => onOpen(r)}>Open</button>}
+      </div>
+    </div>
+  );
+}
+
+// Small date helpers used by the action lists. Presentation only.
+const OPEN_REQ_STATUS = ['pending_approval', 'sourcing', 'in_progress', 'partially_filled',
+  'on_hold', 'reopened', 'draft', 'budget_validation', 'approved', 'in_sourcing'];
+function isOpenReq(r) { return OPEN_REQ_STATUS.includes(r.status); }
+function daysUntil(iso) { if (!iso) return null; const d = (new Date(iso) - Date.now()) / 86400000; return isNaN(d) ? null : d; }
+function isToday(iso) { if (!iso) return false; const d = new Date(iso); const n = new Date(); return d.toDateString() === n.toDateString(); }
+function timeOf(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+/* "today at 14:00" / "tomorrow" / "12 Oct" — a recruiter reads urgency, not a timestamp. */
+function fmtWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso); if (isNaN(d)) return '—';
+  const days = Math.floor((new Date(d.toDateString()) - new Date(new Date().toDateString())) / 86400000);
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (days === 0) return `today at ${t}`;
+  if (days === 1) return `tomorrow at ${t}`;
+  if (days === -1) return `yesterday`;
+  if (days < 0) return `${Math.abs(days)} days ago`;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ` at ${t}`;
+}
+
+/* Fetch exactly what a persona renders — nothing more. `/dashboard` is the one
+   call every persona shares; requests and interviews are pulled only by the
+   compositions that show them. */
+function useDashboardData(user, persona, sharedDash) {
+  const [state, setState] = useState({ loading: true, err: null, d: null, requests: [], interviews: [] });
+  useEffect(() => {
+    let live = true;
+    // `sharedDash` is the /dashboard payload the Shell already fetched for the
+    // sidebar counts. Reusing it is the difference between one call and two.
+    const wantsDashboard = !sharedDash && can(user, 'dashboard.view') && persona !== 'interviewer';
+    const wantsRequests = persona !== 'interviewer'
+      && (can(user, 'request.view_all') || can(user, 'request.view_own'));
+    const wantsInterviews = (persona === 'recruiter' || persona === 'interviewer')
+      && (can(user, 'interview.view_all') || can(user, 'interview.view_assigned'));
+
+    Promise.all([
+      wantsDashboard ? api.get('/dashboard').catch((e) => ({ __err: e.message })) : null,
+      wantsRequests ? api.get('/requests?pageSize=100').catch(() => null) : null,
+      wantsInterviews ? api.get('/interviews').catch(() => null) : null,
+    ]).then(([d, rq, iv]) => {
+      if (!live) return;
+      if (d && d.__err) { setState({ loading: false, err: d.__err, d: null, requests: [], interviews: [] }); return; }
+      setState({
+        loading: false, err: null, d: d || sharedDash || null,
+        requests: (rq && rq.requests) || [], interviews: (iv && iv.interviews) || [],
+      });
+    });
+    return () => { live = false; };
+  }, [persona, !!sharedDash]);
+  return state;
+}
+
+function DashboardSkeleton() {
+  return (
+    <div>
+      <div className="dash-kpi-row">{[0, 1, 2].map((i) => (
+        <div className="dash-kpi dash-kpi-skel" key={i}>
+          <div className="skeleton" style={{ width: '52%' }} />
+          <div className="skeleton" style={{ width: '34%', height: 26, margin: '12px 0 8px' }} />
+          <div className="skeleton" style={{ width: '66%' }} />
+        </div>))}
+      </div>
+      <div className="dash-grid-2"><div className="card"><Skeleton rows={7} /></div><div className="card"><Skeleton rows={7} /></div></div>
+    </div>
+  );
+}
+
+/* --------------------------------- RECRUITER ------------------------------ */
+function RecruiterDashboard({ user, data, onNavigate }) {
+  const { d, requests, interviews } = data;
+  const mine = requests.filter((r) => isOpenReq(r) && (r.ownerId === user.id || r.requesterId === user.id || r.ownerId == null));
+  const owned = requests.filter((r) => isOpenReq(r) && r.ownerId === user.id);
+  const scheduled = interviews.filter((i) => i.status === 'scheduled');
+  const thisWeek = scheduled.filter((i) => { const n = daysUntil(i.scheduledAt); return n != null && n >= 0 && n <= 7; })
+    .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
+  const feedbackDue = interviews.filter((i) => i.status === 'completed' && !i.overallOutcome);
+  const stalled = owned.filter((r) => (r.health || {}).level === 'red' || r.slaBreached);
+  const noPipeline = owned.filter((r) => !((r.pipeline || {}).total));
+  const attention = owned.filter((r) => (r.health || {}).level === 'amber');
+  const overdue = feedbackDue.length + stalled.length;
+  const todays = scheduled.filter((i) => isToday(i.scheduledAt));
+
+  const actions = [];
+  for (const i of feedbackDue.slice(0, 3)) {
+    actions.push({ tone: 'risk', title: `Submit interview feedback — ${(i.candidate || {}).fullName || 'Candidate'}`,
+      meta: `${(i.request || {}).title || 'Role'} · ${i.interviewNo}`, why: 'Blocks the hiring decision',
+      cta: 'Open', go: 'interviews' });
+  }
+  for (const r of stalled.slice(0, 3)) {
+    actions.push({ tone: 'risk', title: `Escalate ${shortReqCode(r.ticketNo)} — ${r.title}`,
+      meta: `${(r.pipeline || {}).total || 0} in pipeline · open ${(r.health || {}).daysOpen ?? '—'} days`,
+      why: r.slaBreached ? 'SLA breached' : 'Target join date at risk', cta: 'Open role', go: 'requests' });
+  }
+  for (const r of noPipeline.slice(0, 2)) {
+    actions.push({ tone: 'warn', title: `No candidates yet — ${r.title}`,
+      meta: `${shortReqCode(r.ticketNo)} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'} to fill`,
+      why: 'Sourcing has not started', cta: 'Source', go: 'requests' });
+  }
+  for (const i of thisWeek.slice(0, 2)) {
+    actions.push({ tone: 'warn', title: `Confirm panel — ${(i.candidate || {}).fullName || 'Candidate'}`,
+      meta: `${(i.request || {}).title || 'Role'} · ${fmtWhen(i.scheduledAt)}`,
+      why: 'Interview this week', cta: 'Open', go: 'interviews' });
+  }
+  if (d && d.myWork.myPendingOfferApprovals) {
+    actions.push({ tone: 'warn', title: `${d.myWork.myPendingOfferApprovals} offer approval${d.myWork.myPendingOfferApprovals === 1 ? '' : 's'} waiting`,
+      meta: 'Offers held for a decision', why: 'Waiting on you', cta: 'Open offers', go: 'offers' });
+  }
+  for (const r of attention.slice(0, 2)) {
+    actions.push({ tone: 'good', title: `Keep ${shortReqCode(r.ticketNo)} moving`,
+      meta: `${r.title} · ${(r.pipeline || {}).total || 0} in pipeline`,
+      why: (r.health || {}).label || 'Needs attention', cta: 'Open role', go: 'requests' });
   }
 
-  if (err) return (
-    <div>
-      <Head sub="Organisation-wide recruitment analytics · Read-only · No salary data." />
-      <div className="card"><div className="dash-state">
-        <div className="dash-state-ico"><Icon name="shield" size={26} /></div>
-        <h3>Dashboard unavailable</h3>
-        <p>{err}</p>
-      </div></div>
-    </div>
-  );
-
-  if (!d) return (
-    <div>
-      <Head sub="Loading your recruitment overview…" />
-      <div className="dash-kpi-row">{[0, 1, 2, 3].map((i) => <div className="dash-kpi dash-kpi-skel" key={i}><div className="skeleton" style={{ width: '52%' }} /><div className="skeleton" style={{ width: '34%', height: 26, margin: '12px 0 8px' }} /><div className="skeleton" style={{ width: '66%' }} /></div>)}</div>
-      <div className="dash-grid-2">
-        <div className="card"><Skeleton rows={7} /></div>
-        <div className="card"><Skeleton rows={7} /></div>
-      </div>
-    </div>
-  );
-
-  const k = d.kpis;
-  const orgWide = d.scope === 'all';
-  const openReq = k.openRequests || 0;
-  const seats = `${k.headcountFilled} of ${k.headcountTotal} seats filled`;
-
-  // SLA health is derived from the aging buckets the API already returns.
-  const onTrack = d.aging['0-30'] || 0;
-  const atRisk = d.aging['31-60'] || 0;
-  const overdue = (d.aging['61-90'] || 0) + (d.aging['90+'] || 0);
-  const agingTotal = onTrack + atRisk + overdue;
-  const pct = (n) => (agingTotal ? (n / agingTotal) * 100 : 0);
-  const donut = agingTotal
-    ? `conic-gradient(var(--action-success) 0 ${pct(onTrack)}%, var(--warning) ${pct(onTrack)}% ${pct(onTrack) + pct(atRisk)}%, var(--danger) ${pct(onTrack) + pct(atRisk)}% 100%)`
-    : 'conic-gradient(var(--border) 0 100%)';
-
-  const reqRows = (d.requestsByStatus || [])
-    .map((r, i) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status, count: r.count, color: CHART_COLORS[i % CHART_COLORS.length] }))
-    .sort((a, b) => b.count - a.count);
-  const offerRows = (d.offersByStatus || [])
-    .map((r, i) => ({ label: (OFFER_STATUS[r.status] || {}).label || r.status, count: r.count, color: CHART_COLORS[i % CHART_COLORS.length] }))
-    .sort((a, b) => b.count - a.count);
-  const loadMax = Math.max(...(d.recruiterLoad || []).map((r) => r.c), 1);
-
-  const summary = orgWide
-    ? `${openReq} open ${openReq === 1 ? 'request' : 'requests'} · ${k.totalApplications} ${k.totalApplications === 1 ? 'candidate' : 'candidates'} in pipeline · ${k.upcomingInterviews} upcoming ${k.upcomingInterviews === 1 ? 'interview' : 'interviews'}`
-    : `Your scoped view · ${d.myWork.myOpenRequests} open ${d.myWork.myOpenRequests === 1 ? 'request' : 'requests'} · ${d.myWork.myInterviews} upcoming ${d.myWork.myInterviews === 1 ? 'interview' : 'interviews'}`;
+  const healthy = owned.length - stalled.length - attention.length;
 
   return (
     <div>
-      <Head
-        sub={<>{summary} <span className="dash-sub-note">· Read-only · No salary data</span></>}
+      <DashHead eyebrow="Recruiter workspace" title="Your next actions"
+        sub="Every item here links to a hiring request, a candidate, an interview or an offer."
         actions={<>
-          <Badge variant="info">{orgWide ? 'Org-wide' : 'My scope'}</Badge>
-          {onNavigate && <button className="btn btn-secondary" onClick={() => onNavigate('requests')}><Icon name="ticket" size={15} /> Hiring Requests</button>}
-          {onNavigate && can(user, 'request.create') && <button className="btn" onClick={() => onNavigate('requests')}>New Hiring Request</button>}
-        </>}
-      />
+          <button className="btn btn-secondary" onClick={() => onNavigate('requests')}>Open my roles</button>
+          {can(user, 'candidate.add') && <button className="btn" onClick={() => onNavigate('candidates')}>Add candidate</button>}
+        </>} />
 
       <div className="dash-kpi-row">
-        <DashKpi label="Open Requests" value={openReq} hint={`${k.totalRequests} total · ${k.filledRequests} filled`} icon="ticket" tone="var(--brand-primary)" />
-        <DashKpi label="Candidates in Pipeline" value={k.totalApplications} hint="active applications" icon="users" tone="var(--action-primary)" />
-        <DashKpi label="Upcoming Interviews" value={k.upcomingInterviews} hint="scheduled ahead" icon="calendar" tone="#00A3E0" />
-        <DashKpi label="Offers" value={k.totalOffers} hint="all offer records" icon="doc" tone="var(--warning-ink)" />
-      </div>
-
-      <div className="dash-kpi-row">
-        <DashKpi label="Fill Rate" value={k.fillRate} unit="%" hint={seats} icon="dashboard" tone="var(--action-success)" />
-        <DashKpi label="Joined" value={k.joined} hint="candidates hired" icon="user" tone="var(--action-success)" />
-        <DashKpi label="Avg Time-to-Fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays} unit={k.timeToFillDays == null ? null : ' days'} hint={k.timeToFillDays == null ? 'no filled requests yet' : 'across filled requests'} icon="scroll" tone="var(--brand-primary)" />
-        <DashKpi label="Offer Acceptance" value={k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate} unit={k.offerAcceptanceRate == null ? null : '%'} hint={k.offerAcceptanceRate == null ? 'no decided offers yet' : 'accepted of decided'} icon="shield" tone="var(--action-success)" />
+        <KpiCard label="Overdue actions" value={overdue} tone={overdue ? 'kpi-risk' : ''}
+          meta={stalled.length ? `Oldest role open ${Math.max(...stalled.map((r) => (r.health || {}).daysOpen || 0))} days` : 'Nothing overdue'} />
+        <KpiCard label="Interviews this week" value={thisWeek.length}
+          meta={thisWeek.length ? `Next: ${fmtWhen(thisWeek[0].scheduledAt)}` : 'None scheduled'} />
+        <KpiCard label="Assigned open roles" value={owned.length}
+          meta={`${owned.filter((r) => r.priority === 'critical').length} critical · ${attention.length} need attention`} />
       </div>
 
       <div className="dash-grid-2">
-        <div className="card">
-          <div className="card-head"><h3>Hiring Funnel</h3><span className="dash-headnote">{orgWide ? 'All active requests' : 'Your requests'}</span></div>
-          <div className="card-pad"><DashFunnel data={d.applicationsByStatus} /></div>
-        </div>
-        <div className="card">
-          <div className="card-head"><h3>Request SLA Health</h3><span className="dash-headnote">by age</span></div>
-          <div className="card-pad">
-            {agingTotal === 0 ? <Empty icon="🗓" text="No open requests to track." /> : (
-              <div className="dash-sla">
-                <div className="dash-donut" style={{ background: donut }}><span>{agingTotal}</span></div>
-                <div className="dash-sla-rows">
-                  <div className="dash-kv"><span><i style={{ background: 'var(--action-success)' }} />On track <em>0–30 days</em></span><strong>{onTrack}</strong></div>
-                  <div className="dash-kv"><span><i style={{ background: 'var(--warning)' }} />At risk <em>31–60 days</em></span><strong>{atRisk}</strong></div>
-                  <div className="dash-kv"><span><i style={{ background: 'var(--danger)' }} />Overdue <em>60+ days</em></span><strong>{overdue}</strong></div>
+        <section className="card">
+          <div className="card-head"><div><h3>Waiting on you</h3></div><span className="dash-headnote">Sorted by what blocks others first</span></div>
+          {actions.length === 0
+            ? <Empty icon="✓" title="Nothing is waiting on you" text="No overdue feedback, no stalled roles, no unsourced requests in your scope." />
+            : <>
+              <div className="action-list">
+                {actions.slice(0, 6).map((a, i) => (
+                  <ActionItem key={i} tone={a.tone} title={a.title} meta={a.meta} why={a.why}
+                    cta={a.cta} onCta={() => onNavigate(a.go)} />
+                ))}
+              </div>
+              {healthy > 0 && <div className="reassurance">{healthy} of {owned.length} of your roles are progressing normally.</div>}
+            </>}
+        </section>
+
+        <aside className="card">
+          <div className="card-head"><div><h3>Today</h3></div><span className="dash-headnote">Owned appointments</span></div>
+          <div className="event-list">
+            {todays.length === 0 && stalled.length === 0
+              ? <Empty icon="🗓" text="Nothing is scheduled for today." />
+              : <>
+                {todays.map((i) => (
+                  <EventCard key={i.id} tone="good"
+                    title={`${timeOf(i.scheduledAt)} · ${(i.interviewType || '').toUpperCase()} interview`}
+                    meta={`${(i.candidate || {}).fullName || 'Candidate'} · ${(i.request || {}).title || ''}`} />
+                ))}
+                {stalled.slice(0, 2).map((r) => (
+                  <EventCard key={r.id} tone="risk"
+                    title={`Overdue · ${shortReqCode(r.ticketNo)}`}
+                    meta={`${r.title} · open ${(r.health || {}).daysOpen ?? '—'} days`} />
+                ))}
+              </>}
+          </div>
+        </aside>
+      </div>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <div className="card-head"><div><h3>My roles</h3></div><span className="dash-headnote">Current status and how long each has been open</span></div>
+        {mine.length === 0
+          ? <Empty icon="🗂" text="No open hiring requests are assigned to you." />
+          : <div className="role-health">{mine.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={() => onNavigate('requests')} />)}</div>}
+      </section>
+    </div>
+  );
+}
+
+/* ---------------------------- RECRUITMENT MANAGER ------------------------- */
+function ManagerDashboard({ user, data, onNavigate }) {
+  const { d, requests } = data;
+  const open = requests.filter(isOpenReq);
+  const unassigned = open.filter((r) => !r.ownerId);
+  const critical = open.filter((r) => r.priority === 'critical');
+  const stalled = open.filter((r) => (r.health || {}).level === 'red' || r.slaBreached);
+  const attention = open.filter((r) => (r.health || {}).level === 'amber');
+  const load = (d && d.recruiterLoad) || [];
+  const loadMax = Math.max(...load.map((r) => r.c), 1);
+  const pendingOffers = d ? (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((s, o) => s + o.count, 0) : 0;
+
+  return (
+    <div>
+      <DashHead eyebrow="Recruitment operations" title="Team command"
+        sub="The blocker, who owns it, and how long it has been sitting there."
+        actions={<>
+          <button className="btn btn-secondary" onClick={() => onNavigate('requests')}>All hiring requests</button>
+          <button className="btn" onClick={() => onNavigate('reports')}>Reports</button>
+        </>} />
+
+      <div className="dash-kpi-row">
+        <KpiCard label="Critical roles" value={critical.length} tone={critical.length ? 'kpi-risk' : ''}
+          meta={`${stalled.length} past their health threshold`} />
+        <KpiCard label="Unassigned requests" value={unassigned.length} tone={unassigned.length ? 'kpi-attn' : ''}
+          meta={unassigned.length ? 'No recruiter is working these' : 'Every open role has an owner'} />
+        <KpiCard label="Offers awaiting decision" value={pendingOffers}
+          meta={d ? `${d.kpis.totalOffers} offer records in total` : '—'} />
+      </div>
+
+      <section className="card">
+        <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
+        <div className="card-pad">
+          {!load.length
+            ? <Empty icon="👥" text="No open request is assigned to a recruiter yet." />
+            : <div className="dash-bars">
+              {load.map((r, i) => (
+                <div className="dash-bar" key={i}>
+                  <span className="dash-bar-l" title={r.name}>{r.name}</span>
+                  <span className="dash-bar-track"><span className="dash-bar-fill" style={{ width: `${(r.c / loadMax) * 100}%`, background: 'var(--green)' }} /></span>
+                  <strong className="dash-bar-n">{r.c}</strong>
                 </div>
+              ))}
+            </div>}
+        </div>
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <div className="card-head"><div><h3>Roles requiring attention</h3></div><span className="dash-headnote">Worst first</span></div>
+        {!stalled.length && !attention.length && !unassigned.length
+          ? <Empty icon="✓" title="Nothing needs escalation" text="No stalled, unassigned or at-risk requests right now." />
+          : <div className="role-health">
+            {[...stalled, ...unassigned.filter((r) => !stalled.includes(r)), ...attention.filter((r) => !stalled.includes(r))]
+              .slice(0, 10).map((r) => <RoleRow key={r.id} r={r} onOpen={() => onNavigate('requests')} />)}
+          </div>}
+      </section>
+    </div>
+  );
+}
+
+/* Group open requests into plan rows. Derived entirely from the requests the
+   caller can already see — this is a re-presentation, not a new data source. */
+function planRows(requests, key) {
+  const map = new Map();
+  for (const r of requests) {
+    const name = (r[key] || {}).name || 'Unassigned';
+    const row = map.get(name) || { name, planned: 0, filled: 0, open: 0, critical: 0 };
+    row.planned += r.headcount || 0;
+    row.filled += r.headcountFilled || 0;
+    if (isOpenReq(r)) row.open += 1;
+    if (r.priority === 'critical' && isOpenReq(r)) row.critical += 1;
+    map.set(name, row);
+  }
+  return [...map.values()].sort((a, b) => b.planned - a.planned);
+}
+
+function PlanTable({ rows, unit }) {
+  if (!rows.length) return <Empty icon="📋" text="No hiring requests to summarise yet." />;
+  return (
+    <div className="table-wrap">
+      <table className="table responsive-table">
+        <thead><tr><th>{unit}</th><th>Planned seats</th><th>Filled</th><th>Open roles</th><th>Progress</th></tr></thead>
+        <tbody>
+          {rows.map((r) => {
+            const pct = r.planned ? Math.round((r.filled / r.planned) * 100) : 0;
+            return (
+              <tr key={r.name}>
+                <td data-label={unit}><span className="cell-strong">{r.name}</span>{r.critical ? <span className="cell-sub">{r.critical} critical</span> : null}</td>
+                <td data-label="Planned seats">{r.planned}</td>
+                <td data-label="Filled">{r.filled}</td>
+                <td data-label="Open roles">{r.open}</td>
+                <td data-label="Progress">
+                  <span className="progress" style={{ minWidth: 90, display: 'block' }}><span style={{ width: pct + '%' }} /></span>
+                  <span className="cell-sub">{pct}%</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* --------------------------------- HR DIRECTOR ---------------------------- */
+function DirectorDashboard({ user, data, onNavigate }) {
+  const { d, requests } = data;
+  const k = (d && d.kpis) || {};
+  const open = requests.filter(isOpenReq);
+  const awaitingApproval = requests.filter((r) => ['pending_approval', 'draft', 'budget_validation'].includes(r.status));
+  const pendingOffers = d ? (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((s, o) => s + o.count, 0) : 0;
+  const overdue = (d ? (d.aging['61-90'] || 0) + (d.aging['90+'] || 0) : 0);
+
+  return (
+    <div>
+      <DashHead eyebrow="Hiring plan and governance" title="Hiring plan and recruitment health"
+        sub="Demand against delivery, and the decisions that are waiting on you."
+        actions={<>
+          <button className="btn btn-secondary" onClick={() => onNavigate('reports')}>Reports</button>
+          {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers')}>Offer approvals</button>}
+        </>} />
+
+      <div className="dash-kpi-row">
+        <KpiCard label="Planned seats" value={k.headcountTotal ?? '—'} meta="Across every hiring request in scope" />
+        <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of the plan`} />
+        <KpiCard label="Waiting on a decision" value={awaitingApproval.length + pendingOffers}
+          tone={(awaitingApproval.length + pendingOffers) ? 'kpi-attn' : ''}
+          meta={`${awaitingApproval.length} request${awaitingApproval.length === 1 ? '' : 's'} · ${pendingOffers} offer${pendingOffers === 1 ? '' : 's'}`} />
+      </div>
+
+      <section className="card">
+        <div className="card-head"><div><h3>Hiring plan by project</h3></div><span className="dash-headnote">Planned versus filled</span></div>
+        <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
+      </section>
+
+      <div className="dash-grid-2" style={{ marginTop: 16 }}>
+        <section className="card">
+          <div className="card-head"><div><h3>Recruitment health</h3></div><span className="dash-headnote">Open requests by age</span></div>
+          <div className="card-pad">
+            {!d ? <Empty icon="🗓" text="No data." /> : (
+              <div className="dash-sla-rows">
+                <div className="dash-kv"><span><i style={{ background: 'var(--green)' }} />On track <em>0–30 days</em></span><strong>{d.aging['0-30'] || 0}</strong></div>
+                <div className="dash-kv"><span><i style={{ background: 'var(--warning)' }} />At risk <em>31–60 days</em></span><strong>{d.aging['31-60'] || 0}</strong></div>
+                <div className="dash-kv"><span><i style={{ background: 'var(--brand)' }} />Overdue <em>60+ days</em></span><strong>{overdue}</strong></div>
+                <div className="dash-kv" style={{ marginTop: 10 }}><span>Average time to fill</span><strong>{k.timeToFillDays == null ? '—' : k.timeToFillDays + ' days'}</strong></div>
+                <div className="dash-kv"><span>Offer acceptance</span><strong>{k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate + '%'}</strong></div>
               </div>
             )}
           </div>
-        </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head"><div><h3>Waiting on your decision</h3></div><span className="dash-headnote">Requests and offers held for approval</span></div>
+        {!awaitingApproval.length && !pendingOffers
+          ? <Empty icon="✓" title="Nothing is waiting on you" text="No hiring request or offer is held for a decision." />
+          : <div className="action-list">
+            {awaitingApproval.slice(0, 6).map((r) => (
+              <ActionItem key={r.id} tone="warn" title={`Approve ${shortReqCode(r.ticketNo)} — ${r.title}`}
+                meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}`}
+                why="Sourcing cannot start until this is approved" cta="Open request" onCta={() => onNavigate('requests')} />
+            ))}
+            {pendingOffers > 0 && (
+              <ActionItem tone="warn" title={`${pendingOffers} offer${pendingOffers === 1 ? '' : 's'} awaiting approval`}
+                meta="Offers held pending a decision" why="Candidates are waiting" cta="Open offers" onCta={() => onNavigate('offers')} />
+            )}
+          </div>}
+        </section>
       </div>
 
-      <div className="dash-grid-2">
-        <div className="card">
-          <div className="card-head"><h3>Requests by Status</h3></div>
-          <div className="card-pad"><DashBars rows={reqRows} empty="No hiring requests yet." icon="🗂" /></div>
-        </div>
-        <div className="card">
-          <div className="card-head"><h3>Offer Outcomes</h3></div>
-          <div className="card-pad"><DashBars rows={offerRows} empty="No offers raised yet." icon="📄" /></div>
-        </div>
+      <section className="card" style={{ marginTop: 16 }}>
+        <div className="card-head"><div><h3>Open roles</h3></div><span className="dash-headnote">{open.length} in scope</span></div>
+        {!open.length ? <Empty icon="🗂" text="No open hiring requests." />
+          : <div className="role-health">{open.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={() => onNavigate('requests')} />)}</div>}
+      </section>
+    </div>
+  );
+}
+
+/* ------------------------------ COO / EXECUTIVE --------------------------- */
+/* Aggregate only. No candidate identity appears on this composition — the
+   executive view answers "are we hiring to plan", not "who is in the pipeline". */
+function ExecutiveDashboard({ user, data, onNavigate }) {
+  const { d, requests } = data;
+  const k = (d && d.kpis) || {};
+  const remaining = Math.max((k.headcountTotal || 0) - (k.headcountFilled || 0), 0);
+  const criticalOpen = requests.filter((r) => isOpenReq(r) && r.priority === 'critical');
+
+  return (
+    <div>
+      <DashHead eyebrow="Executive workforce overview" title="Hiring progress against the approved plan"
+        sub="Delivery against plan. Aggregate figures only — no candidate names in this view."
+        actions={can(user, 'report.export') ? <button className="btn" onClick={() => onNavigate('reports')}>Reports</button> : null} />
+
+      <div className="dash-kpi-row">
+        <KpiCard label="Planned" value={k.headcountTotal ?? '—'} meta="Approved workforce plan" />
+        <KpiCard label="Filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of plan`} />
+        <KpiCard label="Remaining" value={remaining} tone={remaining ? 'kpi-attn' : ''}
+          meta={`${requests.filter(isOpenReq).length} open request${requests.filter(isOpenReq).length === 1 ? '' : 's'}`} />
       </div>
 
-      <div className="dash-grid-2">
-        <div className="card">
-          <div className="card-head"><h3>My Work</h3><span className="dash-headnote">assigned to you</span></div>
-          <div className="dash-listpad">
-            <DashListRow tone="navy" icon="ticket" title={`${d.myWork.myOpenRequests} open ${d.myWork.myOpenRequests === 1 ? 'request' : 'requests'}`} meta="Requests you own or raised" right={onNavigate ? <button className="dash-link" onClick={() => onNavigate('requests')}>Open</button> : null} />
-            <DashListRow tone="blue" icon="calendar" title={`${d.myWork.myInterviews} upcoming ${d.myWork.myInterviews === 1 ? 'interview' : 'interviews'}`} meta="Interviews where you are a panellist" right={onNavigate ? <button className="dash-link" onClick={() => onNavigate('interviews')}>Open</button> : null} />
-            <DashListRow tone={d.myWork.myPendingOfferApprovals ? 'amber' : 'grey'} icon="doc" title={`${d.myWork.myPendingOfferApprovals || 0} offer ${d.myWork.myPendingOfferApprovals === 1 ? 'approval' : 'approvals'} pending`} meta="Waiting on your decision" right={onNavigate ? <button className="dash-link" onClick={() => onNavigate('offers')}>Open</button> : null} />
-          </div>
-        </div>
-        <div className="card">
-          <div className="card-head"><h3>Recruiter Load</h3><span className="dash-headnote">open requests</span></div>
-          <div className="card-pad">
-            {!orgWide ? <Empty icon="👥" text="Recruiter load is visible to users with organisation-wide access." />
-              : !(d.recruiterLoad || []).length ? <Empty icon="👥" text="No requests are assigned to a recruiter yet." />
-              : (
-                <div className="dash-bars">
-                  {d.recruiterLoad.map((r, i) => (
-                    <div className="dash-bar" key={i}>
-                      <span className="dash-bar-l" title={r.name}>{r.name}</span>
-                      <span className="dash-bar-track"><span className="dash-bar-fill" style={{ width: `${(r.c / loadMax) * 100}%`, background: 'var(--brand-primary)' }} /></span>
-                      <strong className="dash-bar-n">{r.c}</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-          </div>
-        </div>
+      <section className="card">
+        <div className="card-head"><div><h3>One hiring-progress view</h3></div><span className="dash-headnote">By project</span></div>
+        <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <div className="card-head"><div><h3>Critical vacancies</h3></div><span className="dash-headnote">Roles flagged critical and still open</span></div>
+        {!criticalOpen.length
+          ? <Empty icon="✓" title="No critical vacancies" text="Nothing flagged critical is still open." />
+          : <div className="table-wrap">
+            <table className="table responsive-table">
+              <thead><tr><th>Role</th><th>Project</th><th>Seats</th><th>Days open</th><th>Health</th></tr></thead>
+              <tbody>
+                {criticalOpen.map((r) => (
+                  <tr key={r.id}>
+                    <td data-label="Role"><span className="cell-strong">{r.title}</span></td>
+                    <td data-label="Project">{(r.project || {}).name || '—'}</td>
+                    <td data-label="Seats">{r.headcountFilled} / {r.headcount}</td>
+                    <td data-label="Days open">{(r.health || {}).daysOpen ?? '—'}</td>
+                    <td data-label="Health"><ReqHealth health={r.health} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>}
+      </section>
+
+      <div className="dash-grid-2" style={{ marginTop: 16 }}>
+        <section className="card">
+          <div className="card-head"><div><h3>Time to fill</h3></div></div>
+          <div className="card-pad"><div className="dash-kpi-val">{k.timeToFillDays == null ? '—' : k.timeToFillDays}</div>
+            <div className="dash-kpi-hint">{k.timeToFillDays == null ? 'No filled requests yet' : 'Average days across filled requests'}</div></div>
+        </section>
+        <section className="card">
+          <div className="card-head"><div><h3>Offer acceptance</h3></div></div>
+          <div className="card-pad"><div className="dash-kpi-val">{k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate + '%'}</div>
+            <div className="dash-kpi-hint">{k.offerAcceptanceRate == null ? 'No decided offers yet' : 'Accepted of decided offers'}</div></div>
+        </section>
       </div>
     </div>
   );
+}
+
+/* --------------------------- TECHNICAL INTERVIEWER ------------------------ */
+function InterviewerDashboard({ user, data, onNavigate }) {
+  const { interviews } = data;
+  const scheduled = interviews.filter((i) => i.status === 'scheduled');
+  const upcoming = scheduled.filter((i) => { const n = daysUntil(i.scheduledAt); return n == null || n >= 0; })
+    .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
+  const feedbackDue = interviews.filter((i) => i.status === 'completed' && !i.overallOutcome);
+  const done = interviews.filter((i) => i.status === 'completed' && i.overallOutcome);
+
+  return (
+    <div>
+      <DashHead eyebrow="Interview panel" title="Your interviews"
+        sub="Only interviews you are on the panel for. Salary and offer terms are not part of this view."
+        actions={<button className="btn" onClick={() => onNavigate('interviews')}>All my interviews</button>} />
+
+      <div className="dash-kpi-row">
+        <KpiCard label="Scheduled" value={upcoming.length} meta={upcoming.length ? `Next: ${fmtWhen(upcoming[0].scheduledAt)}` : 'Nothing scheduled'} />
+        <KpiCard label="Feedback due" value={feedbackDue.length} tone={feedbackDue.length ? 'kpi-risk' : ''}
+          meta={feedbackDue.length ? 'A hiring decision is waiting on these' : 'Nothing outstanding'} />
+        <KpiCard label="Completed" value={done.length} meta="Interviews you have already assessed" />
+      </div>
+
+      <section className="card">
+        <div className="card-head"><div><h3>Pending assessments</h3></div><span className="dash-headnote">Feedback the panel is waiting on</span></div>
+        {!feedbackDue.length
+          ? <Empty icon="✓" title="No assessment is outstanding" text="Every interview you have run has feedback recorded." />
+          : <div className="action-list">
+            {feedbackDue.map((i) => (
+              <ActionItem key={i.id} tone="risk" title={`Submit feedback — ${(i.candidate || {}).fullName || 'Candidate'}`}
+                meta={`${(i.request || {}).title || 'Role'} · ${i.interviewNo} · ${fmtWhen(i.scheduledAt)}`}
+                why="Blocks the hiring decision" cta="Open interview" onCta={() => onNavigate('interviews')} />
+            ))}
+          </div>}
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <div className="card-head"><div><h3>Upcoming</h3></div><span className="dash-headnote">Assigned to you</span></div>
+        {!upcoming.length
+          ? <Empty icon="🗓" text="No interviews are scheduled for you." />
+          : <div className="event-list">
+            {upcoming.slice(0, 8).map((i) => (
+              <EventCard key={i.id} tone={isToday(i.scheduledAt) ? 'warn' : ''}
+                title={`${fmtWhen(i.scheduledAt)} · ${(i.interviewType || '').toUpperCase()}`}
+                meta={`${(i.candidate || {}).fullName || 'Candidate'} · ${(i.request || {}).title || ''} · ${i.mode || ''}`} />
+            ))}
+          </div>}
+      </section>
+    </div>
+  );
+}
+
+/* Dispatcher. The real authenticated role picks the composition. */
+function Dashboard({ user, onNavigate, dash }) {
+  const persona = personaFor(user);
+  const data = useDashboardData(user, persona, dash);
+
+  if (!can(user, 'dashboard.view') && persona !== 'interviewer') {
+    return <Forbidden what="Dashboard" need="dashboard.view" />;
+  }
+  if (data.loading) {
+    return (<div>
+      <DashHead eyebrow="Recruitment workspace" title="Loading…" sub="Fetching your scoped recruitment overview." />
+      <DashboardSkeleton />
+    </div>);
+  }
+  if (data.err) {
+    return (<div>
+      <DashHead eyebrow="Recruitment workspace" title="Dashboard unavailable" sub={data.err} />
+      <div className="card"><div className="dash-state">
+        <div className="dash-state-ico"><Icon name="shield" size={26} /></div>
+        <h3>Dashboard unavailable</h3><p>{data.err}</p>
+      </div></div>
+    </div>);
+  }
+
+  const props = { user, data, onNavigate };
+  if (persona === 'manager') return <ManagerDashboard {...props} />;
+  if (persona === 'director') return <DirectorDashboard {...props} />;
+  if (persona === 'executive') return <ExecutiveDashboard {...props} />;
+  if (persona === 'interviewer') return <InterviewerDashboard {...props} />;
+  return <RecruiterDashboard {...props} />;
 }
 
 /* ----------------------------- Reports / analytics ----------------------------- */
@@ -1751,12 +2625,12 @@ function ProjectsPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Project</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty icon="🏗" text="No projects yet." /> : (
-          <table><thead><tr><th>Code</th><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Sites</th><th>PM</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Sites</th><th>PM</th>{canManage && <th></th>}</tr></thead>
             <tbody>{rows.map((p) => (
-              <tr key={p.id}><td><strong>{p.code}</strong></td><td>{p.name}</td><td>{p.clientName || '—'}</td><td>{p.location || '—'}</td>
-                <td><StatusBadge status={p.status} /></td><td>{p.siteCount}</td><td>{p.projectManager?.name || '—'}</td>
-                {canManage && <td><button className="btn btn-secondary btn-sm" onClick={() => setEditing(p)}>Edit</button></td>}</tr>
-            ))}</tbody></table>
+              <tr key={p.id}><td data-label="Code"><strong>{p.code}</strong></td><td data-label="Name">{p.name}</td><td data-label="Client">{p.clientName || '—'}</td><td data-label="Location">{p.location || '—'}</td>
+                <td data-label="Status"><StatusBadge status={p.status} /></td><td data-label="Sites">{p.siteCount}</td><td data-label="PM">{p.projectManager?.name || '—'}</td>
+                {canManage && <td className="cell-actions"><button className="btn btn-secondary btn-sm" onClick={() => setEditing(p)}>Edit</button></td>}</tr>
+            ))}</tbody></table></div>
         )}
       </div>
       {editing && <OrgModal kind="project" record={editing} bus={bus} users={users}
@@ -1778,12 +2652,12 @@ function SitesPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Site</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty icon="📍" text="No sites yet." /> : (
-          <table><thead><tr><th>Code</th><th>Name</th><th>Project</th><th>Location</th><th>Status</th><th>Site Manager</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Project</th><th>Location</th><th>Status</th><th>Site Manager</th>{canManage && <th></th>}</tr></thead>
             <tbody>{rows.map((s) => (
-              <tr key={s.id}><td><strong>{s.code}</strong></td><td>{s.name}</td><td>{s.project?.name || '—'}</td><td>{s.location || '—'}</td>
-                <td><StatusBadge status={s.status} /></td><td>{s.siteManager?.name || '—'}</td>
-                {canManage && <td><button className="btn btn-secondary btn-sm" onClick={() => setEditing(s)}>Edit</button></td>}</tr>
-            ))}</tbody></table>
+              <tr key={s.id}><td data-label="Code"><strong>{s.code}</strong></td><td data-label="Name">{s.name}</td><td data-label="Project">{s.project?.name || '—'}</td><td data-label="Location">{s.location || '—'}</td>
+                <td data-label="Status"><StatusBadge status={s.status} /></td><td data-label="Site Manager">{s.siteManager?.name || '—'}</td>
+                {canManage && <td className="cell-actions"><button className="btn btn-secondary btn-sm" onClick={() => setEditing(s)}>Edit</button></td>}</tr>
+            ))}</tbody></table></div>
         )}
       </div>
       {editing && <OrgModal kind="site" record={editing} projects={projects} users={users}
@@ -1805,12 +2679,12 @@ function DepartmentsPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Department</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty icon="🏢" text="No departments yet." /> : (
-          <table><thead><tr><th>Code</th><th>Name</th><th>Head</th><th>Status</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Head</th><th>Status</th>{canManage && <th></th>}</tr></thead>
             <tbody>{rows.map((d) => (
-              <tr key={d.id}><td><strong>{d.code}</strong></td><td>{d.name}</td><td>{d.head?.name || '—'}</td>
-                <td><StatusBadge status={d.status} /></td>
-                {canManage && <td><button className="btn btn-secondary btn-sm" onClick={() => setEditing(d)}>Edit</button></td>}</tr>
-            ))}</tbody></table>
+              <tr key={d.id}><td data-label="Code"><strong>{d.code}</strong></td><td data-label="Name">{d.name}</td><td data-label="Head">{d.head?.name || '—'}</td>
+                <td data-label="Status"><StatusBadge status={d.status} /></td>
+                {canManage && <td className="cell-actions"><button className="btn btn-secondary btn-sm" onClick={() => setEditing(d)}>Edit</button></td>}</tr>
+            ))}</tbody></table></div>
         )}
       </div>
       {editing && <OrgModal kind="department" record={editing} bus={bus} users={users}
@@ -2449,7 +3323,9 @@ function RequestTicketCard({ r, onOpen }) {
 function RequestsPage({ user }) {
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [view, setView] = useState('cards'); // cards | table — ticket cards by default
+  // Approved layout is the table: it is what a recruiter scans down. Cards stay
+  // one click away for people who prefer them.
+  const [view, setView] = useState('table'); // table | cards
   const [filters, setFilters] = useState({ q: '', status: '', priority: '', sort: 'created', dir: 'desc' });
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -2510,20 +3386,21 @@ function RequestsPage({ user }) {
             ? 'Try clearing the search box or widening the status and priority filters.'
             : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
-        <div className="card flush"><table className="table">
+        <div className="card flush"><div className="table-wrap"><table className="table responsive-table">
           <thead><tr><th>Request</th><th>Position</th><th>Project / Site</th><th>Pipeline</th><th>Priority</th><th>Status</th><th>SLA</th></tr></thead>
           <tbody>{data.requests.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
-              <td><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
-              <td><span className="cell-strong">{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
-              <td className="cell-sub-only">{placeLabel(r)}</td>
-              <td>{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
-              <td><PriorityBadge p={r.priority} /></td>
-              <td><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
-              <td><ReqHealth health={r.health} /></td>
+              <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
+              <td data-label="Position"><span className="cell-strong">{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
+              <td data-label="Project / Site" className="cell-sub-only">{placeLabel(r)}</td>
+              <td data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
+              <td data-label="Priority"><PriorityBadge p={r.priority} /></td>
+              <td data-label="Status"><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
+              <td data-label="SLA"><ReqHealth health={r.health} /></td>
             </tr>
           ))}</tbody>
         </table></div>
+        <div className="reassurance">Requests without a warning are progressing normally.</div></div>
       ) : (
         <div className="ats-card-grid">
           {data.requests.map((r) => <RequestTicketCard key={r.id} r={r} onOpen={() => setSelectedId(r.id)} />)}
@@ -2777,6 +3654,21 @@ function RequestDetail({ id, user, btns, onBack }) {
 
   const load = useCallback(async () => { setReq((await api.get('/requests/' + id)).request); }, [id]);
   useEffect(() => { load(); }, [id]);
+
+  // Tell anyhelp which hiring request is on screen, so its Team tab opens the
+  // real thread for THIS request instead of guessing, and so the dock can name
+  // what it is looking at. Cleared on unmount, so the dock never claims a
+  // context the user has navigated away from.
+  useEffect(() => {
+    window.__atsOpenRequestId = id;
+    window.dispatchEvent(new CustomEvent('ats:context'));
+    return () => { window.__atsOpenRequestId = null; window.__atsOpenRequestLabel = null; window.dispatchEvent(new CustomEvent('ats:context')); };
+  }, [id]);
+  useEffect(() => {
+    if (!req) return;
+    window.__atsOpenRequestLabel = `${shortReqCode(req.ticketNo)} · ${req.title}`;
+    window.dispatchEvent(new CustomEvent('ats:context'));
+  }, [req && req.id, req && req.title]);
 
   async function doAction(path, body, okMsg) {
     try { const r = await api.post(`/requests/${id}/${path}`, body || {}); setReq(r.request); toast(okMsg); }
@@ -4744,8 +5636,8 @@ function CandidatesPage({ user, onNavigate }) {
             ? 'Try the All tab, or clear the search and filter fields above.'
             : 'Add a candidate manually, or import CVs against a hiring request to populate the pool.'} /></div>
       ) : view === 'table' ? (
-        <div className="card flush">
-          <table className="table">
+        <div className="card flush"><div className="table-wrap">
+          <table className="table responsive-table">
             <thead><tr>
               <th className="th-sel">
                 <input type="checkbox" aria-label="Select all on this page"
@@ -4768,7 +5660,7 @@ function CandidatesPage({ user, onNavigate }) {
                   <input type="checkbox" aria-label={`Select ${c.fullName}`}
                     checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
                 </td>
-                <td>
+                <td data-label="Candidate">
                   <div className="idcell">
                     <span className="idcell-av">{initials(c.fullName)}</span>
                     <span className="idcell-txt">
@@ -4778,18 +5670,18 @@ function CandidatesPage({ user, onNavigate }) {
                   </div>
                   {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
                 </td>
-                <td>
+                <td data-label="Position">
                   <span className="cell-strong">{c.currentPosition || '—'}</span>
                   {c.currentCompany ? <span className="cell-sub">{c.currentCompany}</span> : null}
                 </td>
-                <td className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
-                <td className="cell-sub-only">{c.location || '—'}</td>
-                <td>
+                <td data-label="Experience" className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
+                <td data-label="Location" className="cell-sub-only">{c.location || '—'}</td>
+                <td data-label="Request">
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
                     onNavigate={onNavigate} onLinked={linkOne} />
                 </td>
-                <td><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
-                <td onClick={(e) => e.stopPropagation()}>
+                <td data-label="Stage"><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
+                <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
                     ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Download CV'}
                         onClick={() => downloadResume(c, toast)}>Download</button>
@@ -4798,7 +5690,7 @@ function CandidatesPage({ user, onNavigate }) {
               </tr>
             ))}</tbody>
           </table>
-        </div>
+        </div></div>
       ) : (
         <div className="cand-grid">
           {shown.map((c) => (
@@ -5597,13 +6489,13 @@ function InterviewsPage({ user }) {
             ? 'Try clearing the search box or selecting All statuses.'
             : 'Interviews scheduled from a candidate\u2019s application will appear here with date, panel and outcome.'} /></div>
       ) : (
-        <div className="card flush">
-          <table className="table">
+        <div className="card flush"><div className="table-wrap">
+          <table className="table responsive-table">
             <thead><tr><th>Scheduled</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th>Interview</th><th>Status</th><th>Outcome</th><th>Application</th></tr></thead>
             <tbody>{data.interviews.map((iv) => (
               <tr key={iv.id} className="row-link" onClick={() => setSelected(iv.id)}>
-                <td><DateCell value={iv.scheduledAt} /></td>
-                <td>
+                <td data-label="Scheduled"><DateCell value={iv.scheduledAt} /></td>
+                <td data-label="Candidate">
                   <div className="idcell">
                     <span className="idcell-av">{initials(iv.candidate?.fullName || '?')}</span>
                     <span className="idcell-txt">
@@ -5612,16 +6504,16 @@ function InterviewsPage({ user }) {
                     </span>
                   </div>
                 </td>
-                <td><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub">{iv.request?.title || '—'}</div></td>
-                <td><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
-                <td><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
-                <td><IvStatusBadge status={iv.status} /></td>
-                <td>{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
-                <td title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
+                <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub">{iv.request?.title || '—'}</div></td>
+                <td data-label="Type / Mode"><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
+                <td data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
+                <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
+                <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
+                <td data-label="Application" title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
               </tr>
             ))}</tbody>
           </table>
-        </div>
+        </div></div>
       )}
     </div>
   );
@@ -5804,29 +6696,29 @@ function OffersPage({ user }) {
             ? 'Try clearing the search box, status filter or joining-date range.'
             : 'Offers raised from a candidate\u2019s application will appear here with approval state and joining date.'} /></div>
       ) : (
-        <div className="card flush">
-          <table className="table">
+        <div className="card flush"><div className="table-wrap">
+          <table className="table responsive-table">
             <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th>Project</th><th>Status</th><th>Prepared by</th><th>Approved by</th><th>Joining</th></tr></thead>
             <tbody>{offers.map((o) => (
               <tr key={o.id} className="row-link" onClick={() => setSelected(o.id)}>
-                <td><span className="code-pill">{o.offerNo}</span></td>
-                <td>
+                <td data-label="Offer"><span className="code-pill">{o.offerNo}</span></td>
+                <td data-label="Candidate">
                   <div className="idcell">
                     <span className="idcell-av">{initials(o.candidate?.fullName || '?')}</span>
                     <span className="idcell-txt"><span className="cell-strong">{o.candidate?.fullName || '—'}</span></span>
                   </div>
                 </td>
-                <td><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
-                <td><span className="cell-strong">{o.positionTitle || '—'}</span></td>
-                <td className="cell-sub-only">{o.project?.name || '—'}</td>
-                <td><OfferStatusBadge status={o.status} /></td>
-                <td className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
-                <td className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
-                <td><DateCell value={o.joiningDate} dateOnly /></td>
+                <td data-label="Request"><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
+                <td data-label="Position"><span className="cell-strong">{o.positionTitle || '—'}</span></td>
+                <td data-label="Project" className="cell-sub-only">{o.project?.name || '—'}</td>
+                <td data-label="Status"><OfferStatusBadge status={o.status} /></td>
+                <td data-label="Prepared by" className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
+                <td data-label="Approved by" className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
+                <td data-label="Joining"><DateCell value={o.joiningDate} dateOnly /></td>
               </tr>
             ))}</tbody>
           </table>
-        </div>
+        </div></div>
       )}
     </div>
   );
