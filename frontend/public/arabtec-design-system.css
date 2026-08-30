@@ -1,0 +1,308 @@
+/* Arabtec design system — authoritative alignment layer.
+   Loaded LAST, after styles.css and arabtec-approved-ui.css, so its :root tokens
+   and single-class rules win on ties. Scope: visual tokens + shell chrome + the
+   anyhelp assistant dock. No workflow, permission, route or data-model change.
+   The sign-in screen (.login-*) is deliberately never touched here. */
+
+/* ============================ tokens ============================ */
+:root{
+  /* neutrals */
+  --canvas:#F4F5F7; --app-bg:#F4F5F7; --bg:#F4F5F7;
+  --surface:#FFFFFF; --card-bg:#FFFFFF; --surface-2:#F4F5F7; --surface-3:#ECEEF0;
+  --neutral-tint:#F0F1F3;
+  --border:#E6E8EE; --border-soft:#EDEEF1; --line:#E6E8EE; --line-strong:#D8DCE1;
+  --ink:#1A1A1A; --text:#1A1A1A; --text-strong:#1A1A1A;
+  --ink-soft:#3D4450; --text-dark:#1A1A1A;
+  --muted:#6F6A64; --text-gray:#6F6A64; --faint:#8A867F;
+
+  /* interaction = green */
+  --brand-primary:#008064; --brand-primary-dark:#00664F; --brand-primary-tint:#E6F4F0;
+  --action:#00664F; --action-dark:#00664F;
+  --action-tint:#E6F4F0; --action-tint-bd:#B7DCD3;
+  --action-primary:#008064; --action-primary-hover:#00664F; --action-primary-tint:#E6F4F0;
+  --action-success:#008064; --action-success-hover:#00664F; --action-success-tint:#E6F4F0;
+  --ring-action:0 0 0 3px rgba(0,128,100,.18); --ring:0 0 0 3px rgba(0,128,100,.18);
+
+  /* red = brand + critical only */
+  --brand:#D01827; --brand-dark:#B01420; --brand-accent:#D01827;
+  --accent:#D01827; --secondary:#D01827; --button:#D01827;
+  --ticket-accent:#008064; --ticket-accent-dark:#00664F;
+  --danger:#D01827; --danger-hover:#B01420; --danger-tint:#FCEEEF; --critical:#B01420;
+  --success:#00664F; --info:#245566;
+  --warning:#E09600; --warning-ink:#8A5A00; --warning-tint:#FFF6E0;
+
+  /* type + geometry */
+  --font:Arial,Helvetica,"Helvetica Neue",sans-serif;
+  --font-arabic:Arial,"Helvetica Neue",Helvetica,sans-serif;
+  --radius:999px; --pill-radius:999px; --card-radius:20px;
+
+  /* elevation: none on cards; kept only for floating layers */
+  --shadow-sm:none; --shadow:none; --shadow-card:none;
+  --shadow-pop:0 24px 64px rgba(16,20,26,.20);
+}
+html,body,button,input,select,textarea{font-family:var(--font)}
+body{background:var(--app-bg);color:var(--ink);font-weight:400}
+h1,h2,h3,h4{letter-spacing:-.01em}
+a{color:var(--action)}
+
+/* ============================ app shell ============================ */
+.topbar{
+  background:#fff;backdrop-filter:none;
+  border-top:2px solid var(--brand);border-bottom:1px solid var(--border);
+}
+.tb-brand .bn strong{color:var(--ink)}
+.tb-brand .bn span{color:var(--muted)}
+.gsearch{background:#F4F5F7;border-color:transparent;border-radius:999px}
+.gsearch:hover{background:#fff;border-color:var(--action-tint-bd)}
+.gsearch:focus-visible,.gsearch:focus-within{outline:none;border-color:var(--brand-primary);box-shadow:0 0 0 3px var(--action-primary-tint)}
+.gsearch .kbd{background:#fff;border-color:var(--border)}
+.avatar{background:var(--brand-primary-dark)}
+.icon-btn{border:1px solid var(--action-tint-bd);border-radius:999px;background:#fff;color:var(--brand-primary-dark)}
+.icon-btn:hover{background:var(--action-primary-tint);border-color:var(--brand-primary-dark);color:var(--brand-primary-dark)}
+
+/* light sidebar */
+.sidebar{background:#E8EAED;color:var(--ink);border-right:1px solid #D8DCE1}
+.sidebar-head{border-bottom:1px solid rgba(26,26,26,.08)}
+.sidebar-head:after{display:none}
+.side-txt strong,.sidebar-title{color:var(--ink)}
+.side-txt span{color:var(--muted)}
+.nav-section{color:var(--faint)}
+.nav-item{color:var(--ink);border-left-color:transparent}
+.nav-item:hover{background:#DEE2E6;color:var(--ink)}
+.nav-item.active{background:#D7E8E2;color:var(--brand-primary-dark);font-weight:700;border-left-color:var(--brand-primary)}
+.nav-item.active:before{background:var(--brand-primary)}
+.nav-item.active .nav-icon{color:var(--brand-primary-dark)}
+.nav-icon{opacity:1}
+
+/* content + a single, very light, bottom-right watermark */
+.content{padding:32px 32px 64px}
+.content:before{
+  right:0;bottom:0;width:min(34vw,440px);height:min(46vh,440px);
+  background:url('/arabtec-watermark.webp') no-repeat right bottom/contain;opacity:.03;
+}
+@media(max-width:1180px){.content{padding:28px 24px 64px}}
+@media(max-width:900px){.content{padding:22px 16px 96px}.content:before{opacity:.02;width:min(70vw,320px);height:min(38vh,320px)}}
+@media(max-width:560px){.content{padding:18px 14px 96px}}
+
+/* ============================ page header ============================ */
+.breadcrumb,.page-head .breadcrumb,.dash-eyebrow,.page-head-main .breadcrumb{
+  color:var(--brand-primary-dark);font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;font-size:11px;
+}
+.page-title,.page-head .page-title,.dash-head .page-title{
+  font-family:var(--font);font-weight:700;letter-spacing:-.02em;
+  font-size:32px;line-height:1.16;color:var(--ink);
+}
+.page-sub,.page-head .page-sub,.dash-head .page-sub{
+  font-size:14px;line-height:1.5;color:var(--muted);max-width:72ch;
+}
+@media(max-width:900px){.page-title,.page-head .page-title,.dash-head .page-title{font-size:26px}}
+
+/* ============================ cards ============================ */
+.card,.kpi,.toolbar,.ticket-header-card,.dash-kpi,.pager,
+.notif-panel,.review-panel,.parse-preview-panel{
+  border-radius:20px;box-shadow:none;background:#fff;border:1px solid var(--border);
+}
+.card-head{border-bottom:1px solid var(--border-soft)}
+.card.red-top,.ticket-header-card{border-top:1px solid var(--border)}
+.ticket-header-card::before,.rq-rail{background:var(--brand-primary)}
+.ticket-card:hover,.cand-card:hover,.rq-card:hover,
+.ats-card-grid .ticket-card:hover,.ats-card-grid .ticket-card:hover{
+  box-shadow:none;transform:none;border-color:var(--line-strong);
+}
+@media(max-width:640px){.card,.kpi,.dash-kpi,.toolbar,.pager{border-radius:18px}}
+
+/* KPI: semantic top border + big tabular number */
+.dash-kpi::before{display:none}
+.dash-kpi{border-top:3px solid var(--kc,var(--border))}
+.dash-kpi-skel::before{display:none}
+.dash-kpi-val,.kpi .value,.dash-kpi-val small,.score-number{
+  font-family:var(--font);font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);
+}
+.dash-kpi-val,.kpi .value{font-size:34px;line-height:1.1}
+.dash-kpi-label,.kpi .label{font-size:11px;letter-spacing:.08em;color:var(--muted)}
+
+/* ============================ buttons ============================ */
+.btn{
+  min-height:38px;border-radius:999px;border:1.5px solid var(--brand-primary);
+  background:#fff;color:var(--brand-primary-dark);font-weight:700;font-size:12.5px;
+  box-shadow:none;padding:0 16px;
+}
+.btn:hover{background:var(--action-primary-tint);border-color:var(--brand-primary-dark);color:var(--brand-primary-dark)}
+.btn:focus-visible{outline:3px solid var(--action-tint-bd);outline-offset:2px;box-shadow:none}
+.btn-block{border-radius:999px}
+.btn-secondary{background:#fff;color:var(--ink);border-color:var(--ink)}
+.btn-secondary:hover{background:var(--neutral-tint);border-color:var(--ink);color:var(--ink)}
+.btn-success{background:var(--brand-primary);color:#fff;border-color:var(--brand-primary)}
+.btn-success:hover{background:var(--brand-primary-dark);border-color:var(--brand-primary-dark)}
+.btn-navy{background:#fff;color:var(--brand-primary-dark);border-color:var(--brand-primary)}
+.btn-navy:hover{background:var(--action-primary-tint)}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--muted);box-shadow:none}
+.btn-ghost:hover{background:var(--neutral-tint);border-color:transparent;color:var(--ink)}
+.btn-outline-blue{background:#fff;color:var(--brand-primary-dark);border-color:var(--action-tint-bd)}
+.btn-outline-blue:hover{background:var(--action-primary-tint)}
+.btn-danger{background:#fff;color:var(--danger-hover);border-color:var(--danger)}
+.btn-danger:hover{background:var(--danger-tint);border-color:var(--danger)}
+.btn-danger-solid{background:var(--danger);color:#fff;border-color:var(--danger)}
+.btn-danger-solid:hover{background:var(--danger-hover);border-color:var(--danger-hover)}
+.btn-sm{min-height:32px;font-size:12px;padding:0 13px}
+
+/* ============================ tabs → segmented pills ============================ */
+.tabbar,.profile-tabs{
+  display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;
+  background:#ECEEF0;border:0;border-radius:999px;margin-bottom:18px;
+}
+.tabbar-btn,.profile-tab{
+  min-height:32px;border:0;border-radius:999px;padding:0 14px;margin-bottom:0;
+  color:var(--muted);font-weight:700;font-size:12.5px;
+}
+.tabbar-btn:hover,.profile-tab:hover{color:var(--ink)}
+.tabbar-btn.active,.profile-tab.active{
+  background:#fff;color:var(--brand-primary-dark);border:0;border-bottom-color:transparent;box-shadow:none;
+}
+.seg-tabs{background:#ECEEF0;border:0;border-radius:999px;box-shadow:none;padding:3px}
+.seg-tab{border-radius:999px;color:var(--muted)}
+.seg-tab:hover{background:transparent;color:var(--ink)}
+.seg-tab.active{background:#fff;color:var(--brand-primary-dark);box-shadow:none}
+.seg-tab .seg-count{background:#fff;color:var(--muted)}
+.seg-tab.active .seg-count{background:var(--action-primary-tint);color:var(--brand-primary-dark)}
+.view-toggle{background:#ECEEF0;border:0;border-radius:999px}
+.view-toggle-btn{border-radius:999px}
+.view-toggle-btn:hover{color:var(--ink)}
+.view-toggle-btn.active{background:#fff;color:var(--brand-primary-dark);box-shadow:none}
+
+/* ============================ tables ============================ */
+thead th,table.table thead th,.table thead th,.review-table th,.preview-table th{
+  background:#F5F5F5;color:var(--muted);font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--border);
+}
+tbody td,table.table tbody td,.table tbody td{
+  border-bottom:1px solid var(--border-soft);color:var(--ink);
+}
+tbody tr:hover,table.table tbody tr:hover,.table tbody tr:hover,
+table.table tbody tr.row-link:hover{background:#F4F5F7}
+
+/* ============================ small chrome ============================ */
+.count-pill,.code-pill{background:var(--action-primary-tint);color:var(--brand-primary-dark);border-radius:999px}
+.status-chip,.badge,.chip,.meta-chip,.src-chip,.pq,.score-badge{border-radius:999px}
+.bulk-bar{background:var(--brand-primary-dark);border-radius:999px}
+.chip-filter{background:var(--action-primary-tint);color:var(--brand-primary-dark);border-color:var(--action-tint-bd)}
+.tag-toggle.on{background:var(--brand-primary);border-color:var(--brand-primary)}
+.dot,.notif-dot,.status-chip::before,.dash-kpi .dash-ico{color:inherit}
+.disclosure-caret,.back-link,.dash-link,.linklike,.crumbs button{color:var(--brand-primary-dark)}
+.sort-th:hover,.sort-th.active{color:var(--brand-primary-dark)}
+.pcard.selected{border-color:var(--brand-primary);box-shadow:var(--ring-action)}
+.seg-tab.active,.tabbar-btn.active{border-bottom-color:transparent}
+input:focus,select:focus,textarea:focus,
+.field input:focus,.field select:focus,.field textarea:focus,
+.toolbar input:focus,.toolbar select:focus{
+  border-color:var(--brand-primary);box-shadow:0 0 0 3px var(--action-primary-tint);
+}
+
+/* modal / palette / toast keep their elevation — the only shadowed layers */
+.modal,.notif-panel,.menu,.cmdk,.rq-pop,.parse-review-panel,.toast{box-shadow:var(--shadow-pop)}
+
+/* ============================ anyhelp dock ============================ */
+.anyhelp-fab{
+  position:fixed;right:22px;bottom:22px;z-index:80;
+  min-height:52px;padding:7px 15px 7px 7px;
+  display:flex;align-items:center;gap:10px;
+  border:1.5px solid var(--brand-primary);border-radius:999px;
+  background:#fff;color:var(--brand-primary-dark);cursor:pointer;
+  box-shadow:0 14px 34px rgba(16,20,26,.16);
+}
+.anyhelp-fab:hover{background:var(--action-primary-tint)}
+.anyhelp-fab[hidden]{display:none}
+.anyhelp-fab-mark{
+  width:38px;height:38px;flex:0 0 auto;border-radius:50%;
+  display:grid;place-items:center;background:var(--brand-primary-dark);color:#fff;
+  font-weight:700;font-size:15px;
+}
+.anyhelp-fab-copy{display:flex;flex-direction:column;line-height:1.2;text-align:left}
+.anyhelp-fab-copy strong{font-size:12.5px}
+.anyhelp-fab-copy small{font-size:10.5px;color:var(--muted)}
+
+.anyhelp-dock{
+  position:fixed;top:72px;right:18px;bottom:18px;z-index:80;
+  width:min(400px,calc(100vw - 28px));
+  display:flex;flex-direction:column;overflow:hidden;
+  background:#fff;border:1px solid var(--border);border-radius:20px;
+  box-shadow:0 24px 64px rgba(16,20,26,.22);
+}
+.anyhelp-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  padding:16px 16px 10px;
+}
+.anyhelp-kicker{
+  margin:0;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--brand-primary-dark);font-weight:700;
+}
+.anyhelp-head strong{display:block;font-size:16px;margin-top:2px;color:var(--ink)}
+.anyhelp-context{
+  margin:0 16px 10px;padding:10px 12px;
+  border:1px solid var(--action-tint-bd);background:var(--action-primary-tint);border-radius:12px;
+}
+.anyhelp-context span{display:block;font-size:12.5px;font-weight:700;color:var(--ink)}
+.anyhelp-context small{display:block;margin-top:3px;font-size:11px;color:var(--muted)}
+.anyhelp-notice{margin:0 16px 10px;font-size:11px;line-height:1.45;color:var(--muted)}
+.anyhelp-thread{
+  flex:1;min-height:0;overflow:auto;
+  padding:0 16px 12px;display:flex;flex-direction:column;gap:10px;
+}
+.anyhelp-msg{
+  padding:10px 12px;border:1px solid var(--border);border-radius:14px;background:#F4F5F7;
+}
+.anyhelp-msg.ai{background:var(--action-primary-tint);border-color:var(--action-tint-bd)}
+.anyhelp-msg.mine{background:#fff}
+.anyhelp-who{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}
+.anyhelp-who b{font-size:12px;color:var(--ink)}
+.anyhelp-who span{font-size:10px;color:var(--faint)}
+.anyhelp-msg p{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.anyhelp-msg .btn{margin-top:8px;min-height:30px;font-size:11.5px}
+.anyhelp-fields{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:5px}
+.anyhelp-fields li{
+  font-size:10.5px;color:var(--brand-primary-dark);
+  background:#fff;border:1px solid var(--action-tint-bd);border-radius:999px;padding:2px 8px;
+}
+.anyhelp-composer{
+  display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;
+  padding:12px 16px 16px;border-top:1px solid var(--border);background:#fff;
+}
+.anyhelp-composer textarea{
+  width:100%;min-height:44px;max-height:120px;resize:vertical;
+  border:1px solid var(--border);border-radius:12px;padding:8px 10px;
+  background:#F4F5F7;font:inherit;font-size:12.5px;
+}
+.anyhelp-composer .btn{min-width:74px;background:var(--brand-primary-dark);color:#fff;border-color:var(--brand-primary-dark)}
+.anyhelp-composer .btn:hover{background:var(--brand-primary);color:#fff}
+.anyhelp-composer .btn:disabled{opacity:.5}
+
+@media(max-width:900px){
+  .anyhelp-fab{right:14px;bottom:calc(16px + env(safe-area-inset-bottom))}
+  .anyhelp-dock{
+    top:auto;right:8px;left:8px;bottom:calc(12px + env(safe-area-inset-bottom));
+    width:auto;height:min(74vh,620px);border-radius:18px;
+  }
+}
+@media(prefers-reduced-motion:reduce){.anyhelp-dock,.anyhelp-fab{transition:none}}
+
+/* ============================ responsive shell ============================
+   arabtec-approved-ui.css restates `.shell{grid-template-columns:var(--sidebar-w) …}`
+   with no media guard, and it loads after styles.css — so the icon-rail collapse
+   below 1180px never took effect and the 240px sidebar stayed on phones. This
+   layer loads last; re-assert the collapse here. Behaviour is unchanged from
+   what styles.css always intended: an icon-only rail, not a new drawer. */
+@media(max-width:1180px){ .shell{grid-template-columns:66px minmax(0,1fr)} }
+@media(max-width:560px){ .shell{grid-template-columns:56px minmax(0,1fr)} }
+
+/* Phone topbar + page-header actions were built for desktop width and pushed the
+   page sideways. Keep the avatar (its menu is the only way to sign out), drop the
+   name/role text, and let action rows wrap instead of overflowing. */
+@media(max-width:900px){
+  .topbar .profile-name,.topbar .profile-role{display:none}
+  .topbar .profile{gap:0}
+  .dash-actions,.page-head-actions,.page-actions{flex-wrap:wrap}
+}
+@media(max-width:560px){
+  .dash-actions .btn,.page-head-actions .btn{flex:1 1 auto;justify-content:center}
+}

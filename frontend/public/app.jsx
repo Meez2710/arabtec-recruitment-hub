@@ -607,6 +607,119 @@ function CommandPalette({ open, onClose, onPick }) {
   );
 }
 
+/* ---------------- anyhelp — floating assistant dock ----------------
+   Advisory only. It reads the current route and, when a hiring request is open,
+   its id, then runs the SAME endpoints the pages already use:
+   GET /candidates/smart-search and POST /requests/:id/suggest-candidates.
+   It never writes: linking a candidate, moving a stage or sending an offer
+   still goes through the normal page flow with the same permission checks. */
+const ANYHELP_ROUTE_LABEL = {
+  dashboard: 'Dashboard', requests: 'Hiring Requests', candidates: 'Talent Pool',
+  candidateReview: 'Candidate Review', interviews: 'Interviews', offers: 'Offers', reports: 'Reports',
+};
+function AnyhelpDock({ user, route, onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [ctx, setCtx] = useState(() => (typeof window !== 'undefined' ? window.__anyhelp : null) || null);
+  const [thread, setThread] = useState(() => ([
+    { who: 'anyhelp', role: 'Suggestions only',
+      text: 'I can read what is on your screen and help you find candidates or make sense of a role. I cannot change records, stages, salary or approvals.' },
+  ]));
+  const threadRef = useRef(null);
+
+  useEffect(() => {
+    function onCtx() { setCtx(window.__anyhelp || null); }
+    window.addEventListener('anyhelp:context', onCtx);
+    return () => window.removeEventListener('anyhelp:context', onCtx);
+  }, []);
+  useEffect(() => {
+    if (open && threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
+  }, [thread, open]);
+
+  const scopeLabel = ctx?.label || ANYHELP_ROUTE_LABEL[route] || 'Workspace';
+  const scopeSub = ctx?.sub || 'anyhelp reads only what this page already shows you.';
+  const push = (m) => setThread((t) => [...t, m]);
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || busy) return;
+    setDraft('');
+    push({ who: user.fullName, role: ROLE_NAMES[user.roles[0]] || 'You', text, mine: true });
+    setBusy(true);
+    try {
+      const wantsShortlist = ctx?.type === 'request'
+        && /shortlist|suggest|who fits|candidates for|best (match|fit)|find (me )?(someone|people|candidates)/i.test(text);
+      if (wantsShortlist) {
+        const r = await api.post(`/requests/${ctx.id}/suggest-candidates`, { limit: 5 });
+        const list = r.suggestions || [];
+        push({ who: 'anyhelp', role: 'Suggestions only',
+          text: list.length
+            ? `Top ${list.length} from the pool for ${ctx.label}:\n` + list.map((s) => `• ${s.fullName} — ${s.score}/100. ${s.reason}`).join('\n') + '\n\nOpen the AI Shortlist tab on this request to link anyone.'
+            : `Nobody in the pool clearly fits ${ctx.label} yet. Import CVs or widen the requirements, then ask again.` });
+      } else {
+        const r = await api.get('/candidates/smart-search?q=' + encodeURIComponent(text));
+        const fields = Object.entries(r.filters || {}).filter(([, v]) => v != null && v !== '');
+        push({
+          who: 'anyhelp', role: 'Suggestions only',
+          text: r.interpretation ? `I read that as: ${r.interpretation}` : 'That has no constraints — it would show everyone.',
+          fields: fields.map(([k, v]) => `${k}: ${v}`),
+          action: {
+            label: 'Show matches in Talent Pool',
+            run: () => {
+              setOpen(false);
+              window.__atsPendingAsk = text;
+              onNavigate('candidates');
+              window.dispatchEvent(new CustomEvent('ats:run-smart-search', { detail: { q: text } }));
+            },
+          },
+        });
+      }
+    } catch (e) {
+      push({ who: 'anyhelp', role: 'Suggestions only',
+        text: e?.message || 'That did not work. Try rephrasing, or use the search on the page.' });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      <button className="anyhelp-fab" hidden={open} onClick={() => setOpen(true)} aria-expanded={open} aria-controls="anyhelp-dock">
+        <span className="anyhelp-fab-mark">a</span>
+        <span className="anyhelp-fab-copy"><strong>anyhelp</strong><small>AI helper</small></span>
+      </button>
+      {open && (
+        <aside id="anyhelp-dock" className="anyhelp-dock" role="dialog" aria-label="anyhelp assistant">
+          <header className="anyhelp-head">
+            <div><p className="anyhelp-kicker">anyhelp</p><strong>Assistant</strong></div>
+            <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close anyhelp">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </header>
+          <div className="anyhelp-context"><span>{scopeLabel}</span><small>{scopeSub}</small></div>
+          <div className="anyhelp-notice">anyhelp can suggest and explain. It cannot change records, stages, salary or approvals.</div>
+          <div className="anyhelp-thread" ref={threadRef}>
+            {thread.map((m, i) => (
+              <article key={i} className={'anyhelp-msg' + (m.who === 'anyhelp' ? ' ai' : m.mine ? ' mine' : '')}>
+                <div className="anyhelp-who"><b>{m.who}</b><span>{m.role}</span></div>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{m.text}</p>
+                {m.fields && m.fields.length ? <ul className="anyhelp-fields">{m.fields.map((f, j) => <li key={j}>{f}</li>)}</ul> : null}
+                {m.action ? <button className="btn btn-sm" onClick={m.action.run}>{m.action.label}</button> : null}
+              </article>
+            ))}
+          </div>
+          <form className="anyhelp-composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
+            <textarea rows="2" value={draft} disabled={busy}
+              placeholder="Ask anyhelp about this page…"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
+            <button className="btn" type="submit" disabled={busy || !draft.trim()}>{busy ? '…' : 'Send'}</button>
+          </form>
+        </aside>
+      )}
+    </>
+  );
+}
+
 function Shell({ user, branding, onLogout, refreshBranding }) {
   // Self-service password change, reachable from the user menu.
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -744,6 +857,8 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             window.dispatchEvent(new CustomEvent('ats:open-candidate', { detail: { id: c.id } }));
           }}
         />
+
+        {can(user, 'candidate.view') && <AnyhelpDock user={user} route={route} onNavigate={setRoute} />}
       </div>
     </div>
   );
@@ -751,7 +866,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
 
 /* ----------------------------- Dashboard ----------------------------- */
 /* ---- tiny inline-SVG chart helpers (no external libraries) ---- */
-const CHART_COLORS = ['#005B96', '#00A3E0', '#2E7D32', '#F59E0B', '#C62828', '#1976D2', '#6B7280', '#003A63'];
+// Calm categorical palette aligned to the Arabtec design system: greens carry the
+// weight, one amber and one red for warning/critical series, greys for the rest.
+const CHART_COLORS = ['#00664F', '#008064', '#6F6A64', '#8A93A3', '#E09600', '#B01420', '#3F6E5C', '#1A1A1A'];
 function BarChart({ data, height = 160 }) {
   const items = data.filter((d) => d.count > 0);
   if (!items.length) return <Empty icon="📊" text="No data yet." />;
@@ -794,10 +911,13 @@ function Funnel({ data }) {
 
 // Canonical pipeline stage → swatch color, for the inline funnel mini-bar and reports.
 // Grouped by phase so the bar reads left→right as candidates progress.
+// Ordered stage ramp — one calm family: neutral for the top of funnel, greens
+// deepening through the middle, amber for the offer stages, red only for terminal
+// outcomes. Stages stay legible by their labels and counts, not by hue alone.
 const STAGE_COLORS = {
-  sourced: '#9aa3ad', matched: '#2160a6', shortlisted: '#00A3E0', interviewing: '#1976D2',
-  waiting_feedback: '#F59E0B', issuing_offer: '#d98324', offer_sent: '#b7791f', joined: '#1d6e3e',
-  unmatched: '#c7ccd2', on_hold: '#6a4ca6', rejected: '#c0392b', offer_declined: '#a93b34',
+  sourced: '#8A93A3', matched: '#5E8C7B', shortlisted: '#3F8F76', interviewing: '#1F8468',
+  waiting_feedback: '#E09600', issuing_offer: '#B45309', offer_sent: '#8A5A00', joined: '#00664F',
+  unmatched: '#C7CCD2', on_hold: '#6F6A64', rejected: '#B01420', offer_declined: '#B01420',
 };
 const FUNNEL_ORDER = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
 
@@ -840,9 +960,9 @@ function FunnelMini({ pipeline }) {
 // Presentation only. Every number rendered here comes from the existing
 // GET /dashboard response; nothing is fabricated or extrapolated.
 const APP_STAGE_COLORS = {
-  sourced: '#9AA3AD', screening: '#2160A6', interview_hr: '#00A3E0',
-  interview_technical: '#1976D2', offer: '#B7791F', hired: '#1D6E3E',
-  rejected: '#C0392B', offer_declined: '#A93B34',
+  sourced: '#8A93A3', screening: '#5E8C7B', interview_hr: '#3F8F76',
+  interview_technical: '#1F8468', offer: '#B45309', hired: '#00664F',
+  rejected: '#B01420', offer_declined: '#B01420',
 };
 
 function DashKpi({ label, value, unit, hint, icon, tone }) {
@@ -1015,7 +1135,7 @@ function Dashboard({ user, onNavigate }) {
       <div className="dash-kpi-row">
         <DashKpi label="Open Requests" value={openReq} hint={`${k.totalRequests} total · ${k.filledRequests} filled`} icon="ticket" tone="var(--brand-primary)" />
         <DashKpi label="Candidates in Pipeline" value={k.totalApplications} hint="active applications" icon="users" tone="var(--action-primary)" />
-        <DashKpi label="Upcoming Interviews" value={k.upcomingInterviews} hint="scheduled ahead" icon="calendar" tone="#00A3E0" />
+        <DashKpi label="Upcoming Interviews" value={k.upcomingInterviews} hint="scheduled ahead" icon="calendar" tone="var(--brand-primary)" />
         <DashKpi label="Offers" value={k.totalOffers} hint="all offer records" icon="doc" tone="var(--warning-ink)" />
       </div>
 
@@ -2677,7 +2797,7 @@ function AiShortlistTab({ request, user }) {
     return (
       <div className="card card-pad">
         <Empty icon="✨" title="Find candidates for this request"
-          text="Claude reads this requisition and ranks your talent pool against it, with a reason for each suggestion. Nothing is changed until you link someone."
+          text="anyhelp reads this role and ranks your talent pool against it, with a reason for each name. Nothing changes until you link someone."
           action={<button className="btn" onClick={run}>Suggest candidates</button>} />
       </div>
     );
@@ -2685,7 +2805,7 @@ function AiShortlistTab({ request, user }) {
   if (state === 'loading') {
     return (
       <div className="card card-pad">
-        <p className="muted" style={{ margin: 0 }}>Reading the requisition and comparing it against the talent pool…</p>
+        <p className="muted" style={{ margin: 0 }}>Reading the role and comparing it with the talent pool…</p>
         <ListSkeleton rows={4} />
       </div>
     );
@@ -2761,7 +2881,7 @@ function AiShortlistTab({ request, user }) {
         </div>
       )}
       <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
-        Suggestions are advisory and were produced by {data.model}. Nothing here has changed a candidate record.
+        anyhelp suggestions are advisory. Nothing here has changed a candidate record.
       </p>
     </div>
   );
@@ -2777,6 +2897,18 @@ function RequestDetail({ id, user, btns, onBack }) {
 
   const load = useCallback(async () => { setReq((await api.get('/requests/' + id)).request); }, [id]);
   useEffect(() => { load(); }, [id]);
+
+  // Tell the anyhelp dock which request is open, so "shortlist for this role"
+  // can run against it. Read-only context — cleared when the detail unmounts.
+  useEffect(() => {
+    window.__anyhelp = {
+      type: 'request', id,
+      label: (shortReqCode(req && req.ticketNo) || ('request #' + id)) + (req && req.title ? ' · ' + req.title : ''),
+      sub: 'anyhelp can shortlist your talent pool for this role.',
+    };
+    window.dispatchEvent(new CustomEvent('anyhelp:context'));
+    return () => { window.__anyhelp = null; window.dispatchEvent(new CustomEvent('anyhelp:context')); };
+  }, [id, req && req.ticketNo, req && req.title]);
 
   async function doAction(path, body, okMsg) {
     try { const r = await api.post(`/requests/${id}/${path}`, body || {}); setReq(r.request); toast(okMsg); }
@@ -4416,6 +4548,18 @@ function CandidatesPage({ user, onNavigate }) {
     window.addEventListener('ats:open-candidate', onOpen);
     return () => window.removeEventListener('ats:open-candidate', onOpen);
   }, []);
+
+  // Plain-English search handed over from the anyhelp dock. Same pattern as
+  // above: a pending value for a fresh mount, a live event if already mounted.
+  useEffect(() => {
+    if (window.__atsPendingAsk) {
+      const q = window.__atsPendingAsk; window.__atsPendingAsk = null;
+      setAsk(q); runAsk(q);
+    }
+    function onAsk(e) { const q = e.detail && e.detail.q; if (q) { setAsk(q); runAsk(q); } }
+    window.addEventListener('ats:run-smart-search', onAsk);
+    return () => window.removeEventListener('ats:run-smart-search', onAsk);
+  }, []);
   const [screenTab, setScreenTab] = useState('all'); // Database fitness-screen filter
   // Server-side paging/sorting. The API returns a `pagination` envelope; the UI no
   // longer fetches the whole table and slices it in the browser.
@@ -4535,8 +4679,8 @@ function CandidatesPage({ user, onNavigate }) {
    * separate result list — is what keeps this honest: the recruiter sees the
    * filters it chose, in the boxes they already use, and can correct any of them.
    */
-  async function runAsk() {
-    const query = ask.trim();
+  async function runAsk(explicitQ) {
+    const query = (typeof explicitQ === 'string' ? explicitQ : ask).trim();
     if (!query || asking) return;
     setAsking(true);
     try {
@@ -4619,7 +4763,7 @@ function CandidatesPage({ user, onNavigate }) {
   return (
     <div>
       <PageHead crumb="Recruitment / Talent Pool" title="Talent Pool"
-        sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
+        sub="Every candidate on file. Application status lives on their application to a request, not here."
         actions={<>
           <ViewToggle value={view} onChange={setView} options={[['board', 'Cards'], ['table', 'Table']]} />
           {btns.add_candidate?.visible && (
@@ -5271,7 +5415,7 @@ function CandidateForm({ user, candidate, onClose, onSaved }) {
         <div className="field full"><label>CV / Résumé (optional)</label>
           <input type="file" onChange={(e) => setCvFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" style={{ width: '100%' }} />
           <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
-            {cvFile ? `Selected: ${cvFile.name} — stored with this record, not read.` : 'Stored with the record for reference. Not read — use Parse CV from Talent Pool to have the AI read a CV.'}
+            {cvFile ? `Selected: ${cvFile.name} — kept with this record, not read.` : 'Kept with the record for reference. To have anyhelp read a CV, use Parse CV in the Talent Pool.'}
           </div>
         </div>
         <CustomFieldsInputs defs={customDefs} values={customVals} onChange={(k, v) => setCustomVals((s) => ({ ...s, [k]: v }))} />

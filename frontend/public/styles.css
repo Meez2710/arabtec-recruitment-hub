@@ -4,10 +4,10 @@
    Runtime branding can still override these via CSS variables (applyBranding). */
 :root {
   /* Brand — used sparingly as an accent */
-  --brand: #d2232a; --brand-dark: #a81b22; --brand-tint: #fdf2f3; --brand-tint-bd: #f6dadd;
+  --brand: #D01827; --brand-dark: #B01420; --brand-tint: #FCEEEF; --brand-tint-bd: #f3c9cd;
 
-  /* Surfaces & background — warm off-white page; cards stay pure white so they lift */
-  --bg: #f6f3ec; --surface: #ffffff; --surface-2: #faf8f3;
+  /* Surfaces & background — cool off-white page (Arabtec design system); cards stay pure white */
+  --bg: #F4F5F7; --surface: #ffffff; --surface-2: #F4F5F7;
 
   /* Ink scale */
   --ink: #16191e; --ink-soft: #4b535d; --muted: #8b939d;
