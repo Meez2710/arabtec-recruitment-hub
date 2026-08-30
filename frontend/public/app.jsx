@@ -97,7 +97,11 @@ function setHasCustomLogo(v, version) {
     let link = document.querySelector("link[rel='icon']");
     if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
     if (HAS_CUSTOM_LOGO) { link.type = 'image/png'; link.href = customLogoUrl(); }
-    else { link.type = 'image/svg+xml'; link.href = '/logo.svg'; }
+    // Must match the <link rel=icon> in index.html. This line used to point at
+    // /logo.svg — a hand-drawn approximation of the mark with the wordmark baked
+    // in — and because it runs on every boot it silently overrode the correct
+    // icon set in the HTML. That is what put the wrong logo in the browser tab.
+    else { link.type = 'image/svg+xml'; link.href = '/arabtec-favicon.svg'; }
   } catch {}
 }
 function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }) {
@@ -105,10 +109,10 @@ function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }
   if (HAS_CUSTOM_LOGO) {
     return <img src={customLogoUrl()} alt="Logo" style={{ height: withText ? size * 1.0 : size, maxWidth: size * 3.2, objectFit: 'contain', display: 'block' }} onError={(e) => { e.target.style.display = 'none'; }} />;
   }
-  // Built-in mark = /logo-transparent.png, a transparent derivative of the approved
-  // /logo.png (the original had an opaque checkerboard background baked in). Artwork
-  // pixels are unchanged; only the background was keyed to alpha. See docs note.
-  // The `color` prop does not apply to a raster mark and is intentionally unused here.
+  // Built-in mark = /arabtec-logo.svg, the brand vector itself (600x396). It is
+  // rendered with object-fit:contain inside a square-ish box, so it keeps its
+  // true 1.515 aspect ratio at every size and can never be squashed.
+  // The `color` prop does not apply to a supplied asset and is unused here.
   const mark = (
     <img src="/arabtec-logo.svg" alt="Arabtec"
       style={{ width: size, maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
