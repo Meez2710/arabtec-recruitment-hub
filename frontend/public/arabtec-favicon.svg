@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="-25.65 -128.32 652.30 652.30"
+     width="64" height="64" role="img" aria-label="Arabtec">
+  <!-- The Arabtec mark, taken VERBATIM from the brand asset arabtec-logo.svg:
+       same two paths, same transform, same #dd1627. Nothing is redrawn.
+
+       Only the frame differs. The brand file is 600x396, and a browser paints a
+       favicon into a SQUARE box — so it was being squashed, which is what made
+       the tab icon look wrong. The viewBox above is a square centred on the
+       artwork's measured ink bounds (x 4..597, y 3.66..392), so the mark keeps
+       its true proportions with a little breathing room. The wordmark is
+       deliberately absent: it is illegible at 16px. -->
+  <g transform="translate(0.000000,396.000000) scale(0.050000,-0.050000)"
+     fill="#dd1627" stroke="none">
+    <path d="M3798 7844 l-172 -5 -167 -245 c-142 -209 -416 -606 -803 -1164 -101 -146 -358 -519 -1176 -1710 -268 -390 -525 -764 -570 -830 -45 -66 -131 -192 -191 -280 -59 -88 -115 -169 -124 -180 -8 -11 -80 -115 -160 -231 -80 -116 -172 -249 -205 -296 -33 -47 -80 -119 -104 -159 l-44 -74 -1 -1295 -1 -1295 959 0 958 0 117 165 c64 91 148 210 186 266 39 56 178 257 310 447 132 191 253 366 269 389 189 275 361 522 421 603 40 55 280 400 532 766 252 366 600 870 774 1120 173 250 340 490 371 534 30 44 165 239 299 434 l244 355 0 1340 0 1340 -775 6 c-426 3 -853 2 -947 -1z"/>
+    <path d="M6496 7805 c-34 -137 -4 -2620 33 -2676 21 -32 260 -374 532 -759 271 -385 559 -794 640 -910 81 -115 282 -401 448 -634 344 -484 516 -729 665 -945 171 -247 364 -522 576 -822 378 -534 430 -609 485 -689 30 -44 89 -127 132 -185 l78 -105 923 5 922 5 5 1282 5 1281 -394 579 c-216 318 -430 629 -475 692 -44 62 -207 299 -361 525 -274 404 -535 781 -897 1301 -100 143 -254 367 -342 497 -179 264 -285 419 -519 755 -88 126 -232 336 -321 468 -89 132 -184 269 -210 305 l-49 65 -933 0 c-873 0 -935 -2 -943 -35z"/>
+  </g>
+</svg>

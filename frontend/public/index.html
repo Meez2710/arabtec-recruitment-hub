@@ -2,15 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#F4F5F7" />
   <title>Arabtec Recruitment Hub</title>
-  <link rel="icon" type="image/svg+xml" href="/arabtec-logo.svg" />
-  <!-- Optional web font; if blocked/offline the app falls back to system fonts (handled in CSS). -->
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
-  <link rel="stylesheet" href="/styles.css?v=20260825b" />
-  <link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260825b" />
+  <!-- Square 1:1 mark. The full logo (600x396) was being squashed into the tab's
+       square icon box, which is what made the favicon look distorted. -->
+  <link rel="icon" type="image/svg+xml" href="/arabtec-favicon.svg?v=20260830b" />
+  <link rel="apple-touch-icon" href="/arabtec-favicon.svg?v=20260830b" />
+  <!-- The approved design system is Arial / Helvetica. No web font is loaded:
+       the typeface is present on every target device, so there is no flash of
+       unstyled text and no third-party request. -->
+  <link rel="stylesheet" href="/styles.css?v=20260830b" />
+  <link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260830b" />
+  <!-- Loads LAST: the approved design system is the final word on chrome,
+       colour, type and geometry. See arabtec-design-system.css. -->
+  <link rel="stylesheet" href="/arabtec-design-system.css?v=20260830b" />
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div id="root">
     <div class="boot-loading">Loading Arabtec Recruitment Hub…</div>
   </div>
@@ -23,7 +32,7 @@
   <!-- Cache-bust app.jsx (the whole SPA lives here). Bump ?v= on every UI change so a
        browser/proxy can never serve a stale build — this is what made the app appear to
        "revert" to an old version after edits. Keep in sync with styles.css version. -->
-  <script type="text/babel" src="/intake-review.jsx?v=20260825b"></script>
-  <script type="text/babel" src="/app.jsx?v=20260825b"></script>
+  <script type="text/babel" src="/intake-review.jsx?v=20260830b"></script>
+  <script type="text/babel" src="/app.jsx?v=20260830b"></script>
 </body>
 </html>
