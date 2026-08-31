@@ -105,6 +105,15 @@ function serialize(r, user, { withDetail = false } = {}) {
       daysOpen: daysSince(r.opened_at || r.created_at),
       daysSinceApproval: daysSince(r.opened_at),
       daysToTargetJoin: daysUntil(r.target_join_date),
+      // Days idle in the CURRENT stage — not total days open. Walks the
+      // lifecycle stamps from the furthest reached backwards, so a request
+      // that has had an interview scheduled is timed from that milestone,
+      // not from when it was first approved. Falls back to opened_at/created_at
+      // for a request that has not reached its first milestone yet.
+      stageIdleDays: daysSince(
+        r.first_offer_at || r.first_interview_at || r.first_shortlist_at
+        || r.first_candidate_at || r.opened_at || r.created_at,
+      ),
     },
   };
   // Simplified intake fields (restructure)
@@ -115,9 +124,14 @@ function serialize(r, user, { withDetail = false } = {}) {
   const deptLite = r.department_id ? Departments.byId(r.department_id) : null;
   const siteLite = r.site_id ? Sites.byId(r.site_id) : null;
   const projLite = r.project_id ? Projects.byId(r.project_id) : null;
+  const ownerLite = r.owner_id ? Users.byId(r.owner_id) : null;
   out.department = deptLite ? { id: deptLite.id, name: deptLite.name } : null;
   out.site = siteLite ? { id: siteLite.id, name: siteLite.name } : null;
   out.project = projLite ? { id: projLite.id, name: projLite.name } : null;
+  // A recruiter workload row or an "Owner" table column needs a name, not just
+  // the bare `ownerId` above — added to the list shape (not just withDetail)
+  // for exactly that reason.
+  out.owner = ownerLite ? { id: ownerLite.id, name: ownerLite.full_name } : null;
   if (withDetail) {
     out.jobDescription = r.job_description;
     out.keyRequirements = r.key_requirements;
@@ -562,7 +576,15 @@ router.get('/meta/form', (req, res) => {
     sites: Sites.all().map((s) => ({ id: s.id, name: s.name, projectId: s.project_id })),
     departments: Departments.all().map((d) => ({ id: d.id, name: d.name })),
     businessUnits: BusinessUnits.all().map((b) => ({ id: b.id, name: b.name })),
+    // Unfiltered — kept exactly as before; other callers (including existing
+    // tests) already rely on this being every active user, not just recruiters.
     recruiters: Users.list({}).map((u) => ({ id: u.id, name: u.full_name })),
+    // Who Assign/Reassign should actually offer: anyone who can work a
+    // pipeline (move a candidate through its stages) — a permission check,
+    // not a hardcoded role list, so it stays correct as roles are edited in
+    // Control Center. A new field, not a change to `recruiters` above, so
+    // nothing already reading the unfiltered list is affected.
+    assignableRecruiters: Users.withPermission('candidate.move_stage').map((u) => ({ id: u.id, name: u.full_name })),
     hiringManagers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name })),
     justifications: [
       { value: 'replacement', label: 'Replacement' },

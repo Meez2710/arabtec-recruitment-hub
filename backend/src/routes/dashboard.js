@@ -81,7 +81,9 @@ router.get('/', (req, res) => {
   // ---- Recruiter load (only meaningful org-wide; for own-scope it's just the user) ----
   let recruiterLoad = [];
   if (viewAll) {
-    recruiterLoad = all(`SELECT u.full_name name, COUNT(*) c
+    // `u.id` is what lets a workload row link to that recruiter's own filtered
+    // request list — without it the row has a name but nothing to filter by.
+    recruiterLoad = all(`SELECT u.id id, u.full_name name, COUNT(*) c
       FROM recruitment_request r JOIN users u ON u.id=r.owner_id
       WHERE r.status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')}) GROUP BY u.id, u.full_name ORDER BY c DESC LIMIT 8`, NON_TERMINAL_REQ);
   }

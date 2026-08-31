@@ -606,6 +606,13 @@ table.table tbody tr:hover, .table tbody tr:hover { background: var(--action-pri
 .dash-kpi-hint { font-size: 11.5px; color: var(--muted); }
 .dash-kpi-skel { padding-top: 20px; }
 .dash-kpi-skel::before { background: var(--border); }
+/* Clickable variant of the same card — a real <button>, not a div, so it stays
+   keyboard-reachable and screen-reader-announced. Only applied when the card
+   actually has somewhere to go; a card with no onClick renders as a plain div
+   with none of this, on purpose (see KpiCard's comment). */
+.dash-kpi-link { cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit; appearance: none; -webkit-appearance: none; transition: box-shadow .14s, transform .14s, border-color .14s; }
+.dash-kpi-link:hover, .dash-kpi-link:focus-visible { box-shadow: var(--shadow-pop); transform: translateY(-1px); border-color: var(--line-strong); }
+.dash-kpi-link:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
 
 /* Panels ---------------------------------------------------------------- */
 .dash-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
@@ -642,6 +649,13 @@ table.table tbody tr:hover, .table tbody tr:hover { background: var(--action-pri
 .dash-kv i { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
 .dash-kv em { font-style: normal; color: var(--muted); font-size: 11.5px; }
 .dash-kv strong { font-size: 14px; color: var(--text-strong); }
+/* A `.dash-kv` row rendered as a real button when it opens a filtered list —
+   same layout, just interactive: full width, no default button chrome, a
+   visible hover/focus state so it reads as a control rather than a label. */
+.dash-kv-link { width: 100%; border: none; background: none; padding: 2px 0; font: inherit; cursor: pointer; border-radius: 4px; transition: background-color .12s; }
+.dash-kv-link:hover, .dash-kv-link:focus-visible { background: var(--surface-2); }
+.dash-kv-link:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+.dash-kv-link strong { color: var(--brand-primary); }
 
 /* List rows -------------------------------------------------------------- */
 .dash-listpad { padding: 6px 10px 10px; }

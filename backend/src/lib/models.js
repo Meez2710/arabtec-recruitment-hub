@@ -542,7 +542,10 @@ export const Requests = {
     if (filters.priority) { sql += ' AND priority=?'; p.push(filters.priority); }
     if (filters.projectId) { sql += ' AND project_id=?'; p.push(Number(filters.projectId)); }
     if (filters.departmentId) { sql += ' AND department_id=?'; p.push(Number(filters.departmentId)); }
-    if (filters.ownerId) { sql += ' AND owner_id=?'; p.push(Number(filters.ownerId)); }
+    // The 'unassigned' sentinel must be checked before the numeric branch below —
+    // Number('unassigned') is NaN, which would otherwise silently match nothing.
+    if (filters.ownerId === 'unassigned') { sql += ' AND owner_id IS NULL'; }
+    else if (filters.ownerId) { sql += ' AND owner_id=?'; p.push(Number(filters.ownerId)); }
     if (filters.requesterId) { sql += ' AND requester_id=?'; p.push(Number(filters.requesterId)); }
     if (filters.q) { sql += ' AND (title LIKE ? OR ticket_no LIKE ? OR discipline LIKE ?)'; const l = `%${filters.q}%`; p.push(l, l, l); }
     if (filters.ownedOnly && filters.userId) { sql += ' AND (owner_id=? OR requester_id=? OR created_by=?)'; p.push(filters.userId, filters.userId, filters.userId); }
