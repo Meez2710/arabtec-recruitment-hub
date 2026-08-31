@@ -832,6 +832,21 @@ export function ensureSchema() {
     UNIQUE(entity, record_id, field_key)
   );
   CREATE INDEX IF NOT EXISTS idx_cfv_record ON custom_field_value(entity, record_id);
+
+  -- ---- Designation catalogue (Arabtec job-title reference) ----
+  -- Reference list of approved job titles with HR grade and function. Feeds
+  -- job-title pickers on the request wizard. Editable via /api/org/designations.
+  CREATE TABLE IF NOT EXISTS designation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL UNIQUE,
+    grade TEXT,                    -- HR grade, kept as text (values 4..20)
+    function TEXT,                 -- original Arabtec function label
+    department_id INTEGER REFERENCES department(id),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_designation_dept ON designation(department_id);
   `);
 
   migrateWorkflowStages();

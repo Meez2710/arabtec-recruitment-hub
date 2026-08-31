@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
-  Projects, Sites, Departments, BusinessUnits, Users, SystemSettings, Posts, Applications,
+  Projects, Sites, Departments, Designations, BusinessUnits, Users, SystemSettings, Posts, Applications,
   Candidates,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
@@ -575,6 +575,9 @@ router.get('/meta/form', (req, res) => {
     projects: Projects.all().map((p) => ({ id: p.id, name: p.name, code: p.code, businessUnitId: p.business_unit_id })),
     sites: Sites.all().map((s) => ({ id: s.id, name: s.name, projectId: s.project_id })),
     departments: Departments.all().map((d) => ({ id: d.id, name: d.name })),
+    designations: Designations.all({ activeOnly: true }).map((g) => ({
+      id: g.id, title: g.title, grade: g.grade, departmentId: g.department_id,
+    })),
     businessUnits: BusinessUnits.all().map((b) => ({ id: b.id, name: b.name })),
     // Unfiltered — kept exactly as before; other callers (including existing
     // tests) already rely on this being every active user, not just recruiters.

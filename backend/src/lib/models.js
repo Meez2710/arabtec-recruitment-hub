@@ -311,6 +311,44 @@ export const Departments = {
   },
 };
 
+// ---------------- Designations (job-title catalogue) ----------------
+export const Designations = {
+  all({ q, functionName, departmentId, activeOnly = false } = {}) {
+    let sql = 'SELECT * FROM designation WHERE 1=1';
+    const p = [];
+    if (activeOnly) sql += ' AND is_active = 1';
+    if (q) { sql += ' AND title LIKE ?'; p.push(`%${q}%`); }
+    if (functionName) { sql += ' AND function = ?'; p.push(functionName); }
+    if (departmentId) { sql += ' AND department_id = ?'; p.push(Number(departmentId)); }
+    sql += ' ORDER BY function ASC, CAST(grade AS INTEGER) DESC, title ASC';
+    return all(sql, p);
+  },
+  byId(id) { return get('SELECT * FROM designation WHERE id = ?', [id]); },
+  byTitle(title) { return get('SELECT * FROM designation WHERE title = ?', [title]); },
+  create(d) {
+    const r = run(
+      `INSERT INTO designation (title,grade,function,department_id,is_active,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?)`,
+      [d.title, d.grade ?? null, d.function ?? null,
+       d.departmentId ? Number(d.departmentId) : null,
+       d.isActive === false ? 0 : 1, nowISO(), nowISO()],
+    );
+    return this.byId(Number(r.lastInsertRowid));
+  },
+  update(id, d) {
+    const c = this.byId(id);
+    run(
+      `UPDATE designation SET title=?, grade=?, function=?, department_id=?, is_active=?, updated_at=? WHERE id=?`,
+      [d.title ?? c.title, d.grade !== undefined ? d.grade : c.grade,
+       d.function !== undefined ? d.function : c.function,
+       d.departmentId !== undefined ? (d.departmentId ? Number(d.departmentId) : null) : c.department_id,
+       d.isActive !== undefined ? (d.isActive ? 1 : 0) : c.is_active, nowISO(), id],
+    );
+    return this.byId(id);
+  },
+  remove(id) { run('DELETE FROM designation WHERE id = ?', [id]); },
+};
+
 // ---------------- Settings ----------------
 export const Branding = {
   all() { return Object.fromEntries(all('SELECT key, value FROM branding_setting').map((r) => [r.key, r.value])); },
