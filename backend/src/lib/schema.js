@@ -171,6 +171,21 @@ export function ensureSchema() {
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Which notifications fire, on which channel, to whom. The CATALOG of possible
+  -- events lives in lib/notification-catalog.js; these rows are the tenant's
+  -- choices about them. in_app and email are independent so an alert can be kept
+  -- without the mail volume. The recipients column is a JSON array of symbolic
+  -- tokens (requester, owner, candidate…) resolved against the entity at send time.
+  CREATE TABLE IF NOT EXISTS notification_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_key TEXT UNIQUE NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    in_app INTEGER NOT NULL DEFAULT 1,
+    email INTEGER NOT NULL DEFAULT 0,
+    recipients TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS system_setting (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT UNIQUE NOT NULL,

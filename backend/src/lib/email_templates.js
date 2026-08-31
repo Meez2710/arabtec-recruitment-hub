@@ -1,19 +1,34 @@
 // Branded email templates (C2.2). Plain, table-based HTML that renders reliably
 // in Outlook/Gmail/mobile. Every template returns { subject, html }.
-// Keep copy simple and professional; the brand accent is Arabtec red (#d2232a).
-
-const BRAND = '#d2232a';
-const INK = '#1a1a1a';
-const MUT = '#5b6166';
+//
+// PALETTE. These values track the approved design system (see
+// frontend/public/arabtec-design-system.css) so an email does not look like a
+// different product from the app that sent it. Red is the brand rule only;
+// green is the one interactive colour. They are literals rather than CSS
+// variables because mail clients do not support custom properties.
+const BRAND = '#D01827';   // brand rule / critical
+const GREEN = '#00664F';   // the single interactive colour
+const INK = '#1A1A1A';
+const MUT = '#6F6A64';
+const CANVAS = '#F4F5F7';
+const LINE = '#E4E4E4';
 
 function shell(title, bodyHtml) {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#f6f3ec;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f3ec;padding:24px 0;">
+  // The charset declaration is not optional. Without it a mail client guesses,
+  // and every non-ASCII character in the product — the em-dashes and middots in
+  // this copy, and far more importantly an Arabic candidate or project name —
+  // arrives as mojibake. offerLetterHtml already declared one; nothing else did.
+  return `<!doctype html><html dir="ltr"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${title}</title></head>
+  <body style="margin:0;padding:0;background:${CANVAS};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${CANVAS};padding:24px 0;">
     <tr><td align="center">
-      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
-        <tr><td style="background:${INK};padding:18px 28px;">
-          <span style="color:${BRAND};font-weight:bold;font-size:16px;letter-spacing:.5px;">ARABTEC</span>
-          <span style="color:#ffffff;font-size:16px;"> &nbsp;Recruitment</span>
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;border:1px solid ${LINE};">
+        <tr><td style="height:3px;background:${BRAND};font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="padding:18px 28px 10px;border-bottom:1px solid ${LINE};">
+          <span style="color:${INK};font-weight:bold;font-size:16px;letter-spacing:.5px;">ARABTEC</span>
+          <span style="color:${MUT};font-size:16px;"> &nbsp;Recruitment</span>
         </td></tr>
         <tr><td style="padding:28px 28px 8px;">
           <h1 style="margin:0 0 14px;font-size:20px;color:${INK};">${title}</h1>
@@ -208,6 +223,145 @@ export function testEmail() {
     html: shell('Email is working', [
       p('This is a test message from the Arabtec Recruitment Hub.'),
       p('If you received this, the mailbox connection is set up correctly and the system can now send emails to candidates.'),
+    ].join('')),
+  };
+}
+
+/* ============================================================================
+   INTERNAL NOTIFICATIONS — staff, not candidates.
+   These carry a request or offer reference and a short "what to do next" line.
+   They deliberately do NOT carry salary: an internal alert lands in more inboxes
+   than the record itself is visible to, and the app already gates salary behind
+   offer.salary_view. Anyone entitled to the figure sees it on the record.
+   ========================================================================== */
+
+/** A compact reference block: ticket, role, project. Used by every request mail. */
+function refBlock(rows) {
+  const cells = rows
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => `
+      <tr>
+        <td style="padding:5px 0;font-size:12px;color:${MUT};width:132px;">${k}</td>
+        <td style="padding:5px 0;font-size:13px;color:${INK};font-weight:bold;">${v}</td>
+      </tr>`).join('');
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 16px;width:100%;
+    background:${CANVAS};border-radius:12px;padding:12px 14px;">${cells}</table>`;
+}
+
+/** The one call-to-action button. Green: it is the interactive colour. */
+function cta(label, url) {
+  if (!url) return '';
+  return `<p style="margin:18px 0 4px;">
+    <a href="${url}" style="background:${GREEN};color:#ffffff;text-decoration:none;
+       padding:12px 22px;border-radius:999px;font-size:14px;font-weight:bold;
+       display:inline-block;font-family:Arial,Helvetica,sans-serif;">${label}</a></p>`;
+}
+
+export function requestSubmitted({ ticketNo, title, project, headcount, requesterName, appUrl }) {
+  return {
+    subject: `Approval needed — ${ticketNo} ${title}`,
+    html: shell('A hiring request needs your approval', [
+      p(`<strong>${requesterName || 'A colleague'}</strong> submitted a hiring request and it is waiting on a decision.`),
+      refBlock([['Request', ticketNo], ['Position', title], ['Project', project],
+        ['Headcount', headcount], ['Raised by', requesterName]]),
+      p('Sourcing cannot start until this is approved.'),
+      cta('Review the request', appUrl),
+    ].join('')),
+  };
+}
+
+export function requestApproved({ ticketNo, title, project, headcount, approverName, appUrl }) {
+  return {
+    subject: `Approved — ${ticketNo} ${title}`,
+    html: shell('Hiring request approved', [
+      p(`<strong>${ticketNo} — ${title}</strong> has been approved${approverName ? ` by ${approverName}` : ''}. Sourcing can begin.`),
+      refBlock([['Request', ticketNo], ['Position', title], ['Project', project], ['Headcount', headcount]]),
+      cta('Open the request', appUrl),
+    ].join('')),
+  };
+}
+
+export function requestRejected({ ticketNo, title, project, reason, approverName, appUrl }) {
+  return {
+    subject: `Not approved — ${ticketNo} ${title}`,
+    html: shell('Hiring request not approved', [
+      p(`<strong>${ticketNo} — ${title}</strong> was not approved${approverName ? ` by ${approverName}` : ''}.`),
+      refBlock([['Request', ticketNo], ['Position', title], ['Project', project]]),
+      // The reason is the whole point of this email — never send it without one.
+      reason
+        ? `<p style="margin:0 0 12px;padding:12px 14px;border-left:3px solid ${BRAND};
+             background:#FCEEEF;font-size:14px;line-height:1.6;color:${INK};">
+             <strong style="display:block;margin-bottom:4px;">Reason</strong>${reason}</p>`
+        : p('No reason was recorded.'),
+      p('You can revise the request and submit it again.'),
+      cta('Open the request', appUrl),
+    ].join('')),
+  };
+}
+
+export function requestAssigned({ ticketNo, title, project, headcount, targetDate, appUrl }) {
+  return {
+    subject: `Assigned to you — ${ticketNo} ${title}`,
+    html: shell('You are now the recruiter on a request', [
+      p(`<strong>${ticketNo} — ${title}</strong> is yours to fill.`),
+      refBlock([['Request', ticketNo], ['Position', title], ['Project', project],
+        ['Headcount', headcount], ['Target joining', targetDate]]),
+      cta('Start sourcing', appUrl),
+    ].join('')),
+  };
+}
+
+/** Hold / resume / cancel / close / reopen all share one shape. */
+export function requestStatusChanged({ ticketNo, title, project, statusLabel, reason, actorName, appUrl }) {
+  return {
+    subject: `${statusLabel} — ${ticketNo} ${title}`,
+    html: shell(`Hiring request ${String(statusLabel || '').toLowerCase()}`, [
+      p(`<strong>${ticketNo} — ${title}</strong> is now <strong>${statusLabel}</strong>${actorName ? ` (${actorName})` : ''}.`),
+      refBlock([['Request', ticketNo], ['Position', title], ['Project', project], ['Status', statusLabel]]),
+      reason ? p(`<strong>Reason:</strong> ${reason}`) : '',
+      cta('Open the request', appUrl),
+    ].join('')),
+  };
+}
+
+export function offerPendingApproval({ offerNo, candidateName, position, ticketNo, appUrl }) {
+  return {
+    subject: `Offer approval needed — ${offerNo}`,
+    html: shell('An offer needs your approval', [
+      p(`An offer is waiting on your decision before it can be sent to the candidate.`),
+      refBlock([['Offer', offerNo], ['Candidate', candidateName], ['Position', position], ['Request', ticketNo]]),
+      p('Salary and terms are on the offer record, visible to those entitled to see them.'),
+      cta('Review the offer', appUrl),
+    ].join('')),
+  };
+}
+
+export function offerApproved({ offerNo, candidateName, position, approverName, appUrl }) {
+  return {
+    subject: `Offer approved — ${offerNo} ${candidateName}`,
+    html: shell('Offer approved', [
+      p(`The offer for <strong>${candidateName}</strong> has been approved${approverName ? ` by ${approverName}` : ''} and can now be sent.`),
+      refBlock([['Offer', offerNo], ['Candidate', candidateName], ['Position', position]]),
+      cta('Send the offer', appUrl),
+    ].join('')),
+  };
+}
+
+/** Accepted / declined. `accepted` drives the wording and the accent. */
+export function offerOutcome({ offerNo, candidateName, position, ticketNo, accepted, joiningDate, reason, appUrl }) {
+  const good = !!accepted;
+  return {
+    subject: `${good ? 'Offer accepted' : 'Offer declined'} — ${candidateName}`,
+    html: shell(good ? 'Offer accepted' : 'Offer declined', [
+      p(good
+        ? `<strong>${candidateName}</strong> accepted the offer${position ? ` for ${position}` : ''}.`
+        : `<strong>${candidateName}</strong> declined the offer${position ? ` for ${position}` : ''}. The seat is still open.`),
+      refBlock([['Offer', offerNo], ['Candidate', candidateName], ['Position', position],
+        ['Request', ticketNo], [good ? 'Joining' : 'Reason', good ? joiningDate : reason]]),
+      p(good
+        ? 'Joining formalities follow. The seat is reserved against the request until the candidate joins.'
+        : 'Consider re-opening sourcing or advancing another shortlisted candidate.'),
+      cta('Open the request', appUrl),
     ].join('')),
   };
 }

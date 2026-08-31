@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { randomBytes } from 'node:crypto';
 import { ensureSchema } from '../src/lib/schema.js';
+import { NOTIFICATION_EVENTS } from '../src/lib/notification-catalog.js';
 import { get, run, all } from '../src/lib/db.js';
 import {
   PERMISSIONS, ROLES, ROLE_PERMISSIONS, BUTTONS, DEFAULT_BRANDING,
@@ -211,6 +212,22 @@ async function main(opts = {}) {
       [buttonKey, label, screen, requiredPermission, confirm ? 1 : 0, reason ? 1 : 0, audit ? 1 : 0]);
   }
   log(`${BUTTONS.length} button configs`);
+
+  // 10b. Notification settings — one row per catalog event, inserted only if the
+  // key is new. An administrator's choice to switch an email off is never
+  // overwritten by a later release that re-runs the seed.
+  let notifAdded = 0;
+  for (const e of NOTIFICATION_EVENTS) {
+    const ex = get('SELECT id FROM notification_config WHERE event_key=?', [e.key]);
+    if (!ex) {
+      run(`INSERT INTO notification_config (event_key, enabled, in_app, email, recipients)
+           VALUES (?,?,?,?,?)`,
+        [e.key, e.defaults.enabled ? 1 : 0, e.defaults.inApp ? 1 : 0,
+         e.defaults.email ? 1 : 0, JSON.stringify(e.defaults.recipients || [])]);
+      notifAdded += 1;
+    }
+  }
+  log(`${NOTIFICATION_EVENTS.length} notification events (${notifAdded} new)`);
 
   // 11. Workflow settings
   const workflows = [

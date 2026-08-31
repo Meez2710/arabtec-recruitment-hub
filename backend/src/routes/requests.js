@@ -2,7 +2,7 @@ import { Router } from 'express';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
   Projects, Sites, Departments, BusinessUnits, Users, SystemSettings, Posts, Applications,
-  Candidates,
+  Candidates, HardDelete,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -10,9 +10,38 @@ import { all, tx } from '../lib/db.js';
 import { reconcileSeatsForHeadcount, ReconcileConflict } from '../lib/seat-reconciliation.js';
 import { multipart, streamFile } from '../lib/upload.js';
 import { REQ, reqNorm, REQ_LABELS } from '../lib/stages.js';
-import { notifyUser, notifyByPermission } from '../lib/notify.js';
+import { notifyUser, notifyByPermission, notifyEvent } from '../lib/notify.js';
 import { suggestCandidates } from '../lib/ai/recruiter-ai.js';
 import fs from 'node:fs';
+
+/**
+ * Assemble the people a request notification can reach, plus the variables its
+ * template needs. Resolved once per event so the dispatcher never has to know
+ * anything about recruitment_request's column names.
+ *
+ * The link is built from CORS_ORIGINS' first entry — the app's own public
+ * origin. Absent (local dev), templates simply omit the button rather than
+ * emitting a dead localhost link into somebody's inbox.
+ */
+function requestNotifyCtx(r, actor, extraVars = {}) {
+  const originList = String(process.env.CORS_ORIGINS || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const origin = originList.find((o) => /^https?:\/\//.test(o) && !/localhost|127\.0\.0\.1/.test(o));
+  const project = r.project_id ? Projects.byId(r.project_id) : null;
+  return {
+    actor,
+    requester: r.requester_id ? Users.byId(r.requester_id) : null,
+    owner: r.owner_id ? Users.byId(r.owner_id) : null,
+    hiringManager: r.hiring_manager_id ? Users.byId(r.hiring_manager_id) : null,
+    linkType: 'request', linkId: r.id,
+    vars: {
+      ticketNo: r.ticket_no, title: r.title,
+      project: project ? project.name : null,
+      headcount: r.headcount, targetDate: r.target_join_date,
+      appUrl: origin ? `${origin}/` : null,
+      ...extraVars,
+    },
+  };
+}
 
 /**
  * Deterministic failure injection for the BL-04 suite. Inert in production:
@@ -340,12 +369,13 @@ router.post('/:id/submit', requirePermission('request.submit'), (req, res) => {
   RequestActivity.add(r.id, req.user, 'submitted', { fromStatus: r.status, toStatus: STATUS.PENDING, note: 'Submitted for approval' });
   Posts.system(r.id, 'Request submitted for HR Director approval.', { event: 'submitted' }, req.user);
   writeAudit(req, { action: 'request.submitted', entityType: 'recruitment_request', entityId: r.id });
-  // Notify everyone who can approve (in-app + email), except the submitter.
-  notifyByPermission('request.approve', {
-    type: 'approval_needed', title: `Approval needed: ${r.ticket_no} — ${r.title}`,
+  // Notify everyone who can approve. Routed through the console; the dispatcher
+  // resolves 'approvers' via request.approve and drops the submitter itself.
+  notifyEvent('request.submitted', {
+    ...requestNotifyCtx(r, req.user, { requesterName: req.user.fullName }),
+    title: `Approval needed: ${r.ticket_no} — ${r.title}`,
     body: `${req.user.fullName} submitted a recruitment request that needs your approval.`,
-    linkType: 'request', linkId: r.id,
-  }, { excludeUserId: req.user.id });
+  });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
@@ -364,6 +394,11 @@ router.post('/:id/approve', requirePermission('request.approve'), (req, res) => 
     Requests.setStatus(r.id, STATUS.APPROVED);
     RequestActivity.add(r.id, req.user, 'status_changed', { toStatus: STATUS.APPROVED, note: 'Approved by HR Director' });
     Posts.system(r.id, 'Request approved by HR Director.', { event: 'approved' }, req.user);
+    notifyEvent('request.approved', {
+      ...requestNotifyCtx(r, req.user, { approverName: req.user.fullName }),
+      title: `Approved: ${r.ticket_no} — ${r.title}`,
+      body: `${req.user.fullName} approved this request. Sourcing can begin.`,
+    });
   }
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
@@ -380,6 +415,11 @@ router.post('/:id/reject', requirePermission('request.reject'), (req, res) => {
   RequestActivity.add(r.id, req.user, 'rejected', { fromStatus: r.status, toStatus: STATUS.REJECTED, note: reason });
   Posts.system(r.id, `Request rejected: ${reason}`, { event: 'rejected' }, req.user);
   writeAudit(req, { action: 'request.rejected', entityType: 'recruitment_request', entityId: r.id, comments: reason });
+  notifyEvent('request.rejected', {
+    ...requestNotifyCtx(r, req.user, { reason, approverName: req.user.fullName }),
+    title: `Not approved: ${r.ticket_no} — ${r.title}`,
+    body: reason,
+  });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
@@ -400,11 +440,12 @@ router.post('/:id/assign', requirePermission('request.assign_recruiter'), (req, 
   RequestActivity.add(r.id, req.user, 'assigned', { note: `Assigned to ${owner.full_name}` });
   Posts.system(r.id, `Recruiter assigned: ${owner.full_name}.`, { event: 'assigned', ownerId }, req.user);
   writeAudit(req, { action: 'request.recruiter_assigned', entityType: 'recruitment_request', entityId: r.id, newValue: { ownerId } });
-  // Notify the assigned recruiter (in-app + email).
-  if (owner.id !== req.user.id) notifyUser(owner, {
-    type: 'recruiter_assigned', title: `You’ve been assigned: ${r.ticket_no} — ${r.title}`,
+  // Notify the assigned recruiter. Routed through the console so an administrator
+  // can turn it off, rather than being hardcoded as it was.
+  notifyEvent('request.assigned', {
+    ...requestNotifyCtx(Requests.byId(r.id), req.user),
+    title: `You’ve been assigned: ${r.ticket_no} — ${r.title}`,
     body: `${req.user.fullName} assigned you as the recruiter for this request. Start sourcing candidates.`,
-    linkType: 'request', linkId: r.id,
   });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
@@ -420,6 +461,11 @@ router.post('/:id/hold', requirePermission('request.hold'), (req, res) => {
   Requests.setStatus(r.id, STATUS.ON_HOLD, { close_reason: null, prev_status: r.status });
   RequestActivity.add(r.id, req.user, 'on_hold', { fromStatus: r.status, toStatus: STATUS.ON_HOLD, note: reason });
   writeAudit(req, { action: 'request.on_hold', entityType: 'recruitment_request', entityId: r.id, comments: reason });
+  notifyEvent('request.on_hold', {
+    ...requestNotifyCtx(r, req.user, { statusLabel: 'On hold', reason: typeof reason !== 'undefined' ? reason : null }),
+    title: `On hold: ${r.ticket_no} — ${r.title}`,
+    body: `${req.user.fullName} set this request to on hold.`,
+  });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
@@ -432,6 +478,11 @@ router.post('/:id/resume', requirePermission('request.hold'), (req, res) => {
   Requests.setStatus(r.id, prev, { prev_status: null });
   RequestActivity.add(r.id, req.user, 'resumed', { fromStatus: STATUS.ON_HOLD, toStatus: prev, note: 'Resumed' });
   writeAudit(req, { action: 'request.resumed', entityType: 'recruitment_request', entityId: r.id });
+  notifyEvent('request.resumed', {
+    ...requestNotifyCtx(r, req.user, { statusLabel: 'Resumed', reason: null }),
+    title: `Resumed: ${r.ticket_no} — ${r.title}`,
+    body: `${req.user.fullName} set this request to resumed.`,
+  });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
@@ -446,6 +497,11 @@ router.post('/:id/cancel', requirePermission('request.cancel'), (req, res) => {
   Requests.setStatus(r.id, STATUS.CANCELLED, { closed_at: new Date().toISOString(), close_reason: 'cancelled' });
   RequestActivity.add(r.id, req.user, 'cancelled', { fromStatus: r.status, toStatus: STATUS.CANCELLED, note: reason });
   writeAudit(req, { action: 'request.cancelled', entityType: 'recruitment_request', entityId: r.id, comments: reason });
+  notifyEvent('request.cancelled', {
+    ...requestNotifyCtx(r, req.user, { statusLabel: 'Cancelled', reason: typeof reason !== 'undefined' ? reason : null }),
+    title: `Cancelled: ${r.ticket_no} — ${r.title}`,
+    body: `${req.user.fullName} set this request to cancelled.`,
+  });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
@@ -462,6 +518,11 @@ router.post('/:id/close', requirePermission('request.close'), (req, res) => {
   Requests.setStatus(r.id, STATUS.CLOSED, { closed_at: new Date().toISOString(), close_reason: closeReason });
   RequestActivity.add(r.id, req.user, 'closed', { fromStatus: r.status, toStatus: STATUS.CLOSED, note: `${reason} (${closeReason})` });
   writeAudit(req, { action: 'request.closed', entityType: 'recruitment_request', entityId: r.id, comments: reason, newValue: { closeReason } });
+  notifyEvent('request.closed', {
+    ...requestNotifyCtx(r, req.user, { statusLabel: 'Closed', reason: typeof reason !== 'undefined' ? reason : null }),
+    title: `Closed: ${r.ticket_no} — ${r.title}`,
+    body: `${req.user.fullName} set this request to closed.`,
+  });
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
@@ -688,5 +749,55 @@ router.post('/:id/suggest-candidates', requirePermission('candidate.view'), asyn
   });
 });
 
+
+/* ===================== DELETE =====================
+   The `request.delete` permission and its button have existed since the first
+   release; the endpoint never did, so the button had nothing to call. This is
+   it.
+
+   Deliberately heavy. Every table that references a request cascades, so this
+   destroys the applications, interviews, offers, seats, approvals, activity and
+   the whole ticket conversation along with it. Closing or cancelling is almost
+   always what someone actually wants — deletion is for records raised in error.
+   Hence: an explicit permission, a written reason, an acknowledgement of the
+   blast radius when there is one, and an audit entry written first. */
+router.get('/:id/delete-impact', requirePermission('request.delete'), (req, res) => {
+  const r = Requests.byId(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Request not found.' });
+  const cascaded = HardDelete.requestCounts(r.id);
+  res.json({
+    ticketNo: r.ticket_no, title: r.title, status: r.status, cascaded,
+    // A request nobody has worked yet is the safe case. Anything else is not.
+    destructive: cascaded.applications > 0 || cascaded.interviews > 0 || cascaded.offers > 0,
+  });
+});
+
+router.delete('/:id', requirePermission('request.delete'), (req, res) => {
+  const r = Requests.byId(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Request not found.' });
+
+  const body = req.body || {};
+  const reason = String(body.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'A reason is required to delete a request.' });
+
+  const cascaded = HardDelete.requestCounts(r.id);
+  const destructive = cascaded.applications > 0 || cascaded.interviews > 0 || cascaded.offers > 0;
+  // Refuse to quietly destroy real work. The caller must say it understands what
+  // goes with it — a confirm dialog the API enforces rather than trusts the UI for.
+  if (destructive && body.acknowledgeCascade !== true) {
+    return res.status(409).json({
+      error: 'This request has linked records. Confirm the cascade to delete it.',
+      code: 'CASCADE_NOT_ACKNOWLEDGED', cascaded,
+    });
+  }
+
+  writeAudit(req, {
+    action: 'request.deleted', entityType: 'recruitment_request', entityId: r.id,
+    oldValue: { ticketNo: r.ticket_no, title: r.title, status: r.status, headcount: r.headcount, cascaded },
+    comments: reason,
+  });
+  HardDelete.request(r.id);
+  res.json({ deleted: true, ticketNo: r.ticket_no, cascaded });
+});
 
 export default router;
