@@ -5,6 +5,7 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { notifyEvent } from '../lib/notify.js';
 import { hasOpenSeat, applicationAlreadyFilledSeat } from '../lib/vacancy.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import { APP, appNorm } from '../lib/stages.js';
@@ -172,8 +173,44 @@ router.post('/:id/submit', requirePermission('offer.create'), (req, res) => {
   Offers.setStatus(o.id, 'pending_approval');
   OfferActivity.add(o.id, req.user, 'submitted', { fromStatus: 'draft', toStatus: 'pending_approval', note: 'Submitted for approval' });
   writeAudit(req, { action: 'offer.submitted', entityType: 'offer', entityId: o.id });
+  notifyEvent('offer.pending_approval', {
+    ...offerNotifyCtx(o, req.user),
+    title: `Offer approval needed: ${o.offer_no}`,
+    body: 'An offer is waiting on your decision before it can be sent.',
+  });
   res.json({ offer: serialize(Offers.byId(o.id), req.user, { detail: true }) });
 });
+
+/**
+ * Assemble the people an offer notification can reach. The offer's own request
+ * supplies requester / owner / hiring manager, so the same symbolic recipients
+ * an administrator ticks for a hiring request mean the same thing here.
+ *
+ * Salary is deliberately NOT passed to any internal template: an alert reaches
+ * more inboxes than the offer record is visible to, and offer.salary_view exists
+ * precisely to keep that figure on the record.
+ */
+function offerNotifyCtx(o, actor, extraVars = {}) {
+  const originList = String(process.env.CORS_ORIGINS || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const origin = originList.find((x) => /^https?:\/\//.test(x) && !/localhost|127\.0\.0\.1/.test(x));
+  const request = (() => { try { return Requests.byId(o.request_id); } catch { return null; } })();
+  const cand = (() => { try { return Candidates.byId(o.candidate_id); } catch { return null; } })();
+  const u = (id) => { try { return id ? Users.byId(id) : null; } catch { return null; } };
+  return {
+    actor,
+    candidate: cand,
+    requester: request ? u(request.requester_id) : null,
+    owner: request ? u(request.owner_id) : null,
+    hiringManager: request ? u(request.hiring_manager_id) : null,
+    linkType: 'offer', linkId: o.id,
+    vars: {
+      offerNo: o.offer_no, candidateName: cand ? cand.full_name : null,
+      position: o.position_title, ticketNo: request ? request.ticket_no : null,
+      appUrl: origin ? `${origin}/` : null,
+      ...extraVars,
+    },
+  };
+}
 
 /* ---------------- APPROVE / REJECT (approver) ---------------- */
 router.post('/:id/approve', requirePermission('offer.approve'), (req, res) => {
@@ -197,6 +234,11 @@ router.post('/:id/approve', requirePermission('offer.approve'), (req, res) => {
     Offers.setApprovedBy(o.id, req.user.id);
     OfferActivity.add(o.id, req.user, 'status_changed', { toStatus: 'approved', note: 'All approvals complete' });
     writeAudit(req, { action: 'offer.approved', entityType: 'offer', entityId: o.id });
+    notifyEvent('offer.approved', {
+      ...offerNotifyCtx(o, req.user, { approverName: req.user.fullName }),
+      title: `Offer approved: ${o.offer_no}`,
+      body: 'The offer cleared approval and can now be sent.',
+    });
   }
   res.json({ offer: serialize(Offers.byId(o.id), req.user, { detail: true }) });
 });
@@ -232,18 +274,23 @@ router.post('/:id/send', requirePermission('offer.send'), (req, res) => {
   writeAudit(req, { action: 'offer.sent', entityType: 'offer', entityId: o.id });
   // Email the candidate (best-effort, non-blocking; no-ops until email is configured).
   const cand = Candidates.byId(o.candidate_id);
-  if (cand?.email) {
-    const tpl = offerSentTpl({
-      candidateName: cand.full_name,
-      position: o.position_title,
-      salary: o.salary_offered,
-      allowances: 0,
-      offerDate: o.created_at,
-      totalSalary: o.salary_offered,
-    });
-    sendMail({ to: cand.email, subject: tpl.subject, html: tpl.html })
-      .then((r) => { if (r.ok) CandidateActivity.add({ candidateId: cand.id, applicationId: o.application_id, actorId: req.user.id, actorName: 'System', type: 'email_sent', note: 'Offer email sent' }); })
-      .catch(() => {});
+  // Routed through the console so an administrator can see and control the one
+  // email in this product that goes to a candidate with money in it. The salary
+  // IS included here — unlike the internal alerts — because this is the offer
+  // letter itself, addressed to the person it concerns.
+  const sentOut = notifyEvent('offer.sent', {
+    ...offerNotifyCtx(o, req.user, {
+      salary: o.salary_offered, allowances: 0,
+      offerDate: o.created_at, totalSalary: o.salary_offered,
+    }),
+    title: `Offer sent: ${o.offer_no}`,
+    body: `The offer letter went to ${cand ? cand.full_name : 'the candidate'}.`,
+  });
+  if (sentOut.sent && cand) {
+    try {
+      CandidateActivity.add({ candidateId: cand.id, applicationId: o.application_id,
+        actorId: req.user.id, actorName: 'System', type: 'email_sent', note: 'Offer email sent' });
+    } catch { /* the activity note must never fail the send */ }
   }
   res.json({ offer: serialize(Offers.byId(o.id), req.user, { detail: true }) });
 });
@@ -261,6 +308,11 @@ router.post('/:id/result', requirePermission('offer.result_update'), (req, res) 
     // Application stays at Offer Sent on acceptance; it advances to Joined on the join step.
     OfferActivity.add(o.id, req.user, 'accepted', { toStatus: 'accepted' });
     writeAudit(req, { action: 'offer.accepted', entityType: 'offer', entityId: o.id });
+    notifyEvent('offer.accepted', {
+      ...offerNotifyCtx(o, req.user, { accepted: true, joiningDate: o.joining_date }),
+      title: `Offer accepted: ${o.offer_no}`,
+      body: 'The candidate accepted. Joining formalities follow.',
+    });
   } else if (result === 'rejected_by_candidate') {
     if (!['sent', 'accepted'].includes(o.status)) return res.status(409).json({ error: 'Offer is not in a state the candidate can reject.' });
     if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required.' });
@@ -273,6 +325,11 @@ router.post('/:id/result', requirePermission('offer.result_update'), (req, res) 
     }
     OfferActivity.add(o.id, req.user, 'rejected_by_candidate', { toStatus: 'rejected_by_candidate', note: reason });
     writeAudit(req, { action: 'offer.rejected_by_candidate', entityType: 'offer', entityId: o.id, comments: reason });
+    notifyEvent('offer.declined', {
+      ...offerNotifyCtx(o, req.user, { accepted: false, reason }),
+      title: `Offer declined: ${o.offer_no}`,
+      body: reason,
+    });
   } else if (result === 'withdrawn') {
     if (['joined', 'withdrawn', 'rejected_by_candidate'].includes(o.status)) return res.status(409).json({ error: 'Offer cannot be withdrawn in its current state.' });
     if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required.' });
@@ -325,13 +382,29 @@ router.get('/:id/preview', requirePermission('offer.view'), (req, res) => {
   const o = Offers.byId(Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Offer not found.' });
   const cand = Candidates.byId(o.candidate_id);
+  // The salary BREAKDOWN (basic / accommodation / transportation / others, and
+  // an area allowance on some offers) is what the signed letters actually show,
+  // and it varies per offer. It is held in `benefits`, which the schema already
+  // documents as "JSON or text". A plain-text or absent value falls back to the
+  // single salary figure rather than rendering an empty table.
+  let components = null;
+  try {
+    const parsed = o.benefits ? JSON.parse(o.benefits) : null;
+    if (Array.isArray(parsed?.components)) components = parsed.components;
+    else if (Array.isArray(parsed)) components = parsed;
+  } catch { components = null; }
+
   const html = offerLetterHtml({
+    refNo: o.offer_no,
+    offerDate: o.created_at,
     candidateName: cand?.full_name,
+    titlePrefix: cand?.title || null,
     position: o.position_title,
+    currency: o.currency || 'EGP',
+    components,
+    totalNet: components ? null : o.salary_offered,
     salary: o.salary_offered,
     allowances: 0,
-    offerDate: o.created_at,
-    offerNo: o.offer_no,
   });
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);

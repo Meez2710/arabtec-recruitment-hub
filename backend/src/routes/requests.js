@@ -606,6 +606,11 @@ router.post('/:id/reopen', requirePermission('request.reopen'), (req, res) => {
 
       return { restored: reusable.length, created: Math.max(missing, 0) };
     });
+    notifyEvent('request.reopened', {
+      ...requestNotifyCtx(r, req.user, { statusLabel: 'Reopened', reason: reason || null }),
+      title: `Reopened: ${r.ticket_no} — ${r.title}`,
+      body: `${req.user.fullName} reopened this request. Sourcing can resume.`,
+    });
     return res.json({
       request: serialize(Requests.byId(r.id), req.user, { withDetail: true }),
       seats: result,

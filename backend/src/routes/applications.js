@@ -211,6 +211,15 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
     boundary(8);
     return app;
   });
+  // Acknowledgement to the candidate. Fired outside the transaction — an email
+  // must never be able to roll back a link — and off by default, because a
+  // recruiter sourcing someone is not the same as that person applying.
+  notifyEvent('candidate.application_received', {
+    actor: req.user, candidate,
+    linkType: 'candidate', linkId: candidate.id,
+    vars: { candidateName: candidate.full_name, position: (() => { try { return Requests.byId(requestId)?.title; } catch { return null; } })() },
+    title: 'Application received',
+  });
   res.status(201).json({ application: appOut(created, req.user) });
 });
 

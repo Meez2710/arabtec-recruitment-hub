@@ -123,12 +123,10 @@ export const NOTIFICATION_EVENTS = [
     template: 'interviewInvite',
     defaults: { enabled: true, inApp: true, email: true, recipients: ['candidate', 'panel'] },
   },
-  {
-    key: 'interview.feedback_due', label: 'Interview feedback outstanding', category: 'Interviews',
-    description: 'The interview happened but no scorecard has been submitted.',
-    template: null,
-    defaults: { enabled: true, inApp: true, email: false, recipients: ['panel'] },
-  },
+  // NOTE: an "interview feedback outstanding" reminder belongs here, but it is a
+  // DERIVED state (completed interview + no scorecard), not an event any route
+  // fires. It needs a scheduled sweep, which this product does not have yet.
+  // Deliberately absent rather than shipped as a checkbox that can never fire.
 
   // ----------------------------------------------------------------- offers
   {
