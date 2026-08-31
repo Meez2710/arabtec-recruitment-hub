@@ -81,6 +81,10 @@ export const ROLE_PERMISSIONS = {
   hr_director: [
     'dashboard.view', 'request.view_all', 'request.approve', 'request.reject',
     'request.budget_approve', 'request.cancel', 'request.close',
+    // Widened: a director can now assign/reassign a recruiter and put a
+    // request on hold/resume it directly, not just approve it — the same
+    // authority hr_manager and recruitment_manager already hold.
+    'request.assign_recruiter', 'request.hold',
     'candidate.view', 'candidate.privacy', 'salary.view',
     'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
     'interview.view_all', 'report.export', 'audit.view', 'org.manage',

@@ -955,6 +955,11 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   // Self-service password change, reachable from the user menu.
   const [pwdOpen, setPwdOpen] = useState(false);
   const [route, setRoute] = useState('dashboard');
+  // The params a dashboard card (or any other cross-page jump) handed to the
+  // destination page — e.g. { priority: 'critical' } for "Critical roles".
+  // Reset to null on every navigation that doesn't supply one, so a stale
+  // filter from a previous jump can never leak into an unrelated visit.
+  const [routeParams, setRouteParams] = useState(null);
   const [collapsed, setCollapsed] = useState(branding?.sidebar_mode === 'collapsed');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);   // drawer, <=900px
   const [moreOpen, setMoreOpen] = useState(false);             // bottom-sheet "More"
@@ -981,7 +986,12 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   }, []);
 
   // Any route change closes the mobile chrome, so a drawer never survives a jump.
-  const go = useCallback((r) => { setRoute(r); setMobileNavOpen(false); setMoreOpen(false); }, []);
+  // `params` is optional and destination-specific — a dashboard card passes the
+  // filter it wants the landing page pre-scoped to; a plain nav click passes
+  // nothing, which clears whatever the previous jump left behind.
+  const go = useCallback((r, params = null) => {
+    setRoute(r); setRouteParams(params); setMobileNavOpen(false); setMoreOpen(false);
+  }, []);
 
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
   const navItems = visibleNav.filter((n) => !n.section);
@@ -992,11 +1002,11 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const Page = {
     dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} />,
     reports: <ReportsPage user={user} />,
-    requests: <RequestsPage user={user} />,
-    candidates: <CandidatesPage user={user} onNavigate={go} />,
+    requests: <RequestsPage user={user} initialFilters={route === 'requests' ? routeParams : null} />,
+    candidates: <CandidatesPage user={user} onNavigate={go} initialFilters={route === 'candidates' ? routeParams : null} />,
     candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <div className="error-banner">Candidate Review module failed to load.</div>,
-    interviews: <InterviewsPage user={user} />,
-    offers: <OffersPage user={user} />,
+    interviews: <InterviewsPage user={user} initialFilters={route === 'interviews' ? routeParams : null} />,
+    offers: <OffersPage user={user} initialFilters={route === 'offers' ? routeParams : null} />,
     users: can(user, 'user.manage')
       ? <UsersPage user={user} />
       : <Forbidden what="User Management" need="System Admin" />,
@@ -1409,14 +1419,20 @@ function DashHead({ eyebrow, title, sub, actions }) {
   );
 }
 
-function KpiCard({ label, value, meta, tone }) {
-  return (
-    <div className={'dash-kpi' + (tone ? ' ' + tone : '')}>
-      <span className="dash-kpi-label">{label}</span>
-      <div className="dash-kpi-val">{value}</div>
-      <div className="dash-kpi-hint">{meta}</div>
-    </div>
-  );
+// `onClick` is optional. Present, this renders as a real button — keyboard-
+// reachable, screen-reader-announced, with the same hover lift the ticket
+// cards use. Absent, it renders exactly as before: a plain div, no pointer
+// cursor. A card that looks clickable and isn't is worse than one that looks
+// inert, so the two states are never allowed to look alike.
+function KpiCard({ label, value, meta, tone, onClick }) {
+  const cls = 'dash-kpi' + (tone ? ' ' + tone : '') + (onClick ? ' dash-kpi-link' : '');
+  const body = <>
+    <span className="dash-kpi-label">{label}</span>
+    <div className="dash-kpi-val">{value}</div>
+    <div className="dash-kpi-hint">{meta}</div>
+  </>;
+  if (!onClick) return <div className={cls}>{body}</div>;
+  return <button type="button" className={cls} onClick={onClick}>{body}</button>;
 }
 
 /* One row of "what is waiting on you": the signal, what it is, why it matters,
@@ -1488,8 +1504,11 @@ function fmtWhen(iso) {
    compositions that show them. */
 function useDashboardData(user, persona, sharedDash) {
   const [state, setState] = useState({ loading: true, err: null, d: null, requests: [], interviews: [] });
-  useEffect(() => {
-    let live = true;
+  // Exposed as `reload` so a persona composition that mutates something the
+  // dashboard shows (Assign, Pause…) can pull the fresh numbers back in,
+  // rather than leaving the KPIs and tables stale until the next full visit.
+  const reload = useCallback(() => {
+    let cancelled = false;
     // `sharedDash` is the /dashboard payload the Shell already fetched for the
     // sidebar counts. Reusing it is the difference between one call and two.
     const wantsDashboard = !sharedDash && can(user, 'dashboard.view') && persona !== 'interviewer';
@@ -1503,16 +1522,17 @@ function useDashboardData(user, persona, sharedDash) {
       wantsRequests ? api.get('/requests?pageSize=100').catch(() => null) : null,
       wantsInterviews ? api.get('/interviews').catch(() => null) : null,
     ]).then(([d, rq, iv]) => {
-      if (!live) return;
+      if (cancelled) return;
       if (d && d.__err) { setState({ loading: false, err: d.__err, d: null, requests: [], interviews: [] }); return; }
       setState({
         loading: false, err: null, d: d || sharedDash || null,
         requests: (rq && rq.requests) || [], interviews: (iv && iv.interviews) || [],
       });
     });
-    return () => { live = false; };
-  }, [persona, !!sharedDash]);
-  return state;
+    return () => { cancelled = true; };
+  }, [user.id, persona, !!sharedDash]);
+  useEffect(reload, [reload]);
+  return { ...state, reload };
 }
 
 function DashboardSkeleton() {
@@ -1533,7 +1553,11 @@ function DashboardSkeleton() {
 /* --------------------------------- RECRUITER ------------------------------ */
 function RecruiterDashboard({ user, data, onNavigate }) {
   const { d, requests, interviews } = data;
-  const mine = requests.filter((r) => isOpenReq(r) && (r.ownerId === user.id || r.requesterId === user.id || r.ownerId == null));
+  // `ownerId == null` used to be included here, which put every unassigned
+  // request in the ORG under "My roles" for every recruiter — unassigned work
+  // is the manager's queue to route, not something already on a recruiter's
+  // desk. Genuinely theirs only: they own it, or they raised it.
+  const mine = requests.filter((r) => isOpenReq(r) && (r.ownerId === user.id || r.requesterId === user.id));
   const owned = requests.filter((r) => isOpenReq(r) && r.ownerId === user.id);
   const scheduled = interviews.filter((i) => i.status === 'scheduled');
   const thisWeek = scheduled.filter((i) => { const n = daysUntil(i.scheduledAt); return n != null && n >= 0 && n <= 7; })
@@ -1545,38 +1569,45 @@ function RecruiterDashboard({ user, data, onNavigate }) {
   const overdue = feedbackDue.length + stalled.length;
   const todays = scheduled.filter((i) => isToday(i.scheduledAt));
 
+  // Every CTA below opens the exact record it names — an interview via its id
+  // (InterviewsPage's `openId` initialFilters key), a request via the existing
+  // openRequest() deep-link. Nothing here lands on a generic, unfiltered list.
   const actions = [];
   for (const i of feedbackDue.slice(0, 3)) {
     actions.push({ tone: 'risk', title: `Submit interview feedback — ${(i.candidate || {}).fullName || 'Candidate'}`,
       meta: `${(i.request || {}).title || 'Role'} · ${i.interviewNo}`, why: 'Blocks the hiring decision',
-      cta: 'Open', go: 'interviews' });
+      cta: 'Open', onCta: () => onNavigate('interviews', { openId: i.id }) });
   }
   for (const r of stalled.slice(0, 3)) {
     actions.push({ tone: 'risk', title: `Escalate ${shortReqCode(r.ticketNo)} — ${r.title}`,
       meta: `${(r.pipeline || {}).total || 0} in pipeline · open ${(r.health || {}).daysOpen ?? '—'} days`,
-      why: r.slaBreached ? 'SLA breached' : 'Target join date at risk', cta: 'Open role', go: 'requests' });
+      why: r.slaBreached ? 'SLA breached' : 'Target join date at risk', cta: 'Open role', onCta: () => openRequest(r.id, onNavigate) });
   }
   for (const r of noPipeline.slice(0, 2)) {
     actions.push({ tone: 'warn', title: `No candidates yet — ${r.title}`,
       meta: `${shortReqCode(r.ticketNo)} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'} to fill`,
-      why: 'Sourcing has not started', cta: 'Source', go: 'requests' });
+      why: 'Sourcing has not started', cta: 'Source', onCta: () => openRequest(r.id, onNavigate) });
   }
   for (const i of thisWeek.slice(0, 2)) {
     actions.push({ tone: 'warn', title: `Confirm panel — ${(i.candidate || {}).fullName || 'Candidate'}`,
       meta: `${(i.request || {}).title || 'Role'} · ${fmtWhen(i.scheduledAt)}`,
-      why: 'Interview this week', cta: 'Open', go: 'interviews' });
+      why: 'Interview this week', cta: 'Open', onCta: () => onNavigate('interviews', { openId: i.id }) });
   }
   if (d && d.myWork.myPendingOfferApprovals) {
     actions.push({ tone: 'warn', title: `${d.myWork.myPendingOfferApprovals} offer approval${d.myWork.myPendingOfferApprovals === 1 ? '' : 's'} waiting`,
-      meta: 'Offers held for a decision', why: 'Waiting on you', cta: 'Open offers', go: 'offers' });
+      meta: 'Offers held for a decision', why: 'Waiting on you', cta: 'Open offers', onCta: () => onNavigate('offers', { status: 'pending_approval' }) });
   }
   for (const r of attention.slice(0, 2)) {
     actions.push({ tone: 'good', title: `Keep ${shortReqCode(r.ticketNo)} moving`,
       meta: `${r.title} · ${(r.pipeline || {}).total || 0} in pipeline`,
-      why: (r.health || {}).label || 'Needs attention', cta: 'Open role', go: 'requests' });
+      why: (r.health || {}).label || 'Needs attention', cta: 'Open role', onCta: () => openRequest(r.id, onNavigate) });
   }
 
   const healthy = owned.length - stalled.length - attention.length;
+  const offerCount = (statuses) => (d ? (d.offersByStatus || []).filter((o) => statuses.includes(o.status)).reduce((s, o) => s + o.count, 0) : 0);
+  // `d` for a recruiter is already scoped to their own requests (request.view_own),
+  // so this is already "my offers to issue" — no extra client filter needed.
+  const offersToIssue = offerCount(['draft', 'approved']);
 
   return (
     <div>
@@ -1589,11 +1620,17 @@ function RecruiterDashboard({ user, data, onNavigate }) {
 
       <div className="dash-kpi-row">
         <KpiCard label="Overdue actions" value={overdue} tone={overdue ? 'kpi-risk' : ''}
-          meta={stalled.length ? `Oldest role open ${Math.max(...stalled.map((r) => (r.health || {}).daysOpen || 0))} days` : 'Nothing overdue'} />
+          meta={stalled.length ? `Oldest role open ${Math.max(...stalled.map((r) => (r.health || {}).daysOpen || 0))} days` : 'Nothing overdue'}
+          onClick={() => onNavigate('interviews', { status: 'completed' })} />
         <KpiCard label="Interviews this week" value={thisWeek.length}
-          meta={thisWeek.length ? `Next: ${fmtWhen(thisWeek[0].scheduledAt)}` : 'None scheduled'} />
+          meta={thisWeek.length ? `Next: ${fmtWhen(thisWeek[0].scheduledAt)}` : 'None scheduled'}
+          onClick={() => onNavigate('interviews', { thisWeek: true })} />
         <KpiCard label="Assigned open roles" value={owned.length}
-          meta={`${owned.filter((r) => r.priority === 'critical').length} critical · ${attention.length} need attention`} />
+          meta={`${owned.filter((r) => r.priority === 'critical').length} critical · ${attention.length} need attention`}
+          onClick={() => onNavigate('requests', { owner: String(user.id) })} />
+        <KpiCard label="Offers to issue" value={offersToIssue}
+          meta={d?.myWork.myPendingOfferApprovals ? `${d.myWork.myPendingOfferApprovals} more waiting on an approver` : 'None waiting on an approver'}
+          onClick={() => onNavigate('offers', { toIssue: true })} />
       </div>
 
       <div className="dash-grid-2">
@@ -1605,7 +1642,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
               <div className="action-list">
                 {actions.slice(0, 6).map((a, i) => (
                   <ActionItem key={i} tone={a.tone} title={a.title} meta={a.meta} why={a.why}
-                    cta={a.cta} onCta={() => onNavigate(a.go)} />
+                    cta={a.cta} onCta={a.onCta} />
                 ))}
               </div>
               {healthy > 0 && <div className="reassurance">{healthy} of {owned.length} of your roles are progressing normally.</div>}
@@ -1637,23 +1674,116 @@ function RecruiterDashboard({ user, data, onNavigate }) {
         <div className="card-head"><div><h3>My roles</h3></div><span className="dash-headnote">Current status and how long each has been open</span></div>
         {mine.length === 0
           ? <Empty icon="🗂" text="No open hiring requests are assigned to you." />
-          : <div className="role-health">{mine.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={() => onNavigate('requests')} />)}</div>}
+          : <div className="role-health">{mine.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
       </section>
     </div>
   );
 }
 
+// Mirrors POST /requests/:id/assign's own rule in routes/requests.js exactly.
+// Shared by every place an Assign/Reassign control can appear (the request's
+// own header, the requests table, and this dashboard's attention list) so a
+// request still pending approval is always disabled with the same reason,
+// never left enabled to fail with a 409 the recruiter has to decode.
+const ASSIGNABLE_STATUSES = ['sourcing', 'in_progress', 'reopened', 'partially_filled'];
+function canAssignStatus(status) { return ASSIGNABLE_STATUSES.includes(status); }
+const ASSIGN_BLOCKED_TITLE = 'This request must be approved before a recruiter can be assigned.';
+
 /* ---------------------------- RECRUITMENT MANAGER ------------------------- */
+// One line naming the real, worst reason a recruiter's book needs a look —
+// never a generic "at risk", always the specific request and signal behind it.
+// Returns null when nothing is wrong, which the caller reads as "On plan".
+function overdueCauseFor(reqs) {
+  const breached = reqs.find((r) => r.slaBreached);
+  if (breached) return `SLA breached — ${shortReqCode(breached.ticketNo)}`;
+  const red = reqs.find((r) => (r.health || {}).level === 'red');
+  if (red) return `${shortReqCode(red.ticketNo)} — ${(red.health || {}).daysOpen ?? '—'}d past the health threshold`;
+  const amber = reqs.find((r) => (r.health || {}).level === 'amber');
+  if (amber) return `${shortReqCode(amber.ticketNo)} — approaching the health threshold`;
+  return null;
+}
+// Same idea, for a single role in "Roles requiring attention" — the blocker
+// column names the one reason THIS row is on the list.
+function blockerFor(r) {
+  if (!r.ownerId) return 'No recruiter assigned';
+  if (r.slaBreached) return 'SLA breached';
+  if ((r.health || {}).level === 'red') return `${(r.health || {}).daysOpen ?? '—'} days past the health threshold`;
+  if ((r.health || {}).level === 'amber') return 'Approaching the health threshold';
+  return 'No overdue action';
+}
+// Worst-first ordering: unowned and SLA-breached roles are the most urgent —
+// nobody is working them and the clock has already run out — then red, then amber.
+function severity(r) {
+  if (r.slaBreached) return 4;
+  if (!r.ownerId) return 3;
+  if ((r.health || {}).level === 'red') return 2;
+  if ((r.health || {}).level === 'amber') return 1;
+  return 0;
+}
+const DAY_MS = 86400000;
+function withinPastDays(iso, days) {
+  if (!iso) return false;
+  const age = Date.now() - new Date(iso).getTime();
+  return !isNaN(age) && age >= 0 && age <= days * DAY_MS;
+}
+
 function ManagerDashboard({ user, data, onNavigate }) {
   const { d, requests } = data;
   const open = requests.filter(isOpenReq);
   const unassigned = open.filter((r) => !r.ownerId);
   const critical = open.filter((r) => r.priority === 'critical');
   const stalled = open.filter((r) => (r.health || {}).level === 'red' || r.slaBreached);
-  const attention = open.filter((r) => (r.health || {}).level === 'amber');
+  const attentionNeeded = open.filter((r) => needsAction(r));
   const load = (d && d.recruiterLoad) || [];
-  const loadMax = Math.max(...load.map((r) => r.c), 1);
   const pendingOffers = d ? (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((s, o) => s + o.count, 0) : 0;
+  // "To be issued" = approved and waiting to go out — not `pending_approval`,
+  // which is waiting on someone else's decision, not the recruiter's action.
+  const offersToIssue = d ? (d.offersByStatus || []).filter((o) => o.status === 'draft' || o.status === 'approved').reduce((s, o) => s + o.count, 0) : 0;
+  const [assigning, setAssigning] = useState(null);
+  const [recruiters, setRecruiters] = useState([]);
+  const toast = useToast();
+  useEffect(() => { api.get('/requests/meta/form').then((m) => setRecruiters(m.assignableRecruiters || [])).catch(() => {}); }, []);
+
+  async function doAssign(ownerId) {
+    try {
+      await api.post(`/requests/${assigning.id}/assign`, { ownerId });
+      toast(`Recruiter assigned to ${shortReqCode(assigning.ticketNo)}`);
+      setAssigning(null);
+      data.reload(); // the KPIs and both tables above are stale until this runs
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // Card A rows: `d.recruiterLoad` (name + open-request count) enriched with
+  // real pipeline numbers already sitting in `requests` — no second fetch.
+  const workloadRows = load.map((rl) => {
+    const owned = open.filter((r) => r.ownerId === rl.id);
+    const applications = owned.reduce((s, r) => s + ((r.pipeline || {}).total || 0), 0);
+    const byStage = (key) => owned.reduce((s, r) => s + (((r.pipeline || {}).byStage || {})[key] || 0), 0);
+    const interviews = byStage('interviewing') + byStage('waiting_feedback');
+    const offersOut = byStage('issuing_offer') + byStage('offer_sent');
+    const overdue = owned.filter((r) => needsAction(r)).length;
+    const cause = overdueCauseFor(owned);
+    return { id: rl.id, name: rl.name, roles: rl.c, applications, interviews, offersOut, overdue, cause };
+  });
+  const healthyRecruiters = workloadRows.filter((w) => !w.cause).length;
+
+  // Card B rows: unowned and at-risk roles, worst first.
+  const attentionRows = [...unassigned, ...stalled.filter((r) => r.ownerId), ...attentionNeeded.filter((r) => r.ownerId && !stalled.includes(r))]
+    .filter((r, i, arr) => arr.findIndex((x) => x.id === r.id) === i) // de-dupe a role matching more than one bucket
+    .sort((a, b) => severity(b) - severity(a) || ((b.health || {}).daysOpen ?? 0) - ((a.health || {}).daysOpen ?? 0))
+    .slice(0, 10);
+
+  // "This week" — everything already loaded, nothing new fetched.
+  const openedThisWeek = requests.filter((r) => withinPastDays(r.openedAt, 7)).length;
+  const closedThisWeek = requests.filter((r) => withinPastDays(r.closedAt, 7)).length;
+  const avgStageIdle = open.length
+    ? Math.round(open.reduce((s, r) => s + (r.lifecycle?.stageIdleDays || 0), 0) / open.length) : null;
+  const offerCount = (statuses) => (d ? (d.offersByStatus || []).filter((o) => statuses.includes(o.status)).reduce((s, o) => s + o.count, 0) : 0);
+  const offersIssued = offerCount(['sent', 'accepted', 'rejected_by_candidate', 'withdrawn', 'joined']);
+  const offersAccepted = offerCount(['accepted', 'joined']);
+  const offersDeclined = offerCount(['rejected_by_candidate']);
+  const aging = d ? d.aging : {};
+  const agingOver60 = (aging['61-90'] || 0) + (aging['90+'] || 0);
 
   return (
     <div>
@@ -1666,39 +1796,107 @@ function ManagerDashboard({ user, data, onNavigate }) {
 
       <div className="dash-kpi-row">
         <KpiCard label="Critical roles" value={critical.length} tone={critical.length ? 'kpi-risk' : ''}
-          meta={`${stalled.length} past their health threshold`} />
+          meta={`${stalled.length} past their health threshold`}
+          onClick={() => onNavigate('requests', { priority: 'critical', openOnly: true })} />
         <KpiCard label="Unassigned requests" value={unassigned.length} tone={unassigned.length ? 'kpi-attn' : ''}
-          meta={unassigned.length ? 'No recruiter is working these' : 'Every open role has an owner'} />
-        <KpiCard label="Offers awaiting decision" value={pendingOffers}
-          meta={d ? `${d.kpis.totalOffers} offer records in total` : '—'} />
+          meta={unassigned.length ? 'No recruiter is working these' : 'Every open role has an owner'}
+          onClick={() => onNavigate('requests', { owner: 'unassigned', openOnly: true })} />
+        <KpiCard label="Requests needing action" value={attentionNeeded.length} tone={attentionNeeded.length ? 'kpi-risk' : ''}
+          meta={attentionNeeded.length ? `${stalled.length} overdue, ${attentionNeeded.length - stalled.length} approaching` : 'Nothing is overdue'}
+          onClick={() => onNavigate('requests', { attention: true, openOnly: true })} />
+        <KpiCard label="Offers to issue" value={offersToIssue}
+          meta={pendingOffers ? `${pendingOffers} more waiting on an approver` : 'None waiting on an approver'}
+          onClick={() => onNavigate('offers', { toIssue: true })} />
       </div>
 
-      <section className="card">
-        <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
-        <div className="card-pad">
-          {!load.length
-            ? <Empty icon="👥" text="No open request is assigned to a recruiter yet." />
-            : <div className="dash-bars">
-              {load.map((r, i) => (
-                <div className="dash-bar" key={i}>
-                  <span className="dash-bar-l" title={r.name}>{r.name}</span>
-                  <span className="dash-bar-track"><span className="dash-bar-fill" style={{ width: `${(r.c / loadMax) * 100}%`, background: 'var(--green)' }} /></span>
-                  <strong className="dash-bar-n">{r.c}</strong>
-                </div>
-              ))}
-            </div>}
-        </div>
-      </section>
+      <div className="dash-grid-2">
+        <section className="card">
+          <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Workload at a glance — no ranking.</span></div>
+          <div className="card-pad">
+            {!workloadRows.length
+              ? <Empty icon="👥" text="No open request is assigned to a recruiter yet." />
+              : <>
+                <div className="table-wrap"><table className="table responsive-table">
+                  <thead><tr><th>Recruiter</th><th>Workload</th><th>Commitments</th><th>Overdue</th><th>Status / Cause</th></tr></thead>
+                  <tbody>{workloadRows.map((w) => (
+                    <tr key={w.id} className="row-link" onClick={() => onNavigate('requests', { owner: String(w.id) })}>
+                      <td data-label="Recruiter"><span className="cell-strong">{w.name}</span></td>
+                      <td data-label="Workload" className="cell-sub-only">{w.roles} role{w.roles === 1 ? '' : 's'} · {w.applications} application{w.applications === 1 ? '' : 's'}</td>
+                      <td data-label="Commitments" className="cell-sub-only">{w.interviews} interview{w.interviews === 1 ? '' : 's'} · {w.offersOut} offer{w.offersOut === 1 ? '' : 's'}</td>
+                      <td data-label="Overdue"><span className={w.overdue ? 'cell-strong' : 'cell-sub-only'}>{w.overdue}</span></td>
+                      <td data-label="Status / Cause">
+                        <Badge variant={w.cause ? 'critical' : 'success'}>{w.cause ? 'At risk' : 'On plan'}</Badge>
+                        <div className="cell-sub">{w.cause || 'No overdue action'}</div>
+                      </td>
+                    </tr>
+                  ))}</tbody>
+                </table></div>
+                <div className="reassurance">{healthyRecruiters} of {workloadRows.length} recruiter{workloadRows.length === 1 ? '' : 's'} {workloadRows.length === 1 ? 'is' : 'are'} progressing normally{workloadRows.length - healthyRecruiters ? `; ${workloadRows.length - healthyRecruiters} need${workloadRows.length - healthyRecruiters === 1 ? 's' : ''} direct intervention.` : '.'}</div>
+              </>}
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head"><div><h3>This week</h3></div><span className="dash-headnote">Figures already on this page, in one place</span></div>
+          <div className="card-pad dash-sla-rows">
+            <div className="dash-kv"><span>Requests opened</span><strong>{openedThisWeek}</strong></div>
+            <div className="dash-kv"><span>Requests closed</span><strong>{closedThisWeek}</strong></div>
+            <div className="dash-kv"><span>Average stage-idle (open roles)</span><strong>{avgStageIdle == null ? '—' : avgStageIdle + 'd'}</strong></div>
+            <div className="dash-kv"><span>Offers issued</span><strong>{offersIssued}</strong></div>
+            <div className="dash-kv"><span>Offers accepted</span><strong>{offersAccepted}</strong></div>
+            <div className="dash-kv"><span>Offers declined</span><strong>{offersDeclined}</strong></div>
+            <div className="dash-kv"><span>Time to fill</span><strong>{d?.kpis.timeToFillDays == null ? '—' : d.kpis.timeToFillDays + 'd'}</strong></div>
+            <div className="dash-kv"><span>Offer acceptance</span><strong>{d?.kpis.offerAcceptanceRate == null ? '—' : d.kpis.offerAcceptanceRate + '%'}</strong></div>
+            {/* No day-range filter exists server-side, so these route through the
+                same health-threshold filter the KPI cards use above — an honest
+                approximation (amber/red thresholds default to 30/45 days), not a
+                literal 31-60/60+ query. */}
+            <button type="button" className="dash-kv dash-kv-link" onClick={() => onNavigate('requests', { openOnly: true })}>
+              <span>Aging 0–30 days</span><strong>{aging['0-30'] || 0}</strong>
+            </button>
+            <button type="button" className="dash-kv dash-kv-link" onClick={() => onNavigate('requests', { openOnly: true, attention: true })}>
+              <span>Aging 31–60 days</span><strong>{aging['31-60'] || 0}</strong>
+            </button>
+            <button type="button" className="dash-kv dash-kv-link" onClick={() => onNavigate('requests', { openOnly: true, attention: true })}>
+              <span>Aging 60+ days</span><strong>{agingOver60}</strong>
+            </button>
+          </div>
+        </section>
+      </div>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <div className="card-head"><div><h3>Roles requiring attention</h3></div><span className="dash-headnote">Worst first</span></div>
-        {!stalled.length && !attention.length && !unassigned.length
+        <div className="card-head"><div><h3>Roles requiring attention</h3></div><span className="dash-headnote">Stage-idle time replaces total days open.</span></div>
+        {!attentionRows.length
           ? <Empty icon="✓" title="Nothing needs escalation" text="No stalled, unassigned or at-risk requests right now." />
-          : <div className="role-health">
-            {[...stalled, ...unassigned.filter((r) => !stalled.includes(r)), ...attention.filter((r) => !stalled.includes(r))]
-              .slice(0, 10).map((r) => <RoleRow key={r.id} r={r} onOpen={() => onNavigate('requests')} />)}
-          </div>}
+          : <div className="table-wrap"><table className="table responsive-table">
+            <thead><tr><th>Role</th><th>Owner</th><th>Stage / Idle</th><th>Blocker</th><th>Next action</th></tr></thead>
+            <tbody>{attentionRows.map((r) => (
+              <tr key={r.id} className="row-link" onClick={() => openRequest(r.id, onNavigate)}>
+                <td data-label="Role">
+                  <span className="cell-strong">{r.title}</span>
+                  <div className="cell-sub">{shortReqCode(r.ticketNo)} · {placeLabel(r)} · <PriorityBadge p={r.priority} /></div>
+                </td>
+                <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
+                  {r.owner ? r.owner.name
+                    : canAssignStatus(r.status)
+                      ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign recruiter</button>
+                      : <button className="btn btn-ghost btn-sm" disabled title={ASSIGN_BLOCKED_TITLE}>Assign recruiter</button>}
+                </td>
+                <td data-label="Stage / Idle"><span className="cell-strong">{r.displayStatus}</span><div className="cell-sub">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd idle'}</div></td>
+                <td data-label="Blocker"><span className="cell-strong">{blockerFor(r)}</span></td>
+                <td data-label="Next action" onClick={(e) => e.stopPropagation()}>
+                  {!r.owner
+                    ? (canAssignStatus(r.status)
+                      ? <button className="btn btn-secondary btn-sm" onClick={() => setAssigning(r)}>Assign recruiter</button>
+                      : <button className="btn btn-secondary btn-sm" disabled title={ASSIGN_BLOCKED_TITLE}>Assign recruiter</button>)
+                    : <button className="btn btn-secondary btn-sm" onClick={() => openRequest(r.id, onNavigate)}>Open role</button>}
+                </td>
+              </tr>
+            ))}</tbody>
+          </table></div>}
       </section>
+
+      {assigning && <AssignModal recruiters={recruiters} onClose={() => setAssigning(null)} onAssign={doAssign} />}
     </div>
   );
 }
@@ -1815,7 +2013,7 @@ function DirectorDashboard({ user, data, onNavigate }) {
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>Open roles</h3></div><span className="dash-headnote">{open.length} in scope</span></div>
         {!open.length ? <Empty icon="🗂" text="No open hiring requests." />
-          : <div className="role-health">{open.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={() => onNavigate('requests')} />)}</div>}
+          : <div className="role-health">{open.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
       </section>
     </div>
   );
@@ -3324,16 +3522,44 @@ function RequestTicketCard({ r, onOpen }) {
   );
 }
 
-function RequestsPage({ user }) {
+// A request "needs action" the same way ManagerDashboard already judges it:
+// overdue on health, or the SLA clock itself has tripped. One definition,
+// reused by the dashboard card, this toggle, and the filter chip's label.
+function needsAction(r) { return (r.health || {}).level === 'red' || (r.health || {}).level === 'amber' || !!r.slaBreached; }
+
+function RequestsPage({ user, initialFilters }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   // Approved layout is the table: it is what a recruiter scans down. Cards stay
   // one click away for people who prefer them.
   const [view, setView] = useState('table'); // table | cards
-  const [filters, setFilters] = useState({ q: '', status: '', priority: '', sort: 'created', dir: 'desc' });
+  // `owner`, `attention` and `openOnly` are NOT sent to the API — `owner` maps
+  // onto the server's `ownerId` param (see the outgoing params below); `attention`
+  // and `openOnly` are judged from fields every row already carries, the same way
+  // the dashboards derive them, so a client-side filter keeps the server's query
+  // surface from growing for something that isn't a real column.
+  const [filters, setFilters] = useState(() => ({
+    q: '', status: '', priority: '', sort: 'created', dir: 'desc',
+    owner: '', attention: false, openOnly: false,
+    ...(initialFilters || {}),
+  }));
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [assigning, setAssigning] = useState(null); // request row being assigned/reassigned
+  const [recruiters, setRecruiters] = useState([]);
   const btns = useResolvedButtons();
+
+  // Arriving from a dashboard card hands a fresh `initialFilters` object each
+  // time — apply it whenever its identity changes, not just on first mount, so
+  // a second card click while this page happens to already be current still lands.
+  useEffect(() => {
+    if (!initialFilters) return;
+    setFilters((f) => ({ ...f, ...initialFilters }));
+  }, [initialFilters]);
+
+  useEffect(() => {
+    api.get('/requests/meta/form').then((m) => setRecruiters(m.assignableRecruiters || [])).catch(() => {});
+  }, []);
 
   // Opened from elsewhere (a Talent Pool request link), the same way the Ctrl+K
   // palette opens a candidate: pending id when mounting fresh, event when the
@@ -3353,7 +3579,11 @@ function RequestsPage({ user }) {
     const params = new URLSearchParams();
     // Only the outgoing `q` is normalized (RQ-26-001 → REQ-2026-00001) so the stored
     // ticket_no can be matched; the text the user typed is left as-is in the input.
-    Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, k === 'q' ? expandReqCode(v) : v); });
+    // `attention`/`openOnly` are deliberately excluded — they filter client-side, below.
+    Object.entries(filters).forEach(([k, v]) => {
+      if (k === 'attention' || k === 'openOnly' || !v) return;
+      params.set(k === 'owner' ? 'ownerId' : k, k === 'q' ? expandReqCode(v) : v);
+    });
     setData(await api.get('/requests?' + params.toString()));
   }, [filters]);
   useEffect(() => { load(); }, [load]);
@@ -3361,6 +3591,30 @@ function RequestsPage({ user }) {
   if (selectedId) return <RequestDetail id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
 
   const canCreate = btns.create_request?.visible;
+  const canAssign = btns.assign_recruiter?.visible;
+
+  // Client-side pass over the server-filtered rows for the two toggles that
+  // aren't real columns — see the `filters` state comment above.
+  const shown = (data ? data.requests : []).filter((r) => {
+    if (filters.openOnly && !isOpenReq(r)) return false;
+    if (filters.attention && !needsAction(r)) return false;
+    return true;
+  });
+
+  // Removable filter chips — the same visual pattern as the Talent Pool's
+  // (`.filter-chips` / `.chip-filter`), but built by hand rather than off a flat
+  // label map: `owner` needs a name resolved from the recruiter list, and the
+  // two toggles aren't string values at all.
+  const ownerName = filters.owner === 'unassigned' ? 'Unassigned'
+    : filters.owner ? (recruiters.find((r) => String(r.id) === String(filters.owner)) || {}).name || `#${filters.owner}` : null;
+  const activeChips = [
+    filters.status && ['status', `Status: ${(REQ_STATUS[filters.status] || {}).label || filters.status}`, () => setFilters((f) => ({ ...f, status: '' }))],
+    filters.priority && ['priority', `Priority: ${(PRIORITY[filters.priority] || {}).label || filters.priority}`, () => setFilters((f) => ({ ...f, priority: '' }))],
+    ownerName && ['owner', `Owner: ${ownerName}`, () => setFilters((f) => ({ ...f, owner: '' }))],
+    filters.attention && ['attention', 'Needs action', () => setFilters((f) => ({ ...f, attention: false }))],
+    filters.openOnly && ['openOnly', 'Open only', () => setFilters((f) => ({ ...f, openOnly: false }))],
+  ].filter(Boolean);
+
   return (
     <div>
       <PageHead crumb="Recruitment / Requests" title="Hiring Requests"
@@ -3376,30 +3630,62 @@ function RequestsPage({ user }) {
           <option value="">All statuses</option>{Object.entries(REQ_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <select value={filters.priority} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
           <option value="">All priorities</option>{Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        <select value={filters.owner} onChange={(e) => setFilters((f) => ({ ...f, owner: e.target.value }))} aria-label="Owner">
+          <option value="">All owners</option>
+          <option value="unassigned">Unassigned</option>
+          {recruiters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+        <label className="switch" title="Requests past their health threshold or SLA">
+          <input type="checkbox" checked={filters.attention} onChange={(e) => setFilters((f) => ({ ...f, attention: e.target.checked }))} />
+          Needs action
+        </label>
+        <label className="switch" title="Hide closed, filled, cancelled and rejected requests">
+          <input type="checkbox" checked={filters.openOnly} onChange={(e) => setFilters((f) => ({ ...f, openOnly: e.target.checked }))} />
+          Open only
+        </label>
         <select value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
           <option value="created">Sort: Created</option><option value="priority">Priority</option><option value="title">Title</option><option value="status">Status</option><option value="ticket">Ticket No</option></select>
         <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}>{filters.dir === 'desc' ? '↓ Desc' : '↑ Asc'}</button>
         <div className="spacer" />
-        <CountPill n={data ? data.requests.length : null} noun="request" />
+        <CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />
       </div>
 
-      {!data ? <ListSkeleton rows={6} /> : data.requests.length === 0 ? (
+      {activeChips.length > 0 && (
+        <div className="filter-chips">
+          {activeChips.map(([k, label, clear]) => (
+            <span key={k} className="chip-filter">
+              {label}
+              <button aria-label={`Remove ${label} filter`} onClick={clear}>✕</button>
+            </span>
+          ))}
+          <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, status: '', priority: '', owner: '', attention: false, openOnly: false }))}>Clear all</button>
+        </div>
+      )}
+
+      {!data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
         <div className="card"><Empty icon="🎫"
-          title={filters.q || filters.status || filters.priority ? 'No requests match these filters' : 'No hiring requests yet'}
-          text={filters.q || filters.status || filters.priority
-            ? 'Try clearing the search box or widening the status and priority filters.'
+          title={activeChips.length || filters.q ? 'No requests match these filters' : 'No hiring requests yet'}
+          text={activeChips.length || filters.q
+            ? 'Try clearing the search box or widening the filters above.'
             : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
         <div className="card flush"><div className="table-wrap"><table className="table responsive-table">
-          <thead><tr><th>Request</th><th>Position</th><th>Project / Site</th><th>Pipeline</th><th>Priority</th><th>Status</th><th>SLA</th></tr></thead>
-          <tbody>{data.requests.map((r) => (
+          <thead><tr><th>Request</th><th>Position</th><th>Project / Site</th><th>Owner</th><th>Pipeline</th><th>Priority</th><th>Status</th><th>Idle</th><th>SLA</th></tr></thead>
+          <tbody>{shown.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
               <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
               <td data-label="Position"><span className="cell-strong">{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
               <td data-label="Project / Site" className="cell-sub-only">{placeLabel(r)}</td>
+              <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
+                {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
+                  : !canAssign ? <span className="muted">Unassigned</span>
+                  : canAssignStatus(r.status) ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign</button>
+                  : <button className="btn btn-ghost btn-sm" disabled title={ASSIGN_BLOCKED_TITLE}>Assign</button>}
+              </td>
               <td data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
               <td data-label="Priority"><PriorityBadge p={r.priority} /></td>
               <td data-label="Status"><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
+              <td data-label="Idle" className="cell-sub-only">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
               <td data-label="SLA"><ReqHealth health={r.health} /></td>
             </tr>
           ))}</tbody>
@@ -3407,10 +3693,20 @@ function RequestsPage({ user }) {
         <div className="reassurance">Requests without a warning are progressing normally.</div></div>
       ) : (
         <div className="ats-card-grid">
-          {data.requests.map((r) => <RequestTicketCard key={r.id} r={r} onOpen={() => setSelectedId(r.id)} />)}
+          {shown.map((r) => <RequestTicketCard key={r.id} r={r} onOpen={() => setSelectedId(r.id)} />)}
         </div>
       )}
       {creating && <RequestForm user={user} onClose={() => setCreating(false)} onSaved={(id) => { setCreating(false); load(); setSelectedId(id); }} />}
+      {assigning && (
+        <AssignModal recruiters={recruiters} onClose={() => setAssigning(null)}
+          onAssign={async (ownerId) => {
+            try {
+              await api.post(`/requests/${assigning.id}/assign`, { ownerId });
+              toast(`Recruiter assigned to ${shortReqCode(assigning.ticketNo)}`);
+              setAssigning(null); load();
+            } catch (e) { toast(e.message, 'error'); }
+          }} />
+      )}
     </div>
   );
 }
@@ -3655,9 +3951,12 @@ function RequestDetail({ id, user, btns, onBack }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [action, setAction] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [recruiters, setRecruiters] = useState([]);
 
   const load = useCallback(async () => { setReq((await api.get('/requests/' + id)).request); }, [id]);
   useEffect(() => { load(); }, [id]);
+  useEffect(() => { api.get('/requests/meta/form').then((m) => setRecruiters(m.assignableRecruiters || [])).catch(() => {}); }, []);
 
   // Tell anyhelp which hiring request is on screen, so its Team tab opens the
   // real thread for THIS request instead of guessing, and so the dock can name
@@ -3692,12 +3991,34 @@ function RequestDetail({ id, user, btns, onBack }) {
     ['jd', 'Details'], ['timeline', 'Activity'],
   ];
 
+  // Mirrors the backend's own rules exactly (POST /requests/:id/assign and
+  // /hold in routes/requests.js) — never bypassed, only surfaced honestly:
+  // a control the API would reject is disabled here, with the reason, rather
+  // than left enabled to fail with a 409 the recruiter has to decode.
+  // `canAssignStatus`/`ASSIGN_BLOCKED_TITLE` are shared with the requests
+  // table and this dashboard's attention list, so the rule can't drift.
+  const TERMINAL_STATUSES = ['closed', 'cancelled', 'rejected', 'filled', 'expired'];
+  const PAUSABLE_STATUSES = ['pending_approval', 'sourcing', 'in_progress', 'partially_filled', 'reopened'];
+  const canAssignNow = canAssignStatus(s);
+  const assignLabel = req.ownerId ? 'Reassign' : 'Assign recruiter';
+
   return (
     <div>
       <div className="detail-back"><button className="back-link" onClick={onBack}>← Hiring Requests</button></div>
 
       <TicketHeader req={req}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 560 }}>
+          {btns.assign_recruiter?.visible && !TERMINAL_STATUSES.includes(s) && (
+            canAssignNow
+              ? <button className="btn btn-secondary" onClick={() => setAssigning(true)}>{assignLabel}</button>
+              : <button className="btn btn-secondary" disabled title={ASSIGN_BLOCKED_TITLE}>{assignLabel}</button>
+          )}
+          {btns.hold_request?.visible && PAUSABLE_STATUSES.includes(s) && (
+            <button className="btn btn-secondary" onClick={() => reasonAction('hold', 'Pause Request', 'Request paused', true)}>Pause</button>
+          )}
+          {btns.resume_request?.visible && s === 'on_hold' && (
+            <button className="btn btn-secondary" onClick={() => doAction('resume', {}, 'Request resumed')}>Resume</button>
+          )}
           {btns.edit_request?.visible && !['closed','cancelled','rejected','filled'].includes(s) && <button className="btn btn-secondary" onClick={() => { setEditing(true); }}>Edit</button>}
           {btns.close_request?.visible && !['closed','cancelled','rejected'].includes(s) && <button className="btn btn-secondary" onClick={() => reasonAction('close', 'Close Request', 'Request closed')}>Close</button>}
           {btns.reopen_request?.visible && ['closed','cancelled','filled'].includes(s) && <button className="btn btn-secondary" onClick={() => reasonAction('reopen', 'Reopen Request', 'Request reopened')}>Reopen</button>}
@@ -3730,6 +4051,16 @@ function RequestDetail({ id, user, btns, onBack }) {
 
       {action && <Confirm title={action.title} message="Please provide a reason. This will be recorded in the audit trail." requireReason danger={action.danger} confirmLabel="Confirm" onConfirm={action.run} onClose={() => setAction(null)} />}
       {editing && <RequestForm user={user} request={req} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
+      {assigning && (
+        <AssignModal recruiters={recruiters} onClose={() => setAssigning(false)}
+          onAssign={async (ownerId) => {
+            try {
+              await api.post(`/requests/${id}/assign`, { ownerId });
+              toast(`Recruiter assigned to ${shortReqCode(req.ticketNo)}`);
+              setAssigning(false); load();
+            } catch (e) { toast(e.message, 'error'); }
+          }} />
+      )}
     </div>
   );
 }
@@ -5243,10 +5574,21 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked })
   );
 }
 
-function CandidatesPage({ user, onNavigate }) {
+function CandidatesPage({ user, onNavigate, initialFilters }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
-  const [filters, setFilters] = useState({ q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '', currentCompany: '', tag: '', currentPosition: '', university: '' });
+  const [filters, setFilters] = useState(() => ({
+    q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '',
+    currentCompany: '', tag: '', currentPosition: '', university: '',
+    ...(initialFilters || {}),
+  }));
+  // Arriving with a filter from elsewhere (nothing sends one yet, but the
+  // mechanism matches every other list page) — apply it whenever its
+  // identity changes, not just on first mount.
+  useEffect(() => {
+    if (!initialFilters) return;
+    setFilters((f) => ({ ...f, ...initialFilters }));
+  }, [initialFilters]);
   // Plain-English search. It does not hold its own result list: it fills the
   // filters above and lets the existing load() run, so paging, tabs, sorting
   // and the table stay exactly as they were and the recruiter can hand-edit
@@ -6460,19 +6802,38 @@ function ScheduleInterviewModal({ application, onClose, onScheduled }) {
   );
 }
 
-function InterviewsPage({ user }) {
+function InterviewsPage({ user, initialFilters }) {
   const [data, setData] = useState(null);
-  const [filter, setFilter] = useState({ status: '', q: '' });
-  const [selected, setSelected] = useState(null);
+  // `thisWeek` is client-side only — there is no date-range param on
+  // GET /interviews, so it filters the loaded rows below, the same way
+  // RequestsPage's `openOnly`/`attention` do for the same reason.
+  const [filter, setFilter] = useState({ status: '', q: '', thisWeek: false });
+  // `openId` jumps straight to one interview (a dashboard action item always
+  // names a specific one); a plain filter narrows the list instead.
+  const [selected, setSelected] = useState(initialFilters?.openId ?? null);
+
+  useEffect(() => {
+    if (!initialFilters) return;
+    if (initialFilters.openId) { setSelected(initialFilters.openId); return; }
+    setFilter((f) => ({ ...f, ...initialFilters }));
+  }, [initialFilters]);
+
   const load = useCallback(async () => {
     setData(null);
     const params = new URLSearchParams();
-    Object.entries(filter).forEach(([k, v]) => { if (v) params.set(k, v); });
+    Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
     setData(await api.get('/interviews?' + params.toString()));
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
   if (selected) return <InterviewDetail id={selected} user={user} onBack={() => { setSelected(null); load(); }} />;
+
+  const shown = (data ? data.interviews : []).filter((iv) => {
+    if (!filter.thisWeek) return true;
+    if (iv.status !== 'scheduled') return false;
+    const days = daysUntil(iv.scheduledAt);
+    return days != null && days >= 0 && days <= 7;
+  });
 
   return (
     <div>
@@ -6483,20 +6844,24 @@ function InterviewsPage({ user }) {
         <input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 220 }} />
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(IV_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        <label className="switch" title="Scheduled interviews in the next 7 days">
+          <input type="checkbox" checked={filter.thisWeek} onChange={(e) => setFilter((f) => ({ ...f, thisWeek: e.target.checked }))} />
+          This week
+        </label>
         <div className="spacer" />
-        <CountPill n={data ? data.interviews.length : null} noun="interview" />
+        <CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />
       </div>
-      {!data ? <ListSkeleton rows={6} /> : data.interviews.length === 0 ? (
+      {!data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
         <div className="card"><Empty icon="📅"
-          title={filter.q || filter.status ? 'No interviews match these filters' : 'No interviews scheduled'}
-          text={filter.q || filter.status
-            ? 'Try clearing the search box or selecting All statuses.'
+          title={filter.q || filter.status || filter.thisWeek ? 'No interviews match these filters' : 'No interviews scheduled'}
+          text={filter.q || filter.status || filter.thisWeek
+            ? 'Try clearing the search box or the filters above.'
             : 'Interviews scheduled from a candidate\u2019s application will appear here with date, panel and outcome.'} /></div>
       ) : (
         <div className="card flush"><div className="table-wrap">
           <table className="table responsive-table">
             <thead><tr><th>Scheduled</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th>Interview</th><th>Status</th><th>Outcome</th><th>Application</th></tr></thead>
-            <tbody>{data.interviews.map((iv) => (
+            <tbody>{shown.map((iv) => (
               <tr key={iv.id} className="row-link" onClick={() => setSelected(iv.id)}>
                 <td data-label="Scheduled"><DateCell value={iv.scheduledAt} /></td>
                 <td data-label="Candidate">
@@ -6667,19 +7032,30 @@ function CreateOfferModal({ application, onClose, onCreated }) {
   );
 }
 
-function OffersPage({ user }) {
+function OffersPage({ user, initialFilters }) {
   const [offers, setOffers] = useState(null);
-  const [filter, setFilter] = useState({ status: '', q: '', joiningFrom: '', joiningTo: '' });
+  // `toIssue` is client-side — the API's `status` filter is a single exact
+  // value, and "to issue" (draft + approved, not yet sent) spans two of them.
+  const [filter, setFilter] = useState({ status: '', q: '', joiningFrom: '', joiningTo: '', toIssue: false });
   const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    if (!initialFilters) return;
+    setFilter((f) => ({ ...f, ...initialFilters }));
+  }, [initialFilters]);
+
   const load = useCallback(async () => {
     setOffers(null);
     const params = new URLSearchParams();
-    Object.entries(filter).forEach(([k, v]) => { if (v) params.set(k, v); });
+    Object.entries(filter).forEach(([k, v]) => { if (k !== 'toIssue' && v) params.set(k, v); });
     setOffers((await api.get('/offers?' + params.toString())).offers);
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
   if (selected) return <OfferDetail id={selected} user={user} onBack={() => { setSelected(null); load(); }} />;
+
+  const shown = (offers || []).filter((o) => !filter.toIssue || o.status === 'draft' || o.status === 'approved');
+
   return (
     <div>
       <PageHead crumb="Recruitment / Offers" title="Offers"
@@ -6689,21 +7065,25 @@ function OffersPage({ user }) {
         <input placeholder="Search offer no / position…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 220 }} />
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(OFFER_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        <label className="switch" title="Approved and waiting to go out — not held for approval">
+          <input type="checkbox" checked={filter.toIssue} onChange={(e) => setFilter((f) => ({ ...f, toIssue: e.target.checked }))} />
+          To issue
+        </label>
         <label className="muted" style={{ fontSize: 12 }}>Joining from <input type="date" value={filter.joiningFrom} onChange={(e) => setFilter((f) => ({ ...f, joiningFrom: e.target.value }))} /></label>
         <div className="spacer" />
-        <CountPill n={offers ? offers.length : null} noun="offer" />
+        <CountPill n={offers ? shown.length : null} total={offers ? offers.length : null} noun="offer" />
       </div>
-      {!offers ? <ListSkeleton rows={5} /> : offers.length === 0 ? (
+      {!offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
         <div className="card"><Empty icon="📑"
-          title={filter.q || filter.status || filter.joiningFrom ? 'No offers match these filters' : 'No offers raised yet'}
-          text={filter.q || filter.status || filter.joiningFrom
+          title={filter.q || filter.status || filter.joiningFrom || filter.toIssue ? 'No offers match these filters' : 'No offers raised yet'}
+          text={filter.q || filter.status || filter.joiningFrom || filter.toIssue
             ? 'Try clearing the search box, status filter or joining-date range.'
             : 'Offers raised from a candidate\u2019s application will appear here with approval state and joining date.'} /></div>
       ) : (
         <div className="card flush"><div className="table-wrap">
           <table className="table responsive-table">
             <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th>Project</th><th>Status</th><th>Prepared by</th><th>Approved by</th><th>Joining</th></tr></thead>
-            <tbody>{offers.map((o) => (
+            <tbody>{shown.map((o) => (
               <tr key={o.id} className="row-link" onClick={() => setSelected(o.id)}>
                 <td data-label="Offer"><span className="code-pill">{o.offerNo}</span></td>
                 <td data-label="Candidate">
