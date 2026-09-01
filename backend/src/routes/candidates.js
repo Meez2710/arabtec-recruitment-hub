@@ -47,6 +47,8 @@ function serialize(c, user, { withDetail = false } = {}) {
   // The count already cost this query; the summary is what the Talent Pool
   // needs to show WHICH request a candidate is on without opening the profile.
   const applications = Applications.forCandidate(c.id);
+  // Phase 2 Talent Pool — returning/rehire signal, filled during the links pass below (no extra queries).
+  const _hist = { returning: false, rehire: false, priorApplications: 0, lastOutcome: null, lastSeenAt: null };
   const out = {
     id: c.id, candidateNo: c.candidate_no, fullName: c.full_name, email: c.email, phone: c.phone,
     nationality: c.nationality, location: c.location, linkedinUrl: c.linkedin_url,
@@ -77,6 +79,23 @@ function serialize(c, user, { withDetail = false } = {}) {
     // /applications enforces, surfaced before the click rather than after it.
     links: applications.map((a) => {
       const r = a.request_id ? Requests.byId(a.request_id) : null;
+      // history: computed in THIS pass — reuses r + a, issues no query of its own.
+      // Intentionally broader than the POST /applications one-active-link guard's
+      // REQ_TERMINAL: for "have we seen this candidate before" a `filled` role is a
+      // concluded chapter too, and `expired` requisitions must not be missed.
+      const reqTerminal = !!r && ['closed', 'cancelled', 'rejected', 'expired', 'filled'].includes(r.status);
+      const concluded = reqTerminal
+        || a.status === 'rejected' || a.status === 'offer_declined' || a.status === 'joined';
+      if (concluded) {
+        _hist.priorApplications += 1;
+        _hist.returning = true;
+        if (a.status === 'joined') _hist.rehire = true;
+        // forCandidate() is created_at DESC, so the first concluded row seen is the most recent.
+        if (_hist.lastSeenAt === null) {
+          _hist.lastSeenAt = a.last_activity_at || a.created_at || null;
+          _hist.lastOutcome = a.status || null;
+        }
+      }
       return {
         applicationId: a.id,
         applicationNo: a.application_no,
@@ -87,6 +106,7 @@ function serialize(c, user, { withDetail = false } = {}) {
         status: a.status,
       };
     }),
+    history: _hist,
     customFields: CustomFields.valuesFor('candidate', c.id),
   };
   if (withDetail) {
@@ -133,6 +153,7 @@ function serialize(c, user, { withDetail = false } = {}) {
         status: a.status, matchScore: a.match_score,
         recruiter: rec ? { id: rec.id, name: rec.full_name } : null,
         lastActivityAt: a.last_activity_at, createdAt: a.created_at,
+        stageHistory: StageHistory.forApplication(a.id), // detail only
       };
     });
   }
@@ -149,6 +170,7 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
   const filters = {
     q: q.q, source: q.source, location: q.location, currentCompany: q.currentCompany,
     currentPosition: q.currentPosition, university: q.university, graduationYear: q.graduationYear,
+    graduationFrom: q.graduationFrom, graduationTo: q.graduationTo,
     noticePeriod: q.noticePeriod, ownerRecruiterId: q.ownerRecruiterId,
     minExp: q.minExp, maxExp: q.maxExp, tag: q.tag,
     screeningStatus: q.screeningStatus, parseStatus: q.parseStatus,

@@ -61,7 +61,22 @@ export async function adminToken(base, opts = {}) {
     ?? process.env.SEED_ADMIN_PASSWORD
     ?? ADMIN_BOOTSTRAP_PASSWORD;
 
-  let login = await post(base, '/api/auth/login', { email: ADMIN_EMAIL, password: bootstrap });
+  // The app holds every request with HTTP 503 until migrations and the seed
+  // finish. On a cold CI database that readiness gate can still be closed when
+  // the first suite calls in, which used to surface as an intermittent
+  // "bootstrap attempt: HTTP 503" and fail the whole run. A 503 (or a refused
+  // socket) here means "not ready yet", not "wrong password" — wait it out,
+  // bounded to ~10s. Any other status is a real answer and breaks the loop.
+  let login = { status: 0, json: null };
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      login = await post(base, '/api/auth/login', { email: ADMIN_EMAIL, password: bootstrap });
+    } catch {
+      login = { status: 0, json: null }; // server socket not accepting yet
+    }
+    if (login.status !== 503 && login.status !== 0) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
   const bootstrapStatus = login.status;
 
   // Already rotated by an earlier call in this suite.

@@ -1064,6 +1064,8 @@ tr.row-pending td { pointer-events: none; }
 .chip-filter button { border: 0; background: none; cursor: pointer; color: inherit; font-size: 12px; line-height: 1;
                       padding: 2px 4px; border-radius: 4px; }
 .chip-filter button:hover { background: rgba(0,0,0,.08); }
+/* Category chips in the candidate Activity log use .chip-filter as a toggle button. */
+.filter-chips .chip-filter.on { background: var(--action-primary); color: #fff; border-color: var(--action-primary); cursor: pointer; }
 
 /* Pager */
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
@@ -1114,30 +1116,44 @@ tr.row-pending td { pointer-events: none; }
 .cmdk-name { font-size: 13.5px; font-weight: 600; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Candidate cards — more breathing room, calmer face.
-   Screening state and source were removed from the card in app.jsx; the extra
-   space goes to whitespace and a clearer name/headline hierarchy. */
-.cand-card { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 14px; }
-.cand-card .cc-top { gap: 13px; align-items: center; }
-.cand-card .cc-name { font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; line-height: 1.3; }
-.cand-card .cc-headline { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
-.cand-card .cc-meta { gap: 6px; row-gap: 6px; }
-.cand-card .cc-meta:empty { display: none; }
-.field-hint { margin-top: 6px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
-
-/* Card action row + footer.
-   These previously reused .cc-meta (a wrapping chip row), so the buttons wrapped
-   raggedly and every card ended up a different height. They now have their own
-   layout, and the footer is pinned to the bottom with `margin-top: auto` so all
-   cards in a row align on the same baseline regardless of content. */
-.cand-card { min-height: 172px; }
-.cand-card .cc-actions {
-  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+/* Candidate cards — education-first face, one action control, fixed height so
+   the grid stays aligned. Company left the face on purpose: it lives in the drawer. */
+.cand-card { padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 12px; min-height: 156px; }
+.cand-card .cc-face {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; align-items: start;
 }
-.cand-card .cc-actions .btn { flex: 0 1 auto; white-space: nowrap; min-width: 0; }
+.cand-card .cc-avatar { grid-row: 1 / span 2; width: 38px; height: 38px; }
+.cand-card .cc-id { min-width: 0; }
+.cand-card .cc-name {
+  font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; line-height: 1.3;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+.cand-card .cc-headline {
+  font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cand-card .cc-uni { min-width: 0; text-align: right; }
+.cand-card .cc-uni-name, .cand-card .cc-uni-major {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cand-card .cc-uni-name { font-size: 12.5px; font-weight: 600; color: var(--text-strong); }
+.cand-card .cc-uni-major { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .cand-card .cc-foot {
-  margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border-soft, var(--border));
+  margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border-soft, var(--border));
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
-.cand-card .cc-no { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
-.cand-card .cc-foot-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cand-card .cc-grad { font-size: 12px; color: var(--ink-soft); }
+.cand-card .cc-grad.missing { color: var(--muted); }
+.cand-card .cc-action-wrap { flex: 0 0 auto; }
+.field-hint { margin-top: 6px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.hist-badge-btn { border: 0; background: none; padding: 0; cursor: pointer; display: inline-flex; vertical-align: middle; }
+.hist-badge-btn:focus-visible { outline: 2px solid var(--action-primary); outline-offset: 2px; border-radius: 999px; }
+.act-log { display: flex; flex-direction: column; }
+.act-item {
+  display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start;
+  padding: 12px 0; border-bottom: 1px solid var(--border-soft, var(--border));
+}
+.act-item:last-child { border-bottom: none; }
+.act-ico { color: var(--muted); display: grid; place-items: center; padding-top: 2px; }
+.act-sentence { font-size: 13.5px; color: var(--text-strong); line-height: 1.45; }
+.act-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }

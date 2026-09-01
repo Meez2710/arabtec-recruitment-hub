@@ -179,17 +179,21 @@ async function driveToOfferSent(token, appId) {
   const auditDup = await api('/api/audit?q=Duplicate&pageSize=50', { token: admin });
   c('duplicate override is audited (comments)', (auditDup.json.logs || []).some((l) => (l.comments || '').includes('Duplicate override')));
 
-  console.log('\n— 9. Separation + independent multi-applications —');
+  console.log('\n— 9. Separation + one-active-link rule —');
   const cMulti = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Multi App', email: 'multi@x.com' } });
   c('candidate response has NO status field', !('status' in cMulti.json.candidate));
   c('candidate has candidateState (lifecycle, not pipeline)', cMulti.json.candidate.candidateState === 'active');
   const rA = await approvedRequest(hrMgr, recMgr, 1);
   const rB = await approvedRequest(hrMgr, recMgr, 1);
-  await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rA, initialStatus: 'shortlisted' } });
-  await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rB, initialStatus: 'matched' } });
+  const linkA = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rA, initialStatus: 'shortlisted' } });
+  c('first link succeeds (201)', linkA.status === 201, `got ${linkA.status}`);
+  // Phase 2 Talent Pool — a candidate may hold only ONE non-terminal link at a time.
+  const linkB = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rB, initialStatus: 'matched' } });
+  c('2nd non-terminal link blocked by one-active-link rule (409)', linkB.status === 409, `got ${linkB.status}`);
+  c('409 carries blockingRequest id', linkB.json?.blockingRequest?.id === rA, JSON.stringify(linkB.json?.blockingRequest));
   const prof = await api(`/api/candidates/${cMulti.json.candidate.id}`, { token: recruiter });
-  c('candidate linked to 2 independent applications', prof.json.candidate.applications.length === 2);
-  c('the two applications have different statuses', new Set(prof.json.candidate.applications.map((a) => a.status)).size === 2);
+  c('candidate linked to its single active application', prof.json.candidate.applications.length === 1, `got ${prof.json.candidate.applications.length}`);
+  c('history flag: no prior concluded applications', prof.json.candidate.history?.returning === false);
   const dupApp = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: cMulti.json.candidate.id, requestId: rA } });
   c('duplicate application to same request blocked (409)', dupApp.status === 409, `got ${dupApp.status}`);
 

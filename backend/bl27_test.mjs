@@ -149,6 +149,10 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
     const oldReq = await mkReq(2);
     const oldApp = await link(candId, oldReq);
     for (const st of path) await move(oldApp, st, 'history');
+    // Phase 2 Talent Pool one-active-link rule: a prior link only stays "history"
+    // once its request is terminal. Close the old requisition so the next link is
+    // allowed — the application row itself is left exactly as the path left it.
+    run("UPDATE recruitment_request SET status='closed' WHERE id=?", [oldReq]);
     const newReq = await mkReq(1);
     const newApp = await link(candId, newReq);
     await toOfferSent(newApp);
