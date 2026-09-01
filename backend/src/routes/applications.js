@@ -100,11 +100,17 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
   const candidate = Candidates.byId(candidateId);
   if (!candidate) return res.status(404).json({ error: 'Candidate not found.' });
 
+  // `allow_duplicate_application` is the deployment opt-out for "one candidate,
+  // one live application": it relaxes both the per-request duplicate check below
+  // and the Phase 2 one-active-link guard. The concurrency/reconciliation suites
+  // flip it on so they can arm a candidate on two requisitions and prove the
+  // DB-level one-joined-per-candidate index is the thing enforcing uniqueness.
+  const allowDupApps = SystemSettings.all().allow_duplicate_application === 'true';
+
   // Prevent duplicate application (one per candidate per request) unless admin override allowed.
   const existing = Applications.existing(candidateId, requestId);
   if (existing) {
-    const allowDup = SystemSettings.all().allow_duplicate_application === 'true';
-    const adminOverride = allowDup && req.user.permissions.includes('candidate.merge') && d.overrideExisting;
+    const adminOverride = allowDupApps && req.user.permissions.includes('candidate.merge') && d.overrideExisting;
     if (!adminOverride) {
       return res.status(409).json({ error: 'This candidate already has an application to this request.', applicationId: existing.id });
     }
@@ -112,7 +118,7 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
 
   // Phase 2 Talent Pool — a candidate may be actively linked to only ONE
   // non-terminal request at a time. Terminal/closed history stays linkable.
-  const openLink = Applications.forCandidate(candidateId).find((a) => {
+  const openLink = allowDupApps ? null : Applications.forCandidate(candidateId).find((a) => {
     if (a.request_id === requestId) return false; // same request is the duplicate check above
     // The application itself being terminal (rejected / withdrawn→rejected /
     // offer_declined / joined) means this candidate is no longer actively in
