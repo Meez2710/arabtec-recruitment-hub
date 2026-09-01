@@ -70,16 +70,19 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   const dupApp = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: reqId } });
   c('duplicate application to same request blocked (409)', dupApp.status === 409, `got ${dupApp.status}`);
 
-  // Second request → same candidate, independent application
+  // Second request → same candidate. Phase 2 Talent Pool now allows a candidate
+  // to be actively linked to only ONE non-terminal request at a time, so this
+  // parallel link is refused with a 409 that names the blocking request.
   const cr2 = await api('/api/requests', { method: 'POST', token: hrMgr, body: { title: 'Project Engineer', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount: 1 } });
   const app2 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: cr2.json.request.id, initialStatus: 'matched' } });
-  c('same candidate, 2nd request = independent application', app2.status === 201 && app2.json.application.status === 'matched');
+  c('2nd non-terminal link blocked by one-active-link rule (409)', app2.status === 409, `got ${app2.status}`);
+  c('409 names the blocking request', app2.json?.blockingRequest?.id === reqId, JSON.stringify(app2.json?.blockingRequest));
 
-  console.log('\n— Candidate profile shows multiple applications with independent statuses —');
+  console.log('\n— Candidate profile shows its single active application —');
   const profile = await api(`/api/candidates/${candId}`, { token: recruiter });
   const apps = profile.json?.candidate?.applications || [];
-  c('candidate linked to 2 applications', apps.length === 2);
-  c('applications carry independent statuses', new Set(apps.map((a) => a.status)).size === 2);
+  c('candidate linked to 1 application', apps.length === 1, `got ${apps.length}`);
+  c('application carries status sourced', apps[0]?.status === 'sourced', apps[0]?.status);
 
   console.log('\n— Stage movement + reason rules —');
   const move = await api(`/api/applications/${appId}/move`, { method: 'POST', token: recruiter, body: { status: 'shortlisted' } });
