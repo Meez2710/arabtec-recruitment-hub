@@ -1,38 +1,41 @@
-// Inbound CV ingestion from an external mailbox.
+// Inbound CV ingestion from the Outlook/Graph mailbox scanner.
 //
 // POST /api/ingest/cv — one CV attachment, with the provenance the mailbox
-// reported for it. Used by the daily Microsoft 365 scan.
+// reported for it. This is the single controlled entry point for Outlook CV
+// ingestion.
 //
 // WHY THIS IS A SEPARATE ROUTE AND NOT A FLAG ON /candidates/parse-cv.
 // `parse-cv` serves a HUMAN at a browser: it answers with a parse preview, a
 // per-field import report and the raw text a reviewer is about to judge. That
-// response is exactly what an automated mailbox connector must NOT receive —
-// it would ship CV contents to a caller that has no screen and no need for
-// them. This route answers with a receipt: identifiers and a status, no
-// document text. Same storage, same parser, same intake queue underneath.
+// response is exactly what an automated scanner must NOT receive — it would
+// ship CV contents to a caller that has no screen and no need for them. This
+// route answers with a receipt: identifiers and a status, no document text.
+// Same storage, same parser, same intake queue underneath.
 //
-// WHAT IT DOES NOT DO. It never creates or updates a candidate. It stages a
-// `candidate_intake` exactly as `parse-cv` does, and a person approving that
-// intake is still the only thing in this system that creates a candidate. There
-// is no shortcut here and there is deliberately no flag to add one.
+// WHAT IT DOES NOT DO. It never creates or updates a candidate, and never
+// creates an application. It stages a `candidate_intake` exactly as `parse-cv`
+// does, and a person approving that intake is still the only thing in this
+// system that creates a candidate. There is no shortcut here and deliberately
+// no flag to add one.
 //
-// IDEMPOTENCY IS THE POINT. The orchestrator retries. See ingest-store.js: the
-// identity is claimed against a unique index BEFORE the CV is parsed, so a
-// retry costs one rejected INSERT rather than a second parse and a second
-// review item.
+// IDEMPOTENCY IS THE POINT. The scanner retries. The identity
+// (messageId, attachmentId) is claimed against a UNIQUE index BEFORE anything
+// is parsed, so a duplicate costs one rejected INSERT — not a second model call
+// and not a second review item.
+//
+// THE SCANNER NEVER WAITS ON A PARSE. Claim, answer 201, parse afterwards. See
+// ingest-parser.js for why the receipt row is the queue.
 
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { SystemSettings } from '../lib/models.js';
-import { multipart, readBlob, uploadPath, deleteBlob } from '../lib/upload.js';
-import { parseDocument } from '../lib/parsing/pipeline-provider.js';
-import { createIntake } from '../lib/intake-store.js';
+import { multipart, readBlob, deleteBlob, MAX_UPLOAD_BYTES } from '../lib/upload.js';
+import { scheduleParse } from '../lib/ingest-parser.js';
 import {
-  claimIngestion, ingestionById, isKnownSource, isRetryable, markFailed,
-  markNoFields, markParsed, priorIngestionsWithHash, reopenFailedIngestion,
-  INGEST_STATUS, MICROSOFT_365 as MICROSOFT_365_DEFAULT,
+  claimIngestion, ingestionById, isKnownSource, isRetryable, knownSources,
+  priorIngestionsWithHash, reopenFailedIngestion, DEFAULT_SOURCE,
 } from '../lib/ingest-store.js';
 
 const router = Router();
@@ -42,10 +45,10 @@ router.use(requireAuth);
  * CV document types only.
  *
  * The shared upload middleware also accepts images and .txt because other
- * routes need them. A mailbox connector must not widen this: an inbox is full
- * of signatures, logos, scanned certificates and spreadsheets, and every one of
- * them that reaches the parser costs a model call and produces a junk review
- * item. Anything outside this set is rejected before it is parsed.
+ * routes need them. A mailbox scanner must not widen this: an inbox is full of
+ * signatures, logos, scanned certificates and spreadsheets, and every one of
+ * them that reached the parser would cost a model call and produce a junk
+ * review item. Anything outside this set is rejected before it is parsed.
  */
 const CV_EXTENSIONS = new Set(['.pdf', '.doc', '.docx']);
 const MIME_BY_EXT = {
@@ -55,15 +58,25 @@ const MIME_BY_EXT = {
 };
 
 /** Provenance the receipt cannot be written without. */
-const REQUIRED_FIELDS = ['source', 'messageId', 'attachmentId', 'filename'];
+const REQUIRED_FIELDS = [
+  'source', 'messageId', 'attachmentId', 'filename', 'senderEmail', 'receivedAt',
+];
+
+// The project's existing convention (routes/candidates.js). Deliberately loose:
+// this is a provenance field recording who sent the mail, not a login.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// A zero-byte or near-empty attachment is not a CV. Catching it here keeps a
+// pointless model call off the bill and a junk receipt out of the review queue.
+const MIN_FILE_BYTES = 64;
 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
 /**
  * Reject with a machine-readable code.
  *
- * The orchestrator branches on `code`, never on the sentence, so the codes are
- * part of this endpoint's contract and the sentences are not.
+ * The scanner branches on `code`, never on the sentence, so the codes are part
+ * of this endpoint's contract and the sentences are not.
  */
 const reject = (res, status, code, message, extra = {}) =>
   res.status(status).json({ status: 'rejected', code, error: message, ...extra });
@@ -72,8 +85,8 @@ const reject = (res, status, code, message, extra = {}) =>
  * The receipt shape returned on every non-rejection path.
  *
  * DELIBERATELY CARRIES NO DOCUMENT TEXT — no parsed fields, no preview, no
- * extracted values. A connector needs to know what happened to the file, not
- * what the file said. The review screen reads the intake directly.
+ * extracted values. A scanner needs to know what happened to the file, not what
+ * the file said. The review screen reads the intake directly.
  */
 const receipt = (record, extra = {}) => ({
   ingestionId: record.id,
@@ -85,6 +98,7 @@ const receipt = (record, extra = {}) => ({
   contentHash: record.contentHash,
   intakeId: record.intakeId,
   receivedAt: record.receivedAt,
+  parseAttempts: record.parseAttempts,
   ...extra,
 });
 
@@ -110,7 +124,14 @@ router.post('/cv', requirePermission('candidate.add'), multipart, async (req, re
   if (!isKnownSource(source)) {
     cleanup();
     return reject(res, 400, 'source-unknown',
-      'Unrecognised ingestion source.', { source });
+      'Unrecognised ingestion source.', { source, accepted: knownSources() });
+  }
+
+  const senderEmail = str(fields.senderEmail);
+  if (!EMAIL_RE.test(senderEmail)) {
+    cleanup();
+    return reject(res, 400, 'sender-email-invalid',
+      'senderEmail is not a valid email address.', { senderEmail });
   }
 
   // The extension is taken from the STORED file, not from the `filename` field:
@@ -122,19 +143,14 @@ router.post('/cv', requirePermission('candidate.add'), multipart, async (req, re
       { extension: f.ext || null, accepted: [...CV_EXTENSIONS] });
   }
 
-  // `receivedAt` is provenance, so a malformed one is a defect in the caller
-  // worth surfacing rather than silently storing. Absent is allowed; wrong is not.
   const receivedAtRaw = str(fields.receivedAt);
-  let receivedAt = null;
-  if (receivedAtRaw !== '') {
-    const d = new Date(receivedAtRaw);
-    if (Number.isNaN(d.getTime())) {
-      cleanup();
-      return reject(res, 400, 'received-at-invalid',
-        'receivedAt must be an ISO-8601 timestamp.', { receivedAt: receivedAtRaw });
-    }
-    receivedAt = d.toISOString();
+  const parsedDate = new Date(receivedAtRaw);
+  if (Number.isNaN(parsedDate.getTime())) {
+    cleanup();
+    return reject(res, 400, 'received-at-invalid',
+      'receivedAt must be a parseable ISO-8601 timestamp.', { receivedAt: receivedAtRaw });
   }
+  const receivedAt = parsedDate.toISOString();
 
   // ------------------------------------------------------------------- hash
   // SHA-256 over the bytes AS STORED. A client-supplied hash is never read,
@@ -145,18 +161,32 @@ router.post('/cv', requirePermission('candidate.add'), multipart, async (req, re
     return reject(res, 500, 'storage-unavailable',
       'The uploaded file could not be stored or read back.');
   }
+  if (stored.data.length < MIN_FILE_BYTES) {
+    cleanup();
+    return reject(res, 400, 'file-too-small',
+      'The attachment is too small to be a CV.',
+      { sizeBytes: stored.data.length, minimumBytes: MIN_FILE_BYTES });
+  }
+  if (stored.data.length > MAX_UPLOAD_BYTES) {
+    // The middleware caps the stream, so this is belt-and-braces for a stored
+    // file that somehow exceeded it.
+    cleanup();
+    return reject(res, 413, 'file-too-large',
+      'The attachment exceeds the maximum upload size.',
+      { sizeBytes: stored.data.length, maximumBytes: MAX_UPLOAD_BYTES });
+  }
   const contentHash = crypto.createHash('sha256').update(stored.data).digest('hex');
 
   // ------------------------------------------------------------------ claim
-  // Before parsing, so a retry is one rejected INSERT instead of a second model
-  // call and a second review item.
+  // Before parsing, so a duplicate is one rejected INSERT instead of a second
+  // model call and a second review item.
   let claim;
   try {
     claim = claimIngestion({
       source,
       messageId: str(fields.messageId),
       attachmentId: str(fields.attachmentId),
-      senderEmail: str(fields.senderEmail) || null,
+      senderEmail,
       senderName: str(fields.senderName) || null,
       subject: str(fields.subject) || null,
       receivedAt,
@@ -179,15 +209,17 @@ router.post('/cv', requirePermission('candidate.add'), multipart, async (req, re
 
   let record = claim.record;
 
+  // --------------------------------------------------------------- duplicate
   if (!claim.claimed) {
-    // Already ingested. A FAILED receipt is the one case worth another attempt;
-    // everything else is answered as a duplicate without re-parsing.
+    // A FAILED receipt is the one case worth another attempt; everything else
+    // is answered as a duplicate WITHOUT re-parsing, without a second receipt,
+    // and without any candidate or application being created.
     const reopened = isRetryable(record) ? reopenFailedIngestion(record.id) : null;
     if (!reopened) {
       cleanup(); // this request's bytes are redundant; the winner's copy stands
       console.log(JSON.stringify({
         level: 'info', msg: 'ingest.duplicate', requestId: req.requestId,
-        ingestionId: record.id, source, status: record.status,
+        ingestionId: record.id, source, originalStatus: record.status,
       }));
       return res.status(200).json({
         ...receipt(record),
@@ -201,110 +233,42 @@ router.post('/cv', requirePermission('candidate.add'), multipart, async (req, re
     record = reopened;
   }
 
-  // ------------------------------------------------------- parse + stage
-  // Outside any transaction: parsing is async and tx() forbids async callbacks
-  // (see db.js). The claim above is what makes that safe — the identity is
-  // already held, so nothing else can start a second parse for it.
-  try {
-    const parsed = await parseDocument(uploadPath(f.storedName));
+  // --------------------------------------------------------- accept + enqueue
+  // The scanner is answered NOW. Parsing runs after this response is flushed;
+  // the receipt row is the durable queue entry, so a restart mid-parse is
+  // recoverable (see ingest-parser.js) rather than lost.
+  writeAudit(req, {
+    action: 'cv.ingest_accepted', entityType: 'cv_ingestion', entityId: record.id,
+    newValue: {
+      source, messageId: record.messageId, attachmentId: record.attachmentId,
+      filename: record.filename, sizeBytes: record.sizeBytes,
+    },
+  });
 
-    if (!parsed.ok || !parsed.fields || parsed.fields.length === 0) {
-      const reason = parsed.reason
-        || 'No candidate field could be supported by the document.';
-      const settled = markNoFields(record.id, reason);
-      writeAudit(req, {
-        action: 'cv.ingested_no_fields', entityType: 'cv_ingestion',
-        entityId: record.id,
-        newValue: { source, filename: record.filename, reason },
-      });
-      // 201, not an error: the attachment WAS ingested and its receipt is
-      // durable. Re-sending it would read to the same nothing.
-      return res.status(201).json({
-        ...receipt(settled),
-        code: 'no-fields',
-        reason,
-        message: 'Ingested. The document produced no reviewable candidate fields.',
-      });
-    }
+  console.log(JSON.stringify({
+    level: 'info', msg: 'ingest.accepted', requestId: req.requestId,
+    ingestionId: record.id, source, sizeBytes: record.sizeBytes,
+  }));
 
-    const intake = createIntake({
-      storedName: f.storedName,
-      fileName: record.filename,
-      mimeType: record.mimeType,
-      fileHash: contentHash,
-      // Distinguishes a mailbox ingestion from a recruiter's own upload
-      // everywhere downstream, without a second intake model.
-      origin: 'mailbox.ingest',
-      modelId: parsed.generation?.modelId ?? '',
-      documentId: parsed.documentId,
-      generation: parsed.generation,
-      fields: parsed.fields,
-      createdBy: req.user.id,
-    });
+  scheduleParse(record);
 
-    if (!intake) {
-      const reason = 'Parse produced no reviewable fields.';
-      const settled = markNoFields(record.id, reason);
-      return res.status(201).json({
-        ...receipt(settled), code: 'no-fields', reason,
-        message: 'Ingested. The document produced no reviewable candidate fields.',
-      });
-    }
-
-    const settled = markParsed(record.id, intake.id);
-
-    writeAudit(req, {
-      action: 'cv.ingested', entityType: 'cv_ingestion', entityId: record.id,
-      newValue: {
-        source, messageId: settled.messageId, attachmentId: settled.attachmentId,
-        filename: settled.filename, intakeId: intake.id, fields: intake.fields.length,
-      },
-    });
-
-    console.log(JSON.stringify({
-      level: 'info', msg: 'ingest.accepted', requestId: req.requestId,
-      ingestionId: settled.id, intakeId: intake.id, source,
-      // Counts and identifiers only — never the parsed values themselves.
-      fields: intake.fields.length,
-    }));
-
-    return res.status(201).json({
-      ...receipt(settled),
-      code: 'accepted',
-      // PENDING review. No candidate exists yet.
-      intakeStatus: intake.status,
-      fieldCount: intake.fields.length,
-      // Advisory only: same bytes seen before, under a different message.
-      priorHashMatches: priorIngestionsWithHash(contentHash, settled.id)
-        .map((r) => r.id),
-      message: 'Ingested and staged for review. No candidate was created.',
-    });
-  } catch (e) {
-    // The receipt survives the failure, marked FAILED and therefore retryable.
-    // Losing it would let the next scan re-parse this attachment from scratch.
-    let settled = null;
-    try { settled = markFailed(record.id, e.message); } catch { /* record stands */ }
-    console.error(JSON.stringify({
-      level: 'error', msg: 'ingest.parse_failed', requestId: req.requestId,
-      ingestionId: record.id, source, error: e.message, stack: e.stack,
-    }));
-    return res.status(502).json({
-      ...receipt(settled ?? record),
-      status: INGEST_STATUS.FAILED,
-      code: 'parse-failed',
-      retryable: true,
-      // The driver's sentence, not the document's contents.
-      error: 'CV parsing failed downstream.',
-      message: 'Ingestion recorded and marked failed. Safe to retry.',
-    });
-  }
+  return res.status(201).json({
+    ...receipt(record),
+    code: 'accepted',
+    queued: true,
+    // Advisory only: same bytes seen before, under a different message.
+    priorHashMatches: priorIngestionsWithHash(contentHash, record.id).map((r) => r.id),
+    message: 'Ingested and queued for parsing. No candidate was created.',
+    statusUrl: `/api/ingest/cv/${record.id}`,
+  });
 });
 
 /**
  * GET /api/ingest/cv/:id — one receipt.
  *
- * Lets the orchestrator reconcile a request whose response it never saw (a
- * timeout that actually succeeded) without re-POSTing the file. Returns the
+ * Two jobs. It is how the scanner polls an asynchronous parse to a terminal
+ * status, and it is how it reconciles a request whose response it never saw — a
+ * timeout that actually succeeded — WITHOUT re-POSTing the file. Returns the
  * receipt only: still no document text.
  */
 router.get('/cv/:id', requirePermission('candidate.add'), (req, res) => {
@@ -314,25 +278,28 @@ router.get('/cv/:id', requirePermission('candidate.add'), (req, res) => {
   }
   const record = ingestionById(id);
   if (!record) return reject(res, 404, 'not-found', 'Ingestion record not found.');
-  return res.json(receipt(record));
+  return res.json(receipt(record, { reason: record.reason }));
 });
 
 /* ------------------------------- scan state -------------------------------- */
 
 //
-// The orchestrator's watermark: the instant of the last scan that completed
-// with nothing left unprocessed. It lives HERE, in the ATS, rather than in the
-// connector, because the connector is stateless between runs and a watermark
-// held only in its memory is lost on every restart — which would mean either
+// The scanner's watermark: the instant of the last scan that completed with
+// nothing left unprocessed. It lives HERE, in the ATS, rather than in the
+// scanner, because the scanner is stateless between runs and a watermark held
+// only in its memory is lost on every restart — which would mean either
 // rescanning the whole mailbox or silently skipping a day.
 //
 // THE WATERMARK IS NOT THE DUPLICATE GUARD. Ingestion is already idempotent on
-// (source, messageId, attachmentId), so an over-wide scan window costs redundant
-// POSTs and nothing worse. That is the intended safety margin: it is always
-// better to rescan than to skip, and this endpoint never has to be exactly right.
+// (messageId, attachmentId), so an over-wide scan window costs redundant POSTs
+// and nothing worse. That is the intended safety margin: it is always better to
+// rescan than to skip, and this endpoint never has to be exactly right.
 //
 
-const SCAN_STATE_KEY = (source) => `ingest.scan_state.${source}`;
+// ONE key for every source label. 'outlook' and 'microsoft_365' are the same
+// mailbox, and a per-label watermark would silently reset to the first-run floor
+// the day someone renamed the source — rescanning ~11k historical messages.
+const SCAN_STATE_KEY = 'ingest.scan_state.mailbox';
 
 // FIRST-RUN FLOOR. There is no earlier watermark to resume from, and the mailbox
 // holds ~11k historical messages that were never meant to be ingested. Starting
@@ -341,7 +308,7 @@ const SCAN_STATE_KEY = (source) => `ingest.scan_state.${source}`;
 const FIRST_RUN_WATERMARK = '2026-09-01T00:00:00.000Z';
 
 const readScanState = (source) => {
-  const stored = SystemSettings.get(SCAN_STATE_KEY(source));
+  const stored = SystemSettings.get(SCAN_STATE_KEY);
   return {
     source,
     lastSuccessfulScanAt: stored ?? FIRST_RUN_WATERMARK,
@@ -350,9 +317,10 @@ const readScanState = (source) => {
 };
 
 router.get('/scan-state', requirePermission('candidate.add'), (req, res) => {
-  const source = str(req.query.source) || MICROSOFT_365_DEFAULT;
+  const source = str(req.query.source) || DEFAULT_SOURCE;
   if (!isKnownSource(source)) {
-    return reject(res, 400, 'source-unknown', 'Unrecognised ingestion source.', { source });
+    return reject(res, 400, 'source-unknown', 'Unrecognised ingestion source.',
+      { source, accepted: knownSources() });
   }
   return res.json(readScanState(source));
 });
@@ -368,15 +336,15 @@ router.get('/scan-state', requirePermission('candidate.add'), (req, res) => {
  * idempotent.
  */
 router.put('/scan-state', requirePermission('candidate.add'), (req, res) => {
-  const source = str(req.body?.source) || MICROSOFT_365_DEFAULT;
+  const source = str(req.body?.source) || DEFAULT_SOURCE;
   if (!isKnownSource(source)) {
-    return reject(res, 400, 'source-unknown', 'Unrecognised ingestion source.', { source });
+    return reject(res, 400, 'source-unknown', 'Unrecognised ingestion source.',
+      { source, accepted: knownSources() });
   }
 
   const raw = str(req.body?.lastSuccessfulScanAt);
   if (raw === '') {
-    return reject(res, 400, 'scan-state-missing',
-      'lastSuccessfulScanAt is required.');
+    return reject(res, 400, 'scan-state-missing', 'lastSuccessfulScanAt is required.');
   }
   const next = new Date(raw);
   if (Number.isNaN(next.getTime())) {
@@ -396,7 +364,7 @@ router.put('/scan-state', requirePermission('candidate.add'), (req, res) => {
       });
   }
 
-  SystemSettings.upsert(SCAN_STATE_KEY(source), next.toISOString());
+  SystemSettings.upsert(SCAN_STATE_KEY, next.toISOString());
   writeAudit(req, {
     action: 'cv.scan_state_advanced', entityType: 'ingest_scan_state', entityId: source,
     oldValue: { lastSuccessfulScanAt: current.lastSuccessfulScanAt },

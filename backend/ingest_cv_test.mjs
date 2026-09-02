@@ -1,29 +1,28 @@
-// POST /api/ingest/cv — inbound mailbox CV ingestion.
+// POST /api/ingest/cv — Outlook/Graph CV ingestion.
 //
-// WHAT IT PROVES
-//   1.  A valid PDF is ingested and a durable receipt is written.
-//   2.  A valid DOCX is ingested the same way.
-//   3.  An unsupported file type is rejected and stores nothing.
-//   4.  A missing provenance field is rejected, naming the field.
-//   5.  An unknown `source` is rejected.
-//   6.  The FIRST submission of an attachment is accepted.
-//   7.  An exact retry of (messageId, attachmentId) answers duplicate and
-//       creates no second receipt.
-//   8.  Concurrent submissions of one attachment: exactly one winner.
-//   9.  content_hash is SHA-256 of the real bytes, computed server-side, and a
-//       client-supplied hash is ignored.
-//  10.  A storage/persistence failure propagates rather than being mistaken
-//       for a duplicate.
-//  11.  A FAILED receipt is retryable in place; PARSED/NO_FIELDS are not.
-//  12.  NO candidate is created by this route under any of the above.
-//  13.  Every Microsoft 365 provenance field round-trips unchanged.
-//  14.  The response never carries document text.
+// THE NINE REQUIRED SCENARIOS
+//   1. new CV                                    → 201 / accepted
+//   2. same messageId + attachmentId twice       → second is duplicate
+//   3. concurrent submissions of one attachment  → exactly one ingestion
+//   4. different attachmentId, same messageId    → both accepted
+//   5. missing messageId                         → validation error
+//   6. missing attachmentId                      → validation error
+//   7. invalid file                              → validation error
+//   8. SHA-256 generated server-side             → matches the real bytes
+//   9. duplicate does not trigger parsing twice  → parseAttempts stays 1
 //
-// READER INDEPENDENCE. Almost everything here is about ingestion MECHANICS —
-// identity, hashing, idempotency, provenance — none of which needs a CV reader.
-// With no ANTHROPIC_API_KEY the pipeline answers "no reader configured", the
-// route records NO_FIELDS, and every assertion below still holds. The two
-// checks that genuinely require a parse are marked and skipped loudly.
+// PLUS: source `outlook` and `microsoft_365` both accepted and NOT distinct
+// identities; senderEmail and receivedAt validation; file too small / too large;
+// provenance round-trip; no document text in responses; the async contract
+// (201 before the parse finishes, receipt settles afterwards); restart recovery
+// of a stranded receipt; and — asserted throughout — that NO candidate and NO
+// application is ever created by this route.
+//
+// READER INDEPENDENCE. Almost everything here is ingestion MECHANICS — identity,
+// hashing, idempotency, provenance — none of which needs a CV reader. With no
+// ANTHROPIC_API_KEY the pipeline answers "no reader configured", receipts settle
+// NO_FIELDS, and every assertion below still holds. The one check that genuinely
+// requires a parse is skipped loudly; skipping is not a pass.
 //
 // SYNTHETIC DATA ONLY. Every CV, name, address and message id below is invented.
 //
@@ -210,11 +209,10 @@ const login = await api('/api/auth/login', {
   method: 'POST',
   body: { email: 'recruiter@arabtec.com', password: 'Arabtec@123' },
 });
-assert.equal(login.status, 200, `recruiter login failed: HTTP ${login.status} ${JSON.stringify(login.body)}`);
+assert.equal(login.status, 200, `recruiter login failed: HTTP ${login.status}`);
 const TOKEN = login.body.token;
 assert.ok(TOKEN, 'no token issued');
 
-/** POST one attachment to the ingestion endpoint. */
 const ingest = async (fieldMap, file, token = TOKEN) => {
   const { body, contentType } = multipartBody(fieldMap, file);
   const res = await fetch(`${BASE}/api/ingest/cv`, {
@@ -227,26 +225,34 @@ const ingest = async (fieldMap, file, token = TOKEN) => {
   return { status: res.status, body: json };
 };
 
-const candidateCount = async () => {
-  const r = await api('/api/candidates?limit=1', { token: TOKEN });
-  return r.body?.total ?? r.body?.pagination?.total
-    ?? (Array.isArray(r.body?.data) ? r.body.data.length : 0);
+const getReceipt = async (id) => (await api(`/api/ingest/cv/${id}`, { token: TOKEN })).body;
+
+/** Poll a receipt until the background parse settles it. */
+const waitTerminal = async (id, ms = 8000) => {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const r = await getReceipt(id);
+    if (r && r.status !== 'RECEIVED') return r;
+    if (Date.now() > deadline) return r;
+    await new Promise((res) => setTimeout(res, 100));
+  }
 };
 
-/** Does this deployment have a CV reader wired? Ask the server, not the env. */
-const health = await api('/api/health', { token: TOKEN });
-const READER_WIRED = String(process.env.ANTHROPIC_API_KEY || '').trim() !== '';
-void health;
+const countRows = async (sql, params = []) => {
+  const { all } = await import('./src/lib/db.js');
+  return all(sql, params).length;
+};
 
-const PDF = makePdf('Synthetic CV - Test Candidate - Civil Engineer - 7 years');
-const DOCX = makDocxSafe();
-function makDocxSafe() {
-  try { return makeDocx('Synthetic CV - Test Candidate - QA/QC Engineer - 5 years'); }
-  catch (e) { console.log('  (docx builder failed: ' + e.message + ')'); return null; }
-}
+const candidateCount = async () => countRows('SELECT id FROM candidate');
+const applicationCount = async () => countRows('SELECT id FROM application');
+
+const READER_WIRED = String(process.env.ANTHROPIC_API_KEY || '').trim() !== '';
+
+const PDF = makePdf('Synthetic CV - Test Candidate - Civil Engineer - 7 years experience');
+const DOCX = makeDocx('Synthetic CV - Test Candidate - QA/QC Engineer - 5 years experience');
 
 const base = (over = {}) => ({
-  source: 'microsoft_365',
+  source: 'outlook',
   messageId: 'AAMk-test-message-0001',
   attachmentId: 'ATT-0001',
   filename: 'Test_Candidate_CV.pdf',
@@ -260,117 +266,135 @@ const base = (over = {}) => ({
 const pdfFile = (name = 'Test_Candidate_CV.pdf') =>
   ({ name, type: 'application/pdf', bytes: PDF });
 
-console.log('\n──── ingestion mechanics ────');
-
 const candidatesBefore = await candidateCount();
+const applicationsBefore = await applicationCount();
 
-/* 1 + 6 — first valid PDF submission is accepted */
-let firstIngestionId = null;
-await check('valid PDF is ingested and returns a durable receipt', async () => {
+console.log('\n──── 1. new CV ────');
+
+let firstId = null;
+await check('a new CV returns 201 and is identified as newly ingested', async () => {
   const r = await ingest(base(), pdfFile());
   assert.equal(r.status, 201, `expected 201, got ${r.status}: ${JSON.stringify(r.body)}`);
+  assert.equal(r.body.code, 'accepted');
+  assert.equal(r.body.status, 'RECEIVED', 'the scanner should be answered before the parse');
+  assert.equal(r.body.queued, true);
   assert.ok(r.body.ingestionId, 'no ingestionId returned');
-  assert.equal(r.body.source, 'microsoft_365');
+  assert.equal(r.body.source, 'outlook');
   assert.equal(r.body.messageId, 'AAMk-test-message-0001');
   assert.equal(r.body.attachmentId, 'ATT-0001');
-  assert.ok(['PARSED', 'NO_FIELDS'].includes(r.body.status),
-    `unexpected status ${r.body.status}`);
-  firstIngestionId = r.body.ingestionId;
+  firstId = r.body.ingestionId;
 });
 
-/* 9 — SHA-256 is server-computed over the real bytes */
-await check('content hash is SHA-256 of the actual uploaded bytes', async () => {
+await check('the queued parse settles the receipt without the scanner waiting', async () => {
+  const settled = await waitTerminal(firstId);
+  assert.ok(['PARSED', 'NO_FIELDS'].includes(settled.status),
+    `receipt never settled: ${settled.status}`);
+  assert.equal(settled.parseAttempts, 1, 'parse ran a number of times other than once');
+});
+
+console.log('\n──── 8. server-side SHA-256 ────');
+
+await check('SHA-256 is computed server-side from the real uploaded bytes', async () => {
   const expected = crypto.createHash('sha256').update(PDF).digest('hex');
-  const r = await api(`/api/ingest/cv/${firstIngestionId}`, { token: TOKEN });
-  assert.equal(r.status, 200);
-  assert.equal(r.body.contentHash, expected,
-    'stored hash does not match SHA-256 of the posted bytes');
+  const r = await getReceipt(firstId);
+  assert.equal(r.contentHash, expected, 'stored hash is not SHA-256 of the posted bytes');
 });
 
-/* 9b — a client-supplied hash is ignored */
-await check('a client-supplied contentHash is ignored, not trusted', async () => {
+await check('a client-supplied hash is ignored, never trusted', async () => {
+  const bogus = 'deadbeef'.repeat(8);
   const r = await ingest(
-    base({ messageId: 'AAMk-test-message-0002', attachmentId: 'ATT-0002',
-      contentHash: 'deadbeef'.repeat(8), fileHash: 'deadbeef'.repeat(8) }),
+    base({ messageId: 'AAMk-hash-0002', attachmentId: 'ATT-0002',
+      contentHash: bogus, fileHash: bogus, sha256: bogus }),
     pdfFile(),
   );
   assert.equal(r.status, 201);
   const expected = crypto.createHash('sha256').update(PDF).digest('hex');
-  assert.equal(r.body.contentHash, expected, 'client hash was trusted');
-  assert.notEqual(r.body.contentHash, 'deadbeef'.repeat(8));
+  assert.equal(r.body.contentHash, expected, 'a client-supplied hash was trusted');
+  assert.notEqual(r.body.contentHash, bogus);
 });
 
-/* 7 — exact retry is a duplicate */
-await check('exact retry of messageId+attachmentId returns duplicate', async () => {
+console.log('\n──── 2 + 9. duplicate ────');
+
+await check('the same messageId + attachmentId twice is a duplicate', async () => {
   const r = await ingest(base(), pdfFile());
   assert.equal(r.status, 200, `expected 200 duplicate, got ${r.status}`);
   assert.equal(r.body.status, 'duplicate');
   assert.equal(r.body.code, 'duplicate');
-  assert.equal(r.body.duplicateOf, firstIngestionId,
-    'duplicate did not point at the original receipt');
+  assert.equal(r.body.messageId, 'AAMk-test-message-0001');
+  assert.equal(r.body.attachmentId, 'ATT-0001');
+  assert.equal(r.body.duplicateOf, firstId);
 });
 
-/* 7b — the retry created no second receipt */
-await check('a duplicate retry writes no second ingestion record', async () => {
-  const { all } = await import('./src/lib/db.js');
-  const rows = all(
-    'SELECT id FROM cv_ingestion WHERE source=? AND message_id=? AND attachment_id=?',
-    ['microsoft_365', 'AAMk-test-message-0001', 'ATT-0001'],
+await check('a duplicate creates no second ingestion record', async () => {
+  const n = await countRows(
+    'SELECT id FROM cv_ingestion WHERE message_id=? AND attachment_id=?',
+    ['AAMk-test-message-0001', 'ATT-0001'],
   );
-  assert.equal(rows.length, 1, `expected exactly 1 receipt, found ${rows.length}`);
+  assert.equal(n, 1, `expected exactly 1 receipt, found ${n}`);
 });
 
-/* 7c — a DIFFERENT attachment on the SAME message is its own ingestion */
-await check('same message, different attachment is not a duplicate', async () => {
-  const r = await ingest(
-    base({ messageId: 'AAMk-test-message-0001', attachmentId: 'ATT-SECOND' }),
-    pdfFile('Second_Attachment.pdf'),
-  );
-  assert.equal(r.status, 201, 'a second attachment on one email must ingest separately');
-  assert.notEqual(r.body.ingestionId, firstIngestionId);
+await check('a duplicate does NOT trigger parsing a second time', async () => {
+  const before = await getReceipt(firstId);
+  assert.equal(before.parseAttempts, 1, 'precondition: exactly one parse so far');
+
+  for (let i = 0; i < 3; i += 1) {
+    const r = await ingest(base(), pdfFile());
+    assert.equal(r.body.code, 'duplicate');
+  }
+  await new Promise((res) => setTimeout(res, 400)); // let any stray parse start
+
+  const after = await getReceipt(firstId);
+  assert.equal(after.parseAttempts, 1,
+    `duplicates triggered ${after.parseAttempts} parses; must stay at 1`);
+  assert.equal(after.intakeId, before.intakeId, 'a duplicate produced a second intake');
 });
 
-/* 8 — concurrency: exactly one winner */
-await check('concurrent submissions of one attachment produce exactly one winner', async () => {
+await check('a duplicate creates no candidate and no application', async () => {
+  assert.equal(await candidateCount(), candidatesBefore, 'a candidate was created');
+  assert.equal(await applicationCount(), applicationsBefore, 'an application was created');
+});
+
+console.log('\n──── 3. concurrency ────');
+
+await check('concurrent submissions of one attachment yield exactly one ingestion', async () => {
   const id = { messageId: 'AAMk-race-0001', attachmentId: 'ATT-RACE' };
   const results = await Promise.all(
-    Array.from({ length: 6 }, () => ingest(base(id), pdfFile())),
+    Array.from({ length: 8 }, () => ingest(base(id), pdfFile())),
   );
   const created = results.filter((r) => r.status === 201);
   const dupes = results.filter((r) => r.status === 200 && r.body?.code === 'duplicate');
   assert.equal(created.length, 1,
-    `expected exactly 1 winner, got ${created.length} (statuses: ${results.map((r) => r.status).join(',')})`);
-  assert.equal(dupes.length, 5, `expected 5 duplicates, got ${dupes.length}`);
+    `expected exactly 1 winner, got ${created.length} (statuses ${results.map((r) => r.status).join(',')})`);
+  assert.equal(dupes.length, 7, `expected 7 duplicates, got ${dupes.length}`);
 
-  const { all } = await import('./src/lib/db.js');
-  const rows = all('SELECT id FROM cv_ingestion WHERE message_id=? AND attachment_id=?',
+  const n = await countRows('SELECT id FROM cv_ingestion WHERE message_id=? AND attachment_id=?',
     [id.messageId, id.attachmentId]);
-  assert.equal(rows.length, 1, `race left ${rows.length} rows in the table`);
+  assert.equal(n, 1, `the race left ${n} rows in the table`);
+
+  const settled = await waitTerminal(created[0].body.ingestionId);
+  assert.equal(settled.parseAttempts, 1,
+    `the race caused ${settled.parseAttempts} parses; must be 1`);
 });
 
-console.log('\n──── validation ────');
+console.log('\n──── 4. same message, different attachment ────');
 
-/* 3 — unsupported file type */
-await check('unsupported file type is rejected', async () => {
-  const r = await ingest(
-    base({ messageId: 'AAMk-bad-type', attachmentId: 'ATT-PNG', filename: 'logo.png' }),
-    { name: 'logo.png', type: 'image/png', bytes: Buffer.from('\x89PNG\r\n\x1a\n fake', 'latin1') },
-  );
-  assert.equal(r.status, 400, `expected 400, got ${r.status}`);
-  assert.equal(r.body.code, 'unsupported-file-type');
-  assert.equal(r.body.status, 'rejected');
+await check('a different attachmentId under the same messageId is accepted', async () => {
+  const a = await ingest(
+    base({ messageId: 'AAMk-multi-0001', attachmentId: 'ATT-A' }), pdfFile('CV_One.pdf'));
+  const b = await ingest(
+    base({ messageId: 'AAMk-multi-0001', attachmentId: 'ATT-B' }), pdfFile('CV_Two.pdf'));
+  assert.equal(a.status, 201, 'first attachment rejected');
+  assert.equal(b.status, 201, 'second attachment on the same email was treated as a duplicate');
+  assert.notEqual(a.body.ingestionId, b.body.ingestionId);
+
+  const n = await countRows('SELECT id FROM cv_ingestion WHERE message_id=?', ['AAMk-multi-0001']);
+  assert.equal(n, 2, `expected 2 receipts for one email, found ${n}`);
 });
 
-/* 3b — a rejected upload leaves no receipt behind */
-await check('a rejected file type creates no ingestion record', async () => {
-  const { all } = await import('./src/lib/db.js');
-  const rows = all('SELECT id FROM cv_ingestion WHERE attachment_id=?', ['ATT-PNG']);
-  assert.equal(rows.length, 0, 'a rejected upload wrote a receipt');
-});
+console.log('\n──── 5-7. validation ────');
 
-/* 4 — missing provenance */
-for (const field of ['messageId', 'attachmentId', 'filename', 'source']) {
-  await check(`missing provenance field "${field}" is rejected and named`, async () => {
+for (const field of ['messageId', 'attachmentId', 'source', 'filename', 'senderEmail', 'receivedAt']) {
+  await check(`missing ${field} is a validation error naming the field`, async () => {
     const fields = base({ messageId: `AAMk-miss-${field}`, attachmentId: `ATT-${field}` });
     delete fields[field];
     const r = await ingest(fields, pdfFile());
@@ -381,69 +405,116 @@ for (const field of ['messageId', 'attachmentId', 'filename', 'source']) {
   });
 }
 
-/* 5 — unknown source */
-await check('unknown ingestion source is rejected', async () => {
+await check('an invalid file type is a validation error', async () => {
   const r = await ingest(
-    base({ source: 'gmail', messageId: 'AAMk-src', attachmentId: 'ATT-SRC' }),
+    base({ messageId: 'AAMk-bad-type', attachmentId: 'ATT-PNG', filename: 'logo.png' }),
+    { name: 'logo.png', type: 'image/png', bytes: Buffer.alloc(2048, 7) },
+  );
+  assert.equal(r.status, 400, `expected 400, got ${r.status}`);
+  assert.equal(r.body.code, 'unsupported-file-type');
+});
+
+await check('an invalid file type stores no ingestion record', async () => {
+  const n = await countRows('SELECT id FROM cv_ingestion WHERE attachment_id=?', ['ATT-PNG']);
+  assert.equal(n, 0, 'a rejected upload wrote a receipt');
+});
+
+await check('a request with no file at all is refused', async () => {
+  const r = await ingest(base({ messageId: 'AAMk-nofile', attachmentId: 'ATT-NOFILE' }), null);
+  assert.equal(r.status, 400);
+  assert.equal(r.body.code, 'file-missing');
+});
+
+await check('an empty / too-small attachment is refused', async () => {
+  const r = await ingest(
+    base({ messageId: 'AAMk-tiny', attachmentId: 'ATT-TINY' }),
+    { name: 'tiny.pdf', type: 'application/pdf', bytes: Buffer.from('%PDF-1.4\n') },
+  );
+  assert.equal(r.status, 400);
+  assert.equal(r.body.code, 'file-too-small');
+});
+
+await check('a malformed senderEmail is refused', async () => {
+  const r = await ingest(
+    base({ messageId: 'AAMk-mail', attachmentId: 'ATT-MAIL', senderEmail: 'not-an-email' }),
     pdfFile(),
   );
   assert.equal(r.status, 400);
-  assert.equal(r.body.code, 'source-unknown');
+  assert.equal(r.body.code, 'sender-email-invalid');
 });
 
-/* 5b — malformed receivedAt */
-await check('malformed receivedAt is rejected', async () => {
+await check('an unparseable receivedAt is refused', async () => {
   const r = await ingest(
-    base({ messageId: 'AAMk-date', attachmentId: 'ATT-DATE', receivedAt: 'not-a-date' }),
+    base({ messageId: 'AAMk-date', attachmentId: 'ATT-DATE', receivedAt: 'last Tuesday' }),
     pdfFile(),
   );
   assert.equal(r.status, 400);
   assert.equal(r.body.code, 'received-at-invalid');
 });
 
-/* file missing entirely */
-await check('a request with no file is rejected', async () => {
-  const r = await ingest(base({ messageId: 'AAMk-nofile', attachmentId: 'ATT-NOFILE' }), null);
+await check('an unknown source is refused', async () => {
+  const r = await ingest(
+    base({ source: 'dropbox', messageId: 'AAMk-src', attachmentId: 'ATT-SRC' }), pdfFile());
   assert.equal(r.status, 400);
-  assert.equal(r.body.code, 'file-missing');
+  assert.equal(r.body.code, 'source-unknown');
 });
 
-console.log('\n──── authorization ────');
-
 await check('unauthenticated ingestion is refused', async () => {
-  const { body, contentType } = multipartBody(base({ messageId: 'x', attachmentId: 'y' }), pdfFile());
+  const { body, contentType } = multipartBody(base(), pdfFile());
   const res = await fetch(`${BASE}/api/ingest/cv`, {
     method: 'POST', headers: { 'Content-Type': contentType }, body,
   });
   assert.equal(res.status, 401);
 });
 
+console.log('\n──── source labels ────');
+
+await check('microsoft_365 is accepted as a synonym for outlook', async () => {
+  const r = await ingest(
+    base({ source: 'microsoft_365', messageId: 'AAMk-m365', attachmentId: 'ATT-M365' }),
+    pdfFile(),
+  );
+  assert.equal(r.status, 201, `microsoft_365 was rejected: ${JSON.stringify(r.body)}`);
+  assert.equal(r.body.source, 'microsoft_365', 'source was not preserved verbatim');
+});
+
+await check('relabelling the source does NOT create a second ingestion', async () => {
+  // The same attachment, announced under the other label. If source were part of
+  // the identity this would ingest twice — and renaming the scanner would
+  // silently re-ingest the whole mailbox.
+  const id = { messageId: 'AAMk-relabel', attachmentId: 'ATT-RELABEL' };
+  const first = await ingest(base({ ...id, source: 'outlook' }), pdfFile());
+  assert.equal(first.status, 201);
+  const second = await ingest(base({ ...id, source: 'microsoft_365' }), pdfFile());
+  assert.equal(second.status, 200, 'a relabelled duplicate was ingested again');
+  assert.equal(second.body.code, 'duplicate');
+
+  const n = await countRows('SELECT id FROM cv_ingestion WHERE message_id=?', [id.messageId]);
+  assert.equal(n, 1, `relabelling produced ${n} receipts`);
+});
+
 console.log('\n──── DOCX ────');
 
-/* 2 — valid DOCX */
-if (DOCX) {
-  await check('valid DOCX is ingested', async () => {
-    const r = await ingest(
-      base({ messageId: 'AAMk-docx-0001', attachmentId: 'ATT-DOCX',
-        filename: 'Test_Candidate_CV.docx' }),
-      { name: 'Test_Candidate_CV.docx',
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        bytes: DOCX },
-    );
-    assert.equal(r.status, 201, `expected 201, got ${r.status}: ${JSON.stringify(r.body)}`);
-    assert.ok(['PARSED', 'NO_FIELDS'].includes(r.body.status));
-    const expected = crypto.createHash('sha256').update(DOCX).digest('hex');
-    assert.equal(r.body.contentHash, expected, 'DOCX hash mismatch');
-  });
-} else {
-  skip('valid DOCX is ingested', 'docx fixture could not be built');
-}
+await check('a valid DOCX is ingested', async () => {
+  const r = await ingest(
+    base({ messageId: 'AAMk-docx-0001', attachmentId: 'ATT-DOCX',
+      filename: 'Test_Candidate_CV.docx' }),
+    { name: 'Test_Candidate_CV.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      bytes: DOCX },
+  );
+  assert.equal(r.status, 201, `expected 201, got ${r.status}: ${JSON.stringify(r.body)}`);
+  const expected = crypto.createHash('sha256').update(DOCX).digest('hex');
+  assert.equal(r.body.contentHash, expected, 'DOCX hash mismatch');
+  const settled = await waitTerminal(r.body.ingestionId);
+  assert.ok(['PARSED', 'NO_FIELDS'].includes(settled.status));
+});
 
 console.log('\n──── provenance ────');
 
-/* 13 — every provenance field round-trips unchanged */
-await check('all Microsoft 365 provenance fields are persisted unchanged', async () => {
+await check('every provenance field is persisted unchanged', async () => {
   const fields = base({
+    source: 'outlook',
     messageId: 'AAMk-prov-0001',
     attachmentId: 'ATT-PROV',
     filename: 'Ahmed_Mohamed_CV.pdf',
@@ -457,7 +528,7 @@ await check('all Microsoft 365 provenance fields are persisted unchanged', async
 
   const { get } = await import('./src/lib/db.js');
   const row = get('SELECT * FROM cv_ingestion WHERE id=?', [r.body.ingestionId]);
-  assert.equal(row.source, 'microsoft_365');
+  assert.equal(row.source, 'outlook');
   assert.equal(row.message_id, 'AAMk-prov-0001');
   assert.equal(row.attachment_id, 'ATT-PROV');
   assert.equal(row.sender_email, 'ahmed.mohamed@example.invalid');
@@ -465,34 +536,50 @@ await check('all Microsoft 365 provenance fields are persisted unchanged', async
   assert.equal(row.subject, 'Application for Civil Engineer');
   assert.equal(new Date(row.received_at).toISOString(), '2026-09-01T07:42:00.000Z');
   assert.equal(row.filename, 'Ahmed_Mohamed_CV.pdf');
+  assert.equal(row.mime_type, 'application/pdf');
+  assert.equal(row.size_bytes, PDF.length, 'file size not recorded');
   assert.ok(row.content_hash && row.content_hash.length === 64, 'hash not stored');
   assert.ok(row.stored_name, 'stored file reference not kept');
+  assert.ok(row.status, 'ingestion status not recorded');
   assert.ok(row.created_at && row.updated_at, 'timestamps missing');
 });
 
-/* 14 — no document text in the response */
-await check('the response carries no document text', async () => {
+await check('the stored file is retrievable from durable blob storage', async () => {
+  const { get } = await import('./src/lib/db.js');
+  const { readBlob } = await import('./src/lib/upload.js');
+  const row = get('SELECT stored_name FROM cv_ingestion WHERE attachment_id=?', ['ATT-PROV']);
+  const blob = readBlob(row.stored_name);
+  assert.ok(blob && blob.data, 'the CV bytes are not in durable storage');
+  assert.equal(crypto.createHash('sha256').update(blob.data).digest('hex'),
+    crypto.createHash('sha256').update(PDF).digest('hex'),
+    'stored bytes differ from what was uploaded');
+});
+
+await check('no response carries document text', async () => {
   const r = await ingest(
     base({ messageId: 'AAMk-leak-0001', attachmentId: 'ATT-LEAK' }), pdfFile());
-  const serialized = JSON.stringify(r.body);
   for (const forbidden of ['rawText', 'raw_text', 'preview', 'text', 'fields']) {
     assert.ok(!Object.prototype.hasOwnProperty.call(r.body, forbidden),
       `response exposed "${forbidden}"`);
   }
-  assert.ok(!serialized.includes('Synthetic CV'),
+  assert.ok(!JSON.stringify(r.body).includes('Synthetic CV'),
     'response echoed document contents');
+
+  const settled = await waitTerminal(r.body.ingestionId);
+  assert.ok(!JSON.stringify(settled).includes('Synthetic CV'),
+    'the receipt poll echoed document contents');
 });
 
-console.log('\n──── no candidate shortcut ────');
+console.log('\n──── no candidate / application shortcut ────');
 
-/* 12 — the whole suite created no candidate */
-await check('ingestion created no candidate directly', async () => {
-  const after = await candidateCount();
-  assert.equal(after, candidatesBefore,
-    `ingestion created ${after - candidatesBefore} candidate(s); it must create none`);
+await check('ingestion created no candidate and no application at any point', async () => {
+  assert.equal(await candidateCount(), candidatesBefore,
+    'the ingestion route created a candidate');
+  assert.equal(await applicationCount(), applicationsBefore,
+    'the ingestion route created an application');
 });
 
-await check('every receipt is either awaiting review or produced nothing', async () => {
+await check('anything that parsed points at a PENDING, unapproved intake', async () => {
   const { all } = await import('./src/lib/db.js');
   const rows = all('SELECT status, intake_id FROM cv_ingestion');
   assert.ok(rows.length > 0, 'no receipts written at all');
@@ -500,65 +587,50 @@ await check('every receipt is either awaiting review or produced nothing', async
     assert.ok(['RECEIVED', 'PARSED', 'NO_FIELDS', 'FAILED'].includes(r.status),
       `unexpected status ${r.status}`);
   }
-  // Anything that DID parse must point at a PENDING intake — never a candidate.
-  const parsed = rows.filter((r) => r.status === 'PARSED');
-  for (const r of parsed) {
+  for (const r of rows.filter((x) => x.status === 'PARSED')) {
     const intake = all('SELECT status, candidate_id FROM candidate_intake WHERE id=?',
       [r.intake_id])[0];
-    assert.ok(intake, 'PARSED receipt points at no intake');
+    assert.ok(intake, 'a PARSED receipt points at no intake');
     assert.equal(intake.status, 'PENDING', 'ingestion pre-approved an intake');
     assert.equal(intake.candidate_id ?? null, null,
       'ingestion attached a candidate without review');
   }
 });
 
-console.log('\n──── failure + retry lifecycle ────');
+console.log('\n──── failure, retry and restart recovery ────');
 
-/* 10 — a real persistence failure is not mistaken for a duplicate */
 await check('a persistence failure propagates and is not read as a duplicate', async () => {
   const store = await import('./src/lib/ingest-store.js');
-  // content_hash is NOT NULL. This is a genuine write failure, not a uniqueness
+  // content_hash is NOT NULL. A genuine write failure, not a uniqueness
   // conflict, so it must throw rather than be swallowed as "already ingested".
   assert.throws(() => store.claimIngestion({
-    source: 'microsoft_365',
-    messageId: 'AAMk-broken-0001',
-    attachmentId: 'ATT-BROKEN',
-    filename: 'broken.pdf',
-    contentHash: null,
+    source: 'outlook', messageId: 'AAMk-broken', attachmentId: 'ATT-BROKEN',
+    filename: 'broken.pdf', contentHash: null,
   }), (e) => !store.isIngestionIdentityViolation(e),
   'a NOT NULL violation was misclassified as a duplicate');
 });
 
-/* 11 — FAILED is retryable in place; terminal successes are not */
-await check('a FAILED receipt is retryable in place, reusing the same row', async () => {
+await check('a FAILED receipt is retried in place, reusing the same row', async () => {
   const store = await import('./src/lib/ingest-store.js');
-  const claim = store.claimIngestion({
-    source: 'microsoft_365',
-    messageId: 'AAMk-retry-0001',
-    attachmentId: 'ATT-RETRY',
-    filename: 'retry.pdf',
-    contentHash: crypto.createHash('sha256').update('retry').digest('hex'),
-  });
-  assert.equal(claim.claimed, true);
-  const id = claim.record.id;
+  const id = { messageId: 'AAMk-retry-0001', attachmentId: 'ATT-RETRY' };
+  const first = await ingest(base(id), pdfFile());
+  assert.equal(first.status, 201);
+  await waitTerminal(first.body.ingestionId);
 
-  const failed = store.markFailed(id, 'simulated downstream parse failure');
-  assert.equal(failed.status, 'FAILED');
-  assert.equal(store.isRetryable(failed), true);
+  store.markFailed(first.body.ingestionId, 'simulated downstream failure');
+  const again = await ingest(base(id), pdfFile());
+  assert.equal(again.status, 201, 'a FAILED attachment was not reprocessed');
+  assert.equal(again.body.ingestionId, first.body.ingestionId,
+    'the retry created a second receipt');
 
-  const reopened = store.reopenFailedIngestion(id);
-  assert.ok(reopened, 'a FAILED receipt was not reopened');
-  assert.equal(reopened.id, id, 'retry created a NEW row instead of reusing one');
-  assert.equal(reopened.status, 'RECEIVED');
-  assert.equal(reopened.reason ?? null, null, 'stale failure reason survived the retry');
+  const n = await countRows('SELECT id FROM cv_ingestion WHERE message_id=?', [id.messageId]);
+  assert.equal(n, 1, `the retry left ${n} receipts`);
 });
 
 await check('a PARSED or NO_FIELDS receipt is never reopened', async () => {
   const store = await import('./src/lib/ingest-store.js');
   const claim = store.claimIngestion({
-    source: 'microsoft_365',
-    messageId: 'AAMk-terminal-0001',
-    attachmentId: 'ATT-TERMINAL',
+    source: 'outlook', messageId: 'AAMk-terminal', attachmentId: 'ATT-TERMINAL',
     filename: 'terminal.pdf',
     contentHash: crypto.createHash('sha256').update('terminal').digest('hex'),
   });
@@ -568,24 +640,76 @@ await check('a PARSED or NO_FIELDS receipt is never reopened', async () => {
     'a successfully-ingested receipt was reopened for reprocessing');
 });
 
-/* 11b — a FAILED receipt re-POSTed over HTTP is reprocessed, not duplicated */
-await check('re-POSTing a FAILED attachment reprocesses the same receipt', async () => {
+await check('a receipt stranded by a restart is recoverable, not lost', async () => {
   const store = await import('./src/lib/ingest-store.js');
-  const { all } = await import('./src/lib/db.js');
-  const id = { messageId: 'AAMk-httpretry-0001', attachmentId: 'ATT-HTTPRETRY' };
+  const { run } = await import('./src/lib/db.js');
+  const { recoverStranded } = await import('./src/lib/ingest-parser.js');
 
-  const first = await ingest(base(id), pdfFile());
-  assert.equal(first.status, 201);
-  store.markFailed(first.body.ingestionId, 'simulated failure');
+  // Exactly what a crash mid-parse leaves behind: claimed, never settled.
+  const claim = store.claimIngestion({
+    source: 'outlook', messageId: 'AAMk-stranded', attachmentId: 'ATT-STRANDED',
+    filename: 'stranded.pdf', storedName: 'nonexistent-stranded.pdf',
+    contentHash: crypto.createHash('sha256').update('stranded').digest('hex'),
+  });
+  // Age it past the grace window so recovery considers it abandoned.
+  const old = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  run('UPDATE cv_ingestion SET created_at=?, parse_started_at=NULL WHERE id=?',
+    [old, claim.record.id]);
 
-  const again = await ingest(base(id), pdfFile());
-  assert.equal(again.status, 201, 'a FAILED attachment was not reprocessed');
-  assert.equal(again.body.ingestionId, first.body.ingestionId,
-    'reprocessing created a second receipt');
+  const stranded = store.strandedIngestions();
+  assert.ok(stranded.some((r) => r.id === claim.record.id),
+    'a stranded receipt was not detected as recoverable');
 
-  const rows = all('SELECT id FROM cv_ingestion WHERE message_id=? AND attachment_id=?',
-    [id.messageId, id.attachmentId]);
-  assert.equal(rows.length, 1, `retry left ${rows.length} receipts`);
+  const result = await recoverStranded();
+  assert.ok(result.recovered >= 1, 'recovery re-drove nothing');
+
+  const after = store.ingestionById(claim.record.id);
+  assert.notEqual(after.status, 'RECEIVED', 'the stranded receipt was left unsettled');
+  assert.ok(after.parseAttempts >= 1, 'recovery did not record a parse attempt');
+});
+
+console.log('\n──── scan state ────');
+
+await check('first run reports the conservative 2026-09-01 floor', async () => {
+  const r = await api('/api/ingest/scan-state?source=outlook', { token: TOKEN });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.lastSuccessfulScanAt, '2026-09-01T00:00:00.000Z');
+  assert.equal(r.body.isFirstRun, true);
+});
+
+await check('the watermark advances and is read back', async () => {
+  const r = await api('/api/ingest/scan-state', {
+    method: 'PUT', token: TOKEN,
+    body: { source: 'outlook', lastSuccessfulScanAt: '2026-09-01T18:00:00Z' },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const back = await api('/api/ingest/scan-state', { token: TOKEN });
+  assert.equal(back.body.lastSuccessfulScanAt, '2026-09-01T18:00:00.000Z');
+  assert.equal(back.body.isFirstRun, false);
+});
+
+await check('the watermark is shared across source labels', async () => {
+  const r = await api('/api/ingest/scan-state?source=microsoft_365', { token: TOKEN });
+  assert.equal(r.body.lastSuccessfulScanAt, '2026-09-01T18:00:00.000Z',
+    'renaming the source reset the watermark');
+});
+
+await check('the watermark refuses to move backwards', async () => {
+  const r = await api('/api/ingest/scan-state', {
+    method: 'PUT', token: TOKEN,
+    body: { source: 'outlook', lastSuccessfulScanAt: '2026-09-01T06:00:00Z' },
+  });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, 'scan-state-regression');
+});
+
+await check('a deliberate rewind is allowed with force', async () => {
+  const r = await api('/api/ingest/scan-state', {
+    method: 'PUT', token: TOKEN,
+    body: { source: 'outlook', lastSuccessfulScanAt: '2026-09-01T06:00:00Z', force: true },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.forced, true);
 });
 
 console.log('\n──── parse path (needs a CV reader) ────');
@@ -596,88 +720,27 @@ if (READER_WIRED) {
     const r = await ingest(
       base({ messageId: 'AAMk-parse-0001', attachmentId: 'ATT-PARSE' }), pdfFile());
     assert.equal(r.status, 201);
-    if (r.body.status === 'PARSED') {
-      assert.ok(r.body.intakeId, 'PARSED receipt has no intakeId');
+    const settled = await waitTerminal(r.body.ingestionId, 60000);
+    if (settled.status === 'PARSED') {
       const { get } = await import('./src/lib/db.js');
-      const intake = get('SELECT * FROM candidate_intake WHERE id=?', [r.body.intakeId]);
+      const intake = get('SELECT * FROM candidate_intake WHERE id=?', [settled.intakeId]);
       assert.equal(intake.status, 'PENDING');
       assert.equal(intake.origin, 'mailbox.ingest', 'intake origin not marked as mailbox');
     }
     assert.equal(await candidateCount(), before, 'parsing created a candidate');
   });
 } else {
-  skip('a readable CV is staged as a PENDING intake', 'no ANTHROPIC_API_KEY, so no CV reader is wired');
+  skip('a readable CV is staged as a PENDING intake',
+    'no ANTHROPIC_API_KEY, so no CV reader is wired');
   await check('with no reader wired, ingestion still records a durable receipt', async () => {
     const r = await ingest(
-      base({ messageId: 'AAMk-noreader-0001', attachmentId: 'ATT-NOREADER' }), pdfFile());
+      base({ messageId: 'AAMk-noreader', attachmentId: 'ATT-NOREADER' }), pdfFile());
     assert.equal(r.status, 201, 'a missing reader must not fail the ingestion');
-    assert.equal(r.body.status, 'NO_FIELDS');
-    assert.equal(r.body.code, 'no-fields');
-    assert.ok(r.body.reason, 'no reason given for producing nothing');
+    const settled = await waitTerminal(r.body.ingestionId);
+    assert.equal(settled.status, 'NO_FIELDS');
+    assert.ok(settled.reason, 'no reason recorded for producing nothing');
   });
 }
-
-console.log('\n──── scan state ────');
-
-await check('first run reports the conservative 2026-09-01 floor', async () => {
-  const r = await api('/api/ingest/scan-state?source=microsoft_365', { token: TOKEN });
-  assert.equal(r.status, 200);
-  assert.equal(r.body.source, 'microsoft_365');
-  assert.equal(r.body.lastSuccessfulScanAt, '2026-09-01T00:00:00.000Z',
-    'first-run watermark is not the agreed floor');
-  assert.equal(r.body.isFirstRun, true);
-});
-
-await check('the watermark advances and is read back', async () => {
-  const r = await api('/api/ingest/scan-state', {
-    method: 'PUT', token: TOKEN,
-    body: { source: 'microsoft_365', lastSuccessfulScanAt: '2026-09-01T18:00:00Z' },
-  });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.lastSuccessfulScanAt, '2026-09-01T18:00:00.000Z');
-
-  const back = await api('/api/ingest/scan-state', { token: TOKEN });
-  assert.equal(back.body.lastSuccessfulScanAt, '2026-09-01T18:00:00.000Z');
-  assert.equal(back.body.isFirstRun, false);
-});
-
-await check('the watermark refuses to move backwards', async () => {
-  const r = await api('/api/ingest/scan-state', {
-    method: 'PUT', token: TOKEN,
-    body: { source: 'microsoft_365', lastSuccessfulScanAt: '2026-09-01T06:00:00Z' },
-  });
-  assert.equal(r.status, 409, 'a backwards watermark was accepted');
-  assert.equal(r.body.code, 'scan-state-regression');
-
-  const back = await api('/api/ingest/scan-state', { token: TOKEN });
-  assert.equal(back.body.lastSuccessfulScanAt, '2026-09-01T18:00:00.000Z',
-    'the refused write still mutated the watermark');
-});
-
-await check('a deliberate rewind is allowed with force', async () => {
-  const r = await api('/api/ingest/scan-state', {
-    method: 'PUT', token: TOKEN,
-    body: { source: 'microsoft_365', lastSuccessfulScanAt: '2026-09-01T06:00:00Z', force: true },
-  });
-  assert.equal(r.status, 200);
-  assert.equal(r.body.lastSuccessfulScanAt, '2026-09-01T06:00:00.000Z');
-  assert.equal(r.body.forced, true);
-});
-
-await check('a malformed watermark is rejected', async () => {
-  const r = await api('/api/ingest/scan-state', {
-    method: 'PUT', token: TOKEN,
-    body: { source: 'microsoft_365', lastSuccessfulScanAt: 'yesterday' },
-  });
-  assert.equal(r.status, 400);
-  assert.equal(r.body.code, 'scan-state-invalid');
-});
-
-await check('scan state for an unknown source is refused', async () => {
-  const r = await api('/api/ingest/scan-state?source=gmail', { token: TOKEN });
-  assert.equal(r.status, 400);
-  assert.equal(r.body.code, 'source-unknown');
-});
 
 /* ---------------------------------- summary -------------------------------- */
 

@@ -159,4 +159,7 @@ export function fileExists(storedName) {
   try { if (get('SELECT 1 AS x FROM file_blob WHERE stored_name=?', [storedName])) return true; } catch {}
   return fs.existsSync(path.join(UPLOAD_DIR, storedName));
 }
+// Exported so routes can enforce the same ceiling they were streamed under,
+// rather than each inventing its own limit.
+export const MAX_UPLOAD_BYTES = MAX_BYTES;
 export { UPLOAD_DIR };

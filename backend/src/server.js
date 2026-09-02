@@ -35,6 +35,7 @@ import threadRoutes from './routes/thread.js';
 import adminUiRoutes from './routes/admin-ui.js';
 import notificationRoutes from './routes/notifications.js';
 import ingestRoutes from './routes/ingest.js';
+import { recoverStranded } from './lib/ingest-parser.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -262,6 +263,12 @@ app.listen(PORT, () => {
         startWatcher();
         console.log('   📁 CV inbox watcher started.\n');
       }
+      // Finish CV ingestions stranded mid-parse by a previous restart. Detached
+      // on purpose: recovery replays real model calls, and the readiness gate
+      // must not wait on them. Failures settle their own receipts as FAILED.
+      void recoverStranded().catch((e) => console.error(JSON.stringify({
+        level: 'error', msg: 'ingest.recovery_failed', error: e.message,
+      })));
     } catch (e) {
       console.error('  ! Initialisation failed:', e.message);
       // Open the gate anyway so the operator can see real errors rather than 503s.

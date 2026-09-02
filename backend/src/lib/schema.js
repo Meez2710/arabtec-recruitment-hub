@@ -21,6 +21,17 @@ function addColumnIfMissing(table, column, definition) {
 }
 
 export function ensureSchema() {
+  // The CV-ingestion idempotency key was briefly (source, message_id,
+  // attachment_id). Source is not part of the identity — the same mailbox is
+  // called both 'outlook' and 'microsoft_365', and keeping the label in the key
+  // would mean relabelling the scanner silently re-ingests everything.
+  //
+  // Dropped HERE, before the CREATE below, not in the additive-migration section
+  // at the end: the new UNIQUE(message_id, attachment_id) index cannot be built
+  // while rows exist that differ only by source label, and a failed CREATE
+  // inside the main DDL block would take the whole boot down.
+  try { run('DROP INDEX IF EXISTS ux_cv_ingestion_identity'); } catch { /* fresh database */ }
+
   exec(`
   CREATE TABLE IF NOT EXISTS business_unit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -470,6 +481,14 @@ export function ensureSchema() {
     status TEXT NOT NULL DEFAULT 'RECEIVED',            -- RECEIVED|PARSED|NO_FIELDS|FAILED
     intake_id INTEGER,                                  -- the candidate_intake this became
     reason TEXT,                                        -- why it failed or produced nothing
+    -- How many times parsing has actually been STARTED for this attachment.
+    -- A duplicate submission must never increment it: that is the difference
+    -- between an idempotent retry and paying for a second model call. Also the
+    -- restart-recovery guard, so a stranded row cannot be re-driven forever.
+    parse_attempts INTEGER NOT NULL DEFAULT 0,
+    -- When the current parse attempt began. Lets a restart tell "in flight"
+    -- from "stranded by a crash" without a separate job table.
+    parse_started_at TEXT,
     created_by INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -539,14 +558,21 @@ export function ensureSchema() {
     is_active INTEGER NOT NULL DEFAULT 1
   );
 
-  -- THE IDEMPOTENCY KEY for inbound mailbox ingestion. This index is the only
-  -- thing standing between a retried orchestrator run and a duplicate
-  -- candidate, so it is UNIQUE at the database level rather than checked in
-  -- application code: two concurrent POSTs for one attachment both reach the
-  -- INSERT, and the database picks a winner. The source column is part of the
-  -- key so the same identifiers arriving from another connector never collide.
-  CREATE UNIQUE INDEX IF NOT EXISTS ux_cv_ingestion_identity
-    ON cv_ingestion(source, message_id, attachment_id);
+  -- THE IDEMPOTENCY KEY for inbound mailbox ingestion: (message_id, attachment_id).
+  --
+  -- This index is the only thing standing between a retried scanner run and a
+  -- duplicate candidate, so it is UNIQUE at the DATABASE level rather than
+  -- checked in application code: two concurrent POSTs for one attachment both
+  -- reach the INSERT, and the database picks a winner. A check-then-insert
+  -- cannot do this — the check and the insert are not atomic.
+  --
+  -- SOURCE IS DELIBERATELY NOT IN THE KEY. The same mailbox is called both
+  -- 'outlook' and 'microsoft_365' depending on who is describing it, and if the
+  -- label were part of the identity then relabelling the scanner would silently
+  -- re-ingest the entire mailbox. Graph message ids are globally unique, so the
+  -- pair alone identifies the attachment. Source is recorded as provenance only.
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_cv_ingestion_message_attachment
+    ON cv_ingestion(message_id, attachment_id);
   -- Second-level duplicate signal only — deliberately NOT unique. The same CV
   -- may legitimately arrive twice for two different vacancies.
   CREATE INDEX IF NOT EXISTS idx_cv_ingestion_hash ON cv_ingestion(content_hash);
@@ -787,6 +813,10 @@ export function ensureSchema() {
   addColumnIfMissing('candidate', 'resume_path', 'TEXT');
   addColumnIfMissing('candidate', 'resume_name', 'TEXT');
   addColumnIfMissing('candidate_document', 'stored_path', 'TEXT');
+
+  // ---- CV ingestion: additive migration for tables created before these ----
+  addColumnIfMissing('cv_ingestion', 'parse_attempts', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('cv_ingestion', 'parse_started_at', 'TEXT');
 
   // ---- Interview assessment (Arabtec form): two evaluations per application + shared final decision ----
   exec(`
