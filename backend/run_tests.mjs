@@ -59,7 +59,18 @@ const start = Date.now();
 // Force it on for the whole test run so every suite has its users.
 // Suites log in as admin with a known password. In CI there is no local .env, so we
 // pin SEED_ADMIN_PASSWORD here to keep seeding deterministic (test-only credential).
+//
+// SMTP_TRANSPORT is forced to the dry-run transport for the WHOLE run, and that
+// is a safety interlock rather than a convenience. Only four of the suites set
+// it themselves; the rest inherited whatever was in the developer's .env. That
+// was harmless while nobody had working credentials and every send logged
+// "email.skipped, not_configured" — but the moment real ones exist, `npm test`
+// starts posting genuine mail from the company mailbox to fixture addresses
+// like offer.inject.8@example.com. Those bounce, from a real domain, on every
+// test run. A suite that wants to assert on delivery still gets a fully built
+// and addressed message out of jsonTransport, so nothing is lost by pinning it.
 const env = { ...process.env, SEED_DEMO_DATA: 'true', NODE_ENV: 'test',
+  SMTP_TRANSPORT: 'json',
   SEED_ADMIN_PASSWORD: process.env.SEED_ADMIN_PASSWORD || 'Admin@12345' };
 const runLegacy = process.env.RUN_LEGACY === '1';
 const toRun = runLegacy ? [...SUITES, ...LEGACY_SUITES] : SUITES;

@@ -3,7 +3,7 @@ import {
   Branding, Buttons, Workflows, SystemSettings, NotificationConfig } from '../lib/models.js';
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { isConfigured as emailConfigured, verifyConnection, sendMail } from '../lib/mailer.js';
+import { isConfigured as emailConfigured, verifyConnection, sendMail, DEFAULT_SMTP_HOST } from '../lib/mailer.js';
 import { NOTIFICATION_EVENTS, RECIPIENTS, EXTERNAL_RECIPIENTS } from '../lib/notification-catalog.js';
 import { testEmail } from '../lib/email_templates.js';
 import { allFlags, setFlag, isEnabled } from '../lib/feature-flags.js';
@@ -163,7 +163,7 @@ router.put('/system', requireAuth, requirePermission('system.manage'), (req, res
 router.get('/email/status', requireAuth, requireAnyPermission('system.manage', 'notification.manage'), (req, res) => {
   res.json({
     configured: emailConfigured(),
-    host: process.env.SMTP_HOST || 'smtp.office365.com',
+    host: process.env.SMTP_HOST || DEFAULT_SMTP_HOST,
     from: process.env.MAIL_FROM || process.env.SMTP_USER || '(not set)',
   });
 });

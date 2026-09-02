@@ -107,7 +107,15 @@ export const NOTIFICATION_EVENTS = [
       + 'Stage moves can be applied in bulk, so one action can email several people — '
       + 'untick this to record rejections without contacting anyone.',
     template: 'rejection',
-    defaults: { enabled: true, inApp: false, email: true, recipients: ['candidate'] },
+    // Ships OFF, and it is the only candidate-facing event that does.
+    // offer.sent and interview.scheduled are one deliberate act aimed at one
+    // named person — a recruiter pressing "send offer" knows an offer is going
+    // out. Rejection is reached through a STAGE MOVE, which is bulk-actionable,
+    // so the same click that tidies a pipeline of forty people can post forty
+    // rejection letters. Mail to an external candidate cannot be recalled, so
+    // the first deploy must not be the moment anyone discovers that. One tick
+    // in the console turns it on, deliberately.
+    defaults: { enabled: true, inApp: false, email: false, recipients: ['candidate'] },
   },
   {
     key: 'candidate.application_received', label: 'Application acknowledgement', category: 'Candidates',

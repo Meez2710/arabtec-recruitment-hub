@@ -8,7 +8,9 @@
 //   • Best-effort: a mail failure never throws into a request handler.
 //
 // Configuration (set in the server environment / Render, never in code):
-//   SMTP_HOST       default smtp.gmail.com
+//   SMTP_HOST       default smtp.office365.com (arabtecegy.com is a Microsoft 365
+//                   tenant — its MX is arabtecegy-com.mail.protection.outlook.com
+//                   and its SPF includes spf.protection.outlook.com)
 //   SMTP_PORT       default 587  (STARTTLS)
 //   SMTP_USER       the Gmail address, e.g. career@arabtecegy.com   (REQUIRED)
 //   SMTP_PASS       Gmail app password (NOT your login password)    (REQUIRED)
@@ -18,9 +20,17 @@ import nodemailer from 'nodemailer';
 
 let transport = null;
 
+// The default host is exported so the settings endpoint reports the host mail is
+// ACTUALLY sent through. These two had drifted apart: this module defaulted to
+// smtp.gmail.com while /email/status reported smtp.office365.com, so with
+// SMTP_HOST unset the console would have shown a healthy-looking Microsoft host
+// while every message was really being offered to Gmail, which rejects
+// arabtecegy.com addresses outright. One constant, one answer.
+export const DEFAULT_SMTP_HOST = 'smtp.office365.com';
+
 function cfg() {
   return {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host: process.env.SMTP_HOST || DEFAULT_SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
