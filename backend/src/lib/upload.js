@@ -139,6 +139,20 @@ export function streamFile(storedName, res, fallbackName, opts = {}) {
   return true;
 }
 
+// Remove a stored file from both the durable store and the disk cache.
+//
+// Used when a route rejects an upload AFTER the middleware has already written
+// it: the multipart parser stores bytes as it reads them, so a file that fails
+// a route's own validation is already on disk and in the blob table. Without
+// this it stays there forever, referenced by nothing.
+export function deleteBlob(storedName) {
+  if (!storedName) return false;
+  let removed = false;
+  try { run('DELETE FROM file_blob WHERE stored_name=?', [storedName]); removed = true; } catch { /* blob store may be unavailable */ }
+  try { fs.rmSync(path.join(UPLOAD_DIR, storedName), { force: true }); } catch { /* cache copy may not exist */ }
+  return removed;
+}
+
 export function uploadPath(storedName) { return path.join(UPLOAD_DIR, storedName); }
 export function fileExists(storedName) {
   if (!storedName) return false;

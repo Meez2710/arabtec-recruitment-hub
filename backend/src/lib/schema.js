@@ -427,6 +427,54 @@ export function ensureSchema() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- One inbound CV attachment, as received from an external mailbox.
+  --
+  -- THE GAP THIS FILLS. The Microsoft 365 orchestrator submits the same
+  -- attachment more than once — a retried HTTP call, an overlapping scan
+  -- window, a re-run after a crash. Without a durable identity for "this
+  -- attachment", each retry would parse the CV again and stage a second intake,
+  -- and a reviewer would approve the same person twice.
+  --
+  -- THE IDENTITY IS (source, message_id, attachment_id), NOT THE CONTENT HASH.
+  -- Those three name the attachment at its origin, which is what a retry
+  -- repeats. content_hash is recorded too, but as a SECOND-LEVEL signal only:
+  -- one person legitimately mails the same PDF for two different vacancies, so
+  -- deduplicating on bytes alone would silently drop the second application.
+  --
+  -- ENFORCED BY THE DATABASE. The unique index below is the whole mechanism —
+  -- two concurrent submissions of one attachment race into the same INSERT and
+  -- exactly one wins. An application-level "check then insert" cannot do this;
+  -- the check and the insert are not atomic.
+  --
+  -- This is a RECEIPT, not a candidate. It records that bytes arrived and where
+  -- they were routed. Candidates are still created only by an approved
+  -- candidate_intake review.
+  CREATE TABLE IF NOT EXISTS cv_ingestion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    -- Provenance, preserved verbatim as the mailbox reported it.
+    source TEXT NOT NULL,                               -- 'microsoft_365'
+    message_id TEXT NOT NULL,
+    attachment_id TEXT NOT NULL,
+    sender_email TEXT,
+    sender_name TEXT,
+    subject TEXT,
+    received_at TEXT,
+    -- The attachment itself.
+    filename TEXT NOT NULL,
+    mime_type TEXT,
+    size_bytes INTEGER,
+    content_hash TEXT NOT NULL,                         -- SHA-256, computed server-side
+    stored_name TEXT,                                   -- file_blob key
+    -- Where it went.
+    status TEXT NOT NULL DEFAULT 'RECEIVED',            -- RECEIVED|PARSED|NO_FIELDS|FAILED
+    intake_id INTEGER,                                  -- the candidate_intake this became
+    reason TEXT,                                        -- why it failed or produced nothing
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS application (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     application_no TEXT UNIQUE NOT NULL,
@@ -490,6 +538,20 @@ export function ensureSchema() {
     label TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1
   );
+
+  -- THE IDEMPOTENCY KEY for inbound mailbox ingestion. This index is the only
+  -- thing standing between a retried orchestrator run and a duplicate
+  -- candidate, so it is UNIQUE at the database level rather than checked in
+  -- application code: two concurrent POSTs for one attachment both reach the
+  -- INSERT, and the database picks a winner. The source column is part of the
+  -- key so the same identifiers arriving from another connector never collide.
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_cv_ingestion_identity
+    ON cv_ingestion(source, message_id, attachment_id);
+  -- Second-level duplicate signal only — deliberately NOT unique. The same CV
+  -- may legitimately arrive twice for two different vacancies.
+  CREATE INDEX IF NOT EXISTS idx_cv_ingestion_hash ON cv_ingestion(content_hash);
+  CREATE INDEX IF NOT EXISTS idx_cv_ingestion_status ON cv_ingestion(status);
+  CREATE INDEX IF NOT EXISTS idx_cv_ingestion_intake ON cv_ingestion(intake_id);
 
   CREATE INDEX IF NOT EXISTS idx_cand_name ON candidate(full_name);
   CREATE INDEX IF NOT EXISTS idx_cand_dedup_email ON candidate(dedup_email);

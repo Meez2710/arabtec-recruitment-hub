@@ -34,6 +34,7 @@ import assessmentRoutes from './routes/assessments.js';
 import threadRoutes from './routes/thread.js';
 import adminUiRoutes from './routes/admin-ui.js';
 import notificationRoutes from './routes/notifications.js';
+import ingestRoutes from './routes/ingest.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -183,6 +184,8 @@ app.use('/api/assessments', assessmentRoutes);
 app.use('/api/thread', threadRoutes);
 app.use('/api/admin-ui', adminUiRoutes);
 app.use('/api/notifications', notificationRoutes);
+// Inbound CV ingestion from external mailboxes (Microsoft 365 daily scan).
+app.use('/api/ingest', ingestRoutes);
 
 // Serve the frontend (single-page app) from ../../frontend/public.
 // Cache policy: the HTML shell must ALWAYS revalidate so a version bump on
