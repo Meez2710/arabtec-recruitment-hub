@@ -29,7 +29,7 @@ let cluster = null;
 try {
   cluster = await startCluster({ processes: 3, ownDatabase: own });
   const { api, race, db } = cluster;
-  const { get, all } = db;
+  const { get, all, exec } = db;
   const { JOIN_CONFLICT } = await import('./src/lib/join.js');
   const { JOINED_UNIQUE_INDEX } = await import('./src/lib/join-reconciliation.js');
 
@@ -37,6 +37,12 @@ try {
   const hrMgr = await cluster.login('hr.manager@arabtec.com');
   const recMgr = await cluster.login('rec.manager@arabtec.com');
   const meta = await api(0, '/api/requests/meta/form', { token: hrMgr });
+
+  // This suite deliberately arms ONE candidate on TWO requisitions to prove the
+  // DB-level one-joined-per-candidate index is what enforces uniqueness under a
+  // cross-process race. The Phase 2 one-active-link API guard would block that
+  // setup, so turn it off here — it never gates joining (see bl27_test).
+  exec("UPDATE system_setting SET value='true' WHERE key='allow_duplicate_application'");
 
   const appStatus = (id) => get('SELECT status FROM application WHERE id=$1', [id]).status;
   const reqRow = (id) => get('SELECT status, headcount, headcount_filled FROM recruitment_request WHERE id=$1', [id]);

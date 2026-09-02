@@ -4700,7 +4700,60 @@ const toApiStatus = (s) => APP_WRITE[s] || s;
 const REASON_STATUSES = ['rejected', 'offer_declined', 'on_hold'];
 // Canonical + display spellings: the API stores `joined`, the board labels it Hired.
 const TERMINAL_APP = ['hired', 'joined', 'rejected', 'offer_declined'];
-
+// Turn a failed move into a sentence a recruiter can act on. The API already
+// returns human-readable reasons ("Cannot move from Sourced to Offer."); this only
+// guards against an empty or non-textual error leaking into the UI.
+function moveErrorText(e) {
+  const m = (e && e.message ? String(e.message) : '').trim();
+  if (!m || /^\s*[{[<]/.test(m)) return 'Could not move this candidate. Please try again.';
+  return m;
+}
+// One write path for every pipeline (per-request board and the Talent Pool board).
+// Optimistic splice, then the server's record, then exact rollback.
+async function moveApplication({ appId, status, reason, list, setList, pending, setPending, toast }) {
+  if (pending.has(appId)) return;
+  const snapshot = list;
+  setPending((p) => new Set(p).add(appId));
+  setList((xs) => (xs || []).map((a) => (a.id === appId ? { ...a, status: toApiStatus(status) } : a)));
+  try {
+    const r = await api.post(`/applications/${appId}/move`, { status: toApiStatus(status), reason });
+    if (r && r.application) {
+      setList((xs) => (xs || []).map((a) => (a.id === appId ? { ...a, ...r.application } : a)));
+    }
+    toast(`Moved to ${(APP_STATUS[status] || {}).label || status}`);
+  } catch (e) {
+    setList(snapshot);
+    toast(moveErrorText(e), 'error');
+  } finally {
+    setPending((p) => { const nx = new Set(p); nx.delete(appId); return nx; });
+  }
+}
+function historyHoverTitle(h) {
+  if (!h) return '';
+  const n = Number(h.priorApplications);
+  const times = !Number.isFinite(n) ? null : n === 1 ? 'once' : n + ' times';
+  const outcome = h.lastOutcome ? ((APP_STATUS[h.lastOutcome] || {}).label || h.lastOutcome) : null;
+  let when = null;
+  if (h.lastSeenAt) {
+    const d = new Date(h.lastSeenAt);
+    if (!isNaN(d)) when = d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  }
+  const bits = [];
+  if (times) bits.push('Applied ' + times + ' before');
+  if (outcome || when) bits.push('last outcome: ' + [outcome, when].filter(Boolean).join(', '));
+  return bits.join(' · ');
+}
+function HistoryBadge({ history, onOpen }) {
+  if (!history || !history.returning) return null;
+  const rehire = !!history.rehire;
+  const title = historyHoverTitle(history);
+  return (
+    <button type="button" className="hist-badge-btn" title={title || undefined}
+      onClick={(e) => { e.stopPropagation(); onOpen && onOpen(); }}>
+      <Badge variant={rehire ? 'success' : 'info'}>{rehire ? 'Rehire' : 'Returning'}</Badge>
+    </button>
+  );
+}
 function pipelineStage(status) {
   const s = APP_STATUS[status];
   if (!s) return 'sourced';
@@ -4794,22 +4847,10 @@ function RequestPipeline({ request, user, btns }) {
   // message is surfaced. `pending` guards against double-submit and drives the
   // per-card busy state.
   async function move(appId, status, reason) {
-    if (pending.has(appId)) return;                       // double-submit guard
-    const snapshot = apps;                                // for rollback
-    setPending((p) => new Set(p).add(appId));
-    setApps((list) => (list || []).map((a) => (a.id === appId ? { ...a, status: toApiStatus(status) } : a)));
-    try {
-      const r = await api.post(`/applications/${appId}/move`, { status: toApiStatus(status), reason });
-      if (r && r.application) {
-        setApps((list) => (list || []).map((a) => (a.id === appId ? r.application : a)));
-      }
-      toast(`Moved to ${(APP_STATUS[status] || {}).label || status}`);
-    } catch (e) {
-      setApps(snapshot);                                  // restore previous stage
-      toast(moveErrorText(e), 'error');
-    } finally {
-      setPending((p) => { const nx = new Set(p); nx.delete(appId); return nx; });
-    }
+    await moveApplication({
+      appId, status, reason,
+      list: apps, setList: setApps, pending, setPending, toast,
+    });
   }
   function requestMove(appId, status) {
     if (pending.has(appId)) return;
@@ -4947,15 +4988,6 @@ function StageSelect({ value, onChange, disabled }) {
     {APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>;
 }
 
-// Turn a failed move into a sentence a recruiter can act on. The API already
-// returns human-readable reasons ("Cannot move from Sourced to Offer."); this only
-// guards against an empty or non-textual error leaking into the UI.
-function moveErrorText(e) {
-  const m = (e && e.message ? String(e.message) : '').trim();
-  if (!m || /^\s*[{[<]/.test(m)) return 'Could not move this candidate. Please try again.';
-  return m;
-}
-
 function NextActionModal({ app, onClose, onSaved }) {
   const toast = useToast();
   const [nextAction, setNextAction] = useState(app.nextAction || '');
@@ -4975,7 +5007,7 @@ function NextActionModal({ app, onClose, onSaved }) {
   );
 }
 
-function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns }) {
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns, showRequest }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
   // While a stage move is in flight the card dims, shows a "Moving…" chip and
@@ -4988,7 +5020,7 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
         {canBulk && <input className="pcard-check" type="checkbox" checked={selected} disabled={pending} onChange={onSelect} onClick={(e) => e.stopPropagation()} />}
         <span className="pcard-av">{initials(cand.fullName || '?')}</span>
         <div className="pcard-id">
-          <span className="pcard-name" title={cand.fullName}>{cand.fullName}</span>
+          <span className="pcard-name" title={cand.fullName || cand.name}>{cand.fullName || cand.name || '—'}</span>
           <span className="pcard-role" title={(cand.currentPosition || '') + (cand.currentCompany ? ' · ' + cand.currentCompany : '')}>
             {cand.currentPosition || '—'}{cand.currentCompany ? ' · ' + cand.currentCompany : ''}
           </span>
@@ -4998,6 +5030,11 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
 
       {/* Facts. Salary is deliberately not rendered on the board. */}
       <div className="pcard-facts">
+        {showRequest && (app.request?.ticketNo || app.ticketNo) && (
+          <span className="code-pill" title={app.request?.ticketNo || app.ticketNo}>
+            {shortReqCode(app.request?.ticketNo || app.ticketNo)}
+          </span>
+        )}
         {cand.yearsExperience != null && <span className="fact">{cand.yearsExperience}y exp</span>}
         {cand.location && <span className="fact">{cand.location}</span>}
         {cand.noticePeriod && <span className="fact">{cand.noticePeriod}</span>}
@@ -5024,6 +5061,188 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
           {btns.generate_offer?.visible && <div className="menu-item" onClick={() => { setMenu(false); onOffer(); }}>Generate Offer</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+const PIPELINE_CAP = 500;
+async function fetchAllApplications(params) {
+  const pageSize = 100;
+  let page = 1;
+  let items = [];
+  let total = 0;
+  let totalPages = 1;
+  while (items.length < PIPELINE_CAP) {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, v); });
+    qs.set('page', String(page));
+    qs.set('pageSize', String(pageSize));
+    const r = await api.get('/applications?' + qs.toString());
+    const batch = r.items || r.applications || [];
+    total = r.total != null ? r.total : (r.pagination ? r.pagination.total : items.length + batch.length);
+    totalPages = r.totalPages != null ? r.totalPages : (r.pagination ? r.pagination.totalPages : 1);
+    items = items.concat(batch);
+    if (page >= totalPages || batch.length === 0) break;
+    page++;
+  }
+  return { items, total, capped: items.length < total };
+}
+function TalentPipeline({
+  user, btns, pipeFilters, setPipeFilters, q, setQ,
+  linkRequests, unlinked, unlinkedTotal, hasMoreUnlinked,
+  onOpenCards, onOpenCandidate, toast,
+}) {
+  const [apps, setApps] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [pending, setPending] = useState(new Set());
+  const [moveModal, setMoveModal] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [capped, setCapped] = useState(false);
+  const canMove = btns.move_stage?.visible;
+  const load = useCallback(async () => {
+    setApps(null); setLoadError(null);
+    try {
+      const params = {
+        q: q || undefined,
+        status: pipeFilters.stage ? toApiStatus(pipeFilters.stage) : undefined,
+        recruiterId: pipeFilters.recruiterId || undefined,
+        requestId: pipeFilters.requestId || undefined,
+        projectId: pipeFilters.projectId || undefined,
+      };
+      const r = await fetchAllApplications(params);
+      setApps(r.items);
+      setTotal(r.total);
+      setCapped(r.capped);
+    } catch (e) {
+      setApps([]);
+      setLoadError(e.message || 'Could not load the pipeline.');
+    }
+  }, [q, pipeFilters]);
+  useEffect(() => { load(); }, [load]);
+  async function move(appId, status, reason) {
+    await moveApplication({
+      appId, status, reason,
+      list: apps, setList: setApps, pending, setPending, toast,
+    });
+  }
+  function requestMove(appId, status) {
+    if (pending.has(appId)) return;
+    if (REASON_STATUSES.includes(status)) setMoveModal({ appId, toStatus: status });
+    else move(appId, status);
+  }
+  const recruiterOptions = useMemo(() => {
+    const m = new Map();
+    (apps || []).forEach((a) => { if (a.recruiter) m.set(String(a.recruiter.id), a.recruiter.name); });
+    return [...m.entries()];
+  }, [apps]);
+  const projectOptions = useMemo(() => {
+    const m = new Map();
+    (linkRequests || []).forEach((r) => { if (r.project) m.set(String(r.project.id), r.project.name); });
+    (apps || []).forEach((a) => {
+      const p = a.request && a.request.project;
+      if (p && p.id) m.set(String(p.id), p.name || p);
+    });
+    return [...m.entries()];
+  }, [apps, linkRequests]);
+  if (loadError) {
+    return <div className="card"><Empty icon="⚠" title="Could not load the pipeline" text={loadError}
+      action={<button className="btn" onClick={load}>Retry</button>} /></div>;
+  }
+  if (!apps) return <ListSkeleton rows={6} />;
+  const cols = APP_ORDER;
+  const activeApps = apps.filter((a) => !isDisqualified(a.status));
+  return (
+    <div>
+      <div className="toolbar">
+        <input placeholder="Search name / request…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 200 }} />
+        <select value={pipeFilters.stage} onChange={(e) => setPipeFilters((f) => ({ ...f, stage: e.target.value }))}>
+          <option value="">All stages</option>
+          {APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}
+        </select>
+        <select value={pipeFilters.recruiterId} onChange={(e) => setPipeFilters((f) => ({ ...f, recruiterId: e.target.value }))}>
+          <option value="">All recruiters</option>
+          {recruiterOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+        <select value={pipeFilters.requestId} onChange={(e) => setPipeFilters((f) => ({ ...f, requestId: e.target.value }))}>
+          <option value="">All requests</option>
+          {(linkRequests || []).filter(isLinkable).map((r) => (
+            <option key={r.id} value={r.id}>{shortReqCode(r.ticketNo)} · {r.title}</option>
+          ))}
+        </select>
+        <select value={pipeFilters.projectId} onChange={(e) => setPipeFilters((f) => ({ ...f, projectId: e.target.value }))}>
+          <option value="">All projects</option>
+          {projectOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+        <div className="spacer" />
+        <CountPill n={apps.length} total={total || null} noun="application" />
+      </div>
+      {capped && (
+        <div className="notice notice-warn" style={{ marginBottom: 12 }}>
+          Showing the first {apps.length} of {total} applications. Narrow the filters to see the rest — nothing was dropped silently.
+        </div>
+      )}
+      {(unlinkedTotal > 0 || (unlinked && unlinked.length)) && (
+        <div className="notice notice-info" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span>{unlinkedTotal || unlinked.length} candidate{(unlinkedTotal || unlinked.length) === 1 ? '' : 's'} not on a request.
+            {hasMoreUnlinked ? ' More are in the pool.' : ''}</span>
+          <button className="btn btn-sm" onClick={onOpenCards}>View cards</button>
+        </div>
+      )}
+      <div className="kanban">
+        <div className="kan-col">
+          <div className="kan-head">
+            <span className="kan-dot" style={{ background: 'var(--muted)' }} />
+            <span className="kan-title">Unlinked</span>
+            <span className="kan-count">{unlinked ? unlinked.length : 0}</span>
+          </div>
+          <div className="kan-body">
+            {!unlinked || unlinked.length === 0
+              ? <div className="kan-empty">Everyone on this page is on a request</div>
+              : unlinked.map((c) => (
+                <div key={c.id} className="pcard" onClick={() => onOpenCandidate(c.id)} style={{ cursor: 'pointer' }}>
+                  <div className="pcard-top">
+                    <span className="pcard-av">{initials(c.fullName)}</span>
+                    <div className="pcard-id">
+                      <span className="pcard-name">{c.fullName}</span>
+                      <span className="pcard-role">{c.currentPosition || '—'}</span>
+                    </div>
+                  </div>
+                  <HistoryBadge history={c.history} onOpen={() => onOpenCandidate(c.id, { tab: 'activity', focusPrior: true })} />
+                </div>
+              ))}
+          </div>
+        </div>
+        {cols.map((st) => {
+          const items = activeApps.filter((a) => pipelineStage(a.status) === st);
+          return (
+            <div key={st} className="kan-col">
+              <div className="kan-head">
+                <span className="kan-dot" style={{ background: APP_STAGE_COLORS[st] || 'var(--muted)' }} />
+                <span className="kan-title">{APP_STATUS[st].label}</span>
+                <span className="kan-count">{items.length}</span>
+              </div>
+              <div className="kan-body">
+                {items.length === 0
+                  ? <div className="kan-empty">No candidates at this stage</div>
+                  : items.map((a) => (
+                    <PipelineCard key={a.id} app={a} showRequest pending={pending.has(a.id)}
+                      canMove={canMove} canBulk={false} selected={false}
+                      onSelect={() => {}}
+                      onView={() => onOpenCandidate(a.candidate?.id || a.candidateId)}
+                      onMove={(s) => requestMove(a.id, s)}
+                      onSchedule={() => {}}
+                      onOffer={() => {}}
+                      onNote={() => {}}
+                      btns={btns} />
+                  ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {moveModal && <Confirm title="Provide a reason" message={`Set status to "${APP_STATUS[moveModal.toStatus].label}". This is recorded in the audit trail.`} requireReason danger
+        onConfirm={(reason) => { const m = moveModal; setMoveModal(null); move(m.appId, m.toStatus, reason); }}
+        onClose={() => setMoveModal(null)} />}
     </div>
   );
 }
@@ -5541,6 +5760,81 @@ function Pager({ page, pageSize, total, totalPages, onPage, onPageSize }) {
 // in POST /applications rather than inventing a second notion of "open".
 const LINKABLE_BLOCKED = ['closed', 'cancelled', 'rejected', 'filled'];
 const isLinkable = (r) => !LINKABLE_BLOCKED.includes(r.status);
+function isActiveLink(link) {
+  if (!link) return false;
+  return !LINKABLE_BLOCKED.includes(link.requestStatus);
+}
+function activeLinkOf(c) {
+  return (c && (c.links || []).find(isActiveLink)) || null;
+}
+function useViewportAnchor(open, wrapRef, { width = 320, minBelow = 300 } = {}) {
+  const [anchor, setAnchor] = useState(null);
+  useEffect(() => {
+    if (!open) { setAnchor(null); return undefined; }
+    const place = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const b = el.getBoundingClientRect();
+      const left = Math.min(Math.max(8, b.left), window.innerWidth - width - 8);
+      const below = window.innerHeight - b.bottom;
+      const openUp = below < minBelow && b.top > below;
+      setAnchor({ left, top: openUp ? undefined : b.bottom + 5, bottom: openUp ? window.innerHeight - b.top + 5 : undefined });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open, width, minBelow]);
+  return anchor;
+}
+function RequestPickList({ candidate, requests, q, setQ, picked, setPicked }) {
+  const linkedIds = new Set((candidate.links || []).map((l) => l.requestId));
+  const available = requests.filter((r) => isLinkable(r) && !linkedIds.has(r.id));
+  const suggested = suggestRequests(candidate, available);
+  const suggestedIds = new Set(suggested.map((r) => r.id));
+  const needle = (q || '').trim().toLowerCase();
+  const match = (r) => !needle
+    || String(r.title || '').toLowerCase().includes(needle)
+    || String(r.ticketNo || '').toLowerCase().includes(needle);
+  const rest = available.filter((r) => !suggestedIds.has(r.id) && match(r));
+  const shownSuggested = suggested.filter(match);
+  return (
+    <>
+      <input className="rq-pop-search" placeholder="Search requests…" value={q}
+        onChange={(e) => setQ(e.target.value)} autoFocus />
+      <div className="rq-pop-list">
+        {available.length === 0 && <div className="rq-pop-empty">No request is open for linking.</div>}
+        {shownSuggested.length > 0 && <div className="rq-pop-label">Suggested</div>}
+        {shownSuggested.map((r) => (
+          <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
+            onClick={() => setPicked(r.id)}>
+            <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
+            <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
+          </button>
+        ))}
+        {rest.length > 0 && <div className="rq-pop-label">Available Requests</div>}
+        {rest.map((r) => (
+          <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
+            onClick={() => setPicked(r.id)}>
+            <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
+            <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+// Withdraw-then-link. No /withdraw route on this backend; moving the old app to
+// `rejected` (reason-required, terminal) is what frees the 409.
+async function relinkToRequest(candidateId, fromLink, dest) {
+  if (fromLink && fromLink.applicationId) {
+    await api.post(`/applications/${fromLink.applicationId}/move`, {
+      status: 'rejected',
+      reason: `Moved to ${dest.ticketNo} (${dest.title})`,
+    });
+  }
+  return api.post('/applications', { candidateId, requestId: dest.id });
+}
 
 /**
  * A cheap, explainable suggestion from data the API already returned.
@@ -5575,140 +5869,236 @@ function openRequest(id, onNavigate) {
   window.dispatchEvent(new CustomEvent('ats:open-request', { detail: { id } }));
 }
 
-function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked }) {
+function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked, onRelinked }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState('link');
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [blocking, setBlocking] = useState(null);
+  const [confirmMove, setConfirmMove] = useState(null);
   const wrapRef = useRef(null);
   const popRef = useRef(null);
-  const [anchor, setAnchor] = useState(null);
+  const anchor = useViewportAnchor(open, wrapRef);
   const links = candidate.links || [];
-
-  // Dismiss on an outside click or Escape. Deliberately NOT a full-screen
-  // scrim: a fixed scrim would paint over the popover and eat the very clicks
-  // it is meant to let through.
+  const active = activeLinkOf(candidate);
   useEffect(() => {
     if (!open) return undefined;
     const inside = (t) => (wrapRef.current && wrapRef.current.contains(t))
       || (popRef.current && popRef.current.contains(t));
-    const onDown = (e) => { if (!inside(e.target)) { setOpen(false); setError(''); } };
-    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); setError(''); } };
+    const onDown = (e) => { if (!inside(e.target)) { setOpen(false); setError(''); setBlocking(null); } };
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); setError(''); setBlocking(null); } };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [open]);
-
-  // Anchor the popover to the button in viewport coordinates. It is rendered
-  // through a portal (below) because each table row is its own stacking
-  // context: a dropdown that overflows its cell is painted under the next
-  // row's controls no matter what z-index it carries.
-  useEffect(() => {
-    if (!open) { setAnchor(null); return undefined; }
-    const place = () => {
-      const el = wrapRef.current;
-      if (!el) return;
-      const b = el.getBoundingClientRect();
-      const width = 320;
-      const left = Math.min(Math.max(8, b.left), window.innerWidth - width - 8);
-      // Flip above the control when there is not enough room below it.
-      const below = window.innerHeight - b.bottom;
-      const openUp = below < 300 && b.top > below;
-      setAnchor({ left, top: openUp ? undefined : b.bottom + 5, bottom: openUp ? window.innerHeight - b.top + 5 : undefined });
-    };
-    place();
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
-  }, [open]);
-
-  // Already linked: show the relationship and route to it. Never offer a second
-  // link to a request this candidate is already on — the API would 409.
-  if (links.length > 0) {
-    return (
-      <div className="rq-links">
-        {links.map((l) => (
-          <button key={l.applicationId} className="rq-link-chip"
-            title={`${l.ticketNo || 'Request'} — ${l.requestTitle || ''} (${l.status})`}
-            onClick={(e) => { e.stopPropagation(); openRequest(l.requestId, onNavigate); }}>
-            {shortReqCode(l.ticketNo) || 'Request'}
-            {l.requestTitle ? <span className="rq-link-sub">{l.requestTitle}</span> : null}
-          </button>
-        ))}
-      </div>
-    );
+  function captureConflict(e) {
+    const br = e && e.status === 409 && e.data && e.data.blockingRequest;
+    setError((e && (e.data && e.data.error || e.message)) || 'Could not link this candidate.');
+    setBlocking(br || null);
   }
-
-  if (!canLink) return <span className="muted">—</span>;
-
-  const linkedIds = new Set(links.map((l) => l.requestId));
-  const available = requests.filter((r) => isLinkable(r) && !linkedIds.has(r.id));
-  const suggested = suggestRequests(candidate, available);
-  const suggestedIds = new Set(suggested.map((r) => r.id));
-  const needle = q.trim().toLowerCase();
-  const match = (r) => !needle
-    || String(r.title || '').toLowerCase().includes(needle)
-    || String(r.ticketNo || '').toLowerCase().includes(needle);
-  const rest = available.filter((r) => !suggestedIds.has(r.id) && match(r));
-  const shownSuggested = suggested.filter(match);
-
-  async function confirm() {
+  async function confirmLink() {
     if (!picked) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setBlocking(null);
     try {
-      // The parent owns the candidate list, so it owns the optimistic update and
-      // its rollback. This cell only reports the intent and renders the outcome.
-      const req = available.find((r) => r.id === picked) || null;
+      const req = requests.find((r) => r.id === picked) || null;
       await onLinked(candidate.id, req);
       setOpen(false); setPicked(null); setQ('');
     } catch (e) {
-      // The real backend message: already applied, request not linkable, or a
-      // permission failure. Never a fabricated success, never a silent retry.
-      setError(e.message || 'Could not link this candidate.');
+      captureConflict(e);
     } finally { setBusy(false); }
   }
-
+  function beginMove(dest) {
+    if (!dest) return;
+    setConfirmMove({ dest, from: active });
+  }
+  async function doMove(dest) {
+    setBusy(true); setError('');
+    try {
+      const r = await relinkToRequest(candidate.id, active, dest);
+      // relinkToRequest already withdrew the old application and created the new
+      // one — onRelinked is a refresh hook, not a second create.
+      if (onRelinked) await onRelinked(candidate.id, dest, r);
+      setOpen(false); setPicked(null); setQ(''); setBlocking(null);
+    } catch (e) {
+      captureConflict(e);
+    } finally { setBusy(false); setConfirmMove(null); }
+  }
+  const pop = open && anchor && ReactDOM.createPortal(
+    (
+      <div className="rq-pop" ref={popRef} style={{ left: anchor.left, top: anchor.top, bottom: anchor.bottom }}
+        role="dialog" aria-label={mode === 'move' ? `Move ${candidate.fullName} to another request` : `Link ${candidate.fullName} to a hiring request`}>
+        <div className="rq-pop-head">{mode === 'move' ? 'Move to another request' : 'Link to Request'}</div>
+        <RequestPickList candidate={candidate} requests={requests} q={q} setQ={setQ} picked={picked} setPicked={setPicked} />
+        {error && (
+          <div className="rq-pop-error">
+            {error}
+            {blocking && (
+              <div style={{ marginTop: 8 }}>
+                <button className="btn btn-sm" onClick={() => { setMode('move'); setError(''); }}>
+                  Move to another request
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="rq-pop-foot">
+          <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); setError(''); setBlocking(null); }}>Cancel</button>
+          <button className="btn btn-sm" disabled={!picked || busy} onClick={() => {
+            const dest = requests.find((r) => r.id === picked);
+            if (mode === 'move') beginMove(dest);
+            else confirmLink();
+          }}>
+            {busy ? 'Working…' : (mode === 'move' ? 'Move' : 'Link')}
+          </button>
+        </div>
+      </div>
+    ), document.body);
   return (
     <div className="rq-linkwrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
-      <button className="rq-link-btn" onClick={() => setOpen((v) => !v)}
-        aria-haspopup="dialog" aria-expanded={open}>Link to Request ▾</button>
+      {active ? (
+        <div className="rq-links" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <button className="rq-link-chip"
+            title={`${active.ticketNo || 'Request'} — ${active.requestTitle || ''} (${active.status})`}
+            onClick={() => openRequest(active.requestId, onNavigate)}>
+            {shortReqCode(active.ticketNo) || 'Request'}
+            {active.requestTitle ? <span className="rq-link-sub">{active.requestTitle}</span> : null}
+          </button>
+          {canLink && (
+            <button className="rq-link-btn" onClick={() => { setMode('move'); setOpen((v) => !v); setError(''); setBlocking(null); }}
+              aria-haspopup="dialog" aria-expanded={open}>
+              Move to another request ▾
+            </button>
+          )}
+        </div>
+      ) : canLink ? (
+        <button className="rq-link-btn" onClick={() => { setMode('link'); setOpen((v) => !v); setError(''); setBlocking(null); }}
+          aria-haspopup="dialog" aria-expanded={open}>Link to Request ▾</button>
+      ) : <span className="muted">—</span>}
+      {pop}
+      {confirmMove && (
+        <Confirm
+          title="Move to another request"
+          message={`Withdraw ${candidate.fullName} from ${shortReqCode(confirmMove.from?.ticketNo) || 'the current request'} (${confirmMove.from?.requestTitle || '—'}) and link them to ${shortReqCode(confirmMove.dest.ticketNo)} (${confirmMove.dest.title})? Closed history stays on the profile.`}
+          confirmLabel="Move"
+          danger
+          onConfirm={() => doMove(confirmMove.dest)}
+          onClose={() => setConfirmMove(null)} />
+      )}
+    </div>
+  );
+}
+
+function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onScreen, onFit, onUnfit, onLinked, onRelinked, onOpen, toast }) {
+  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState('menu');
+  const [q, setQ] = useState('');
+  const [picked, setPicked] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [blocking, setBlocking] = useState(null);
+  const [confirmMove, setConfirmMove] = useState(null);
+  const wrapRef = useRef(null);
+  const popRef = useRef(null);
+  const anchor = useViewportAnchor(open, wrapRef, { width: 280, minBelow: 260 });
+  const active = activeLinkOf(candidate);
+  useEffect(() => {
+    if (!open) return undefined;
+    const inside = (t) => (wrapRef.current && wrapRef.current.contains(t))
+      || (popRef.current && popRef.current.contains(t));
+    const onDown = (e) => { if (!inside(e.target)) { setOpen(false); setPanel('menu'); setError(''); } };
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); setPanel('menu'); setError(''); } };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  function captureConflict(e) {
+    const br = e && e.status === 409 && e.data && e.data.blockingRequest;
+    setError((e && (e.data && e.data.error || e.message)) || 'Could not link this candidate.');
+    setBlocking(br || null);
+  }
+  async function doLink() {
+    if (!picked) return;
+    setBusy(true); setError(''); setBlocking(null);
+    try {
+      const req = requests.find((r) => r.id === picked);
+      await onLinked(candidate.id, req);
+      setOpen(false); setPanel('menu'); setPicked(null);
+    } catch (e) { captureConflict(e); }
+    finally { setBusy(false); }
+  }
+  async function doMove(dest) {
+    setBusy(true); setError('');
+    try {
+      const r = await relinkToRequest(candidate.id, active, dest);
+      if (onRelinked) await onRelinked(candidate.id, dest, r);
+      setOpen(false); setPanel('menu'); setPicked(null); setBlocking(null);
+    } catch (e) { captureConflict(e); }
+    finally { setBusy(false); setConfirmMove(null); }
+  }
+  function Item({ onClick, children }) {
+    return <div className="menu-item" onClick={onClick}>{children}</div>;
+  }
+  return (
+    <div className="cc-action-wrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="btn btn-secondary btn-sm" aria-haspopup="menu" aria-expanded={open}
+        onClick={() => { setOpen((v) => !v); setPanel('menu'); setError(''); setBlocking(null); }}>
+        Action ▾
+      </button>
       {open && anchor && ReactDOM.createPortal(
         (
-          <div className="rq-pop" ref={popRef} style={{ left: anchor.left, top: anchor.top, bottom: anchor.bottom }}
-            role="dialog" aria-label={`Link ${candidate.fullName} to a hiring request`}>
-            <div className="rq-pop-head">Link to Request</div>
-            <input className="rq-pop-search" placeholder="Search requests…" value={q}
-              onChange={(e) => setQ(e.target.value)} autoFocus />
-            <div className="rq-pop-list">
-              {available.length === 0 && <div className="rq-pop-empty">No request is open for linking.</div>}
-              {shownSuggested.length > 0 && <div className="rq-pop-label">Suggested</div>}
-              {shownSuggested.map((r) => (
-                <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
-                  onClick={() => setPicked(r.id)}>
-                  <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
-                  <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
-                </button>
-              ))}
-              {rest.length > 0 && <div className="rq-pop-label">Available Requests</div>}
-              {rest.map((r) => (
-                <button key={r.id} className={'rq-pop-item' + (picked === r.id ? ' picked' : '')}
-                  onClick={() => setPicked(r.id)}>
-                  <strong>{shortReqCode(r.ticketNo)} — {r.title}</strong>
-                  <small>{[r.project?.name, r.department?.name].filter(Boolean).join(' · ') || '—'}</small>
-                </button>
-              ))}
-            </div>
-            {error && <div className="rq-pop-error">{error}</div>}
-            <div className="rq-pop-foot">
-              <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); setError(''); }}>Cancel</button>
-              <button className="btn btn-sm" disabled={!picked || busy} onClick={confirm}>
-                {busy ? 'Linking…' : 'Link'}
-              </button>
-            </div>
+          <div className="rq-pop" ref={popRef} style={{ left: anchor.left, top: anchor.top, bottom: anchor.bottom, width: 280 }}
+            role="menu" aria-label={`Actions for ${candidate.fullName}`}>
+            {panel === 'menu' && (
+              <>
+                <div className="rq-pop-head">Action</div>
+                <div className="rq-pop-list" style={{ paddingTop: 6 }}>
+                  {canScreen && sc === 'new' && <Item onClick={() => { setOpen(false); onScreen(); }}>Screen</Item>}
+                  {canScreen && sc !== 'fit' && <Item onClick={() => { setOpen(false); onFit(); }}>Mark fit</Item>}
+                  {canScreen && sc !== 'unfit' && <Item onClick={() => { setOpen(false); onUnfit(); }}>Mark unfit</Item>}
+                  {canLink && !active && <Item onClick={() => { setPanel('link'); setPicked(null); setQ(''); }}>Link to request</Item>}
+                  {canLink && active && <Item onClick={() => { setPanel('move'); setPicked(null); setQ(''); }}>Move to another request</Item>}
+                  {candidate.hasResume && <Item onClick={() => { setOpen(false); downloadResume(candidate, toast); }}>Download CV</Item>}
+                  <Item onClick={() => { setOpen(false); onOpen(); }}>Open profile</Item>
+                </div>
+              </>
+            )}
+            {(panel === 'link' || panel === 'move') && (
+              <>
+                <div className="rq-pop-head">{panel === 'move' ? 'Move to another request' : 'Link to Request'}</div>
+                <RequestPickList candidate={candidate} requests={requests} q={q} setQ={setQ} picked={picked} setPicked={setPicked} />
+                {error && (
+                  <div className="rq-pop-error">
+                    {error}
+                    {blocking && (
+                      <div style={{ marginTop: 8 }}>
+                        <button className="btn btn-sm" onClick={() => { setPanel('move'); setError(''); }}>Move to another request</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="rq-pop-foot">
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setPanel('menu'); setError(''); }}>Back</button>
+                  <button className="btn btn-sm" disabled={!picked || busy} onClick={() => {
+                    const dest = requests.find((r) => r.id === picked);
+                    if (panel === 'move') setConfirmMove({ dest });
+                    else doLink();
+                  }}>{busy ? 'Working…' : (panel === 'move' ? 'Move' : 'Link')}</button>
+                </div>
+              </>
+            )}
           </div>
         ), document.body)}
+      {confirmMove && (
+        <Confirm
+          title="Move to another request"
+          message={`Withdraw ${candidate.fullName} from ${shortReqCode(active?.ticketNo) || 'the current request'} (${active?.requestTitle || '—'}) and link them to ${shortReqCode(confirmMove.dest.ticketNo)} (${confirmMove.dest.title})? Closed history stays on the profile.`}
+          confirmLabel="Move" danger
+          onConfirm={() => doMove(confirmMove.dest)}
+          onClose={() => setConfirmMove(null)} />
+      )}
     </div>
   );
 }
@@ -5719,6 +6109,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const [filters, setFilters] = useState(() => ({
     q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '',
     currentCompany: '', tag: '', currentPosition: '', university: '',
+    graduationFrom: '', graduationTo: '',
+    ...(initialFilters || {}),
+  }));
+  const [pipeFilters, setPipeFilters] = useState(() => ({
+    stage: '', recruiterId: '', requestId: '', projectId: '',
     ...(initialFilters || {}),
   }));
   // Arriving with a filter from elsewhere (nothing sends one yet, but the
@@ -5727,6 +6122,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   useEffect(() => {
     if (!initialFilters) return;
     setFilters((f) => ({ ...f, ...initialFilters }));
+    setPipeFilters((f) => ({ ...f, ...initialFilters }));
   }, [initialFilters]);
   // Plain-English search. It does not hold its own result list: it fills the
   // filters above and lets the existing load() run, so paging, tabs, sorting
@@ -5780,7 +6176,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   }, [bgParseJob?.jobId, bgParseJob?.status, parsingCv, toast]);
 
   const [importOpen, setImportOpen] = useState(false);
-  const [view, setView] = useState('board'); // board | table
+  const [view, setView] = useState('pipeline'); // pipeline | cards | table
+  const [profileTab, setProfileTab] = useState(null);
+  const [profileFocusPrior, setProfileFocusPrior] = useState(false);
+  const CAND_FILTER_KEYS = ['q', 'source', 'location', 'minExp', 'maxExp', 'noticePeriod',
+    'currentCompany', 'tag', 'currentPosition', 'university', 'graduationFrom', 'graduationTo'];
 
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
   // (custom event) and page mounting fresh after navigation (pending id).
@@ -5822,7 +6222,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const load = useCallback(async () => {
     setCandidates(null); setLoadError(null);
     const params = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
+    Object.entries(filters).forEach(([k, v]) => { if (v && CAND_FILTER_KEYS.includes(k)) params.set(k, v); });
     if (screenTab !== 'all') params.set('screeningStatus', screenTab);
     params.set('page', String(page));
     params.set('pageSize', String(pageSize));
@@ -5880,7 +6280,14 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
 
   const clearSelection = useCallback(() => setSelected(new Set()), []);
 
-  if (selectedId) return <CandidateProfile id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
+  function openProfile(id, opts) {
+    setProfileTab((opts && opts.tab) || 'overview');
+    setProfileFocusPrior(!!(opts && opts.focusPrior));
+    setSelectedId(id);
+  }
+  if (selectedId) return <CandidateProfile id={selectedId} user={user} btns={btns} onNavigate={onNavigate}
+    initialTab={profileTab} focusPrior={profileFocusPrior}
+    onBack={() => { setSelectedId(null); setProfileTab(null); setProfileFocusPrior(false); load(); }} />;
 
   // Database fitness-screen tabs (target flow: new → screening → fit | unfit).
   // NOTE: the source-attribution tab row (LinkedIn / Careers / Referral / Agency /
@@ -5893,11 +6300,29 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     q: 'Search', location: 'Location', currentCompany: 'Company',
     minExp: 'Min exp', maxExp: 'Max exp', tag: 'Tag',
     currentPosition: 'Role', university: 'University',
+    graduationFrom: 'Graduated from', graduationTo: 'Graduated to',
+    stage: 'Stage', recruiterId: 'Recruiter', requestId: 'Request', projectId: 'Project',
   };
-  const activeFilters = Object.entries(filters)
-    .filter(([k, v]) => v && FILTER_LABELS[k])
-    .map(([k, v]) => [k, `${FILTER_LABELS[k]}: ${v}`]);
-  const clearFilter = (k) => setFilters((f) => ({ ...f, [k]: '' }));
+  const mergedForChips = { ...filters, ...pipeFilters };
+  const activeFilters = Object.entries(mergedForChips)
+    .filter(([k, v]) => v && FILTER_LABELS[k] && v !== true)
+    .map(([k, v]) => {
+      let shown = v;
+      if (k === 'stage') shown = (APP_STATUS[v] || {}).label || v;
+      if (k === 'requestId') {
+        const r = linkRequests.find((x) => String(x.id) === String(v));
+        shown = r ? `${shortReqCode(r.ticketNo)} · ${r.title}` : v;
+      }
+      if (k === 'projectId') {
+        const r = linkRequests.find((x) => x.project && String(x.project.id) === String(v));
+        shown = (r && r.project && r.project.name) || v;
+      }
+      return [k, `${FILTER_LABELS[k]}: ${shown}`];
+    });
+  const clearFilter = (k) => {
+    if (k in pipeFilters) setPipeFilters((f) => ({ ...f, [k]: '' }));
+    setFilters((f) => ({ ...f, [k]: '' }));
+  };
   const clearAllFilters = () => {
     setFilters((f) => Object.fromEntries(Object.keys(f).map((k) => [k, ''])));
     setScreenTab('all');
@@ -5975,9 +6400,29 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   async function bulkLink() {
     const request = linkRequests.find((r) => String(r.id) === String(bulkRequestId));
     if (!request) return;
-    await bulkRun(`Linked to ${shortReqCode(request.ticketNo)} —`,
-      (id) => linkCandidate(id, request));
+    const ids = [...selected];
+    const skipIds = ids.filter((id) => {
+      const c = (candidates || []).find((x) => x.id === id);
+      return !!(c && activeLinkOf(c));
+    });
+    const work = ids.filter((id) => !skipIds.includes(id));
+    if (work.length === 0) {
+      toast(`Skipped ${skipIds.length} candidate${skipIds.length === 1 ? '' : 's'} already on a request`);
+      setBulkRequestId('');
+      return;
+    }
+    setBulkBusy(true);
+    let ok = 0; const failures = [];
+    for (const id of work) {
+      try { await linkCandidate(id, request); ok++; } catch (e) { failures.push(e.message || 'failed'); }
+    }
+    setBulkBusy(false);
+    clearSelection();
+    const skipBit = skipIds.length ? `; skipped ${skipIds.length} already on a request` : '';
+    if (failures.length === 0) toast(`Linked to ${shortReqCode(request.ticketNo)} — ${ok} candidate${ok === 1 ? '' : 's'}${skipBit}`);
+    else toast(`Linked to ${shortReqCode(request.ticketNo)} — ${ok}; ${failures.length} could not be done — ${failures[0]}${skipBit}`, ok ? 'warning' : 'error');
     setBulkRequestId('');
+    load();
   }
 
   async function setScreening(id, status, reason) {
@@ -5996,9 +6441,9 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   return (
     <div>
       <PageHead crumb="Recruitment / Talent Pool" title="Talent Pool"
-        sub="The person record. Application status lives on each candidate's application to a request — never on the candidate."
+        sub="One active request at a time. Closed applications stay on the profile as history."
         actions={<>
-          <ViewToggle value={view} onChange={setView} options={[['board', 'Cards'], ['table', 'Table']]} />
+          <ViewToggle value={view} onChange={setView} options={[['pipeline', 'Pipeline'], ['cards', 'Cards'], ['table', 'Table']]} />
           {btns.add_candidate?.visible && (
             <button className="btn" onClick={() => { setResumeJob(null); setParsingCv(true); }}>Parse CV</button>
           )}
@@ -6043,18 +6488,21 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
           <button className="btn btn-ghost btn-sm" onClick={clearAllFilters}>Clear</button>
         </div>
       )}
+      {view !== 'pipeline' && (
       <div className="toolbar">
         <input placeholder="Search name / id / company / email…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 240 }} />
         <input placeholder="Location" value={filters.location} onChange={(e) => setFilters((f) => ({ ...f, location: e.target.value }))} style={{ width: 120 }} />
         <input placeholder="Company" value={filters.currentCompany} onChange={(e) => setFilters((f) => ({ ...f, currentCompany: e.target.value }))} style={{ width: 120 }} />
-        <input placeholder="Min exp" type="number" value={filters.minExp} onChange={(e) => setFilters((f) => ({ ...f, minExp: e.target.value }))} style={{ width: 80 }} />
-        <input placeholder="Max exp" type="number" value={filters.maxExp} onChange={(e) => setFilters((f) => ({ ...f, maxExp: e.target.value }))} style={{ width: 80 }} />
+        <input placeholder="Grad from" type="number" value={filters.graduationFrom} onChange={(e) => setFilters((f) => ({ ...f, graduationFrom: e.target.value }))} style={{ width: 96 }} title="Graduation year from" />
+        <input placeholder="Grad to" type="number" value={filters.graduationTo} onChange={(e) => setFilters((f) => ({ ...f, graduationTo: e.target.value }))} style={{ width: 88 }} title="Graduation year to" />
         <input placeholder="Tag" value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))} style={{ width: 100 }} />
         <div className="spacer" />
         <CountPill n={candidates ? shown.length : null} total={candidates ? candidates.length : null} noun="candidate" />
       </div>
+      )}
 
       {/* Database fitness-screen tabs (new → screening → fit | unfit) */}
+      {view !== 'pipeline' && (
       <div className="seg-tabs" title="Screen candidates for fitness before attaching them to a requisition">
         {SCREEN_TABS.map(([k, label]) => (
           <button key={k} className={'seg-tab' + (screenTab === k ? ' active' : '')} onClick={() => setScreenTab(k)}>
@@ -6062,6 +6510,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
           </button>
         ))}
       </div>
+      )}
 
       {activeFilters.length > 0 && (
         <div className="filter-chips">
@@ -6132,7 +6581,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               </th>
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              <SortTh label="Exp" col="experience" sort={sort} onSort={toggleSort} />
+              <SortTh label="University" col="university" sort={sort} onSort={toggleSort} />
+              <SortTh label="Graduation" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
               <th className="th-request">Request</th>
               <th>Stage</th>
@@ -6140,7 +6590,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
             </tr></thead>
             <tbody>{shown.map((c) => (
               <tr key={c.id} className={'row-link' + (selected.has(c.id) ? ' row-selected' : '')}
-                onClick={() => setSelectedId(c.id)}>
+                onClick={() => openProfile(c.id)}>
                 <td className="th-sel" onClick={(e) => e.stopPropagation()}>
                   <input type="checkbox" aria-label={`Select ${c.fullName}`}
                     checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
@@ -6149,7 +6599,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <div className="idcell">
                     <span className="idcell-av">{initials(c.fullName)}</span>
                     <span className="idcell-txt">
-                      <span className="cell-strong">{c.fullName}</span>
+                      <span className="cell-strong">{c.fullName} <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} /></span>
                       <span className="cell-sub">{c.candidateNo}</span>
                     </span>
                   </div>
@@ -6159,11 +6609,15 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <span className="cell-strong">{c.currentPosition || '—'}</span>
                   {c.currentCompany ? <span className="cell-sub">{c.currentCompany}</span> : null}
                 </td>
-                <td data-label="Experience" className="cell-sub-only">{c.yearsExperience == null ? '—' : c.yearsExperience + ' yrs'}</td>
+                <td data-label="University">
+                  <span className="cell-strong">{c.university || '—'}</span>
+                  {c.major ? <span className="cell-sub">{c.major}</span> : null}
+                </td>
+                <td data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>
                 <td data-label="Location" className="cell-sub-only">{c.location || '—'}</td>
                 <td data-label="Request">
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
-                    onNavigate={onNavigate} onLinked={linkOne} />
+                    onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
                 </td>
                 <td data-label="Stage"><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
@@ -6176,42 +6630,56 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
             ))}</tbody>
           </table>
         </div></div>
+      ) : view === 'pipeline' ? (
+        <TalentPipeline
+          user={user} btns={btns}
+          pipeFilters={pipeFilters} setPipeFilters={setPipeFilters}
+          q={filters.q} setQ={(value) => setFilters((f) => ({ ...f, q: value }))}
+          linkRequests={linkRequests}
+          unlinked={shown.filter((c) => !activeLinkOf(c))}
+          unlinkedTotal={shown.filter((c) => !activeLinkOf(c)).length}
+          hasMoreUnlinked={!!pageInfo.hasMore || (pageInfo.total > shown.length)}
+          onOpenCards={() => setView('cards')}
+          onOpenCandidate={openProfile}
+          toast={toast} />
       ) : (
         <div className="cand-grid">
           {shown.map((c) => (
-            <div key={c.id} className="card cand-card" onClick={() => setSelectedId(c.id)}>
-              <div className="cc-top">
+            <div key={c.id} className="card cand-card" onClick={() => openProfile(c.id)}>
+              <div className="cc-face">
                 <div className="cc-avatar">{initials(c.fullName)}</div>
-                <div style={{ minWidth: 0 }}>
-                  <div className="cc-name">{c.fullName}</div>
-                  <div className="cc-headline">{c.currentPosition || '—'}{c.currentCompany ? ' · ' + c.currentCompany : ''}</div>
+                <div className="cc-id">
+                  <div className="cc-name">
+                    {c.fullName}
+                    <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} />
+                  </div>
+                  <div className="cc-headline">{c.currentPosition || '—'}</div>
+                </div>
+                <div className="cc-uni">
+                  <div className="cc-uni-name" title={c.university || ''}>{c.university || '—'}</div>
+                  <div className="cc-uni-major" title={c.major || ''}>{c.major || '—'}</div>
                 </div>
               </div>
-              {/* Card face stays deliberately quiet: screening state and source live in
-                  the detail drawer, not on the card. Only durable facts appear here. */}
-              <div className="cc-meta">
-                {c.yearsExperience != null && <span className="meta-chip">{c.yearsExperience}y exp</span>}
-                {c.location && <span className="meta-chip">{c.location}</span>}
-              </div>
-              {canScreen && scOf(c) !== 'fit' && scOf(c) !== 'unfit' && (
-                <div className="cc-actions" onClick={(e) => e.stopPropagation()}>
-                  {scOf(c) === 'new' && <button className="btn btn-ghost btn-sm" onClick={() => setScreening(c.id, 'screening')}>Screen</button>}
-                  <button className="btn btn-sm" onClick={() => setScreening(c.id, 'fit')}>Mark fit</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => setUnfitFor(c)}>Unfit</button>
-                </div>
-              )}
               <div className="cc-foot">
-                <span className="cc-no">{c.candidateNo}</span>
-                <span className="cc-foot-right">
-                  {c.hasResume && <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); downloadResume(c, toast); }}>CV</button>}
-                  <span className="meta-chip" title="Applications">{c.applicationCount} app{c.applicationCount === 1 ? '' : 's'}</span>
+                <span className={c.graduationYear != null ? 'cc-grad' : 'cc-grad missing'}>
+                  {c.graduationYear != null ? `Class of ${c.graduationYear}` : 'Graduation year not recorded'}
                 </span>
+                <CandidateActionMenu
+                  candidate={c} canScreen={canScreen} canLink={canLink} sc={scOf(c)}
+                  requests={linkRequests}
+                  onScreen={() => setScreening(c.id, 'screening')}
+                  onFit={() => setScreening(c.id, 'fit')}
+                  onUnfit={() => setUnfitFor(c)}
+                  onLinked={linkOne}
+                  onRelinked={() => load()}
+                  onOpen={() => openProfile(c.id)}
+                  toast={toast} />
               </div>
             </div>
           ))}
         </div>
       )}
-      {candidates && shown.length > 0 && (
+      {candidates && shown.length > 0 && view !== 'pipeline' && (
         <Pager page={page} pageSize={pageSize} total={pageInfo.total}
           totalPages={pageInfo.totalPages} onPage={setPage} onPageSize={setPageSize} />
       )}
@@ -6700,11 +7168,214 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
   );
 }
 
+const ACT_CATS = [
+  ['applications', 'Applications'],
+  ['interviews', 'Interviews'],
+  ['offers', 'Offers'],
+  ['notes', 'Notes'],
+  ['cv', 'CV & parsing'],
+  ['privacy', 'Privacy'],
+];
+function actStamp(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function actCatForType(type) {
+  const t = String(type || '').toLowerCase();
+  if (t.includes('interview')) return 'interviews';
+  if (t.includes('offer')) return 'offers';
+  if (t.includes('note') || t.includes('assessment')) return 'notes';
+  if (t.includes('parse') || t.includes('resume') || t.includes('cv') || t.includes('attach')) return 'cv';
+  if (t.includes('consent') || t.includes('eras') || t.includes('retention') || t.includes('privacy')) return 'privacy';
+  return 'applications';
+}
+function actIcon(cat) {
+  return { applications: 'ticket', interviews: 'calendar', offers: 'doc', notes: 'scroll', cv: 'user', privacy: 'shield' }[cat] || 'scroll';
+}
+function buildActivityLog(c, { canSeeInterviews, canSeeOffers }) {
+  const entries = [];
+  const apps = c.applications || c.links || [];
+  apps.forEach((app, i) => {
+    const ticket = app.ticketNo || (app.request && app.request.ticketNo);
+    const reqId = app.requestId || (app.request && app.request.id);
+    const reqTitle = app.position || app.requestTitle || (app.request && app.request.title);
+    (app.stageHistory || []).forEach((h, j) => {
+      const from = (APP_STATUS[h.fromStatus] || {}).label || h.fromStatus || '—';
+      const to = (APP_STATUS[h.toStatus] || {}).label || h.toStatus || '—';
+      const actor = (h.actor && h.actor.name) || h.actor_name || 'System';
+      const at = h.occurredAt || h.occurred_at;
+      entries.push({
+        id: `sh-${app.id || i}-${j}`,
+        source: 'stageHistory',
+        category: 'applications',
+        at,
+        actor,
+        requestId: reqId,
+        ticketNo: ticket,
+        prior: TERMINAL_APP.includes(h.toStatus) || TERMINAL_APP.includes(app.status),
+        sentence: `Moved from ${from} to ${to}` + (ticket ? ` on ${ticket}` : '') + (h.note ? ` — ${h.note}` : ''),
+      });
+    });
+    const createdAt = app.createdAt || app.created_at || app.stageDate;
+    if (createdAt) {
+      entries.push({
+        id: `app-${app.id || app.applicationId || i}`,
+        source: 'application',
+        category: 'applications',
+        at: createdAt,
+        actor: (app.recruiter && app.recruiter.name) || 'System',
+        requestId: reqId,
+        ticketNo: ticket,
+        prior: TERMINAL_APP.includes(app.status),
+        sentence: `Linked to ${ticket || 'a request'}` + (reqTitle ? ` (${reqTitle})` : '') + ` as ${((APP_STATUS[app.status] || {}).label || app.status || 'sourced')}`,
+      });
+    }
+  });
+  (c.activity || []).forEach((a) => {
+    const type = a.type || '';
+    if (type === 'application_status_changed' && (c.applications || []).some((app) => (app.stageHistory || []).length)) {
+      return;
+    }
+    const cat = actCatForType(type);
+    entries.push({
+      id: `act-${a.id}`,
+      source: 'activity',
+      category: cat,
+      at: a.occurred_at || a.occurredAt,
+      actor: a.actor_name || (a.actor && a.actor.name) || 'System',
+      requestId: a.requestId || a.request_id || null,
+      ticketNo: a.ticketNo || a.ticket_no || null,
+      sentence: (type || 'update').replace(/_/g, ' ') + (a.note ? ' — ' + a.note : ''),
+    });
+  });
+  (c.notes || []).forEach((n) => {
+    entries.push({
+      id: `note-${n.id}`,
+      source: 'note',
+      category: 'notes',
+      at: n.created_at || n.createdAt,
+      actor: n.author_name || (n.author && n.author.name) || 'System',
+      requestId: null,
+      ticketNo: null,
+      sentence: (n.note_type === 'assessment' ? 'Added an assessment' : 'Added a note') + (n.body ? ': ' + n.body : ''),
+    });
+  });
+  if (canSeeInterviews) {
+    (c.interviews || []).forEach((iv) => {
+      entries.push({
+        id: `iv-${iv.id}`,
+        source: 'interview',
+        category: 'interviews',
+        at: iv.scheduledAt || iv.createdAt || iv.created_at,
+        actor: (iv.organizer && iv.organizer.name) || 'System',
+        requestId: iv.requestId || (iv.request && iv.request.id),
+        ticketNo: iv.ticketNo || (iv.request && iv.request.ticketNo),
+        sentence: `Interview ${iv.interviewNo || ''} (${iv.interviewType || '—'} / ${iv.mode || '—'})`
+          + (iv.status ? ` — ${(IV_STATUS[iv.status] || {}).label || iv.status}` : '')
+          + (iv.overallOutcome ? `, outcome ${(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}` : ''),
+      });
+    });
+  }
+  if (canSeeOffers) {
+    (c.offers || []).forEach((o) => {
+      entries.push({
+        id: `off-${o.id}`,
+        source: 'offer',
+        category: 'offers',
+        at: o.createdAt || o.created_at || o.joiningDate,
+        actor: (o.preparedBy && o.preparedBy.name) || 'System',
+        requestId: o.requestId || (o.request && o.request.id),
+        ticketNo: o.ticketNo || (o.request && o.request.ticketNo),
+        sentence: `Offer ${o.offerNo || ''}` + (o.positionTitle ? ` for ${o.positionTitle}` : '')
+          + (o.status ? ` — ${(OFFER_STATUS[o.status] || {}).label || o.status}` : ''),
+      });
+    });
+  }
+  if (c.consentAt) entries.push({ id: 'privacy-consent', source: 'privacy', category: 'privacy', at: c.consentAt, actor: 'System', sentence: `Consent marked ${(c.consentStatus || 'unknown')}` });
+  if (c.retentionUntil) entries.push({ id: 'privacy-retention', source: 'privacy', category: 'privacy', at: c.retentionUntil, actor: 'System', sentence: 'Retention until ' + actStamp(c.retentionUntil) });
+  if (c.erasedAt) entries.push({ id: 'privacy-erased', source: 'privacy', category: 'privacy', at: c.erasedAt, actor: 'System', sentence: 'Personal data erased' });
+  entries.sort((x, y) => {
+    const dx = Date.parse(x.at || '') || 0;
+    const dy = Date.parse(y.at || '') || 0;
+    if (dy !== dx) return dy - dx;
+    if (x.source !== y.source) return x.source < y.source ? -1 : 1;
+    return String(x.id).localeCompare(String(y.id));
+  });
+  return entries;
+}
+function ActivityLog({ c, user, onNavigate, focusPrior }) {
+  const canSeeInterviews = user.permissions.includes('interview.view_all') || user.permissions.includes('interview.view_assigned');
+  const canSeeOffers = user.permissions.includes('offer.view');
+  const hidden = [];
+  if (!canSeeInterviews) hidden.push('interviews');
+  if (!canSeeOffers) hidden.push('offers');
+  const [cat, setCat] = useState('');
+  const logRef = useRef(null);
+  const priorRef = useRef(null);
+  const entries = useMemo(
+    () => buildActivityLog(c, { canSeeInterviews, canSeeOffers }),
+    [c, canSeeInterviews, canSeeOffers],
+  );
+  const shown = cat ? entries.filter((e) => e.category === cat) : entries;
+  useEffect(() => {
+    if (!focusPrior) return;
+    const el = priorRef.current || logRef.current;
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+  }, [focusPrior, c && c.id]);
+  const emptyAll = entries.length === 0;
+  const emptyFilter = shown.length === 0 && !emptyAll;
+  const cannotSeeFilter = cat && hidden.includes(cat);
+  return (
+    <div className="card">
+      <div className="filter-chips" style={{ padding: '12px 16px 0' }}>
+        <button className={'chip-filter' + (!cat ? ' on' : '')} onClick={() => setCat('')}>All</button>
+        {ACT_CATS.map(([k, label]) => (
+          <button key={k} className={'chip-filter' + (cat === k ? ' on' : '')} onClick={() => setCat(k)}>{label}</button>
+        ))}
+      </div>
+      <div className="card-pad act-log" ref={logRef}>
+        {cannotSeeFilter ? (
+          <Empty icon="🔒" title="You cannot see this"
+            text={cat === 'interviews'
+              ? 'Interviews are hidden from your role — the list is empty because you cannot see it, not because nothing happened.'
+              : 'Offers are hidden from your role — the list is empty because you cannot see it, not because nothing happened.'} />
+        ) : emptyAll ? (
+          hidden.length
+            ? <Empty icon="📜" title="Nothing you can see has been recorded yet"
+                text={`No activity is visible on this profile.${hidden.includes('interviews') ? ' Interviews are hidden from your role.' : ''}${hidden.includes('offers') ? ' Offers are hidden from your role.' : ''}`} />
+            : <Empty icon="📜" title="Nothing has happened yet" text="When this candidate is linked, interviewed or noted, the events will land here in order." />
+        ) : emptyFilter ? (
+          <Empty icon="🔍" title="Nothing in this category" text="Try another chip, or All." />
+        ) : shown.map((e) => {
+          const isPrior = !!(focusPrior && e.prior && e.category === 'applications');
+          return (
+            <div key={e.id} className="act-item" ref={isPrior && !priorRef.current ? priorRef : undefined}>
+              <span className="act-ico"><Icon name={actIcon(e.category)} size={15} /></span>
+              <div>
+                <div className="act-sentence">{e.sentence}</div>
+                <div className="act-meta">
+                  {e.actor} · {actStamp(e.at)}
+                  {e.ticketNo && onNavigate && (
+                    <> · <button className="linklike" onClick={() => openRequest(e.requestId, onNavigate)}>{shortReqCode(e.ticketNo) || e.ticketNo}</button></>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ----------------------------- Candidate Profile (6 tabs) ----------------------------- */
-function CandidateProfile({ id, user, btns, onBack }) {
+function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focusPrior }) {
   const toast = useToast();
   const [c, setC] = useState(null);
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState(initialTab || 'overview');
+  useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   const [editing, setEditing] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
 
@@ -6713,7 +7384,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
   if (!c) return <Skeleton rows={8} />;
 
   const canPrivacy = can(user, 'candidate.privacy');
-  const TABS = [['overview', 'Overview'], ['cv', 'CV & Attachments'], ['applications', `Applications (${c.applications?.length || 0})`], ['interviews', 'Interviews'], ['offers', 'Offers'], ['notes', 'Notes & Activity']];
+  const TABS = [['overview', 'Overview'], ['cv', 'CV & Attachments'], ['applications', `Applications (${c.applications?.length || 0})`], ['interviews', 'Interviews'], ['offers', 'Offers'], ['activity', 'Activity log']];
   if (canPrivacy) TABS.push(['privacy', 'Data & Privacy']);
   return (
     <div>
@@ -6724,7 +7395,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
         <div className="profile-header">
           <div className="ph-avatar">{initials(c.fullName)}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="ph-name">{c.fullName}</div>
+            <div className="ph-name">{c.fullName} <HistoryBadge history={c.history} onOpen={() => setTab('activity')} /></div>
             <div className="ph-headline">{c.currentPosition || '—'}{c.currentCompany ? ' · ' + c.currentCompany : ''}</div>
             <div className="ph-meta">
               <span className="meta-chip">{c.candidateNo}</span>
@@ -6751,6 +7422,9 @@ function CandidateProfile({ id, user, btns, onBack }) {
           <Info label="Nationality">{c.nationality}</Info><Info label="Location">{c.location}</Info>
           <Info label="LinkedIn">{c.linkedinUrl ? <a href={c.linkedinUrl} target="_blank" rel="noreferrer">Profile</a> : '—'}</Info>
           <Info label="Current Company">{c.currentCompany}</Info><Info label="Current Position">{c.currentPosition}</Info>
+          <Info label="University">{c.university || '—'}</Info>
+          <Info label="Major">{c.major || '—'}</Info>
+          <Info label="Graduation Year">{c.graduationYear ?? '—'}</Info>
           <Info label="Experience">{c.yearsExperience != null ? c.yearsExperience + ' years' : '—'}</Info>
           <Info label="Notice Period">{c.noticePeriod}</Info><Info label="Source">{c.source}</Info>
           {c.salaryVisible ? <Info label="Expected Salary">{c.expectedSalary ?? '—'}</Info> : <Info label="Expected Salary"><span className="muted">Restricted</span></Info>}
@@ -6768,7 +7442,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
                   <td><AppStatusBadge status={a.status} /></td><td className="muted">{a.recruiter?.name || '—'}</td><td className="muted">{fmtDateShort(a.lastActivityAt)}</td></tr>
               ))}</tbody></table>
           )}
-          <div className="card-pad muted">Each row is an independent <strong>Application</strong> — the same candidate can sit at different stages across requests.</div>
+          <div className="card-pad muted">One active request at a time. Closed applications stay visible here as history.</div>
         </div>
       )}
       {tab === 'interviews' && (
@@ -6797,20 +7471,7 @@ function CandidateProfile({ id, user, btns, onBack }) {
           <div className="card-pad muted">Offers link to a specific application/request; salary is shown only to authorized roles.</div>
         </div>
       )}
-      {tab === 'notes' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="card"><div className="card-head"><h3>Notes</h3></div><div className="card-pad">
-            {(c.notes || []).length === 0 ? <p className="muted">No notes.</p> : c.notes.map((n) => (
-              <div key={n.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                <div>{n.body}</div><div className="muted" style={{ fontSize: 12 }}><span className="chip">{n.note_type}</span> {n.author_name} · {fmtDate(n.created_at)}</div>
-              </div>
-            ))}
-          </div></div>
-          <div className="card"><div className="card-head"><h3>Activity</h3></div><div className="card-pad">
-            {(c.activity || []).map((a) => <div key={a.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}><strong style={{ textTransform: 'capitalize' }}>{a.type.replace(/_/g, ' ')}</strong>{a.note ? ' — ' + a.note : ''}<div className="muted" style={{ fontSize: 11 }}>{a.actor_name} · {fmtDate(a.occurred_at)}</div></div>)}
-          </div></div>
-        </div>
-      )}
+      {tab === 'activity' && <ActivityLog c={c} user={user} onNavigate={onNavigate} focusPrior={focusPrior} />}
 
       {tab === 'privacy' && canPrivacy && <CandidatePrivacyTab c={c} onChanged={load} />}
 

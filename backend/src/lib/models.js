@@ -923,6 +923,8 @@ export const Candidates = {
     if (f.currentPosition) { sql += ' AND current_position LIKE ?'; p.push(`%${f.currentPosition}%`); }
     if (f.university) { sql += ' AND university LIKE ?'; p.push(`%${f.university}%`); }
     if (f.graduationYear) { sql += ' AND graduation_year=?'; p.push(Number(f.graduationYear)); }
+    if (f.graduationFrom) { sql += ' AND graduation_year >= ?'; p.push(Number(f.graduationFrom)); }
+    if (f.graduationTo)   { sql += ' AND graduation_year <= ?'; p.push(Number(f.graduationTo)); }
     if (f.noticePeriod) { sql += ' AND notice_period=?'; p.push(f.noticePeriod); }
     if (f.ownerRecruiterId) { sql += ' AND owner_recruiter_id=?'; p.push(Number(f.ownerRecruiterId)); }
     if (f.minExp) { sql += ' AND years_experience >= ?'; p.push(Number(f.minExp)); }
@@ -1003,6 +1005,58 @@ export const Applications = {
   },
   forRequest(requestId) { return all('SELECT * FROM application WHERE request_id=? ORDER BY created_at', [requestId]); },
   forCandidate(candidateId) { return all('SELECT * FROM application WHERE candidate_id=? ORDER BY created_at DESC', [candidateId]); },
+
+  /**
+   * Phase 2 Talent Pool — global, paginated application listing.
+   * `_where` is shared by list() and count() so the two can never diverge
+   * (same pattern as Candidates._where / Candidates.count). Filters are always
+   * bound; sort is whitelisted; nothing from the caller is interpolated.
+   */
+  _from() {
+    return ' FROM application a'
+      + ' JOIN recruitment_request r ON r.id = a.request_id'
+      + ' LEFT JOIN candidate c ON c.id = a.candidate_id';
+  },
+  _where(f = {}) {
+    let sql = ' WHERE 1=1';
+    const p = [];
+    if (f.status)      { sql += ' AND a.status = ?';       p.push(f.status); }
+    if (f.requestId)   { sql += ' AND a.request_id = ?';   p.push(Number(f.requestId)); }
+    if (f.recruiterId) { sql += ' AND a.recruiter_id = ?'; p.push(Number(f.recruiterId)); }
+    if (f.projectId)   { sql += ' AND r.project_id = ?';   p.push(Number(f.projectId)); }
+    if (f.q) {
+      sql += ' AND (a.application_no LIKE ? OR a.position_applied LIKE ?'
+           + ' OR c.full_name LIKE ? OR c.candidate_no LIKE ?'
+           + ' OR r.ticket_no LIKE ? OR r.title LIKE ?)';
+      const l = `%${f.q}%`; p.push(l, l, l, l, l, l);
+    }
+    // Request-scope fragment handed in by the route (copied from dashboard.requestScope).
+    if (f.scopeWhere && f.scopeWhere !== '1=1') { sql += ` AND (${f.scopeWhere})`; p.push(...(f.scopeParams || [])); }
+    return { sql, p };
+  },
+  /** Whitelisted sort columns — mirrors Candidates._orderBy. */
+  _orderBy(sort, dir) {
+    const COLS = {
+      created: 'a.created_at', updated: 'a.updated_at', status: 'a.status',
+      match: 'a.match_score', score: 'a.match_score', stage: 'a.stage_date',
+      activity: 'a.last_activity_at', application: 'a.application_no',
+      candidate: 'c.full_name', request: 'r.ticket_no',
+    };
+    const col = COLS[String(sort || '').toLowerCase()] || 'a.created_at';
+    const d = String(dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    return ` ORDER BY ${col} ${d}, a.id ${d}`;
+  },
+  count(f = {}) {
+    const { sql, p } = this._where(f);
+    return get('SELECT COUNT(*) AS c' + this._from() + sql, p)?.c ?? 0;
+  },
+  list(f = {}) {
+    const { sql, p } = this._where(f);
+    let q = 'SELECT a.*' + this._from() + sql + this._orderBy(f.sort, f.dir);
+    // Same contract as Candidates.list: omit limit → everything; else LIMIT/OFFSET.
+    if (f.limit != null) { q += ' LIMIT ? OFFSET ?'; p.push(Number(f.limit), Number(f.offset || 0)); }
+    return all(q, p);
+  },
   // Pipeline summary per request: { [requestId]: { total, byStage: {status:count} } }.
   // One grouped query feeds the inline funnel mini-bar on the requests board.
   stageCountsByRequest(requestIds) {

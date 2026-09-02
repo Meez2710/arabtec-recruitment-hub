@@ -13,6 +13,7 @@ import {
   APP, APP_STATUSES as STAGES, APP_REASON_REQUIRED, APP_TERMINAL,
   appNorm, appCanMove, APP_LABELS,
   APP_ENTRY, APP_ENTRY_DEFAULT, appIsEntry,
+  REQ_TERMINAL, reqNorm,
 } from '../lib/stages.js';
 
 /**
@@ -103,7 +104,7 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
   const requestId = Number(d.requestId);
   const request = Requests.byId(requestId);
   if (!request) return res.status(404).json({ error: 'Recruitment request not found.' });
-  if (['closed', 'cancelled', 'rejected', 'filled'].includes(request.status)) {
+  if (REQ_TERMINAL.includes(reqNorm(request.status))) {
     return res.status(409).json({ error: `Cannot link candidates to a ${request.status} request.` });
   }
 
@@ -134,14 +135,44 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
   const candidate = Candidates.byId(candidateId);
   if (!candidate) return res.status(404).json({ error: 'Candidate not found.' });
 
+  // `allow_duplicate_application` is the deployment opt-out for "one candidate,
+  // one live application": it relaxes both the per-request duplicate check below
+  // and the Phase 2 one-active-link guard. The concurrency/reconciliation suites
+  // flip it on so they can arm a candidate on two requisitions and prove the
+  // DB-level one-joined-per-candidate index is the thing enforcing uniqueness.
+  const allowDupApps = SystemSettings.all().allow_duplicate_application === 'true';
+
   // Prevent duplicate application (one per candidate per request) unless admin override allowed.
   const existing = Applications.existing(candidateId, requestId);
   if (existing) {
-    const allowDup = SystemSettings.all().allow_duplicate_application === 'true';
-    const adminOverride = allowDup && req.user.permissions.includes('candidate.merge') && d.overrideExisting;
+    const adminOverride = allowDupApps && req.user.permissions.includes('candidate.merge') && d.overrideExisting;
     if (!adminOverride) {
       return res.status(409).json({ error: 'This candidate already has an application to this request.', applicationId: existing.id });
     }
+  }
+
+  // Phase 2 Talent Pool — a candidate may be actively linked to only ONE
+  // non-terminal request at a time. Terminal/closed history stays linkable.
+  const openLink = allowDupApps ? null : Applications.forCandidate(candidateId).find((a) => {
+    if (a.request_id === requestId) return false; // same request is the duplicate check above
+    // The application itself being terminal (rejected / withdrawn→rejected /
+    // offer_declined / joined) means this candidate is no longer actively in
+    // play on that request, so it must not block a fresh link. Mirrors the
+    // `concluded` computation in routes/candidates.js so the API and the
+    // Talent Pool UI agree.
+    if (APP_TERMINAL.includes(appNorm(a.status))) return false;
+    const lr = a.request_id ? Requests.byId(a.request_id) : null;
+    return lr && !REQ_TERMINAL.includes(reqNorm(lr.status));
+  });
+  if (openLink) {
+    const br = Requests.byId(openLink.request_id) || {};
+    const name = candidate.full_name || candidate.candidate_no || 'This candidate';
+    const code = br.ticket_no || (br.id ? `REQ-${br.id}` : 'another request');
+    const title = br.title || 'Untitled request';
+    return res.status(409).json({
+      error: `${name} is already on ${code} (${title}). Close or withdraw that application before linking them to another request.`,
+      blockingRequest: { id: br.id ?? null, ticketNo: br.ticket_no ?? null, title: br.title ?? null },
+    });
   }
 
   // BL-03. Previously this validated against APP_STATUSES — every status an
@@ -223,11 +254,71 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
   res.status(201).json({ application: appOut(created, req.user) });
 });
 
+/* ---------------- GLOBAL application listing (Phase 2 Talent Pool) ----------------
+   Registered BEFORE '/:id' so the literal path segment is not read as an id. */
+
+// Request-scope WHERE fragment — COPIED verbatim from routes/dashboard.js.
+function requestScope(user, col = 'id') {
+  if (user.permissions.includes('request.view_all')) return { where: '1=1', params: [] };
+  return {
+    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=?)`,
+    params: [user.id, user.id, user.id],
+  };
+}
+
+// Single-row form of the list route's requestScope(), for the read-only
+// by-id / by-request routes below. Without it a candidate.view holder with no
+// request scope (e.g. an interviewer) — or a view_own role on an unrelated
+// team — can read ANY application, its stage history and candidate PII by
+// walking numeric ids, even though the sibling list route hides those exact
+// rows. Mirrors requestScope() and routes/requests.js canView().
+function canScopeRequest(user, requestId) {
+  if (user.permissions.includes('request.view_all')) return true;
+  if (!requestId) return false;
+  const r = Requests.byId(requestId);
+  return !!r && (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id);
+}
+
+router.get('/', (req, res) => {
+  if (!req.user.permissions.includes('candidate.view')) return res.status(403).json({ error: 'Insufficient permissions.' });
+  const q = req.query;
+  const pageSize = Math.min(Math.max(parseInt(q.pageSize, 10) || 50, 1), 200);
+  const page = Math.max(parseInt(q.page, 10) || 1, 1);
+  const scope = requestScope(req.user, 'a.request_id'); // scoping column = application.request_id
+  const filters = {
+    status: q.status, requestId: q.requestId, recruiterId: q.recruiterId,
+    projectId: q.projectId, q: q.q, sort: q.sort, dir: q.dir,
+    scopeWhere: scope.where, scopeParams: scope.params,
+  };
+  const total = Applications.count(filters);
+  const rows = Applications.list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
+  res.json({
+    applications: rows.map((a) => {
+      const base = appOut(a, req.user); // EXISTING serializer — already attaches candidate:{…}
+      const r = a.request_id ? Requests.byId(a.request_id) : null;
+      const proj = r && r.project_id ? Projects.byId(r.project_id) : null;
+      return {
+        ...base,
+        // request lite object — mirrors how candidates.js attaches its link/project lite objects
+        request: r
+          ? { id: r.id, ticketNo: r.ticket_no, title: r.title, project: proj ? { id: proj.id, name: proj.name } : null }
+          : null,
+      };
+    }),
+    pagination: {
+      page, pageSize, total,
+      totalPages: Math.max(Math.ceil(total / pageSize), 1),
+      hasMore: page * pageSize < total,
+    },
+  });
+});
+
 /* ---------------- PIPELINE for a request ---------------- */
 router.get('/request/:requestId', (req, res) => {
   if (!req.user.permissions.includes('candidate.view')) return res.status(403).json({ error: 'Insufficient permissions.' });
   const request = Requests.byId(Number(req.params.requestId));
   if (!request) return res.status(404).json({ error: 'Request not found.' });
+  if (!canScopeRequest(req.user, request.id)) return res.status(404).json({ error: 'Request not found.' });
   const apps = Applications.forRequest(request.id).map((a) => appOut(a, req.user));
   res.json({ applications: apps, statuses: APP_STATUSES });
 });
@@ -237,6 +328,7 @@ router.get('/:id', (req, res) => {
   if (!req.user.permissions.includes('candidate.view')) return res.status(403).json({ error: 'Insufficient permissions.' });
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
+  if (!canScopeRequest(req.user, a.request_id)) return res.status(404).json({ error: 'Application not found.' });
   res.json({ application: appOut(a, req.user), history: StageHistory.forApplication(a.id) });
 });
 
