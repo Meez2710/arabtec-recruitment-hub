@@ -10,7 +10,8 @@ import fs from 'node:fs';
 for (const f of [DBF, DBF + '-journal']) { try { fs.rmSync(f); } catch {} }
 await import('./prisma/seed.js');
 await import('./src/server.js');
-await new Promise((r) => setTimeout(r, 900));
+const { waitForReady } = await import('./test-support/wait-ready.mjs');
+await waitForReady('http://localhost:' + process.env.PORT);
 
 const B = 'http://localhost:' + process.env.PORT;
 let pass = 0, fail = 0;

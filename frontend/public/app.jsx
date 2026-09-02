@@ -452,6 +452,7 @@ const NAV = [
   { key: 'projects', label: 'Projects', icon: 'hardhat', perm: null },
   { key: 'sites', label: 'Sites', icon: 'pin', perm: null },
   { key: 'departments', label: 'Departments', icon: 'building', perm: null },
+  { key: 'notifications', label: 'Notification Settings', icon: 'bell', perm: 'notification.manage' },
   { key: 'users', label: 'Users', icon: 'users', perm: 'user.manage' },
   { key: 'roles', label: 'Roles & Permissions', icon: 'shield', perm: 'role.manage' },
   { key: 'control', label: 'Control Center', icon: 'gear', perm: 'app.manage_ui' },
@@ -1019,6 +1020,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     buttons: <ButtonsPage user={user} />,
     workflow: <WorkflowPage user={user} />,
     system: <SystemPage user={user} />,
+    notifications: can(user, 'notification.manage')
+      ? <NotificationsPanel user={user} />
+      : <Forbidden what="Notification Settings" need="HR, Recruitment or System Admin" />,
     audit: <AuditPage user={user} />,
   }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} />;
 
@@ -2981,11 +2985,12 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 /* ============================ SUPER-ADMIN CONTROL CENTER ============================ */
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
-  const TABS = [['buttons', 'Buttons'], ['branding', 'Branding & Logo'], ['fields', 'Built-in Fields'], ['custom', 'Custom Fields']];
+  const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['branding', 'Branding & Logo'],
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields']];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
-        sub="Super-admin control of the whole app: turn buttons on/off, upload the logo, show or hide any built-in field, and add your own custom fields." />
+        sub="Super-admin control of the whole app: turn buttons on/off, choose which notifications and emails go out and to whom, upload the logo, show or hide any built-in field, and add your own custom fields." />
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 18, flexWrap: 'wrap' }}>
         {TABS.map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className="btn btn-ghost"
@@ -2993,6 +2998,7 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
         ))}
       </div>
       {tab === 'buttons' && <ButtonsPanel user={user} />}
+      {tab === 'notifications' && <NotificationsPanel user={user} />}
       {tab === 'branding' && <BrandingLogoPanel user={user} branding={branding} refreshBranding={refreshBranding} />}
       {tab === 'fields' && <BuiltinFieldsPanel user={user} />}
       {tab === 'custom' && <CustomFieldsPanel user={user} />}
@@ -3059,6 +3065,139 @@ function ButtonsPanel({ user }) {
           </tr>
         ))}</tbody></table>
       <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Toggle what you need, then click <strong>Save Changes</strong>. Nothing is applied until you save.</div>
+    </div>
+  );
+}
+
+// --- Notifications panel -----------------------------------------------------
+// One row per catalogued event: on/off, the two channels, and who it reaches.
+// Saves per-row so a mis-tick never takes the whole page with it, and every
+// change is written to the audit log by the API.
+function NotificationsPanel({ user }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [saving, setSaving] = useState(() => new Set());
+  // notification.manage, not system.manage: who a rejection email reaches is a
+  // recruiting decision. The four HR/recruitment roles hold it (see permissions.js).
+  const canEdit = can(user, 'notification.manage');
+
+  const load = useCallback(() => {
+    api.get('/settings/notifications').then(setData).catch((e) => setErr(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  async function patch(eventKey, change) {
+    if (!canEdit) return;
+    setSaving((s) => new Set(s).add(eventKey));
+    // Optimistic only in the sense that the row shows "saving"; the value shown
+    // afterwards is whatever the server returns, never what we hoped it would be.
+    try {
+      const r = await api.put(`/settings/notifications/${eventKey}`, change);
+      setData((d) => ({ ...d, notifications: d.notifications.map((n) => (n.eventKey === eventKey ? r.notification : n)) }));
+    } catch (e) {
+      toast(e.message || 'Could not save that setting.', 'error');
+      load();   // resync, so the checkbox can never show a state the server rejected
+    } finally {
+      setSaving((s) => { const n = new Set(s); n.delete(eventKey); return n; });
+    }
+  }
+
+  function toggleRecipient(n, token) {
+    const next = n.recipients.includes(token)
+      ? n.recipients.filter((r) => r !== token)
+      : [...n.recipients, token];
+    patch(n.eventKey, { recipients: next });
+  }
+
+  if (err) return <div className="error-banner">{err}</div>;
+  if (!data) return <div className="card"><Skeleton rows={8} /></div>;
+
+  const categories = [...new Set(data.notifications.map((n) => n.category))];
+  const external = new Set(data.externalRecipients || []);
+
+  return (
+    <div>
+      {!data.emailConfigured && (
+        <div className="notice notice-warn card-pad" style={{ marginBottom: 14 }}>
+          <strong>No mailbox is configured.</strong> In-app alerts still work; anything ticked
+          for email is recorded but will not send until SMTP is set up in System Settings.
+        </div>
+      )}
+      {!canEdit && (
+        <div className="notice notice-info card-pad" style={{ marginBottom: 14 }}>
+          You can see how notifications are configured. Changing them needs the
+          System Settings permission.
+        </div>
+      )}
+
+      {categories.map((cat) => (
+        <section className="card" key={cat} style={{ marginBottom: 16 }}>
+          <div className="card-head"><h3>{cat}</h3>
+            <span className="dash-headnote">{data.notifications.filter((n) => n.category === cat).length} events</span></div>
+          <div className="table-wrap">
+            <table className="table responsive-table">
+              <thead><tr>
+                <th style={{ minWidth: 260 }}>Event</th>
+                <th style={{ width: 70 }}>On</th>
+                <th style={{ width: 80 }}>In-app</th>
+                <th style={{ width: 80 }}>Email</th>
+                <th>Send to</th>
+              </tr></thead>
+              <tbody>
+                {data.notifications.filter((n) => n.category === cat).map((n) => {
+                  const busy = saving.has(n.eventKey);
+                  const off = !n.enabled;
+                  return (
+                    <tr key={n.eventKey} style={busy ? { opacity: .55 } : null}>
+                      <td data-label="Event">
+                        <span className="cell-strong">{n.label}</span>
+                        <span className="cell-sub">{n.description}</span>
+                        {n.externalRecipients.length > 0 && n.enabled && n.email && (
+                          <span className="badge badge-warning" style={{ marginTop: 6 }}>Reaches candidates</span>
+                        )}
+                      </td>
+                      <td data-label="On">
+                        <input type="checkbox" checked={n.enabled} disabled={!canEdit || busy}
+                          aria-label={`Enable ${n.label}`}
+                          onChange={(e) => patch(n.eventKey, { enabled: e.target.checked })} />
+                      </td>
+                      <td data-label="In-app">
+                        <input type="checkbox" checked={n.inApp} disabled={!canEdit || busy || off}
+                          aria-label={`In-app alert for ${n.label}`}
+                          onChange={(e) => patch(n.eventKey, { inApp: e.target.checked })} />
+                      </td>
+                      <td data-label="Email">
+                        <input type="checkbox" checked={n.email} disabled={!canEdit || busy || off}
+                          aria-label={`Email for ${n.label}`}
+                          onChange={(e) => patch(n.eventKey, { email: e.target.checked })} />
+                      </td>
+                      <td data-label="Send to">
+                        <div className="recip-grid">
+                          {Object.entries(data.recipients).map(([token, label]) => (
+                            <label key={token} className={'recip' + (external.has(token) ? ' recip-external' : '')}
+                              title={label}>
+                              <input type="checkbox" checked={n.recipients.includes(token)}
+                                disabled={!canEdit || busy || off}
+                                onChange={() => toggleRecipient(n, token)} />
+                              <span>{label.split(' — ')[0]}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+      <p className="muted" style={{ fontSize: 12 }}>
+        Recipients are roles relative to the record, not named people — “Requester” means
+        whoever raised that particular request. Settings survive releases, and every change
+        is written to the audit log.
+      </p>
     </div>
   );
 }

@@ -33,13 +33,25 @@ const NOW = new Date().toISOString();
 const ok = (m) => console.log('  ✓ ' + m);
 const info = (m) => console.log('  • ' + m);
 
+/**
+ * Delete from a table that may not exist yet.
+ *
+ * `optional` is the whole point of the distinction: a table this release added
+ * (candidate_intake, designation…) is legitimately absent on an older database
+ * and skipping it is correct. Anything else failing is NOT correct — a delete
+ * that silently does nothing lets the load phase collide on a UNIQUE index
+ * several steps later, which is exactly how the designation→department foreign
+ * key hid itself on the first re-run. So a failure that is not "no such table"
+ * stops the migration rather than being logged and stepped over.
+ */
 function tryDelete(table, where = '') {
   try {
     const r = run(`DELETE FROM ${table}${where ? ' WHERE ' + where : ''}`);
     return r?.changes ?? 0;
   } catch (e) {
-    info(`skip ${table} (${e.message.split('\n')[0]})`);
-    return 0;
+    const msg = e.message.split('\n')[0];
+    if (/no such table|does not exist/i.test(msg)) { info(`skip ${table} (not in this schema)`); return 0; }
+    throw new Error(`DELETE FROM ${table} failed: ${msg}`);
   }
 }
 function count(table, where = '') {
@@ -54,7 +66,7 @@ console.log('BEFORE:', ['project', 'site', 'department', 'designation', 'users',
   .map((t) => `${t}=${count(t)}`).join('  '));
 
 // ============================ 1. WIPE =====================================
-console.log('\n[1/6] Wiping candidate / request / project data…');
+console.log('\n[1/7] Wiping candidate / request / project data…');
 
 // -- application & candidate sub-tree
 for (const t of [
@@ -80,6 +92,10 @@ tryDelete('user_scope', 'project_id IS NOT NULL OR site_id IS NOT NULL');
 tryDelete('site');
 tryDelete('project');
 
+// -- designations BEFORE departments: designation.department_id references
+//    department(id), so departments cannot go first. Reloaded in step 6.
+tryDelete('designation');
+
 // -- departments (rebuilt below): detach users first, then delete
 run('UPDATE users SET department_id = NULL');
 tryDelete('department');
@@ -87,7 +103,7 @@ ok('wiped. Now: ' + ['project', 'site', 'department', 'candidate', 'application'
   .map((t) => `${t}=${count(t)}`).join('  '));
 
 // ============================ 2. DEMO USERS ===============================
-console.log('\n[2/6] Removing 8 demo sample users (admin kept)…');
+console.log('\n[2/7] Removing 8 demo sample users (admin kept)…');
 const DEMO_EMAILS = [
   'hr.director@arabtec.com', 'hr.manager@arabtec.com', 'rec.manager@arabtec.com',
   'recruiter@arabtec.com', 'hiring.manager@arabtec.com', 'pm@arabtec.com',
@@ -118,7 +134,7 @@ if (!bu) {
 const BU_ID = bu.id;
 
 // ============================ 4. DEPARTMENTS =============================
-console.log('\n[3/6] Loading departments…');
+console.log('\n[3/7] Loading departments…');
 const deptIdByCode = {};
 for (const d of LOADSET.departments) {
   run(`INSERT INTO department (code,name,status,business_unit_id,is_active,created_at,updated_at)
@@ -129,7 +145,7 @@ for (const d of LOADSET.departments) {
 ok(`${LOADSET.departments.length} departments`);
 
 // ============================ 5. MANAGERS -> USERS ======================
-console.log('\n[4/6] Loading managers as user accounts…');
+console.log('\n[4/7] Loading managers as user accounts…');
 const managerHash = await bcrypt.hash(MANAGER_PW, ROUNDS);
 const roleIdByCode = Object.fromEntries(all('SELECT id, code FROM role').map((r) => [r.code, r.id]));
 const userIdByEmpNo = {};
@@ -169,7 +185,7 @@ for (const d of LOADSET.departments) {
 ok(`${heads} department heads set`);
 
 // ============================ 6. PROJECTS ================================
-console.log('\n[5/6] Loading projects…');
+console.log('\n[5/7] Loading projects…');
 for (const p of LOADSET.projects) {
   const pmId = p.pm_employee_no ? userIdByEmpNo[p.pm_employee_no] ?? null : null;
   run(`INSERT INTO project (code,name,client_name,location,status,project_manager_id,
@@ -181,8 +197,9 @@ const pmSet = LOADSET.projects.filter((p) => p.pm_employee_no).length;
 ok(`${LOADSET.projects.length} projects (${pmSet} with a linked PM, ${LOADSET.projects.length - pmSet} without)`);
 
 // ============================ 7. DESIGNATIONS ===========================
-console.log('\n[6/6] Loading designations…');
-tryDelete('designation');
+console.log('\n[6/7] Loading designations…');
+// Already emptied in the wipe phase — it has to happen there, ahead of the
+// department delete it holds a foreign key into.
 let dCount = 0;
 for (const d of LOADSET.designations) {
   const deptId = d.dept_code ? deptIdByCode[d.dept_code] ?? null : null;
@@ -192,6 +209,37 @@ for (const d of LOADSET.designations) {
   dCount++;
 }
 ok(`${dCount} designations`);
+
+// ============================ PRISTINE STATE ===========================
+// A reprovisioned system should look reprovisioned. Three kinds of residue
+// survive the table wipes above and would otherwise ship to the client.
+console.log('\n[7/7] Clearing operational residue…');
+
+// 1. Sessions. Every bearer token in here was minted against the data set that
+//    was just deleted — it authenticates a person against candidates, requests
+//    and projects that no longer exist. They are also live credentials, and a
+//    handover copy of the database should not carry someone else's open login.
+const killedSessions = tryDelete('session');
+
+// 2. Sequence counters. If a trial run minted REQ-2026-00001 before the wipe,
+//    the counter keeps its value and the client's genuinely-first requisition
+//    silently becomes 00002. Reset so the numbering starts where the business
+//    thinks it starts.
+for (const k of ['request_counter', 'candidate_counter', 'application_counter',
+                 'interview_counter', 'offer_counter']) {
+  run('UPDATE system_setting SET value = ? WHERE key = ?', ['0', k]);
+}
+
+// 3. Audit log. The schema calls this append-only "by convention; never
+//    updated/deleted by the app" — and that rule is about the running
+//    application, which must never be able to erase its own trail. This script
+//    is not the running application: it is the provisioning step, and what it
+//    would otherwise hand over is a history of seeding and of whoever poked the
+//    API while building the load. Starting the client's audit trail with a
+//    truthful record of the provisioning itself is more useful than starting it
+//    with someone else's test edits.
+const killedAudit = tryDelete('audit_log');
+ok(`cleared ${killedSessions} session(s), ${killedAudit} pre-handover audit entrie(s); counters reset to 0`);
 
 // ============================ ADMIN ====================================
 // The seed always flags the bootstrap admin must_change_password=1. In this

@@ -13,7 +13,8 @@ process.env.SEED_ADMIN_PASSWORD ||= ADMIN_BOOTSTRAP_PASSWORD;
 
 await import('./prisma/seed.js');
 await import('./src/server.js');
-await new Promise((r) => setTimeout(r, 900));
+const { waitForReady } = await import('./test-support/wait-ready.mjs');
+await waitForReady('http://localhost:' + process.env.PORT);
 const B = 'http://localhost:' + process.env.PORT;
 let pass = 0, fail = 0;
 const c = (n, ok, x = '') => { console.log((ok ? '  ✅ ' : '  ❌ ') + n + ' ' + x); ok ? pass++ : fail++; };

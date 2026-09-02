@@ -380,6 +380,69 @@ export const Buttons = {
   },
 };
 
+/* ---- Hard delete -----------------------------------------------------------
+   Both parent tables are referenced with ON DELETE CASCADE throughout, so the
+   database removes the dependent rows itself: for a request that is its seats,
+   approvals, activity, applications, interviews, offers and thread posts. That
+   is a great deal of history to destroy, which is why the routes above these
+   helpers require an explicit permission and a written reason, and why the
+   audit entry is written BEFORE the row disappears.
+
+   `counts` exists so a caller can tell the user what they are about to lose
+   rather than discovering it afterwards. */
+export const HardDelete = {
+  requestCounts(id) {
+    const one = (sql) => { try { return get(sql, [id]).c; } catch { return 0; } };
+    return {
+      applications: one('SELECT COUNT(*) c FROM application WHERE request_id=?'),
+      interviews:   one('SELECT COUNT(*) c FROM interview WHERE request_id=?'),
+      offers:       one('SELECT COUNT(*) c FROM offer WHERE request_id=?'),
+      posts:        one('SELECT COUNT(*) c FROM ticket_post WHERE request_id=?'),
+      seats:        one('SELECT COUNT(*) c FROM requisition_seat WHERE request_id=?'),
+    };
+  },
+  candidateCounts(id) {
+    const one = (sql) => { try { return get(sql, [id]).c; } catch { return 0; } };
+    return {
+      applications: one('SELECT COUNT(*) c FROM application WHERE candidate_id=?'),
+      interviews:   one('SELECT COUNT(*) c FROM interview WHERE candidate_id=?'),
+      offers:       one('SELECT COUNT(*) c FROM offer WHERE candidate_id=?'),
+      documents:    one('SELECT COUNT(*) c FROM candidate_document WHERE candidate_id=?'),
+    };
+  },
+  request(id) { run('DELETE FROM recruitment_request WHERE id=?', [id]); },
+  candidate(id) { run('DELETE FROM candidate WHERE id=?', [id]); },
+};
+
+// ---- Notification settings: which events fire, on which channel, to whom ----
+// Mirrors Buttons above. The catalog of possible events is static code; these
+// rows are the tenant's choices about them, and survive redeploys.
+export const NotificationConfig = {
+  all() { return all('SELECT * FROM notification_config ORDER BY event_key ASC'); },
+  byKey(key) { return get('SELECT * FROM notification_config WHERE event_key = ?', [key]); },
+  update(key, d) {
+    const c = this.byKey(key);
+    if (!c) return null;
+    run(
+      `UPDATE notification_config SET enabled=?, in_app=?, email=?, recipients=?, updated_at=? WHERE event_key=?`,
+      [d.enabled !== undefined ? b(d.enabled) : c.enabled,
+       d.inApp !== undefined ? b(d.inApp) : c.in_app,
+       d.email !== undefined ? b(d.email) : c.email,
+       d.recipients !== undefined ? JSON.stringify(d.recipients || []) : c.recipients,
+       nowISO(), key],
+    );
+    return this.byKey(key);
+  },
+  // Insert any catalog event this database has never seen. Deliberately does NOT
+  // touch an existing row: switching an email off must survive the next release.
+  ensure(key, defaults) {
+    if (this.byKey(key)) return false;
+    run('INSERT INTO notification_config (event_key, enabled, in_app, email, recipients) VALUES (?,?,?,?,?)',
+      [key, b(defaults.enabled), b(defaults.inApp), b(defaults.email), JSON.stringify(defaults.recipients || [])]);
+    return true;
+  },
+};
+
 // ---- Super-admin: built-in field visibility per form ----
 export const FieldConfig = {
   forForm(form) { return all('SELECT * FROM field_config WHERE form=? ORDER BY sort_order ASC, field_key ASC', [form]); },
