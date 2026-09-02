@@ -50,6 +50,12 @@ const EXPECTED = [
   // nothing — linking still goes through POST /applications with its own
   // permission, duplicate and request-status rules.
   ['POST', '/:id/suggest-candidates'],
+  // Hard delete. The `request.delete` permission and its button shipped in the
+  // first release; the endpoint did not, so the button had nothing to call.
+  // delete-impact is the read-only "what would this destroy" probe the confirm
+  // dialog calls first.
+  ['GET', '/:id/delete-impact'],
+  ['DELETE', '/:id'],
 ];
 
 const manifest = (router) => router.stack

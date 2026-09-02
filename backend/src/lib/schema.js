@@ -1,7 +1,9 @@
 // DDL for Phase 1. Mirrors prisma/schema.prisma. Kept ANSI-friendly so the same
 // structure ports to PostgreSQL (swap AUTOINCREMENT→SERIAL/IDENTITY, DATETIME→TIMESTAMPTZ,
 // INTEGER booleans→BOOLEAN). See docs/SCHEMA.sql for the Postgres variant.
-import { exec, all, run, driverKind } from './db.js';
+import { exec, all, run, get, driverKind } from './db.js';
+import { PERMISSIONS, ROLE_PERMISSIONS } from './permissions.js';
+import { NOTIFICATION_EVENTS } from './notification-catalog.js';
 import {
   duplicateJoinedCandidates, formatDuplicateJoined, JOINED_UNIQUE_INDEX_SQL,
 } from './join-reconciliation.js';
@@ -168,6 +170,21 @@ export function ensureSchema() {
     name TEXT NOT NULL,
     value TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Which notifications fire, on which channel, to whom. The CATALOG of possible
+  -- events lives in lib/notification-catalog.js; these rows are the tenant's
+  -- choices about them. in_app and email are independent so an alert can be kept
+  -- without the mail volume. The recipients column is a JSON array of symbolic
+  -- tokens (requester, owner, candidate…) resolved against the entity at send time.
+  CREATE TABLE IF NOT EXISTS notification_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_key TEXT UNIQUE NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    in_app INTEGER NOT NULL DEFAULT 1,
+    email INTEGER NOT NULL DEFAULT 0,
+    recipients TEXT NOT NULL DEFAULT '[]',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -832,10 +849,102 @@ export function ensureSchema() {
     UNIQUE(entity, record_id, field_key)
   );
   CREATE INDEX IF NOT EXISTS idx_cfv_record ON custom_field_value(entity, record_id);
+
+  -- ---- Designation catalogue (Arabtec job-title reference) ----
+  -- Reference list of approved job titles with HR grade and function. Feeds
+  -- job-title pickers on the request wizard. Editable via /api/org/designations.
+  CREATE TABLE IF NOT EXISTS designation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL UNIQUE,
+    grade TEXT,                    -- HR grade, kept as text (values 4..20)
+    function TEXT,                 -- original Arabtec function label
+    department_id INTEGER REFERENCES department(id),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_designation_dept ON designation(department_id);
   `);
 
   migrateWorkflowStages();
+  syncCatalogAdditions();
   ensureOneJoinedPerCandidate();
+}
+
+/**
+ * Make catalog ADDITIONS reach a database that already has data.
+ *
+ * The boot seed in server.js runs only `if (!hasUsers)`. That is correct — a
+ * redeploy must not re-seed a live system — but it means a release that adds a
+ * permission ships it to production as dead code: ensureSchema creates the new
+ * tables, the seed never runs, the permission row is never inserted, so it is in
+ * no role and `can(user, …)` is false for everyone. The notification console
+ * would have deployed invisible to every user including the administrator, and
+ * the symptom (a menu item nobody can see) looks nothing like the cause.
+ *
+ * This closes only the additive case, deliberately:
+ *
+ *   • A permission in PERMISSIONS with no row gets one.
+ *   • A permission that is NEW IN THIS RUN is granted to the roles
+ *     ROLE_PERMISSIONS says should hold it.
+ *   • A permission that already existed is left completely alone.
+ *
+ * That last rule is the important one. permissions.js says runtime changes are
+ * made through the Roles & Permissions admin, so re-applying the whole matrix on
+ * every boot would silently revert an administrator's deliberate decisions on
+ * the next deploy. Only genuinely new codes are granted, because for those there
+ * is no administrator decision to overwrite.
+ *
+ * Notification events get the same treatment: a catalogued event with no config
+ * row is inserted at its declared defaults. notify.js already falls back to those
+ * defaults in memory, so this is about the console showing real rows rather than
+ * about whether mail sends.
+ */
+function syncCatalogAdditions() {
+  try {
+    const existing = new Set(all('SELECT code FROM permission').map((p) => p.code));
+    const added = [];
+    for (const [code, resource, action, description] of PERMISSIONS) {
+      if (existing.has(code)) continue;
+      run('INSERT INTO permission (code,resource,action,description) VALUES (?,?,?,?)',
+        [code, resource, action, description]);
+      added.push(code);
+    }
+    if (added.length) {
+      const permId = Object.fromEntries(all('SELECT id, code FROM permission').map((p) => [p.code, p.id]));
+      const roleId = Object.fromEntries(all('SELECT id, code FROM role').map((r) => [r.code, r.id]));
+      let grants = 0;
+      for (const [roleCode, codes] of Object.entries(ROLE_PERMISSIONS)) {
+        if (!roleId[roleCode]) continue;
+        for (const code of added) {
+          if (!codes.includes(code)) continue;
+          run('INSERT OR IGNORE INTO role_permission (role_id,permission_id) VALUES (?,?)',
+            [roleId[roleCode], permId[code]]);
+          grants += 1;
+        }
+      }
+      console.log(`  • Schema: added ${added.length} new permission(s) [${added.join(', ')}] and ${grants} role grant(s).`);
+    }
+  } catch (e) {
+    console.error('  ! Permission catalog sync failed (continuing):', e.message);
+  }
+
+  try {
+    let added = 0;
+    for (const e of NOTIFICATION_EVENTS) {
+      const row = get('SELECT id FROM notification_config WHERE event_key = ?', [e.key]);
+      if (row) continue;
+      const d = e.defaults;
+      run(`INSERT INTO notification_config (event_key, enabled, in_app, email, recipients)
+           VALUES (?,?,?,?,?)`,
+        [e.key, d.enabled ? 1 : 0, d.inApp ? 1 : 0, d.email ? 1 : 0,
+         JSON.stringify(d.recipients || [])]);
+      added += 1;
+    }
+    if (added) console.log(`  • Schema: added ${added} new notification event row(s).`);
+  } catch (e) {
+    console.error('  ! Notification catalog sync failed (continuing):', e.message);
+  }
 }
 
 /* ------------------------- BL-27 database invariant ------------------------ */

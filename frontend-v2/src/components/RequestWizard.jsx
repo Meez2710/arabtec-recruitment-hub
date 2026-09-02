@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 
 const STEPS = ['Position', 'Details', 'Review'];
@@ -6,8 +6,25 @@ const STEPS = ['Position', 'Details', 'Review'];
 export default function RequestWizard({ onClose, onCreated }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [meta, setMeta] = useState({ departments: [], projects: [], designations: [] });
+  const [metaErr, setMetaErr] = useState(null);
   const [f, setF] = useState({ title: '', departmentId: '', projectId: '', location: '', priority: 'medium', keyResponsibilities: '', keyRequirements: '' });
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+
+  useEffect(() => {
+    api.get('/requests/meta/form')
+      .then(d => setMeta({
+        departments: d.departments || [],
+        projects: d.projects || [],
+        designations: d.designations || [],
+      }))
+      .catch(e => setMetaErr(e.message || 'Failed to load form options'));
+  }, []);
+
+  // Designations narrowed to the chosen department (falls back to all).
+  const titleOptions = f.departmentId
+    ? meta.designations.filter(g => String(g.departmentId) === String(f.departmentId))
+    : meta.designations;
 
   async function submit() {
     setBusy(true);
@@ -36,12 +53,20 @@ export default function RequestWizard({ onClose, onCreated }) {
           {step === 0 && (
             <div className="space-y-4">
               <h3 className="font-semibold text-sm">Position Details</h3>
-              <input placeholder="Position title *" value={f.title} onChange={e => set('title', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              {metaErr && <p className="text-xs text-red-600">Could not load options: {metaErr}</p>}
+              <input list="rw-designations" placeholder="Position title *" value={f.title} onChange={e => set('title', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              <datalist id="rw-designations">
+                {titleOptions.map(g => (
+                  <option key={g.id} value={g.title}>{g.grade ? `Grade ${g.grade}` : ''}</option>
+                ))}
+              </datalist>
               <select value={f.departmentId} onChange={e => set('departmentId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
                 <option value="">Department *</option>
+                {meta.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
               <select value={f.projectId} onChange={e => set('projectId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
                 <option value="">Project *</option>
+                {meta.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
           )}
@@ -63,6 +88,8 @@ export default function RequestWizard({ onClose, onCreated }) {
               <h3 className="font-semibold text-sm">Review</h3>
               <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
                 <div><span className="text-gray-400">Position:</span> <strong>{f.title || '(not set)'}</strong></div>
+                <div><span className="text-gray-400">Department:</span> {meta.departments.find(d => String(d.id) === String(f.departmentId))?.name || '(not set)'}</div>
+                <div><span className="text-gray-400">Project:</span> {meta.projects.find(p => String(p.id) === String(f.projectId))?.name || '(not set)'}</div>
                 <div><span className="text-gray-400">Location:</span> {f.location || '(not set)'}</div>
                 <div><span className="text-gray-400">Priority:</span> <span className="capitalize">{f.priority}</span></div>
               </div>

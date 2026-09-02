@@ -6,6 +6,7 @@ import {
 import { tx } from '../lib/db.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { notifyEvent } from '../lib/notify.js';
 import { hasOpenSeat } from '../lib/vacancy.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import {
@@ -37,6 +38,40 @@ const canSalary = (u) => u.permissions.includes('salary.view');
 // Canonical pipeline stages now live in lib/stages.js (single source of truth).
 export const APP_STATUSES = STAGES;
 const REASON_REQUIRED = APP_REASON_REQUIRED;
+
+/**
+ * Send the candidate a decline when an application moves to Rejected.
+ *
+ * Whether this actually sends is the administrator's call, not this file's: it
+ * goes through notifyEvent('candidate.rejected'), which the Control Center can
+ * switch off. That matters because stage moves are BULK-actionable — one action
+ * can move many applications at once — so the ability to turn an outbound
+ * candidate email off has to live somewhere a person can reach it.
+ *
+ * Returns what actually happened so the response can say "email sent" or
+ * "suppressed by settings" rather than leaving the recruiter to guess.
+ */
+function maybeNotifyRejection(a, toStatus, req) {
+  if (toStatus !== APP.REJECTED) return null;
+  let candidate = null;
+  try { candidate = Candidates.byId(a.candidate_id); } catch { candidate = null; }
+  if (!candidate) return null;
+  const request = (() => { try { return Requests.byId(a.request_id); } catch { return null; } })();
+  const r = notifyEvent('candidate.rejected', {
+    actor: req.user,
+    candidate,
+    linkType: 'candidate', linkId: candidate.id,
+    vars: { candidateName: candidate.full_name, position: request ? request.title : candidate.current_position },
+    title: 'Application update',
+  });
+  if (r.sent) {
+    try {
+      CandidateActivity.add({ candidateId: candidate.id, applicationId: a.id, actorId: req.user.id,
+        actorName: 'System', type: 'email_sent', note: 'Rejection email sent' });
+    } catch { /* the activity note must never fail the move */ }
+  }
+  return { sent: r.sent, reason: r.reason || null, to: r.sent && candidate.email ? candidate.email : null };
+}
 const TERMINAL = APP_TERMINAL;
 // hasOpenSeat / fillSeatAndCount now live in lib/vacancy.js (shared with offers).
 
@@ -207,6 +242,15 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
     boundary(8);
     return app;
   });
+  // Acknowledgement to the candidate. Fired outside the transaction — an email
+  // must never be able to roll back a link — and off by default, because a
+  // recruiter sourcing someone is not the same as that person applying.
+  notifyEvent('candidate.application_received', {
+    actor: req.user, candidate,
+    linkType: 'candidate', linkId: candidate.id,
+    vars: { candidateName: candidate.full_name, position: (() => { try { return Requests.byId(requestId)?.title; } catch { return null; } })() },
+    title: 'Application received',
+  });
   res.status(201).json({ application: appOut(created, req.user) });
 });
 
@@ -357,7 +401,8 @@ router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) =
     return res.json({ application: appOut(Applications.byId(a.id), req.user) });
   }
   performMove(a, toStatus, req, reasonField ? reason : null);
-  res.json({ application: appOut(Applications.byId(a.id), req.user) });
+  const outcome = maybeNotifyRejection(a, toStatus, req);
+  res.json({ application: appOut(Applications.byId(a.id), req.user), ...(outcome ? { rejectionEmail: outcome } : {}) });
 });
 
 /* ---------------- SET next action (recruiter workspace) ---------------- */

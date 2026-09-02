@@ -60,6 +60,12 @@ export const PERMISSIONS = [
   ['workflow.manage', 'workflow', 'manage', 'Manage workflow settings'],
   ['org.manage', 'org', 'manage', 'Manage projects/sites/departments'],
   ['system.manage', 'system', 'manage', 'Manage system settings'],
+  // Separate from system.manage on purpose. Deciding that a rejection email
+  // goes out is a recruiting decision, not a systems one, and the people who
+  // own the consequence are the HR and recruitment team — not whoever holds the
+  // keys to the database. Gating it on system.manage would have left the console
+  // visible to an administrator who never sends a candidate anything.
+  ['notification.manage', 'notification', 'manage', 'Configure which notifications and emails are sent, and to whom'],
   ['audit.view', 'audit', 'view', 'View audit logs'],
 ];
 
@@ -88,6 +94,7 @@ export const ROLE_PERMISSIONS = {
     'candidate.view', 'candidate.privacy', 'salary.view',
     'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
     'interview.view_all', 'report.export', 'audit.view', 'org.manage',
+    'notification.manage',
   ],
   hr_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
@@ -99,6 +106,7 @@ export const ROLE_PERMISSIONS = {
     'salary.view', 'offer.view',
     'offer.create', 'offer.edit', 'offer.approve', 'offer.send', 'offer.result_update',
     'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view', 'org.manage',
+    'notification.manage',
   ],
   recruitment_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
@@ -109,6 +117,7 @@ export const ROLE_PERMISSIONS = {
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',
     'salary.view', 'offer.view', 'offer.create', 'offer.edit', 'offer.send', 'offer.result_update',
     'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view',
+    'notification.manage',
   ],
   recruiter: [
     'dashboard.view', 'request.view_own', 'request.create', 'request.edit', 'request.submit',
@@ -117,6 +126,7 @@ export const ROLE_PERMISSIONS = {
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',
     'offer.view', 'offer.create', 'offer.edit', 'offer.result_update',
     'offer.salary_view', 'offer.salary_edit',
+    'notification.manage',
   ],
   hiring_manager: [
     'dashboard.view', 'request.view_own', 'request.create', 'request.edit', 'request.submit',

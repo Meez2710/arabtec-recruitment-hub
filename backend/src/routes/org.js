@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  BusinessUnits, Projects, Sites, Departments, Users,
+  BusinessUnits, Projects, Sites, Departments, Designations, Users,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -127,6 +127,56 @@ router.put('/departments/:id', requirePermission('org.manage'), (req, res) => {
   });
   writeAudit(req, { action: 'department.updated', entityType: 'department', entityId: id, oldValue: before, newValue: updated });
   res.json({ department: updated });
+});
+
+// ---------------- Designations (job-title catalogue) ----------------
+router.get('/designations', (req, res) => {
+  const { q, function: fn, departmentId, activeOnly } = req.query || {};
+  const rows = Designations.all({
+    q, functionName: fn, departmentId,
+    activeOnly: activeOnly === '1' || activeOnly === 'true',
+  }).map((d) => ({
+    id: d.id, title: d.title, grade: d.grade, function: d.function,
+    departmentId: d.department_id, isActive: !!d.is_active,
+  }));
+  res.json({ designations: rows });
+});
+
+router.post('/designations', requirePermission('org.manage'), (req, res) => {
+  const { title, grade, function: fn, departmentId, isActive } = req.body || {};
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Designation title is required.' });
+  if (Designations.byTitle(String(title).trim())) return res.status(409).json({ error: 'Designation title already exists.' });
+  if (departmentId && !Departments.byId(Number(departmentId))) return res.status(400).json({ error: 'Selected department does not exist.' });
+  const created = Designations.create({ title: String(title).trim(), grade, function: fn, departmentId, isActive });
+  writeAudit(req, { action: 'designation.created', entityType: 'designation', entityId: created.id, newValue: created });
+  res.status(201).json({ designation: created });
+});
+
+router.put('/designations/:id', requirePermission('org.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  const before = Designations.byId(id);
+  if (!before) return res.status(404).json({ error: 'Designation not found.' });
+  const { title, grade, function: fn, departmentId, isActive } = req.body || {};
+  if (title && String(title).trim() !== before.title) {
+    const clash = Designations.byTitle(String(title).trim());
+    if (clash && clash.id !== id) return res.status(409).json({ error: 'Designation title already exists.' });
+  }
+  if (departmentId && !Departments.byId(Number(departmentId))) return res.status(400).json({ error: 'Selected department does not exist.' });
+  const updated = Designations.update(id, {
+    title: title !== undefined ? String(title).trim() : undefined,
+    grade, function: fn, departmentId, isActive,
+  });
+  writeAudit(req, { action: 'designation.updated', entityType: 'designation', entityId: id, oldValue: before, newValue: updated });
+  res.json({ designation: updated });
+});
+
+router.delete('/designations/:id', requirePermission('org.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  const before = Designations.byId(id);
+  if (!before) return res.status(404).json({ error: 'Designation not found.' });
+  Designations.remove(id);
+  writeAudit(req, { action: 'designation.deleted', entityType: 'designation', entityId: id, oldValue: before });
+  res.json({ ok: true });
 });
 
 export default router;

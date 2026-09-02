@@ -551,16 +551,15 @@ body:has(.modal-overlay) .more-sheet { display: none; }
    and never depends on the label being painted. */
 .anyhelp-fab {
   position: fixed; right: 22px; bottom: 22px; z-index: 80;
-  min-height: 56px; width: 56px; padding: 7px; gap: 0; overflow: hidden;
+  min-height: 56px; padding: 7px; gap: 0;
   border: 1.5px solid var(--green); border-radius: 999px;
   background: #fff; color: var(--green-700); display: flex; align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   box-shadow: 0 18px 40px rgba(16, 20, 26, .16); cursor: pointer; font: inherit;
-  transition: width .16s ease, padding .16s ease, gap .16s ease, background .16s ease;
+  transition: padding .16s ease, gap .16s ease, background .16s ease;
 }
 .anyhelp-fab:hover, .anyhelp-fab:focus-visible {
-  width: 168px; padding: 7px 16px 7px 7px; gap: 10px; justify-content: flex-start;
-  background: var(--green-50);
+  padding: 7px 16px 7px 7px; gap: 10px; background: var(--green-50);
 }
 .anyhelp-fab:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
 .anyhelp-fab.is-open { opacity: 0; pointer-events: none; }
@@ -569,12 +568,18 @@ body:has(.modal-overlay) .more-sheet { display: none; }
   width: 40px; height: 40px; border-radius: 50%; background: var(--green-700); color: #fff;
   display: grid; place-items: center; font-size: 18px; font-weight: 700; flex: 0 0 auto;
 }
+/* The label collapses to ZERO WIDTH at rest, not merely to zero opacity. An
+   invisible-but-laid-out label is still a flex item: it stole space from the
+   mark inside the button's fixed width and pushed it off-centre, where the
+   rounded overflow clipped it. Collapsing max-width lets the button size itself
+   to the mark alone, so there is nothing to clip and nothing to centre against. */
 .anyhelp-fab-copy {
-  text-align: left; white-space: nowrap; opacity: 0;
-  transition: opacity .12s ease; pointer-events: none;
+  text-align: left; white-space: nowrap;
+  max-width: 0; opacity: 0; overflow: hidden; pointer-events: none;
+  transition: max-width .16s ease, opacity .12s ease;
 }
 .anyhelp-fab:hover .anyhelp-fab-copy,
-.anyhelp-fab:focus-visible .anyhelp-fab-copy { opacity: 1; }
+.anyhelp-fab:focus-visible .anyhelp-fab-copy { max-width: 130px; opacity: 1; }
 .anyhelp-fab-copy strong { display: block; font-size: 12px; }
 .anyhelp-fab-copy small { display: block; font-size: 10.5px; color: var(--muted); }
 
@@ -789,9 +794,9 @@ body:has(.modal-overlay) .more-sheet { display: none; }
      part that reaches across a row's action buttons, and on a phone the mark
      is recognisable without it — this is the fix for the FAB sitting on top of
      row actions, and it keeps the approved shape everywhere it fits. */
-  .anyhelp-fab { width: 52px; min-height: 52px; padding: 6px; }
-  .anyhelp-fab:hover, .anyhelp-fab:focus-visible { width: 52px; padding: 6px; justify-content: center; }
-  .anyhelp-fab-copy { display: none; }
+  .anyhelp-fab { min-height: 52px; padding: 6px; }
+  .anyhelp-fab:hover, .anyhelp-fab:focus-visible { padding: 6px; gap: 0; }
+  .anyhelp-fab-copy, .anyhelp-fab:hover .anyhelp-fab-copy { display: none; max-width: 0; }
   .anyhelp-fab-mark { width: 38px; height: 38px; }
 
   /* Filters: the search box owns its row, the selects pair up. The previous
@@ -880,3 +885,30 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .login-card .btn { min-height: 44px; font-size: 13px; }
 .login-card input { min-height: 44px; }
 .login-brand-label { border-radius: 999px; }
+
+/* ------------------------------------------------- 15. NOTIFICATIONS CONSOLE
+   A checkbox matrix: one row per event, one tick per recipient. The recipient
+   cell wraps rather than scrolls, because a half-visible tick is a setting
+   somebody will get wrong. */
+.recip-grid { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.recip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink); white-space: nowrap; cursor: pointer;
+}
+.recip input { margin: 0; cursor: pointer; }
+.recip span { line-height: 1.3; }
+/* An external recipient leaves the company. Marked, so ticking one is a
+   deliberate act rather than an accident of a wide row. */
+.recip-external span { color: var(--warning-ink); font-weight: 700; }
+.recip-external::after {
+  content: 'external'; font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--warning-ink); background: var(--warning-tint);
+  border: 1px solid #F3D48A; border-radius: 999px; padding: 1px 6px;
+}
+/* The matrix is dense; give its checkboxes a real target without stretching rows. */
+.table td > input[type=checkbox] { width: 17px; height: 17px; cursor: pointer; accent-color: var(--green); }
+.recip input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--green); }
+@media (max-width: 640px) {
+  .recip-grid { gap: 10px 14px; }
+  .recip, .recip input { min-height: 28px; }
+}

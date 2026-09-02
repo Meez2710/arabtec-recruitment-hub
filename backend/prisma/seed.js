@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { randomBytes } from 'node:crypto';
 import { ensureSchema } from '../src/lib/schema.js';
+import { NOTIFICATION_EVENTS } from '../src/lib/notification-catalog.js';
 import { get, run, all } from '../src/lib/db.js';
 import {
   PERMISSIONS, ROLES, ROLE_PERMISSIONS, BUTTONS, DEFAULT_BRANDING,
@@ -19,7 +20,19 @@ function log(msg) { console.log('  ✓ ' + msg); }
 
 async function main(opts = {}) {
   // demo=true seeds sample users + demo content; demo=false seeds admin + reference data only.
-  const demo = opts.demo !== undefined ? opts.demo : (process.env.SEED_DEMO_DATA === 'true' || process.env.NODE_ENV !== 'production');
+  //
+  // SEED_DEMO_DATA is now a three-state switch, not a one-way "on". It was
+  // `SEED_DEMO_DATA === 'true' || NODE_ENV !== 'production'` — an OR, so setting
+  // it to "false" on a development box did nothing and the eight demo accounts
+  // came back on every seed. That is harmless on a fixture database and wrong on
+  // one holding real staff: `Nadia Fouad` reappearing next to the real HR
+  // director, with a published password, is not a development convenience.
+  // Unset still means "demo outside production", so nothing about the existing
+  // local workflow changes; an explicit "false" is now honoured.
+  const demoEnv = process.env.SEED_DEMO_DATA;
+  const demo = opts.demo !== undefined ? opts.demo
+    : (demoEnv === 'false' ? false
+      : (demoEnv === 'true' || process.env.NODE_ENV !== 'production'));
   console.log(`🌱 Seeding Arabtec Recruitment Hub (${demo ? 'with demo data' : 'admin-only'})...`);
 
   // 1. Permissions
@@ -211,6 +224,22 @@ async function main(opts = {}) {
       [buttonKey, label, screen, requiredPermission, confirm ? 1 : 0, reason ? 1 : 0, audit ? 1 : 0]);
   }
   log(`${BUTTONS.length} button configs`);
+
+  // 10b. Notification settings — one row per catalog event, inserted only if the
+  // key is new. An administrator's choice to switch an email off is never
+  // overwritten by a later release that re-runs the seed.
+  let notifAdded = 0;
+  for (const e of NOTIFICATION_EVENTS) {
+    const ex = get('SELECT id FROM notification_config WHERE event_key=?', [e.key]);
+    if (!ex) {
+      run(`INSERT INTO notification_config (event_key, enabled, in_app, email, recipients)
+           VALUES (?,?,?,?,?)`,
+        [e.key, e.defaults.enabled ? 1 : 0, e.defaults.inApp ? 1 : 0,
+         e.defaults.email ? 1 : 0, JSON.stringify(e.defaults.recipients || [])]);
+      notifAdded += 1;
+    }
+  }
+  log(`${NOTIFICATION_EVENTS.length} notification events (${notifAdded} new)`);
 
   // 11. Workflow settings
   const workflows = [

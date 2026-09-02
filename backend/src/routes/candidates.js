@@ -2,8 +2,7 @@ import { Router } from 'express';
 import {
   Candidates, CandidateDocuments, Applications, CandidateNotes, CandidateActivity,
   Users, Projects, Requests, Interviews, Offers, CustomFields, StageHistory,
-  decodeList,
-} from '../lib/models.js';
+  decodeList, HardDelete } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile, uploadPath } from '../lib/upload.js';
@@ -1133,22 +1132,43 @@ router.get('/meta/form', requirePermission('candidate.view'), (req, res) => {
   });
 });
 
-/* ---------------- DELETE ---------------- */
-router.delete('/:id', (req, res) => {
-  const candidate = Candidates.byId(req.params.id);
+/* ---------------- DELETE ----------------
+   Two defects lived here. The gate read `req.user.role` — singular — which the
+   auth middleware has never set (it sets `roles`, an array), so `isAdmin` was
+   permanently false and a System Administrator could not delete a candidate
+   somebody else created. It then called `Candidates.delete`, which does not
+   exist, so anything that DID get past the gate threw a 500. Deleting a
+   candidate has therefore never worked.
+
+   Now governed like every other endpoint: the `candidate.delete` permission
+   decides, so the Roles console is the single place this is granted. A written
+   reason is required, and the audit entry — including what is about to be
+   destroyed — is written BEFORE the row goes, because afterwards there is
+   nothing left to describe. */
+router.delete('/:id', requirePermission('candidate.delete'), (req, res) => {
+  const candidate = Candidates.byId(Number(req.params.id));
   if (!candidate) return res.status(404).json({ error: 'Candidate not found.' });
 
-  // Restrict to admin or the user who created the candidate/owns it.
-  const isAdmin = req.user.role === 'admin' || req.user.role === 'hr_manager';
-  const isOwner = candidate.created_by === req.user.id || candidate.owner_recruiter_id === req.user.id;
-  
-  if (!isAdmin && !isOwner) {
-    return res.status(403).json({ error: 'You do not have permission to delete this candidate.' });
-  }
+  const reason = String((req.body || {}).reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'A reason is required to delete a candidate.' });
 
-  Candidates.delete(req.params.id);
-  writeAudit(req, { action: 'candidate.deleted', entityType: 'candidate', entityId: req.params.id, newValue: { name: candidate.full_name } });
-  res.json({ message: 'Candidate deleted successfully.' });
+  // Cascades take applications, interviews, offers and documents with it. Say so.
+  const counts = HardDelete.candidateCounts(candidate.id);
+  writeAudit(req, {
+    action: 'candidate.deleted', entityType: 'candidate', entityId: candidate.id,
+    oldValue: { name: candidate.full_name, candidateNo: candidate.candidate_no, email: candidate.email, cascaded: counts },
+    comments: reason,
+  });
+  HardDelete.candidate(candidate.id);
+  res.json({ deleted: true, candidateNo: candidate.candidate_no, cascaded: counts });
+});
+
+/* What a delete would destroy. The UI asks first so a recruiter sees the blast
+   radius before confirming, not after. */
+router.get('/:id/delete-impact', requirePermission('candidate.delete'), (req, res) => {
+  const candidate = Candidates.byId(Number(req.params.id));
+  if (!candidate) return res.status(404).json({ error: 'Candidate not found.' });
+  res.json({ candidateNo: candidate.candidate_no, fullName: candidate.full_name, cascaded: HardDelete.candidateCounts(candidate.id) });
 });
 
 export default router;

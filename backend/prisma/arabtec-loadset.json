@@ -1,0 +1,3421 @@
+{
+  "_meta": {
+    "source_files": [
+      "Arabtec - Project Register - 2026-08-23.xlsx (17 projects)",
+      "Arabtec - Key Contacts List - 2026-08-23.xlsx / Managerial Team Contact List.xlsx (identical, 40 managers)",
+      "Arabtec- List of Designations.xlsx -> 'Updated List' sheet (459 titles)",
+      "Book11.xlsx, Projects.xlsx (cross-reference only)"
+    ],
+    "generated_for": "worktree serene-morse-701bb5"
+  },
+  "departments": [
+    {
+      "code": "DEP-CONST",
+      "name": "Construction",
+      "head_employee_no": "EMP-1032"
+    },
+    {
+      "code": "DEP-MEP",
+      "name": "MEP",
+      "head_employee_no": "EMP-1009"
+    },
+    {
+      "code": "DEP-TECH",
+      "name": "Technical Office",
+      "head_employee_no": "EMP-1021"
+    },
+    {
+      "code": "DEP-DESIGN",
+      "name": "Design & BIM",
+      "head_employee_no": null
+    },
+    {
+      "code": "DEP-PLAN",
+      "name": "Planning",
+      "head_employee_no": "EMP-1016"
+    },
+    {
+      "code": "DEP-COMM",
+      "name": "Commercial",
+      "head_employee_no": "EMP-1018"
+    },
+    {
+      "code": "DEP-COST",
+      "name": "Cost Control & Estimation",
+      "head_employee_no": "EMP-1013"
+    },
+    {
+      "code": "DEP-PROC",
+      "name": "Procurement & Purchasing",
+      "head_employee_no": "EMP-1014"
+    },
+    {
+      "code": "DEP-STORE",
+      "name": "Stores & Warehouse",
+      "head_employee_no": "EMP-1008"
+    },
+    {
+      "code": "DEP-PLANT",
+      "name": "Plant & Equipment",
+      "head_employee_no": null
+    },
+    {
+      "code": "DEP-HSE",
+      "name": "HSE",
+      "head_employee_no": "EMP-1022"
+    },
+    {
+      "code": "DEP-QAQC",
+      "name": "QA/QC",
+      "head_employee_no": "EMP-1025"
+    },
+    {
+      "code": "DEP-FIN",
+      "name": "Finance & Accounts",
+      "head_employee_no": "EMP-1006"
+    },
+    {
+      "code": "DEP-HR",
+      "name": "HR & Admin",
+      "head_employee_no": "EMP-1001"
+    },
+    {
+      "code": "DEP-IT",
+      "name": "IT",
+      "head_employee_no": null
+    },
+    {
+      "code": "DEP-BD",
+      "name": "Business Development",
+      "head_employee_no": null
+    },
+    {
+      "code": "DEP-LEGAL",
+      "name": "Legal",
+      "head_employee_no": null
+    }
+  ],
+  "managers": [
+    {
+      "employee_no": "EMP-1001",
+      "full_name": "Doaa Mohamed Abdel Gaber",
+      "email": "doaa.abdelgaber@arabtecegy.com",
+      "phone": "01116006680",
+      "job_title": "HR & Admin Director",
+      "dept_code": "DEP-HR",
+      "role": "hr_director",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1002",
+      "full_name": "Menna Allah Haytham Gamal Eldin",
+      "email": "menna.haytham@arabtecegy.com",
+      "phone": "01119221122",
+      "job_title": "HR Operations Manager",
+      "dept_code": "DEP-HR",
+      "role": "hr_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1003",
+      "full_name": "Doaa El Sherbine",
+      "email": "doaa.elsherbini@arabtecegy.com",
+      "phone": "01552224890",
+      "job_title": "Recruitment Manager",
+      "dept_code": "DEP-HR",
+      "role": "recruitment_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1004",
+      "full_name": "Hossam Abdallah Abdulgawad Abdulbaky",
+      "email": "hossam.abdallah@arabtecegy.com",
+      "phone": "01286494663",
+      "job_title": "Sr. Administration Manager",
+      "dept_code": "DEP-HR",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1005",
+      "full_name": "Saeed Hosny Abdulaziz Afify",
+      "email": "saeed.hosny@arabtecegy.com",
+      "phone": "01014447966",
+      "job_title": "IT Manager",
+      "dept_code": "DEP-HR",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1006",
+      "full_name": "Bassem Milad Shafiq Asaad",
+      "email": "bassem.shafik@arabtecegy.com",
+      "phone": "01208821214",
+      "job_title": "Finance Director",
+      "dept_code": "DEP-FIN",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1007",
+      "full_name": "Mohamed El Sayed Youssef Mohamed",
+      "email": "m.youssef@arabtecegy.com",
+      "phone": "01008818282",
+      "job_title": "Accounts Manager",
+      "dept_code": "DEP-FIN",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1008",
+      "full_name": "Mohamed Salah Hamam Abdulaziz",
+      "email": "mohamed.salah@arabtecegy.com",
+      "phone": "01000593293",
+      "job_title": "Stores Manager",
+      "dept_code": "DEP-STORE",
+      "role": "hiring_manager",
+      "location": "All Projects"
+    },
+    {
+      "employee_no": "EMP-1009",
+      "full_name": "Tamer Ibrahim Zaki Abd El-Hady",
+      "email": "tamer.abdelhady@arabtecegy.com",
+      "phone": "01154440619",
+      "job_title": "MEP Manager",
+      "dept_code": "DEP-MEP",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1010",
+      "full_name": "Tawfik Abdulfatah Tawfik Abdulhady",
+      "email": "tawfik.abdulhady@arabtecegy.com",
+      "phone": "01022388270",
+      "job_title": "Construction Manager - MEP",
+      "dept_code": "DEP-MEP",
+      "role": "hiring_manager",
+      "location": "Aliva"
+    },
+    {
+      "employee_no": "EMP-1011",
+      "full_name": "Amr Ali Mayhoub Ali",
+      "email": "amr.ali@arabtecegy.com",
+      "phone": "01149910654",
+      "job_title": "Construction Manager - MEP",
+      "dept_code": "DEP-MEP",
+      "role": "hiring_manager",
+      "location": "North Coast Area"
+    },
+    {
+      "employee_no": "EMP-1012",
+      "full_name": "Ahmed Abdulsamea Meselhy Sheirf",
+      "email": "ahmed.sherif@arabtecegy.com",
+      "phone": "01020028575",
+      "job_title": "Construction Manager - MEP",
+      "dept_code": "DEP-MEP",
+      "role": "hiring_manager",
+      "location": "MV 1 Extension"
+    },
+    {
+      "employee_no": "EMP-1013",
+      "full_name": "Hisham Younis",
+      "email": "hisham.younis@arabtecegy.com",
+      "phone": "01118888959",
+      "job_title": "Cost Control Manager",
+      "dept_code": "DEP-COST",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1014",
+      "full_name": "Shrief Mohamed Abdel Moniem El Faham",
+      "email": "sherif.alfaham@arabtecegy.com",
+      "phone": "01008666610",
+      "job_title": "Procurement & Contracts Director",
+      "dept_code": "DEP-PROC",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1015",
+      "full_name": "Ahmed Mohamed Abdualla Ibrahim",
+      "email": "ahmed.eissa@arabtecegy.com",
+      "phone": "01011248987",
+      "job_title": "Procurement Manager",
+      "dept_code": "DEP-PROC",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1016",
+      "full_name": "Hossam Mohamed Ahmed Abdulhady",
+      "email": "hossam.abdulhady@arabtecegy.com",
+      "phone": "01119411254",
+      "job_title": "Planning & Operations Director",
+      "dept_code": "DEP-PLAN",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1017",
+      "full_name": "Habiba Tarek Farouk Badwy",
+      "email": "habiba.tarek@arabtecegy.com",
+      "phone": "01013251726",
+      "job_title": "Planning Manager",
+      "dept_code": "DEP-PLAN",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1018",
+      "full_name": "Mohamed Farouk Mohamed Al Abany",
+      "email": "mohamed.elabany@arabtecegy.com",
+      "phone": "01121766000",
+      "job_title": "Commercial Director",
+      "dept_code": "DEP-COMM",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1019",
+      "full_name": "Mostafa ElSayed ElSayed Ali Ghorab",
+      "email": "mostafa.sayed@arabtecegy.com",
+      "phone": "01211285709",
+      "job_title": "Commercial Manager",
+      "dept_code": "DEP-COMM",
+      "role": "hiring_manager",
+      "location": "North Coast Area"
+    },
+    {
+      "employee_no": "EMP-1020",
+      "full_name": "Waleed Aboelfotoh Abdulgawad Mohamed",
+      "email": "waleed.elsisy@arabtecegy.com",
+      "phone": "01285962842",
+      "job_title": "Commercial Manager",
+      "dept_code": "DEP-COMM",
+      "role": "hiring_manager",
+      "location": "Cairo Area"
+    },
+    {
+      "employee_no": "EMP-1021",
+      "full_name": "Mohamed Isamil Mohamed Ismail",
+      "email": "mohamed.ismaeel@arabtecegy.com",
+      "phone": "01012033314",
+      "job_title": "Technical Director",
+      "dept_code": "DEP-TECH",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1022",
+      "full_name": "Antonuos Atef Henry Ghali",
+      "email": "antonuos.atef@arabtecegy.com",
+      "phone": "01281609995",
+      "job_title": "Sr. HSE Manager",
+      "dept_code": "DEP-HSE",
+      "role": "hiring_manager",
+      "location": "Al-Burouj, MV 1 Extension, Aliva, & Hills of One"
+    },
+    {
+      "employee_no": "EMP-1023",
+      "full_name": "Mahmoud Mohamed Mahmoud Mohamed Yosri",
+      "email": "mahmoud.yosri@arabtecegy.com",
+      "phone": "01500012394",
+      "job_title": "Sr. HSE Manager",
+      "dept_code": "DEP-HSE",
+      "role": "hiring_manager",
+      "location": "North Coast Area"
+    },
+    {
+      "employee_no": "EMP-1024",
+      "full_name": "Elsayed Abdel Rahman Elsayed Abdel Salam",
+      "email": "sayed.abdelrahman@arabtecegy.com",
+      "phone": "01227094736",
+      "job_title": "HSE Manager",
+      "dept_code": "DEP-HSE",
+      "role": "hiring_manager",
+      "location": "I City"
+    },
+    {
+      "employee_no": "EMP-1025",
+      "full_name": "Ahmed Hussien Salah Ahmed",
+      "email": "ahmed.hussien@arabtecegy.com",
+      "phone": "01111500074",
+      "job_title": "Sr. Quality Manager",
+      "dept_code": "DEP-QAQC",
+      "role": "hiring_manager",
+      "location": "Al-Burouj & Aliva"
+    },
+    {
+      "employee_no": "EMP-1026",
+      "full_name": "Hossam Zein El Din Fathi",
+      "email": "hossam.zein@arabtecegy.com",
+      "phone": "01149779216",
+      "job_title": "Quality Manager",
+      "dept_code": "DEP-QAQC",
+      "role": "hiring_manager",
+      "location": "I City"
+    },
+    {
+      "employee_no": "EMP-1027",
+      "full_name": "Mohamed Samir Abdel Hamid Mohamed",
+      "email": "mohamed.abdelhamid@arabtecegy.com",
+      "phone": "01094488987",
+      "job_title": "Quality Manager",
+      "dept_code": "DEP-QAQC",
+      "role": "hiring_manager",
+      "location": "North Coast Area"
+    },
+    {
+      "employee_no": "EMP-1028",
+      "full_name": "Mohamed Ramadan Abdel Qader Khalil",
+      "email": "mohamed.ramadan@arabtecegy.com",
+      "phone": "01020097779",
+      "job_title": "Technical Manager",
+      "dept_code": "DEP-TECH",
+      "role": "hiring_manager",
+      "location": "Head Office"
+    },
+    {
+      "employee_no": "EMP-1029",
+      "full_name": "Mohamed Ahmed El Refaie Abdullatef",
+      "email": "mohamed.elrefaie@arabtecegy.com",
+      "phone": "01147152345",
+      "job_title": "Sr. Technical Manager",
+      "dept_code": "DEP-TECH",
+      "role": "hiring_manager",
+      "location": "North Coast Area"
+    },
+    {
+      "employee_no": "EMP-1030",
+      "full_name": "Ahmed Atta Farghaly",
+      "email": "ahmed.atta@arabtecegy.com",
+      "phone": "01124060042",
+      "job_title": "Deputy Technical Manager",
+      "dept_code": "DEP-TECH",
+      "role": "hiring_manager",
+      "location": "MV 1.1"
+    },
+    {
+      "employee_no": "EMP-1031",
+      "full_name": "Mahmoud Mohamed Ibrahim",
+      "email": "mahmoud.ahmed@arabtecegy.com",
+      "phone": "01099221890",
+      "job_title": "Deputy Technical Manager",
+      "dept_code": "DEP-TECH",
+      "role": "hiring_manager",
+      "location": "Aliva"
+    },
+    {
+      "employee_no": "EMP-1032",
+      "full_name": "Ramy Rabiea Abdel Meniem Ali",
+      "email": "ramy.rabiee@arabtecegy.com",
+      "phone": "01113819996",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Icity"
+    },
+    {
+      "employee_no": "EMP-1033",
+      "full_name": "Mohamed taha Hamed Abduallah",
+      "email": "mohamed.taha@arabtecegy.com",
+      "phone": "01020533907",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Al-Burouj"
+    },
+    {
+      "employee_no": "EMP-1034",
+      "full_name": "Mohamed Mohsen Youness Abdulqader",
+      "email": "mohamed.mohsen@arabtecegy.com",
+      "phone": "01011800434",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Parcel 7"
+    },
+    {
+      "employee_no": "EMP-1035",
+      "full_name": "Mohamed Hassan Youssef Afify",
+      "email": "mohamed.hassan@arabtecegy.com",
+      "phone": "01069809292",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Mountain View 1 Extension"
+    },
+    {
+      "employee_no": "EMP-1036",
+      "full_name": "Wael Elmohamdy Abdulaziz Elhenawy",
+      "email": "wael.elhenawy@arabtecegy.com",
+      "phone": "01000141466",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Sahel Area"
+    },
+    {
+      "employee_no": "EMP-1037",
+      "full_name": "Mohamed Sabah Abd Rabo Sabah",
+      "email": "mohamed.sabah@arabtecegy.com",
+      "phone": "01228065484",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Ceasar"
+    },
+    {
+      "employee_no": "EMP-1038",
+      "full_name": "Ahmed Khaled Morsy Farag",
+      "email": "ahmed.khaled@arabtecegy.com",
+      "phone": "01207880043",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Seazen"
+    },
+    {
+      "employee_no": "EMP-1039",
+      "full_name": "Rafaat Mofrah Ali Aboelgereed",
+      "email": "raafat.moufreh@arabtecegy.com",
+      "phone": "01114583444",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Hills Of One"
+    },
+    {
+      "employee_no": "EMP-1040",
+      "full_name": "Emad Waheed Shawky Malak",
+      "email": "emad.waheed@arabtecegy.com",
+      "phone": "01221516675",
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "LIVLS"
+    },
+    {
+      "employee_no": "EMP-1041",
+      "full_name": "Ahmed Abo Zaid",
+      "email": "ahmed.abozaid@arabtecegy.com",
+      "phone": null,
+      "job_title": "Project Manager",
+      "dept_code": "DEP-CONST",
+      "role": "project_manager",
+      "location": "Aliva"
+    }
+  ],
+  "projects": [
+    {
+      "code": "PRJ-SOUL",
+      "name": "Soul",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1032",
+      "pm_source_name": "Ramy Rabiea"
+    },
+    {
+      "code": "PRJ-LAGOON",
+      "name": "Lagoon",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1032",
+      "pm_source_name": "Ramy Rabiea"
+    },
+    {
+      "code": "PRJ-MPARK",
+      "name": "Mountain Park",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1032",
+      "pm_source_name": "Ramy Rabiea"
+    },
+    {
+      "code": "PRJ-LAGOONVL",
+      "name": "Lagoon Villa",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1032",
+      "pm_source_name": "Ramy Rabiea"
+    },
+    {
+      "code": "PRJ-MPARKLS",
+      "name": "Mountain Park LandScape",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1032",
+      "pm_source_name": "Ramy Rabiea"
+    },
+    {
+      "code": "PRJ-MV1EXT",
+      "name": "Mountain View 1 Extension",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1035",
+      "pm_source_name": "Mohamed Hassan"
+    },
+    {
+      "code": "PRJ-ALIVA1",
+      "name": "Aliva 1",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1041",
+      "pm_source_name": "Ahmed Abo Zaid"
+    },
+    {
+      "code": "PRJ-ALIVA2",
+      "name": "Aliva 2",
+      "client_name": "Mountain View",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1041",
+      "pm_source_name": "Ahmed Abo Zaid"
+    },
+    {
+      "code": "PRJ-BUROUJ",
+      "name": "Al-Burouj",
+      "client_name": "Imkan",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1033",
+      "pm_source_name": "Mohamed Taha"
+    },
+    {
+      "code": "PRJ-HILLS1",
+      "name": "Hills Of One",
+      "client_name": "People & Places",
+      "location": "Cairo",
+      "status": "active",
+      "pm_employee_no": "EMP-1039",
+      "pm_source_name": "Rafaat Mofrah"
+    },
+    {
+      "code": "PRJ-ESTATE",
+      "name": "The Estate",
+      "client_name": "Sodic",
+      "location": "Cairo",
+      "status": "on_hold",
+      "pm_employee_no": null,
+      "pm_source_name": "Hold"
+    },
+    {
+      "code": "PRJ-PARCEL7",
+      "name": "Parcel 7",
+      "client_name": "Sodic",
+      "location": "Ras El Hikma",
+      "status": "active",
+      "pm_employee_no": "EMP-1034",
+      "pm_source_name": "Mohamed Mohsen"
+    },
+    {
+      "code": "PRJ-SOLARE",
+      "name": "Solare",
+      "client_name": "Misr Italia",
+      "location": "Ras El Hikma",
+      "status": "active",
+      "pm_employee_no": "EMP-1034",
+      "pm_source_name": "Mohamed Mohsen"
+    },
+    {
+      "code": "PRJ-WATERBOD",
+      "name": "Water Bodies",
+      "client_name": "Sodic",
+      "location": "Ras El Hikma",
+      "status": "active",
+      "pm_employee_no": "EMP-1034",
+      "pm_source_name": "Mohamed Mohsen"
+    },
+    {
+      "code": "PRJ-CEASAR",
+      "name": "Ceasar",
+      "client_name": "Sodic",
+      "location": "Ras El Hikma",
+      "status": "active",
+      "pm_employee_no": "EMP-1037",
+      "pm_source_name": "Mohamed Sabah"
+    },
+    {
+      "code": "PRJ-SEAZEN",
+      "name": "Seazen",
+      "client_name": "Qamzi",
+      "location": "Ras El Hikma",
+      "status": "active",
+      "pm_employee_no": "EMP-1038",
+      "pm_source_name": "Ahmed Khaled"
+    },
+    {
+      "code": "PRJ-LVLS",
+      "name": "LVLS",
+      "client_name": "Mountain View",
+      "location": "Ras El Hikma",
+      "status": "active",
+      "pm_employee_no": "EMP-1040",
+      "pm_source_name": "Emad Waheed"
+    }
+  ],
+  "designations": [
+    {
+      "title": "Chief Financial Officer",
+      "grade": "19",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Accounts Director",
+      "grade": "16",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Finance Director",
+      "grade": "16",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Treasury Director",
+      "grade": "16",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Accounts Manager",
+      "grade": "14",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Finance Manager",
+      "grade": "14",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Chief Accountant",
+      "grade": "12",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Chief Accountant - Cash Management",
+      "grade": "12",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Chief Accountant – Ins. Inventory & Utility",
+      "grade": "12",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Chief Accountant - JV & Related Parties",
+      "grade": "12",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Chief Accountant - Receivables",
+      "grade": "12",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Chief Accountant – Sub Contracts & Petty cash",
+      "grade": "12",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Sr. Accountant",
+      "grade": "10",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Accountant",
+      "grade": "9",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Assistant Accountant",
+      "grade": "8",
+      "function": "Accounts & Finance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Sr. Administration and Welfare Manager",
+      "grade": "15",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Administration Manager",
+      "grade": "14",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Government Affairs Manager",
+      "grade": "13",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Camp and Welfare Manager",
+      "grade": "13",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Camps and Security Manager",
+      "grade": "13",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "General Services Manager",
+      "grade": "12",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Site  Administration Manager",
+      "grade": "11",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Performance Specialist",
+      "grade": "12",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Administration Specialist",
+      "grade": "10",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Site Administration Specialist",
+      "grade": "10",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Administration Officer",
+      "grade": "9",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. General Service Officer",
+      "grade": "9",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Site Administration Officer",
+      "grade": "9",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Administration Officer",
+      "grade": "8",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "General Service Officer",
+      "grade": "8",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Site Administration Officer",
+      "grade": "8",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Public Relations Officer",
+      "grade": "8",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Public Relations Officer",
+      "grade": "7",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Receptionist",
+      "grade": "6",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant Administration Officer",
+      "grade": "5",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant General Service Officer",
+      "grade": "5",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant Public Relations Officer",
+      "grade": "5",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant Site Administration Officer",
+      "grade": "5",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Clerk",
+      "grade": "5",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Office Driver",
+      "grade": "5",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Typist",
+      "grade": "5",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Office Assistant",
+      "grade": "4",
+      "function": "Admin",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "BIM Manager",
+      "grade": "15",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Lead BIM Engineer",
+      "grade": "12",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Sr. BIM Coordinator",
+      "grade": "12",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "BIM Coordinator",
+      "grade": "11",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Sr. BIM Engineer",
+      "grade": "11",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "BIM Engineer",
+      "grade": "10",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Sr. BIM Modeler",
+      "grade": "10",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "BIM Modeler",
+      "grade": "9",
+      "function": "BIM",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Director Business Development",
+      "grade": "16",
+      "function": "Business Development",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Business Development Manager",
+      "grade": "14",
+      "function": "Business Development",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Sr. Business Development Specialist",
+      "grade": "12",
+      "function": "Business Development",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Business Development Specialist",
+      "grade": "11",
+      "function": "Business Development",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Sr. Business Development Officer",
+      "grade": "10",
+      "function": "Business Development",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Business Development Officer",
+      "grade": "9",
+      "function": "Business Development",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Assistant Business Development Officer",
+      "grade": "8",
+      "function": "Business Development",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Camp & Security Manager",
+      "grade": "13",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Security Manager",
+      "grade": "11",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Welfare Specialist",
+      "grade": "10",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Security In - Charge",
+      "grade": "9",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Welfare Officer",
+      "grade": "9",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Camps Supervisor",
+      "grade": "8",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Security Supervisor",
+      "grade": "8",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Security Officer",
+      "grade": "8",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Welfare Officer",
+      "grade": "8",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant Welfare Officer",
+      "grade": "7",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Security Officer",
+      "grade": "7",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Camp Officer",
+      "grade": "7",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant Security Officer",
+      "grade": "6",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Camp Officer",
+      "grade": "6",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Camps Administrator",
+      "grade": "6",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Camp Boss",
+      "grade": "5",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant Camp Boss",
+      "grade": "4",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Security Guard",
+      "grade": "4",
+      "function": "Camps",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Chief Commercial Officer",
+      "grade": "19",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Commercial Director",
+      "grade": "17",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Sr. Commercial Manager",
+      "grade": "16",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Claims Manager",
+      "grade": "15",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Commercial Manager",
+      "grade": "14",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Commercial Manager - Contract",
+      "grade": "14",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Commercial Manager - QS",
+      "grade": "14",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Lead Quantity Surveyor",
+      "grade": "13",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Lead Claims Engineer",
+      "grade": "12",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Lead Contract Administrator",
+      "grade": "12",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Sr. Quantity Surveyor",
+      "grade": "12",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Sr. Claims Engineer",
+      "grade": "11",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Sr. Contract Administrator",
+      "grade": "11",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Claims Engineer",
+      "grade": "10",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Contract Administrator",
+      "grade": "10",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Quantity Surveyor",
+      "grade": "10",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Assistant Quantity Surveyor",
+      "grade": "9",
+      "function": "Commercial",
+      "dept_code": "DEP-COMM"
+    },
+    {
+      "title": "Chief Executive Officer",
+      "grade": "20",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Chief Operating Officer - Infrastructure",
+      "grade": "19",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Project Director",
+      "grade": "17",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Project Manager",
+      "grade": "16",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Construction Director",
+      "grade": "16",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Manager Operations & Mobilization",
+      "grade": "14",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Project Manager",
+      "grade": "14",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Mobilization Manager",
+      "grade": "14",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Operations Manager",
+      "grade": "14",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Construction Manager",
+      "grade": "14",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Construction Manager",
+      "grade": "13",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Construction Manager - Mobilization & Project Services",
+      "grade": "13",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Surveying Manager",
+      "grade": "12",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Project Engineer",
+      "grade": "11",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Project Engineer - Mobilization",
+      "grade": "11",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Project Engineer",
+      "grade": "10",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Project Engineer - Mobilization",
+      "grade": "10",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Section Engineer",
+      "grade": "9",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Site Engineer",
+      "grade": "9",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Site Engineer - Mobilization",
+      "grade": "9",
+      "function": "Construction",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Cost Control Manager",
+      "grade": "14",
+      "function": "Cost Control",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Lead Cost Control Engineer",
+      "grade": "12",
+      "function": "Cost Control",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Sr. Cost Control Engineer",
+      "grade": "11",
+      "function": "Cost Control",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Cost Control Engineer",
+      "grade": "10",
+      "function": "Cost Control",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "General Manager",
+      "grade": "16",
+      "function": "CRE",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Facilities Manager",
+      "grade": "14",
+      "function": "CRE",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Property Manager",
+      "grade": "14",
+      "function": "CRE",
+      "dept_code": "DEP-BD"
+    },
+    {
+      "title": "Director Design & Development",
+      "grade": "17",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Development Manager",
+      "grade": "15",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Design Manager",
+      "grade": "14",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Financial Modeler",
+      "grade": "14",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Lead Designer",
+      "grade": "12",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Sr. Designer",
+      "grade": "11",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Design Coordinator",
+      "grade": "10",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Designer",
+      "grade": "10",
+      "function": "Design",
+      "dept_code": "DEP-DESIGN"
+    },
+    {
+      "title": "Sr. Document Controller",
+      "grade": "7",
+      "function": "Document Control",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Document Controller",
+      "grade": "6",
+      "function": "Document Control",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Assistant Document Controller",
+      "grade": "5",
+      "function": "Document Control",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Estimation Director",
+      "grade": "17",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Estimation Manager",
+      "grade": "15",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Lead Estimator",
+      "grade": "13",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Sr. Electrical Estimator",
+      "grade": "11",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Sr. Estimator",
+      "grade": "11",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Sr. Mechanical Estimator",
+      "grade": "11",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Estimator",
+      "grade": "10",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Assistant Estimator",
+      "grade": "9",
+      "function": "Estimation",
+      "dept_code": "DEP-COST"
+    },
+    {
+      "title": "Health & Safety Director",
+      "grade": "16",
+      "function": "HSE",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Director HSEQ",
+      "grade": "16",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HSEQ Manager",
+      "grade": "15",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. HSE Manager",
+      "grade": "15",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. Quality Manager",
+      "grade": "16",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Audit & Training Manager",
+      "grade": "14",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HSE Manager- Project",
+      "grade": "12",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Quality Manager",
+      "grade": "14",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Lead HSE ENGINEER",
+      "grade": "12",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Lead Quality ENGINEER",
+      "grade": "12",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. HSE ENGINEER",
+      "grade": "11",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. Quality ENGINEER",
+      "grade": "11",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. QA/QC Engineer - MEP",
+      "grade": "11",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HSE ENGINEER",
+      "grade": "10",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Quality ENGINEER",
+      "grade": "10",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Quality Specialist",
+      "grade": "10",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. HSE Officer",
+      "grade": "10",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. Quality Officer",
+      "grade": "10",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HSE Officer",
+      "grade": "9",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Quality Officer",
+      "grade": "9",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Sr. HSE Inspector",
+      "grade": "9",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Civil Defence Training Coordinator",
+      "grade": "9",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HSE Inspector",
+      "grade": "7",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Quality Inspector",
+      "grade": "7",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Fire Warden",
+      "grade": "6",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "First Aider",
+      "grade": "6",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HSE Assistant",
+      "grade": "5",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Lab Technician",
+      "grade": "5",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "Assistant Lab Technician",
+      "grade": "4",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HSE Attendant",
+      "grade": "4",
+      "function": "HSEQ",
+      "dept_code": "DEP-HSE"
+    },
+    {
+      "title": "HR Director",
+      "grade": "16",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "HR & Admin Manager",
+      "grade": "15",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Manager OD & Rewards",
+      "grade": "15",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Talent Development Manager",
+      "grade": "15",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "HR Operation Manager",
+      "grade": "14",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Resourcing & Recruitment Manager",
+      "grade": "14",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Employee Relation Manager",
+      "grade": "14",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Employee Personnel Specialist",
+      "grade": "12",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Recruitment Specialist",
+      "grade": "12",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Employee Allocation Specialist",
+      "grade": "10",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "HR Operation Specialist",
+      "grade": "10",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Recruitment Specialist",
+      "grade": "10",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Rewards & Performance Specialist",
+      "grade": "10",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Employee Personnel Officer",
+      "grade": "9",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Employee Relation Officer",
+      "grade": "9",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. HR Officer",
+      "grade": "9",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. HR Operation Officer",
+      "grade": "9",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Recruitment Officer",
+      "grade": "9",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Sr. Rewards & Performance Officer",
+      "grade": "9",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Employee Personnel Officer",
+      "grade": "8",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Employee Relation Officer",
+      "grade": "8",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "HR Operation Officer",
+      "grade": "8",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Recruitment Officer",
+      "grade": "8",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Rewards & Performance Officer",
+      "grade": "8",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Staff Allocation Officer",
+      "grade": "8",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Worker Allocation Officer",
+      "grade": "8",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant Employee Relation Officer",
+      "grade": "6",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Assistant HR Operation Officer",
+      "grade": "6",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Asstistant Employee Personnel Officer",
+      "grade": "6",
+      "function": "Human Resource",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "EB/ PMV & Corporate Insurance Officer",
+      "grade": "9",
+      "function": "Insurance",
+      "dept_code": "DEP-FIN"
+    },
+    {
+      "title": "Director Information Technology",
+      "grade": "16",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Enterprise Systems Manager",
+      "grade": "14",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Application Development Manager",
+      "grade": "13",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Service Operation Manager",
+      "grade": "12",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Sr. Enterprise Application Specialist",
+      "grade": "12",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Application Development Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Enterprise Application Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Enterprise Systems Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Network Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Process Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Security Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Service Support Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Systems Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "System Development Specialist",
+      "grade": "11",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Sr. Application Development Engineer",
+      "grade": "10",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Sr. Enterprise System Engineer",
+      "grade": "10",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Sr. IT Network Engineer",
+      "grade": "10",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Sr. IT Service Desk Engineer",
+      "grade": "10",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Sr. IT Service Support Engineer",
+      "grade": "10",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Sr. IT Systems Engineer",
+      "grade": "10",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Application Development Engineer",
+      "grade": "9",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Enterprise System Engineer",
+      "grade": "9",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Network Engineer",
+      "grade": "9",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Service Desk Engineer",
+      "grade": "9",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Service Support Engineer",
+      "grade": "9",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Systems Engineer",
+      "grade": "9",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "R&D Engineer",
+      "grade": "9",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Assets Officer",
+      "grade": "8",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Technician",
+      "grade": "8",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "IT Assets Analyst",
+      "grade": "7",
+      "function": "IT",
+      "dept_code": "DEP-IT"
+    },
+    {
+      "title": "Head Of Legal - Construction",
+      "grade": "17",
+      "function": "Legal",
+      "dept_code": "DEP-LEGAL"
+    },
+    {
+      "title": "Legal Director",
+      "grade": "16",
+      "function": "Legal",
+      "dept_code": "DEP-LEGAL"
+    },
+    {
+      "title": "Sr. Legal Counsel",
+      "grade": "14",
+      "function": "Legal",
+      "dept_code": "DEP-LEGAL"
+    },
+    {
+      "title": "Legal Counsel",
+      "grade": "13",
+      "function": "Legal",
+      "dept_code": "DEP-LEGAL"
+    },
+    {
+      "title": "Corporate (Legal) Translator",
+      "grade": "12",
+      "function": "Legal",
+      "dept_code": "DEP-LEGAL"
+    },
+    {
+      "title": "Assistant Legal Counsel",
+      "grade": "12",
+      "function": "Legal",
+      "dept_code": "DEP-LEGAL"
+    },
+    {
+      "title": "Director MEP",
+      "grade": "17",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Electrical Department Manager",
+      "grade": "15",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "MEP Estimation Manager",
+      "grade": "15",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "MEP Manager",
+      "grade": "15",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Sr. MEP Manager",
+      "grade": "16",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Technical Manager - MEP",
+      "grade": "15",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "MEP Construction Manager",
+      "grade": "13",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Electrical Manager",
+      "grade": "13",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "MEP Completion Manager",
+      "grade": "13",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Mechanical Manager",
+      "grade": "13",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Lead Electrical Engineer",
+      "grade": "12",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Lead Mechanical Engineer",
+      "grade": "12",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Sr. Design Engineer – Electrical",
+      "grade": "11",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Sr. Electrical Engineer",
+      "grade": "11",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Sr. Mechanical Engineer",
+      "grade": "11",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Sr. MEP Engineer",
+      "grade": "11",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Sr. MEP Estimator Mechanical",
+      "grade": "11",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Design Engineer – Electrical",
+      "grade": "10",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Electrical Engineer",
+      "grade": "10",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Mechanical Engineer",
+      "grade": "10",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "MEP Engineer",
+      "grade": "10",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Assistant MEP Engineer",
+      "grade": "9",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "MEP Inspector",
+      "grade": "9",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Electrical Supervisor",
+      "grade": "8",
+      "function": "MEP",
+      "dept_code": "DEP-MEP"
+    },
+    {
+      "title": "Planning Manager - Forensic",
+      "grade": "15",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Sr. Planning Manager",
+      "grade": "16",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "System Improvement & Implementation Manager",
+      "grade": "14",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Pre Contracts & Project Management Director",
+      "grade": "17",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Planning Manager",
+      "grade": "15",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Project Initialization Manager",
+      "grade": "14",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "R&D Manager",
+      "grade": "14",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Lead Planning Engineer",
+      "grade": "12",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Project Initialization Specialist",
+      "grade": "11",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "R&D Specialist",
+      "grade": "11",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Sr. Planning Engineer",
+      "grade": "11",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "System Improvement & Implementation Specialist",
+      "grade": "11",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Planning Engineer",
+      "grade": "10",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Sr. R&D Officer",
+      "grade": "10",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Sr. System Improvement & Implementation Officer",
+      "grade": "10",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "R&D Officer",
+      "grade": "9",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Sr. T and A Officer",
+      "grade": "9",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "System Improvement & Implementation Officer",
+      "grade": "9",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "T and A Officer",
+      "grade": "8",
+      "function": "Planning",
+      "dept_code": "DEP-PLAN"
+    },
+    {
+      "title": "Plant Manager",
+      "grade": "14",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Plant Purchasing Manager",
+      "grade": "15",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Central Workshop Manager",
+      "grade": "13",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Highrise Fleet Manager",
+      "grade": "13",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Logistics Manager",
+      "grade": "13",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Lead Hoist Engineer",
+      "grade": "12",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Lead Plant Engineer",
+      "grade": "12",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Lead Plant Fabrication Engineer",
+      "grade": "12",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Lead Tower Crane Engineer",
+      "grade": "12",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Lead Workshop Engineer",
+      "grade": "12",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Plant Administration & Personnel Manager",
+      "grade": "12",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Cost Controller",
+      "grade": "11",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Hoist Engineer",
+      "grade": "11",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Plant Engineer",
+      "grade": "11",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Plant Fabrication Engineer",
+      "grade": "11",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Tower Crane Engineer",
+      "grade": "11",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Workshop Engineer",
+      "grade": "11",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Electrical Central Store – Procurement Engineer",
+      "grade": "10",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Plant Auto Store Engineer",
+      "grade": "10",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Plant Engineer",
+      "grade": "10",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Fabrication Superintendant",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Plant Superintendent",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "PMV & Corporate Insurance Officer",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Logistics Officer",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Logistics Officer-Plant",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Personnel Officer",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Plant Administration Officer",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Security Controller-Plant",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Tower Crane Superitendant",
+      "grade": "9",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "AC Supervisor",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Logistics Supervisor",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Plant Administration Officer",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Rigger Supervisor",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Supervisor - Hoist",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Tower Crane Maintenance Supervisor",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Tower Crane Supervisor",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Transport Supervisor",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Waste Management Sr. Officer",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Plant Supervisor",
+      "grade": "8",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Security Controller",
+      "grade": "7",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Sr. Transport Officer",
+      "grade": "7",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Transport Officer",
+      "grade": "6",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Assistant Administration Officer - Plant",
+      "grade": "5",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Assistant Plant Administrator",
+      "grade": "5",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Assistant Transport Officer",
+      "grade": "5",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "PMV Administration Asst.",
+      "grade": "5",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Power Electrician",
+      "grade": "5",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Heavy Vehicle Driver",
+      "grade": "4",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Light Vehicle Driver",
+      "grade": "4",
+      "function": "Plant",
+      "dept_code": "DEP-PLANT"
+    },
+    {
+      "title": "Chief Pre-Contract and Procurement Officer",
+      "grade": "19",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Director Procurement",
+      "grade": "17",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Estimation & Procurement Director",
+      "grade": "17",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Procurement Manager - Tendering",
+      "grade": "15",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Plant Procurement Manager",
+      "grade": "14",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Procurement Manager",
+      "grade": "14",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Lead Procurement Engineer",
+      "grade": "12",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Lead Procurement Engineer - MEP",
+      "grade": "12",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Lead Procurement Engineer - Tendering",
+      "grade": "12",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Lead Material Engineer",
+      "grade": "12",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Sr. Procurement Engineer",
+      "grade": "11",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Sr. Procurement Engineer - MEP",
+      "grade": "11",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Sr. Procurement Engineer - Tendering",
+      "grade": "11",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Procurement Engineer",
+      "grade": "10",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Procurement Engineer - MEP",
+      "grade": "10",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Procurement Engineer - Tendering",
+      "grade": "10",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Sr. Procurement Officer",
+      "grade": "10",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Assistant Procurement Engineer - Tendering",
+      "grade": "9",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Category Senior Buyer",
+      "grade": "9",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Procurement Officer",
+      "grade": "9",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Sr. Buyer",
+      "grade": "9",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Buyer",
+      "grade": "8",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Assistant Buyer",
+      "grade": "7",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Assistant Procurement Officer",
+      "grade": "7",
+      "function": "Procurement & Purchasing",
+      "dept_code": "DEP-PROC"
+    },
+    {
+      "title": "Executive Assistant",
+      "grade": "10",
+      "function": "Secretary",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Personal Assistant",
+      "grade": "9",
+      "function": "Secretary",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Executive Secretary",
+      "grade": "7",
+      "function": "Secretary",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Secretary",
+      "grade": "6",
+      "function": "Secretary",
+      "dept_code": "DEP-HR"
+    },
+    {
+      "title": "Site Manager",
+      "grade": "13",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Logistics Manager",
+      "grade": "12",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Logistics Engineer",
+      "grade": "11",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Site Superintendant",
+      "grade": "10",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Chief Land Surveyor",
+      "grade": "9",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Carpentery Supervisor",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Carpentry Supervisor",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Finishing Supervisor",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Logistics Officer",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Scaffolding Incharge",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Scaffolding Supervisor",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Scrap Supervisor",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Site Supervisor",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Slipform Incharge",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Land Surveyor",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "General Foreman",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "General Foreman - Carpentary Workshop",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "General Foreman - Carpenter",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "General Foreman - Finishes",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "General Foreman - Scaffolder",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "General Foreman - Steel Fixer",
+      "grade": "8",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Land Surveyor",
+      "grade": "7",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Slipform Technician",
+      "grade": "7",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Sr. Timekeeper",
+      "grade": "7",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Assistant Land Surveyor",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Assistant Logistics Officer",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Slipform Technician",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Assistant Slipform Technician",
+      "grade": "5",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - AC Technician",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Auto AC",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Auto Electrician",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Carpenter",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Civil",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Denter",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Electrical",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Electrician",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Erector",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Fabrication",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Field Repair",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Finishing",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Function",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman – General",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Heavy Vehicles",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Hoist",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - HVAC",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Lifting",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Logistics",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Mason",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Mechanic",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - MEP",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - MSE and Tools",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Painter",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Painter Auto",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Pipe Fitter",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Plumber",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Scaffolder",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Scrap",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Steel Fixer",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Stock Yard",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Tower Crane",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Welder",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Workshop",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Rigger Foreman",
+      "grade": "5",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Timekeeper",
+      "grade": "5",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Foreman - Plant",
+      "grade": "6",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Assistant Timekeeper",
+      "grade": "4",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Land Surveyor Attendant",
+      "grade": "4",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Logistic Attendant",
+      "grade": "4",
+      "function": "Site Supervisor",
+      "dept_code": "DEP-CONST"
+    },
+    {
+      "title": "Engineering and Innovation Director",
+      "grade": "17",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Technical Director",
+      "grade": "16",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Engineering Manager",
+      "grade": "15",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Technical Manager",
+      "grade": "16",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Technical Manager - Tendering",
+      "grade": "15",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Technical Manager- Project",
+      "grade": "14",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Construction Manager - Façade",
+      "grade": "14",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Chief Architect",
+      "grade": "12",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Lead Structural Engineer",
+      "grade": "12",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Lead Technical Engineer",
+      "grade": "12",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Architect",
+      "grade": "11",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Structural Engineer",
+      "grade": "11",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Technical Engineer",
+      "grade": "11",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Architect",
+      "grade": "10",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Chief Draughtsman",
+      "grade": "10",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Structural Engineer",
+      "grade": "10",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Technical Engineer",
+      "grade": "10",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Assistant Architect",
+      "grade": "9",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Draughtsman",
+      "grade": "9",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Draughtsman - Architectural",
+      "grade": "9",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Sr. Draughtsman - Structural",
+      "grade": "9",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Draughtsman",
+      "grade": "8",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Draughtsman - Architectural",
+      "grade": "8",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Draughtsman - Electrical",
+      "grade": "8",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Draughtsman - Structural",
+      "grade": "8",
+      "function": "Technical",
+      "dept_code": "DEP-TECH"
+    },
+    {
+      "title": "Stores Manager",
+      "grade": "12",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Store In Charge",
+      "grade": "8",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Store Keeper Supervisor",
+      "grade": "8",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Warehouse Supervisor",
+      "grade": "8",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Sr. Store Keeper",
+      "grade": "6",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Sr. Store Keeper Scaffolding",
+      "grade": "6",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Auto Storekeeper",
+      "grade": "5",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Electrical Storekeeper",
+      "grade": "5",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Scaffolding Store Keeper",
+      "grade": "5",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Store Keeper",
+      "grade": "5",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Assistant Store Keeper",
+      "grade": "4",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    },
+    {
+      "title": "Store Keeper Attendant",
+      "grade": "4",
+      "function": "Warehouse",
+      "dept_code": "DEP-STORE"
+    }
+  ]
+}
