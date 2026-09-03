@@ -51,3 +51,4 @@ Arabtec_ATS_User_Manual_Internal_Handover*
 # On-prem env files (secrets) — templates (*.template) stay tracked.
 deploy/on-prem/ats.env
 deploy/on-prem/scan.env
+deploy/on-prem/mailbox.env

@@ -1,0 +1,11 @@
+[Unit]
+Description=Arabtec ATS — poll the careers mailbox every 10 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=arabtec-cv-mailbox.service
+
+[Install]
+WantedBy=timers.target
