@@ -364,12 +364,33 @@ function Empty({ icon, text, title, action }) {
   return (
     <div className="empty">
       <div className="ico" aria-hidden="true">
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .5 }}>
-          <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M3 12l9 4 9-4" />
-        </svg>
+        {icon
+          ? <span style={{ fontSize: 26, lineHeight: 1, opacity: .55 }}>{icon}</span>
+          : (
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .5 }}>
+              <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M3 12l9 4 9-4" />
+            </svg>
+          )}
       </div>
       {title && <h4 className="empty-title">{title}</h4>}
       <p>{text}</p>
+      {action && <div className="empty-action">{action}</div>}
+    </div>
+  );
+}
+
+// Distinct treatment for a failed load — so "couldn't reach the server" never
+// looks identical to "no results". Keeps the caller's optional retry action.
+function ErrorState({ text, action }) {
+  return (
+    <div className="empty">
+      <div className="ico" aria-hidden="true" style={{ color: 'var(--danger, #D01827)' }}>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+        </svg>
+      </div>
+      <h4 className="empty-title">Couldn’t load this</h4>
+      <p>{text || 'Something went wrong reaching the server. Try again in a moment.'}</p>
       {action && <div className="empty-action">{action}</div>}
     </div>
   );
@@ -1126,7 +1147,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             )}
           </div>
         </header>
-        <main id="main-content" className={'content density-' + density} tabIndex="-1">{Page}</main>
+        <main id="main-content" className={'content density-' + density} tabIndex="-1">
+          <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
+        </main>
 
         {pwdOpen && (
           <Modal title="Change password" onClose={() => setPwdOpen(false)}>
@@ -2779,10 +2802,10 @@ function RolesPage({ user }) {
   return (
     <div>
       <PageHead crumb="Administration / Roles" title="Roles & Permissions" sub="Toggle capabilities per role. Changes are enforced server-side and audited." />
-      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16 }}>
+      <div className="roles-grid">
         <div className="card"><div className="card-pad">
           {roles.map((r) => (
-            <button key={r.id} className={'nav-item' + (selected?.id === r.id ? ' active' : '')} style={{ color: selected?.id === r.id ? '#fff' : 'var(--text-dark)' }} onClick={() => pick(r)}>
+            <button key={r.id} className={'nav-item' + (selected?.id === r.id ? ' active' : '')} onClick={() => pick(r)} aria-current={selected?.id === r.id ? 'true' : undefined}>
               <span>{r.name}</span>
             </button>
           ))}
@@ -3615,9 +3638,18 @@ function ListSkeleton({ rows = 6 }) {
 }
 
 // Resolve admin-controlled buttons for current user from the server.
+// Retries a transient failure so detail-page action bars don't silently and
+// permanently disappear when this one secondary fetch hiccups.
 function useResolvedButtons() {
   const [map, setMap] = useState({});
-  useEffect(() => { api.get('/settings/buttons/resolved').then((r) => { const m = {}; r.buttons.forEach((b) => { m[b.buttonKey] = b; }); setMap(m); }).catch(() => {}); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const load = (attempt = 0) => api.get('/settings/buttons/resolved')
+      .then((r) => { if (cancelled) return; const m = {}; r.buttons.forEach((b) => { m[b.buttonKey] = b; }); setMap(m); })
+      .catch(() => { if (!cancelled && attempt < 2) setTimeout(() => load(attempt + 1), 1500); });
+    load();
+    return () => { cancelled = true; };
+  }, []);
   return map;
 }
 
@@ -4009,7 +4041,7 @@ function AiShortlistTab({ request, user }) {
   if (state === 'error') {
     return (
       <div className="card card-pad">
-        <Empty icon="⚠" title="No shortlist" text={error}
+        <ErrorState text={error || 'The shortlist could not be generated.'}
           action={<button className="btn btn-secondary" onClick={run}>Try again</button>} />
       </div>
     );
@@ -5145,7 +5177,7 @@ function TalentPipeline({
     return [...m.entries()];
   }, [apps, linkRequests]);
   if (loadError) {
-    return <div className="card"><Empty icon="⚠" title="Could not load the pipeline" text={loadError}
+    return <div className="card"><ErrorState text={loadError || 'The pipeline could not be loaded.'}
       action={<button className="btn" onClick={load}>Retry</button>} /></div>;
   }
   if (!apps) return <ListSkeleton rows={6} />;
@@ -6561,7 +6593,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
       )}
 
       {loadError ? (
-        <div className="card"><Empty icon="⚠" title="Could not load candidates" text={loadError}
+        <div className="card"><ErrorState text={loadError || 'Candidates could not be loaded.'}
           action={<button className="btn" onClick={load}>Retry</button>} /></div>
       ) : !candidates ? <ListSkeleton rows={7} /> : shown.length === 0 ? (
         <div className="card"><Empty icon="👤"
@@ -7967,6 +7999,54 @@ function OfferDetail({ id, user, onBack }) {
   );
 }
 
+/* ----------------------------- Error boundary ----------------------------- */
+// The whole SPA is one file with no build step and no framework-level recovery.
+// Without this, any render-time exception unmounts everything and leaves a blank
+// white page with no way back. `page` mode keeps the shell chrome so the user can
+// still navigate away or sign out; the default (root) mode is a full-page notice.
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) {
+    try {
+      console.error(JSON.stringify({ level: 'error', msg: 'react.render_error', where: this.props.label || (this.props.page ? 'page' : 'root'), error: String(err && err.message || err), stack: (info && info.componentStack || '').slice(0, 2000) }));
+    } catch { /* logging must never re-throw */ }
+  }
+  componentDidUpdate(prev) {
+    // A route change should clear a page-level error so the next screen renders.
+    if (this.props.page && this.state.err && prev.resetKey !== this.props.resetKey) this.setState({ err: null });
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    const msg = String(this.state.err && this.state.err.message || this.state.err || 'Unexpected error');
+    if (this.props.page) {
+      return (
+        <div className="card card-pad" style={{ margin: '24px auto', maxWidth: 560 }} role="alert">
+          <h3 style={{ marginTop: 0 }}>This screen ran into a problem</h3>
+          <p className="muted">The rest of the app is still working — use the menu to go somewhere else, or reload.</p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className="btn btn-sm" onClick={() => this.setState({ err: null })}>Try again</button>
+            <button className="btn btn-sm btn-secondary" onClick={() => window.location.reload()}>Reload</button>
+          </div>
+          <details style={{ marginTop: 14 }}><summary className="muted" style={{ fontSize: 12, cursor: 'pointer' }}>Technical detail</summary>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, marginTop: 8, color: 'var(--muted)' }}>{msg}</pre></details>
+        </div>
+      );
+    }
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, fontFamily: 'Arial, Helvetica, sans-serif', color: 'var(--ink, #1A1A1A)' }} role="alert">
+        <div style={{ maxWidth: 460, textAlign: 'center' }}>
+          <h2 style={{ margin: '0 0 8px' }}>Something went wrong</h2>
+          <p style={{ margin: '0 0 16px', color: 'var(--muted, #6F6A64)' }}>The page hit an unexpected error. Reloading usually clears it. If it keeps happening, tell your administrator.</p>
+          <button className="btn" onClick={() => window.location.reload()}>Reload the app</button>
+          <details style={{ marginTop: 16, textAlign: 'left' }}><summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--muted, #6F6A64)' }}>Technical detail</summary>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, marginTop: 8, color: 'var(--muted, #6F6A64)' }}>{msg}</pre></details>
+        </div>
+      </div>
+    );
+  }
+}
+
 /* ----------------------------- Root App ----------------------------- */
 function App() {
   const [booting, setBooting] = useState(true);
@@ -8013,5 +8093,7 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <ToastProvider><App /></ToastProvider>
+  <ErrorBoundary label="root">
+    <ToastProvider><App /></ToastProvider>
+  </ErrorBoundary>
 );
