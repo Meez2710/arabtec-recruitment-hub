@@ -22,6 +22,10 @@ The system is role-aware: what users can view or change depends on their assigne
 
 > **Important:** Never share user passwords or credentials inside this manual. Credentials should be distributed separately and securely.
 
+> **Internal go-live (Arabtec, on-premises):** access URL, the production account
+> list, first-login steps, and support routing are in **Appendix A** at the end
+> of this manual.
+
 ---
 
 ## 2. Getting started
@@ -597,3 +601,88 @@ Use the system as the working record of recruitment activity:
 > **Request → Conversation → Candidate → Assessment → Decision → Offer → Join**
 
 Keep information accurate, use AI as an assistant rather than an authority, protect candidate data, and keep the recruitment team working from the same source of truth.
+
+---
+
+# Appendix A — Internal deployment (Arabtec, on-premises go-live)
+
+This appendix reflects the current internal production deployment. It contains
+**no passwords** — temporary credentials are distributed separately in the
+confidential credential handover.
+
+## A.1 Access
+
+- **Application:** Arabtec Recruitment Hub
+- **Internal URL:** `http://10.20.0.9:4001`
+- Reachable **only from the Arabtec / internal network.** It is not published to
+  the internet and there is no external login.
+- Use a current desktop browser (Chrome, Edge, or Firefox). One account per
+  person — do not share logins.
+
+## A.2 First login
+
+1. Open the Recruitment Hub at `http://10.20.0.9:4001`.
+2. Enter your **company email address**.
+3. Enter the **temporary password** supplied to you in the confidential
+   credential handover.
+4. The system requires you to **create a new password** before you can continue.
+   The new password must be at least 12 characters and include an uppercase
+   letter, a lowercase letter, a number, and a symbol, and must not contain your
+   name or email address.
+5. After the change you are taken to the **dashboard for your assigned role**.
+   Your temporary password stops working at that point.
+
+If your account becomes locked (five failed attempts locks it for 15 minutes),
+contact the System Admin — see A.4.
+
+## A.3 Users and roles (production)
+
+The production system currently holds **42 accounts**: 1 System Admin and 41 real
+Arabtec users. Candidate and recruitment-request data starts empty; the
+organization data (17 departments, 17 projects, 459 designations) is loaded.
+
+| Role | Accounts | Who holds it |
+|---|---|---|
+| **System Admin** | 1 | Platform administrator (`admin@arabtec.com`) — configuration, users, roles, security |
+| **HR Director** | 1 | Doaa Mohamed Abdel Gaber — recruitment oversight, high-level approvals |
+| **HR Manager** | 1 | Menna Allah Haytham Gamal Eldin — HR workflow support and coordination |
+| **Recruitment Manager** | 1 | Doaa El Sherbine — recruiter assignment, pipeline and recruitment operations |
+| **Hiring Manager** | 27 | Department directors and functional managers who raise and review hiring requests |
+| **Project Manager** | 10 | Construction project managers — raise/endorse project headcount, project visibility |
+| Recruiter / Interviewer / Viewer | 0 | Role definitions exist; no accounts assigned yet |
+
+Hiring-Manager and Project-Manager accounts span Construction, MEP, Technical
+Office, Design & BIM, Planning, Commercial, Cost Control & Estimation,
+Procurement & Purchasing, Stores & Warehouse, Plant & Equipment, HSE, QA/QC,
+Finance & Accounts, HR & Admin, IT, Business Development, and Legal.
+
+Every user signs in with their **`@arabtecegy.com` company email**. Role
+capabilities are as described in Section 3 of this manual; exact permissions are
+controlled by the system role configuration.
+
+**Passwords are provided separately in the confidential credential handover.**
+Every non-admin user is required to change the temporary password at first login.
+
+## A.4 Support and administration
+
+- **Locked account, forgotten password, or credential problem:** contact the
+  **ATS System Admin**. The admin resets the password from **Settings → Users**,
+  which issues a new one-time password and forces a change at next login.
+  Self-service "forgot password" is not enabled in this deployment.
+- **Role or access change:** requested through HR / the Recruitment Manager and
+  applied by the System Admin.
+- **Suspected security issue** (unexpected access or permissions): report to the
+  System Admin immediately.
+
+## A.5 Capabilities not enabled in this deployment
+
+The following are visible in the UI as future-state actions but are **not active**
+here. Treat them as configuration items, not defects:
+
+- **Email notifications (SMTP).** No mail is sent; notifications appear in-app only.
+- **AI CV parsing.** "Parse CV" is not connected — upload the CV and enter
+  candidate details manually.
+- **CV inbox / shared-folder scanning.** "Scan CV Inbox" has no source folder
+  configured.
+
+Follow company rollout guidance before relying on any of these.
