@@ -1,16 +1,11 @@
 // Security headers middleware (dependency-free equivalent of Helmet).
 //
-// WHY NOT helmet? The npm dependency is the usual choice, but this codebase is
-// deliberately zero-dependency in its infrastructure (see upload.js, db.js), and
-// these headers are a small, well-understood set. This module sets the same
-// headers Helmet would; it can be swapped for `helmet` later with no behavioural
-// change (see docs/SECURITY_HARDENING.md).
-//
 // Configuration (env vars only — never hard-code):
-//   NODE_ENV=production        → enables HSTS + upgrade-insecure-requests
-//   HSTS_MAX_AGE               → HSTS max-age seconds (default 15552000 = 180d)
-//   CSP_REPORT_ONLY=true       → send CSP as report-only (observe, don't block)
-//   SECURITY_HEADERS_DISABLED=true → escape hatch for debugging only (NOT for prod)
+//   NODE_ENV=production             → enables HSTS + upgrade-insecure-requests
+//   HSTS_MAX_AGE                    → HSTS max-age seconds (default 15552000 = 180d)
+//   CSP_REPORT_ONLY=true            → send CSP as report-only (observe, don't block)
+//   SECURITY_HEADERS_DISABLED=true  → escape hatch for debugging only (NOT for prod)
+//   ENABLE_UI_REVIEW=true           → expose ats-editor/ats-preview in production-mode staging
 //
 // IMPORTANT — Content Security Policy and the current frontend:
 //   The production frontend (frontend/public) compiles JSX in the browser with
@@ -19,6 +14,8 @@
 //   the existing app keeps working. This WEAKENS XSS protection. The correct fix
 //   is to ship a pre-built (compiled) frontend and then drop 'unsafe-eval' /
 //   'unsafe-inline'. Tracked in docs/PRODUCTION_BLOCKERS.md and SECURITY_HARDENING.md.
+
+import { reviewRequestPolicy, rewriteReviewFrameHeaders } from './review-ui-access.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -32,10 +29,7 @@ function buildCSP() {
     'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
     'img-src': ["'self'", 'data:', 'blob:'],
     // The CV preview panel shows the picked file via an iframe pointed at a
-    // blob: URL (URL.createObjectURL on the File object). Without this,
-    // frame-src falls back to default-src 'self', which does not match
-    // blob: — the iframe loads nothing, silently, no console error a user
-    // would notice.
+    // blob: URL (URL.createObjectURL on the File object).
     'frame-src': ["'self'", 'blob:'],
     'connect-src': ["'self'"],
     'object-src': ["'none'"],
@@ -56,16 +50,34 @@ const CSP_VALUE = buildCSP();
 const HSTS_MAX_AGE = Number(process.env.HSTS_MAX_AGE || 15552000); // 180 days
 
 export function securityHeaders(req, res, next) {
+  const reviewPolicy = reviewRequestPolicy({
+    path: req.path,
+    query: req.query,
+    isProd,
+    enabled: process.env.ENABLE_UI_REVIEW === 'true',
+  });
+
+  // Review tools are local/dev by default. Production-mode staging can opt in
+  // explicitly, but production remains closed unless the operator chooses otherwise.
+  if (reviewPolicy.blocked) return res.status(404).type('text/plain').send('Not found');
+
   if (process.env.SECURITY_HEADERS_DISABLED === 'true') return next();
 
   // Content Security Policy (report-only optionally, to roll out safely).
   const cspHeader = process.env.CSP_REPORT_ONLY === 'true'
     ? 'Content-Security-Policy-Report-Only'
     : 'Content-Security-Policy';
-  res.setHeader(cspHeader, CSP_VALUE);
 
-  // Clickjacking protection (Helmet frameguard).
-  res.setHeader('X-Frame-Options', 'DENY');
+  let frameHeaders = {
+    [cspHeader]: CSP_VALUE,
+    'X-Frame-Options': 'DENY',
+  };
+  if (reviewPolicy.allowSameOriginFrame) frameHeaders = rewriteReviewFrameHeaders(frameHeaders);
+  res.setHeader(cspHeader, frameHeaders[cspHeader]);
+
+  // Clickjacking protection remains DENY everywhere except the explicit review
+  // shell query, which permits only SAMEORIGIN framing for the local review tool.
+  res.setHeader('X-Frame-Options', frameHeaders['X-Frame-Options']);
 
   // MIME-sniffing protection (Helmet noSniff) — global, not just downloads.
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -93,6 +105,7 @@ export function securityConfigSummary() {
     hstsMaxAge: HSTS_MAX_AGE,
     cspReportOnly: process.env.CSP_REPORT_ONLY === 'true',
     cspAllowsUnsafeEval: true, // because of Babel-in-browser frontend
+    uiReviewEnabled: !isProd || process.env.ENABLE_UI_REVIEW === 'true',
     disabled: process.env.SECURITY_HEADERS_DISABLED === 'true',
   };
 }
