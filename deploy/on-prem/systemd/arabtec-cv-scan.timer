@@ -1,0 +1,11 @@
+[Unit]
+Description=Arabtec ATS — daily CV folder scan at 08:00 Africa/Cairo
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Timezone=Africa/Cairo
+Persistent=true
+Unit=arabtec-cv-scan.service
+
+[Install]
+WantedBy=timers.target

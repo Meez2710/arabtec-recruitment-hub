@@ -1,0 +1,11 @@
+[Unit]
+Description=Arabtec ATS — nightly backup at 02:00 Africa/Cairo
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Timezone=Africa/Cairo
+Persistent=true
+Unit=arabtec-ats-backup.service
+
+[Install]
+WantedBy=timers.target

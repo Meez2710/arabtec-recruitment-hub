@@ -1,0 +1,13 @@
+[Unit]
+Description=Arabtec ATS — scan the HR CV folder
+After=arabtec-ats.service
+Requires=arabtec-ats.service
+
+[Service]
+Type=oneshot
+User=arabtec-ats
+Group=arabtec-ats
+EnvironmentFile=/etc/arabtec-ats/scan.env
+ExecStart=/opt/arabtec-ats-bin/cv-scan.sh
+StandardOutput=append:/var/log/arabtec-ats/cv-scan.log
+StandardError=append:/var/log/arabtec-ats/cv-scan.log
