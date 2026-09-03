@@ -160,3 +160,10 @@ test('security middleware allows SAMEORIGIN only for the enabled review frame', 
   assert.equal(normalRes.getHeader('X-Frame-Options'), 'DENY');
   assert.match(normalRes.getHeader('Content-Security-Policy'), /frame-ancestors 'none'/);
 });
+
+test('review frame exception is limited to the ATS root shell', () => {
+  assert.equal(
+    reviewRequestPolicy({ path: '/api/health', query: { ui_review_frame: '1' }, isProd: true, enabled: true }).allowSameOriginFrame,
+    false,
+  );
+});
