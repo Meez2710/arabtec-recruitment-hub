@@ -79,7 +79,9 @@ async function api(path, { method = 'GET', token, body } = {}) {
 
   console.log('\n— Branding / Buttons / Workflow —');
   const branding = await api('/api/settings/branding', { token: adminToken });
-  check('branding loads (minimal corporate: red accent)', branding.json?.branding?.accent_color === '#d2232a' && branding.json?.branding?.button_color === '#d2232a');
+  check('branding loads (red brand, green actions)', branding.json?.branding?.accent_color === '#d2232a' && branding.json?.branding?.button_color === '#008064');
+  const badActionColor = await api('/api/settings/branding', { method: 'PUT', token: adminToken, body: { branding: { button_color: '#ffffff' } } });
+  check('low-contrast action color rejected (400)', badActionColor.status === 400, `got ${badActionColor.status}`);
   const setBrand = await api('/api/settings/branding', { method: 'PUT', token: adminToken, body: { branding: { accent_color: '#00B0F0' } } });
   check('admin updates branding (200)', setBrand.status === 200 && setBrand.json?.branding?.accent_color === '#00B0F0');
   const recBrand = await api('/api/settings/branding', { method: 'PUT', token: recToken, body: { branding: { accent_color: '#000' } } });

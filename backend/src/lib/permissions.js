@@ -214,7 +214,7 @@ export const DEFAULT_BRANDING = {
   text_dark: '#1b1f24',
   text_gray: '#8a929c',
   border_color: '#e7eaee',
-  button_color: '#d2232a',
+  button_color: '#008064',      // interactive actions (brand red is reserved for identity/risk)
   success_color: '#1f7a44',
   warning_color: '#b7791f',
   critical_color: '#c0392b',
