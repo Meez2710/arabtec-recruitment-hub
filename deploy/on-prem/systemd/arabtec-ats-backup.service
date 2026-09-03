@@ -1,0 +1,16 @@
+[Unit]
+Description=Arabtec ATS — nightly database + uploads backup
+After=arabtec-ats.service postgresql.service
+
+[Service]
+Type=oneshot
+User=arabtec-ats
+Group=arabtec-ats
+# ats.env holds DATABASE_URL and UPLOAD_DIR, which backup.sh needs.
+EnvironmentFile=/etc/arabtec-ats/ats.env
+ExecStart=/opt/arabtec-ats-bin/backup.sh
+StandardOutput=append:/var/log/arabtec-ats/backup.log
+StandardError=append:/var/log/arabtec-ats/backup.log
+# backup.sh writes here; ProtectSystem=strict otherwise makes it read-only.
+ProtectSystem=strict
+ReadWritePaths=/var/backups/arabtec-ats /var/log/arabtec-ats

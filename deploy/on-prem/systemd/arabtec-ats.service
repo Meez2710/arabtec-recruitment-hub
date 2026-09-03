@@ -1,0 +1,37 @@
+[Unit]
+Description=Arabtec Recruitment Hub (ATS)
+Documentation=https://github.com/Meez2710/arabtec-recruitment-hub
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=arabtec-ats
+Group=arabtec-ats
+WorkingDirectory=/opt/arabtec-ats/backend
+EnvironmentFile=/etc/arabtec-ats/ats.env
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+StandardOutput=append:/var/log/arabtec-ats/ats.log
+StandardError=append:/var/log/arabtec-ats/ats.log
+
+# Hardening. The ATS may write only its own data and log directories — it cannot
+# reach Employee Workspace's files even if something in it were compromised.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/arabtec-ats /var/log/arabtec-ats
+
+[Install]
+WantedBy=multi-user.target
