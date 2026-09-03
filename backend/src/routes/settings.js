@@ -10,6 +10,15 @@ import { allFlags, setFlag, isEnabled } from '../lib/feature-flags.js';
 
 const router = Router();
 
+function hasWhiteTextContrast(value) {
+  const match = String(value || '').match(/^#([0-9a-f]{6})$/i);
+  if (!match) return false;
+  const channels = [0, 2, 4].map((i) => parseInt(match[1].slice(i, i + 2), 16) / 255)
+    .map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+  const luminance = .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+  return 1.05 / (luminance + .05) >= 4.5;
+}
+
 // ---------------- Branding ----------------
 // Public: the login screen themes itself (colors, company name, logo) before
 // auth. Returns only presentational branding tokens — nothing sensitive.
@@ -17,6 +26,9 @@ router.get('/branding', (req, res) => res.json({ branding: Branding.all() }));
 
 router.put('/branding', requireAuth, requirePermission('branding.manage'), (req, res) => {
   const updates = req.body?.branding || {};
+  if (Object.hasOwn(updates, 'button_color') && !hasWhiteTextContrast(updates.button_color)) {
+    return res.status(400).json({ error: 'Primary action color must be a 6-digit hex color with readable white text.' });
+  }
   const before = Branding.all();
   for (const [key, value] of Object.entries(updates)) Branding.upsert(key, value);
   const after = Branding.all();

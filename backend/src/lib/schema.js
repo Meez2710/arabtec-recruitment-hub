@@ -867,8 +867,19 @@ export function ensureSchema() {
   `);
 
   migrateWorkflowStages();
+  migrateLegacyActionColor();
   syncCatalogAdditions();
   ensureOneJoinedPerCandidate();
+}
+
+// The original seed reused Arabtec red for ordinary buttons. Move only that
+// known legacy default to the approved action green; any administrator-chosen
+// value remains untouched. Safe and idempotent on SQLite and PostgreSQL.
+function migrateLegacyActionColor() {
+  try {
+    run('UPDATE branding_setting SET value=? WHERE key=? AND lower(value)=?',
+      ['#008064', 'button_color', '#d2232a']);
+  } catch { /* first boot may not have reached this table yet */ }
 }
 
 /**

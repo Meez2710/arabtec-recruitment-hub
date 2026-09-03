@@ -29,6 +29,9 @@ const SUITES = [
   'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
+  'ui_compile_test.mjs',      // production JSX compiles in the vendored browser Babel
+  'ui_readiness_test.mjs',    // production UI release-contract regression checks
+  'branding_migration_test.mjs', // legacy red actions migrate without overwriting custom values
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider
   'cv_proposal_test.mjs',     // CV -> proposal -> approved fields -> candidate
   'cv_intake_test.mjs',       // CV -> pre-candidate intake -> review -> candidate

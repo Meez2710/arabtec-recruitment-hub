@@ -39,3 +39,4 @@ deploy/docling-sidecar/.env.local
 deploy/docling-sidecar/.venv
 logs/
 deploy/docling-sidecar/__pycache__/
+.worktrees/
