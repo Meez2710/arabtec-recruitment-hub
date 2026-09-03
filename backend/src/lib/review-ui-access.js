@@ -5,7 +5,7 @@ export function reviewUiAllowed({ isProd, enabled }) {
 export function reviewRequestPolicy({ path = '', query = {}, isProd, enabled }) {
   const allowed = reviewUiAllowed({ isProd, enabled });
   const isReviewTool = path === '/ats-editor.html' || path === '/ats-preview.html';
-  const isReviewFrame = query?.ui_review_frame === '1';
+  const isReviewFrame = path === '/' && query?.ui_review_frame === '1';
   return {
     allowed,
     blocked: isReviewTool && !allowed,
