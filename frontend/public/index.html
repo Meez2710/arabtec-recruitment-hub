@@ -7,16 +7,20 @@
   <title>Arabtec Recruitment Hub</title>
   <!-- Square 1:1 mark. The full logo (600x396) was being squashed into the tab's
        square icon box, which is what made the favicon look distorted. -->
-  <link rel="icon" type="image/svg+xml" href="/arabtec-favicon.svg?v=20260903a" />
-  <link rel="apple-touch-icon" href="/arabtec-favicon.svg?v=20260903a" />
+  <link rel="icon" type="image/svg+xml" href="/arabtec-favicon.svg?v=20260904a" />
+  <link rel="apple-touch-icon" href="/arabtec-favicon.svg?v=20260904a" />
   <!-- The approved design system is Arial / Helvetica. No web font is loaded:
        the typeface is present on every target device, so there is no flash of
        unstyled text and no third-party request. -->
-  <link rel="stylesheet" href="/styles.css?v=20260903a" />
-  <link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260903a" />
-  <!-- Loads LAST: the approved design system is the final word on chrome,
-       colour, type and geometry. See arabtec-design-system.css. -->
-  <link rel="stylesheet" href="/arabtec-design-system.css?v=20260903a" />
+  <link rel="stylesheet" href="/styles.css?v=20260904a" />
+  <link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260904a" />
+  <!-- The approved design system: the final word on chrome, colour and type. -->
+  <link rel="stylesheet" href="/arabtec-design-system.css?v=20260904a" />
+  <!-- Loads LAST and only re-shapes: the Claude geometry system (radius,
+       spacing, sizing, alignment, ratios, elevation). It declares no colour,
+       background or font-family, so the Arabtec palette, typeface, logo and
+       page background above are untouched. Remove this one line to revert. -->
+  <link rel="stylesheet" href="/claude-system.css?v=20260904a" />
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -32,7 +36,7 @@
   <!-- Cache-bust app.jsx (the whole SPA lives here). Bump ?v= on every UI change so a
        browser/proxy can never serve a stale build — this is what made the app appear to
        "revert" to an old version after edits. Keep in sync with styles.css version. -->
-  <script type="text/babel" src="/intake-review.jsx?v=20260903a"></script>
-  <script type="text/babel" src="/app.jsx?v=20260903a"></script>
+  <script type="text/babel" src="/intake-review.jsx?v=20260904a"></script>
+  <script type="text/babel" src="/app.jsx?v=20260904a"></script>
 </body>
 </html>

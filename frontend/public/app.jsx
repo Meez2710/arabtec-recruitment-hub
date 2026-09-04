@@ -1066,7 +1066,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   };
 
   return (
-    <div className="shell" style={{ '--sidebar-w': collapsed ? '72px' : '236px' }}>
+    <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '264px' }}>
       {mobileNavOpen && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
       <aside className={'sidebar' + (collapsed ? ' collapsed' : '') + (mobileNavOpen ? ' mobile-open' : '')}>
         <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
