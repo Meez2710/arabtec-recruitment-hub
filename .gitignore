@@ -39,4 +39,18 @@ deploy/docling-sidecar/.env.local
 deploy/docling-sidecar/.venv
 logs/
 deploy/docling-sidecar/__pycache__/
+
 .worktrees/
+
+# Confidential user-credential handover artefacts. Generated on the server into
+# /var/lib/arabtec-ats/handover/ — these patterns are a backstop in case a copy
+# ever lands inside the repo. NEVER commit plaintext credentials or the private
+# handover manual.
+**/handover/
+temporary-credentials-*
+credentials-map-*
+Arabtec_ATS_User_Manual_Internal_Handover*
+# On-prem env files (secrets) — templates (*.template) stay tracked.
+deploy/on-prem/ats.env
+deploy/on-prem/scan.env
+deploy/on-prem/mailbox.env

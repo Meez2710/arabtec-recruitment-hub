@@ -421,6 +421,7 @@ function Empty({ icon, text, title, action, tone = 'neutral' }) {
     </div>
   );
 }
+
 function Skeleton({ rows = 5 }) { return <div className="card-pad">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skeleton" style={{ width: (90 - i * 8) + '%' }} />)}</div>; }
 
 /* ----------------------------- Login ----------------------------- */
@@ -1092,7 +1093,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   };
 
   return (
-    <div className="shell" style={{ '--sidebar-w': collapsed ? '72px' : '236px' }}>
+    <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '264px' }}>
       {mobileNavOpen && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
       <aside className={'sidebar' + (collapsed ? ' collapsed' : '') + (mobileNavOpen ? ' mobile-open' : '')}>
         <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
@@ -1173,7 +1174,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             )}
           </div>
         </header>
-        <main id="main-content" className={'content density-' + density} tabIndex="-1">{Page}</main>
+        <main id="main-content" className={'content density-' + density} tabIndex="-1">
+          <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
+        </main>
 
         {pwdOpen && (
           <Modal title="Change password" onClose={() => setPwdOpen(false)}>
@@ -2829,7 +2832,7 @@ function RolesPage({ user }) {
       <div className="roles-layout">
         <div className="card roles-list"><div className="card-pad">
           {roles.map((r) => (
-            <button key={r.id} className={'nav-item' + (selected?.id === r.id ? ' active' : '')} onClick={() => pick(r)}>
+            <button key={r.id} className={'nav-item' + (selected?.id === r.id ? ' active' : '')} onClick={() => pick(r)} aria-current={selected?.id === r.id ? 'true' : undefined}>
               <span>{r.name}</span>
             </button>
           ))}
@@ -3666,9 +3669,18 @@ function ListSkeleton({ rows = 6 }) {
 }
 
 // Resolve admin-controlled buttons for current user from the server.
+// Retries a transient failure so detail-page action bars don't silently and
+// permanently disappear when this one secondary fetch hiccups.
 function useResolvedButtons() {
   const [map, setMap] = useState({});
-  useEffect(() => { api.get('/settings/buttons/resolved').then((r) => { const m = {}; r.buttons.forEach((b) => { m[b.buttonKey] = b; }); setMap(m); }).catch(() => {}); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const load = (attempt = 0) => api.get('/settings/buttons/resolved')
+      .then((r) => { if (cancelled) return; const m = {}; r.buttons.forEach((b) => { m[b.buttonKey] = b; }); setMap(m); })
+      .catch(() => { if (!cancelled && attempt < 2) setTimeout(() => load(attempt + 1), 1500); });
+    load();
+    return () => { cancelled = true; };
+  }, []);
   return map;
 }
 
@@ -8021,6 +8033,54 @@ function OfferDetail({ id, user, onBack }) {
   );
 }
 
+/* ----------------------------- Error boundary ----------------------------- */
+// The whole SPA is one file with no build step and no framework-level recovery.
+// Without this, any render-time exception unmounts everything and leaves a blank
+// white page with no way back. `page` mode keeps the shell chrome so the user can
+// still navigate away or sign out; the default (root) mode is a full-page notice.
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) {
+    try {
+      console.error(JSON.stringify({ level: 'error', msg: 'react.render_error', where: this.props.label || (this.props.page ? 'page' : 'root'), error: String(err && err.message || err), stack: (info && info.componentStack || '').slice(0, 2000) }));
+    } catch { /* logging must never re-throw */ }
+  }
+  componentDidUpdate(prev) {
+    // A route change should clear a page-level error so the next screen renders.
+    if (this.props.page && this.state.err && prev.resetKey !== this.props.resetKey) this.setState({ err: null });
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    const msg = String(this.state.err && this.state.err.message || this.state.err || 'Unexpected error');
+    if (this.props.page) {
+      return (
+        <div className="card card-pad" style={{ margin: '24px auto', maxWidth: 560 }} role="alert">
+          <h3 style={{ marginTop: 0 }}>This screen ran into a problem</h3>
+          <p className="muted">The rest of the app is still working — use the menu to go somewhere else, or reload.</p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className="btn btn-sm" onClick={() => this.setState({ err: null })}>Try again</button>
+            <button className="btn btn-sm btn-secondary" onClick={() => window.location.reload()}>Reload</button>
+          </div>
+          <details style={{ marginTop: 14 }}><summary className="muted" style={{ fontSize: 12, cursor: 'pointer' }}>Technical detail</summary>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, marginTop: 8, color: 'var(--muted)' }}>{msg}</pre></details>
+        </div>
+      );
+    }
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, fontFamily: 'Arial, Helvetica, sans-serif', color: 'var(--ink, #1A1A1A)' }} role="alert">
+        <div style={{ maxWidth: 460, textAlign: 'center' }}>
+          <h2 style={{ margin: '0 0 8px' }}>Something went wrong</h2>
+          <p style={{ margin: '0 0 16px', color: 'var(--muted, #6F6A64)' }}>The page hit an unexpected error. Reloading usually clears it. If it keeps happening, tell your administrator.</p>
+          <button className="btn" onClick={() => window.location.reload()}>Reload the app</button>
+          <details style={{ marginTop: 16, textAlign: 'left' }}><summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--muted, #6F6A64)' }}>Technical detail</summary>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, marginTop: 8, color: 'var(--muted, #6F6A64)' }}>{msg}</pre></details>
+        </div>
+      </div>
+    );
+  }
+}
+
 /* ----------------------------- Root App ----------------------------- */
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -8095,5 +8155,7 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <ToastProvider><App /></ToastProvider>
+  <ErrorBoundary label="root">
+    <ToastProvider><App /></ToastProvider>
+  </ErrorBoundary>
 );

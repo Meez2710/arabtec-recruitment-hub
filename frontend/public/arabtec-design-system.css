@@ -913,6 +913,11 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .recip, .recip input { min-height: 28px; }
 }
 
+/* Roles & Permissions — two-pane layout that reflows instead of crushing the
+   permission column on narrow screens (pilot fix). */
+.roles-grid { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 16px; }
+@media (max-width: 820px) { .roles-grid { grid-template-columns: 1fr; } }
+
 /* ================================================= 16. UI READINESS RELEASE
    Production stabilization: clear action hierarchy, readable intake review,
    resilient admin layouts and safe horizontal overflow. This section is

@@ -190,6 +190,13 @@ app.use('/api/notifications', notificationRoutes);
 // app to appear "reverted" to an old build). Other assets may be cached for a
 // short time and are revalidated via ETag; versioned URLs bust themselves.
 const frontendDir = path.resolve(__dirname, '../../frontend/public');
+// Only the SPA shell is a servable HTML document. Any other *.html in the static
+// dir (design mockups, editor/preview pages) is not part of the app and must not
+// be reachable by direct URL — some have carried hard-coded demo credentials.
+app.get(/\.html$/i, (req, res, next) => {
+  if (req.path === '/' || req.path === '/index.html') return next();
+  res.status(404).end();
+});
 app.use(express.static(frontendDir, {
   etag: true,
   lastModified: true,

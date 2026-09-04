@@ -1,0 +1,316 @@
+/* =============================================================================
+   Claude system layer — geometry only.
+
+   Applies the shape / spacing / sizing / alignment system measured from
+   claude.ai, claude.com, platform.claude.com and anthropic.com on 4 Sep 2026,
+   on top of the Arabtec design system.
+
+   HARD RULE FOR THIS FILE: it declares NO colour, NO background, NO
+   border-color, NO font-family. Only geometry — radius, spacing, size,
+   alignment, ratio, position, weight and neutral elevation. The Arabtec
+   palette, typeface, logo and page background are untouched by construction,
+   not by care: grep this file for `color:`, `background`, `font-family` and it
+   returns the token names in comments only.
+
+   Loads LAST, so it wins on geometry. Delete the <link> to revert completely.
+
+   ---- What was measured -------------------------------------------------
+   radius     claude.ai 6px x86, 10px x30, 8px, 24px · claude.com 4/8/12/24
+   spacing    strict 4px base; dominant gaps 6 / 8 / 12, blocks 16/20/24, sections 32/40/48
+   controls   button+input h40 r10 pad 0 16 fs15 fw500 · compact h36 r8 fs14
+   nav item   h32 r8 pad 0 8-12 fs14 fw400
+   table      td pad 8, fs14, row 36-40, header NOT uppercase
+   borders    0.5px hairline dominant, 1px next; no 1.5px anywhere
+   elevation  flat. inset hairline ring + 1px lift; overlays get a 4-layer whisper
+   ======================================================================== */
+
+/* ---------------------------------------------------------------- 1. tokens */
+:root {
+  /* Radius scale. Pills are retired from controls and kept for counts/tags. */
+  --cl-r-xs: 4px;    /* micro chips, checkbox, swatch */
+  --cl-r-sm: 6px;    /* menu rows, small icon buttons, badges */
+  --cl-r-md: 8px;    /* nav items, secondary buttons, tab track */
+  --cl-r-lg: 10px;   /* primary buttons, inputs, small cards */
+  --cl-r-xl: 12px;   /* cards, panels, popovers */
+  --cl-r-2xl: 16px;  /* modals, sheets */
+  --cl-r-3xl: 24px;  /* full-bleed feature surfaces */
+
+  /* 4px spacing base. */
+  --cl-1: 4px;  --cl-2: 6px;  --cl-3: 8px;  --cl-4: 12px; --cl-5: 16px;
+  --cl-6: 20px; --cl-7: 24px; --cl-8: 28px; --cl-9: 32px; --cl-10: 40px;
+  --cl-11: 48px; --cl-12: 64px;
+
+  /* Control sizing. */
+  --cl-ctl-lg: 40px; --cl-ctl-md: 36px; --cl-ctl-sm: 30px; --cl-ctl-xs: 26px;
+  --cl-nav-h: 34px;  --cl-row-h: 40px;
+
+  /* Neutral elevation — black alpha only, never a hue. */
+  --cl-ring:    inset 0 0 0 1px rgba(0, 0, 0, .07);
+  --cl-lift:    0 1px 2px rgba(0, 0, 0, .05);
+  --cl-raise:   inset 0 0 0 1px rgba(0, 0, 0, .07), 0 1px 2px rgba(0, 0, 0, .05);
+  --cl-overlay: 0 4px 24px rgba(0, 0, 0, .04), 0 4px 32px rgba(0, 0, 0, .04),
+                0 2px 64px rgba(0, 0, 0, .03), 0 16px 32px rgba(0, 0, 0, .03);
+  --cl-pop:     0 1px 2px rgba(0, 0, 0, .04), 0 10px 28px rgba(0, 0, 0, .07),
+                0 28px 64px rgba(0, 0, 0, .07);
+
+  /* Remap the app's own geometry tokens so token-driven rules follow along.
+     applyBranding() clears any inline --radius / --card-radius, so these win. */
+  --card-radius: var(--cl-r-xl);
+  --radius: var(--cl-r-lg);
+  --r-md: var(--cl-r-md);
+
+  /* Shell proportions — Claude runs a wider, quieter rail and a shorter bar. */
+  --sidebar-w: 264px;
+  --topbar-h: 56px;
+}
+
+/* ------------------------------------------------------- 2. shell + chrome */
+.sidebar { padding: var(--cl-4) var(--cl-4) var(--cl-6); }
+.sidebar.collapsed { --sidebar-w: 68px; padding: var(--cl-4) var(--cl-2) var(--cl-6); }
+.sidebar-head {
+  padding: var(--cl-2) var(--cl-3) var(--cl-4);
+  gap: var(--cl-3); min-height: var(--cl-ctl-lg); align-items: center;
+}
+.nav { padding-top: var(--cl-1); }
+.nav-section {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: none;
+  padding: var(--cl-5) var(--cl-3) var(--cl-2);
+}
+
+.topbar {
+  height: var(--topbar-h);
+  padding: 0 var(--cl-6); gap: var(--cl-4);
+  border-bottom-width: 1px;
+}
+
+/* Gutters follow Claude's 24 / 32 rhythm. The 104px floor is the anyhelp
+   launcher's corner and is deliberately preserved. */
+.content { padding: var(--cl-7) var(--cl-9) 104px; }
+
+/* -------------------------------------------------------- 3. navigation */
+.nav-item {
+  min-height: var(--cl-nav-h);
+  padding: 0 var(--cl-4) 0 var(--cl-3);
+  border-radius: var(--cl-r-md);
+  font-size: 14px; font-weight: 400;
+  gap: var(--cl-3); margin-bottom: 2px;
+}
+.nav-item.active { font-weight: 600; }
+.nav-item:focus-visible { outline-width: 2px; outline-offset: 2px; }
+.nav-item .nav-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+.nav-count {
+  min-width: 20px; height: 20px; padding: 0 var(--cl-2);
+  border-radius: var(--r-pill); font-size: 11px; font-weight: 600;
+}
+.sidebar.collapsed .nav-item { padding: 0; justify-content: center; }
+
+/* ------------------------------------------ 4. page heads + type rhythm */
+.page-head, .dash-head {
+  margin-bottom: var(--cl-7); gap: var(--cl-5); align-items: flex-start;
+}
+.page-title, .page-head .page-title, .dash-head .page-title {
+  font-size: 28px; line-height: 1.3; font-weight: 600; letter-spacing: -.012em;
+}
+.page-sub { font-size: 14px; line-height: 1.5; margin-top: var(--cl-2); max-width: 68ch; }
+
+/* Claude never shouts an eyebrow: sentence case, normal tracking. */
+.breadcrumb, .page-head .breadcrumb, .dash-eyebrow {
+  font-size: 12px; font-weight: 500;
+  letter-spacing: normal; text-transform: none;
+  margin-bottom: var(--cl-2);
+}
+
+.card-head, .modal-head, .dash-head {
+  padding-bottom: var(--cl-4); gap: var(--cl-4);
+}
+.card-head h2, .card-head h3, .modal-head h2, .modal-head h3 {
+  font-size: 17px; line-height: 1.35; font-weight: 600; letter-spacing: -.006em;
+}
+
+/* Heading scale + the big top / no bottom margin pattern from the docs site. */
+.content h2 { font-size: 21px; line-height: 1.3;  font-weight: 600; margin: var(--cl-9) 0 var(--cl-4); }
+.content h3 { font-size: 17px; line-height: 1.35; font-weight: 600; margin: var(--cl-7) 0 var(--cl-3); }
+.content h4 { font-size: 15px; line-height: 1.4;  font-weight: 600; margin: var(--cl-6) 0 var(--cl-2); }
+.content h2:first-child, .content h3:first-child, .content h4:first-child { margin-top: 0; }
+
+/* ---------------------------------------------------- 5. cards + surfaces */
+.card, .toolbar, .ticket-header-card, .cand-card, .rq-card, .ticket-card,
+.login-card, .forced-pw-card, .notice, .pcard, .scope-card, .kpi, .dash-kpi,
+.report-grid > *, .ats-card-grid > * {
+  border-radius: var(--cl-r-xl);
+}
+.card { border-width: 1px; box-shadow: var(--cl-lift); }
+.card-pad, .card > .card-pad { padding: var(--cl-6); }
+.toolbar {
+  border-radius: var(--cl-r-xl); padding: var(--cl-4) var(--cl-5);
+  gap: var(--cl-3); align-items: center;
+}
+.ats-card-grid, .dash-grid-2, .report-grid { gap: var(--cl-5); }
+.dash-kpi-row { gap: var(--cl-4); }
+.dash-kpi, .kpi { border-radius: var(--cl-r-xl); padding: var(--cl-5); }
+.dash-kpi-val, .kpi-value { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.015em; }
+.dash-kpi-label, .kpi-label { font-size: 13px; font-weight: 400; letter-spacing: normal; text-transform: none; }
+.dash-kpi-hint { font-size: 12px; line-height: 1.45; margin-top: var(--cl-1); }
+.dash-kv { gap: var(--cl-2); font-size: 14px; }
+
+/* --------------------------------------------------------- 6. buttons */
+/* The de-pilling. Claude buttons are 10px rounded rectangles at every size. */
+.btn, button.btn, a.btn {
+  min-height: var(--cl-ctl-lg);   /* 40px — matches claude.ai's measured button and PR #6's --at-control-h */
+  padding: 0 var(--cl-5);
+  border-radius: var(--cl-r-lg);
+  border-width: 1px;
+  font-size: 14px; font-weight: 500; line-height: 1.2;
+  letter-spacing: normal;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--cl-2);
+  box-shadow: none;
+}
+.btn.btn-lg { min-height: var(--cl-ctl-lg); padding: 0 var(--cl-6); font-size: 15px; }
+.btn.btn-sm, .btn-sm { min-height: var(--cl-ctl-sm); padding: 0 var(--cl-4); font-size: 13px; border-radius: var(--cl-r-md); }
+.btn.btn-xs, .btn-xs { min-height: var(--cl-ctl-xs); padding: 0 var(--cl-3); font-size: 12px; border-radius: var(--cl-r-sm); }
+.btn-ghost, .btn-link { border-width: 1px; }
+.btn:focus-visible { outline-width: 2px; outline-offset: 2px; }
+
+.icon-btn, .view-toggle-btn {
+  width: var(--cl-ctl-md); height: var(--cl-ctl-md);
+  border-radius: var(--cl-r-md); border-width: 1px;
+  display: inline-grid; place-items: center; padding: 0;
+}
+.btn-row, .btn-group, .actions, .card-actions, .modal-foot { gap: var(--cl-3); }
+
+/* ---------------------------------------------------- 7. form controls */
+.field input, .field select, .field textarea,
+.toolbar input, .toolbar select, .cmdk-input,
+input[type=text], input[type=email], input[type=password], input[type=number],
+input[type=search], input[type=date], input[type=datetime-local], input[type=time], select,
+/* a bare <input> carries no type attribute, so the list above never matches it */
+input:not([type]), .gsearch input, .cmdk input {
+  border-radius: var(--cl-r-lg);
+  min-height: var(--cl-ctl-lg);
+  padding: 0 var(--cl-4);
+  font-size: 14px; line-height: 1.4;
+  border-width: 1px;
+}
+.field textarea, textarea {
+  border-radius: var(--cl-r-lg);
+  padding: var(--cl-4); min-height: 96px; line-height: 1.55; font-size: 14px;
+}
+.field { gap: var(--cl-2); }
+.field label, .field > span {
+  font-size: 13px; font-weight: 500; letter-spacing: normal; text-transform: none;
+  margin-bottom: var(--cl-1);
+}
+.field-hint, .field-error { font-size: 12px; line-height: 1.45; margin-top: var(--cl-1); }
+.form-grid, .field-row, .radio-row { gap: var(--cl-4); }
+.radio-row label, .checkbox-row label { gap: var(--cl-3); font-size: 14px; }
+input[type=checkbox], input[type=radio] { width: 16px; height: 16px; }
+input[type=checkbox] { border-radius: var(--cl-r-xs); }
+
+/* ------------------------------------------------ 8. tabs + segmented */
+.tabbar, .profile-tabs, .seg-tabs, .tabs, .control-tabs {
+  padding: var(--cl-1); gap: 2px; border-radius: var(--cl-r-md);
+}
+.tabbar-btn, .profile-tab, .seg-tab, .tabs button {
+  min-height: var(--cl-ctl-sm); padding: 0 var(--cl-4);
+  border-radius: var(--cl-r-sm);
+  font-size: 14px; font-weight: 500; letter-spacing: normal; text-transform: none;
+}
+.tabbar-btn.active, .profile-tab.active, .seg-tab.active { font-weight: 600; box-shadow: var(--cl-lift); }
+
+/* --------------------------------------------- 9. chips, badges, status */
+/* Badges become small rounded rectangles; true pills stay only on counts. */
+.status-chip, .chip, .badge, .tag, .pill-tag, .src-tag {
+  height: 24px; padding: 0 var(--cl-3);
+  border-radius: var(--cl-r-sm); border-width: 1px;
+  font-size: 12px; font-weight: 500; letter-spacing: normal; text-transform: none;
+  display: inline-flex; align-items: center; gap: var(--cl-1);
+}
+.status-chip.lg, .chip.lg { height: 28px; padding: 0 var(--cl-4); font-size: 13px; }
+.src-dot { width: 6px; height: 6px; border-radius: var(--r-pill); }
+
+/* ---------------------------------------------------------- 10. tables */
+.table-wrap, .responsive-table, .review-table { border-radius: var(--cl-r-xl); }
+.table, table { font-size: 14px; }
+table.table thead th, .table thead th, table thead th {
+  font-size: 13px; font-weight: 600;
+  letter-spacing: normal; text-transform: none;
+  padding: var(--cl-3) var(--cl-4);
+  border-bottom-width: 1px;
+}
+table.table tbody td, .table tbody td, table tbody td {
+  padding: var(--cl-4); font-size: 14px; line-height: 1.45;
+  border-bottom-width: 1px; height: var(--cl-row-h);
+}
+.sort-th { gap: var(--cl-1); }
+.bulk-bar { border-radius: var(--cl-r-xl); padding: var(--cl-3) var(--cl-5); gap: var(--cl-3); }
+
+/* ------------------------------------------------ 11. modals + overlays */
+.modal {
+  border-radius: var(--cl-r-2xl);
+  box-shadow: var(--cl-pop);
+  border-width: 1px;
+}
+.modal-head { padding: var(--cl-6) var(--cl-6) var(--cl-4); }
+.modal-body { padding: 0 var(--cl-6) var(--cl-6); }
+.modal-foot { padding: var(--cl-4) var(--cl-6) var(--cl-6); gap: var(--cl-3); }
+.rq-pop, .popover, .menu, .dropdown, .cmdk {
+  border-radius: var(--cl-r-xl); box-shadow: var(--cl-overlay);
+  border-width: 1px; padding: var(--cl-1);
+}
+.rq-pop-item, .menu-item, .dropdown-item {
+  min-height: var(--cl-ctl-md); padding: 0 var(--cl-4);
+  border-radius: var(--cl-r-sm); font-size: 14px; gap: var(--cl-3);
+  display: flex; align-items: center;
+}
+
+/* --------------------------------------------------- 12. misc surfaces */
+.empty { padding: var(--cl-11) var(--cl-6); gap: var(--cl-4); }
+.empty .ico { margin-bottom: var(--cl-2); }
+.empty-title { font-size: 16px; font-weight: 600; line-height: 1.35; }
+.empty p { font-size: 14px; line-height: 1.55; max-width: 46ch; margin-inline: auto; }
+.empty-action { margin-top: var(--cl-5); }
+
+.gsearch, .gsearch input { border-radius: var(--cl-r-lg); }
+.gsearch { min-height: var(--cl-ctl-md); padding: 0 var(--cl-4); gap: var(--cl-3); }
+
+/* The launcher stays a pill: it is a circle at rest that expands into a pill on
+   hover, and Claude's own floating controls are pills too. Only the elevation
+   and the label are brought onto the system. */
+.anyhelp-fab { box-shadow: var(--cl-pop); border-width: 1px; }
+.anyhelp-fab-copy { font-size: 14px; font-weight: 500; letter-spacing: normal; }
+
+.profile-header { border-radius: var(--cl-r-xl); padding: var(--cl-6); gap: var(--cl-5); }
+.funnel-mini { gap: var(--cl-1); border-radius: var(--cl-r-sm); }
+.event, .action-item, .role-row, .recip {
+  border-radius: var(--cl-r-md); padding: var(--cl-4); gap: var(--cl-3);
+}
+.roles-grid { gap: var(--cl-5); }
+.login-card { border-radius: var(--cl-r-2xl); padding: var(--cl-9); box-shadow: var(--cl-overlay); }
+.login-brand { margin-bottom: var(--cl-7); gap: var(--cl-3); }
+
+/* ------------------------------------------------------ 13. responsive */
+@media (max-width: 1180px) {
+  :root { --sidebar-w: 240px; }
+  .content { padding-left: var(--cl-7); padding-right: var(--cl-7); }
+  .nav-item { padding-left: var(--cl-3); padding-right: var(--cl-4); }
+  .sidebar-head { padding-left: var(--cl-3); padding-right: var(--cl-3); }
+}
+@media (max-width: 900px) {
+  .topbar { height: 52px; padding: 0 var(--cl-4); gap: var(--cl-3); }
+  .sidebar.collapsed { --sidebar-w: 264px; padding: var(--cl-4) var(--cl-4) var(--cl-6); }
+  .content { padding: var(--cl-6) var(--cl-5) 104px; }
+  .page-title, .page-head .page-title, .dash-head .page-title { font-size: 24px; }
+}
+@media (max-width: 640px) {
+  .content { padding: var(--cl-5) var(--cl-4) 96px; }
+  .page-title, .page-head .page-title, .dash-head .page-title { font-size: 22px; }
+  .page-head, .dash-head { margin-bottom: var(--cl-5); gap: var(--cl-4); }
+  .card-pad, .card > .card-pad { padding: var(--cl-5); }
+  .modal { border-radius: var(--cl-r-xl); }
+  .modal-head { padding: var(--cl-5) var(--cl-5) var(--cl-3); }
+  .modal-body { padding: 0 var(--cl-5) var(--cl-5); }
+  .modal-foot { padding: var(--cl-3) var(--cl-5) var(--cl-5); }
+  /* 44px, not 40: the UI-readiness release set this touch target deliberately
+     and this layer loads after it, so it must not quietly shrink it. */
+  .btn, button.btn, a.btn, .btn-sm, .btn.small { min-height: 44px; }
+}

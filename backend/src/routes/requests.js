@@ -699,6 +699,10 @@ router.get('/:id/attachment', (req, res) => {
 router.post('/:id/suggest-candidates', requirePermission('candidate.view'), async (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
+  // Same requisition-scope check as GET /:id — otherwise any candidate.view
+  // holder could obtain an AI reading (title, requirements, responsibilities)
+  // of a request they cannot open.
+  if (!canView(req.user, r)) return res.status(403).json({ error: 'You cannot view this request.' });
 
   const limit = Math.min(Math.max(parseInt(req.body?.limit, 10) || 10, 1), 25);
 
