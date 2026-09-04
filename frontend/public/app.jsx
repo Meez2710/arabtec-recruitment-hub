@@ -2,7 +2,7 @@
    Single-file app: API client, auth, shell, dashboard, and admin modules.
    Permissions/buttons are resolved from the server; UI also hides what the
    user can't use, but the server is the source of truth (RBAC in logic). */
-const { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } = React;
+const { useState, useEffect, useCallback, useMemo, useRef, useId, createContext, useContext } = React;
 
 /* ----------------------------- API client ----------------------------- */
 const TOKEN_KEY = 'arabtec_token';
@@ -162,17 +162,24 @@ function applyBranding(b) {
   // the product kept rendering in the old typeface however the CSS was edited.
   //
   // Same reasoning the line below already applies to --bg, generalised.
-  const map = {
-    primary_color: '--primary', secondary_color: '--secondary', accent_color: '--accent',
-    button_color: '--button',
-  };
-  for (const [k, cssVar] of Object.entries(map)) if (b[k]) r.setProperty(cssVar, b[k]);
+  const primary = hasWhiteTextContrast(b.button_color) ? b.button_color : '#008064';
+  if (primary) {
+    // Keep the Control Center setting functional without letting it leak into
+    // destructive/status colours. Only interactive action tokens are themed.
+    r.setProperty('--button', primary);
+    r.setProperty('--at-action', primary);
+    r.setProperty('--at-action-hover', shadeColor(primary, -14));
+    r.setProperty('--at-action-tint', colorWithAlpha(primary, .10));
+    r.setProperty('--at-focus-ring', `0 0 0 3px ${colorWithAlpha(primary, .32)}`);
+  }
   // Typography, geometry, neutrals and status colours belong to the design
   // system. Status colours especially: a configurable "success" that is not
   // green is not branding, it is a defect. Cleared rather than ignored, so a
   // value stored by an older build stops applying on the next load.
   for (const owned of ['--font', '--radius', '--card-radius', '--surface',
-    '--text-dark', '--text-gray', '--border', '--success', '--warning', '--critical']) {
+    '--text-dark', '--text-gray', '--border', '--success', '--warning', '--critical',
+    '--primary', '--secondary', '--accent', '--brand', '--brand-dark',
+    '--ticket-accent', '--ticket-accent-dark']) {
     r.removeProperty(owned);
   }
   // Page background (--bg) is OWNED BY THE STYLESHEET (warm off-white #f6f3ec).
@@ -180,18 +187,19 @@ function applyBranding(b) {
   // rows carry cool greys/whites (e.g. #f6f7f9) that made the page look grey.
   // Always clear any inline override so the stylesheet off-white wins.
   r.removeProperty('--bg');
-  // The Control Center "Primary Color" (stored as button_color) drives the brand
-  // accent app-wide: buttons, links, nav highlight, the ticket left-accent, focus rings.
-  const primary = b.button_color || b.primary_color;
-  if (primary) {
-    r.setProperty('--brand', primary);
-    r.setProperty('--ticket-accent', primary);
-    r.setProperty('--brand-dark', shadeColor(primary, -14)); // darker hover
-    r.setProperty('--ticket-accent-dark', shadeColor(primary, -14));
-  }
+  // Brand red, interactive green and semantic states are owned by the design
+  // system. A saved tenant colour must never recolour destructive controls.
   document.title = (b.company_name || 'Arabtec Recruitment Hub');
 }
-// Lighten/darken a hex color by percent (-100..100). Used to derive the hover shade.
+function hasWhiteTextContrast(value) {
+  const match = String(value || '').match(/^#([0-9a-f]{6})$/i);
+  if (!match) return false;
+  const channels = [0, 2, 4].map((i) => parseInt(match[1].slice(i, i + 2), 16) / 255)
+    .map((v) => v <= .04045 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4));
+  const luminance = .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+  return 1.05 / (luminance + .05) >= 4.5;
+}
+// Lighten/darken a hex color by percent (-100..100). Used to derive the action hover shade.
 function shadeColor(hex, percent) {
   try {
     const h = hex.replace('#', '');
@@ -200,6 +208,15 @@ function shadeColor(hex, percent) {
     const f = (v) => Math.max(0, Math.min(255, Math.round(v + (percent / 100) * 255)));
     return '#' + [f(r), f(g), f(b)].map((v) => v.toString(16).padStart(2, '0')).join('');
   } catch { return hex; }
+}
+function colorWithAlpha(hex, alpha) {
+  try {
+    const h = hex.replace('#', '');
+    const n = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    const values = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16));
+    if (values.some(Number.isNaN)) throw new Error('Invalid color');
+    return `rgba(${values.join(', ')}, ${alpha})`;
+  } catch { return `rgba(0, 128, 100, ${alpha})`; }
 }
 
 /* ----------------------------- Auth context ----------------------------- */
@@ -331,11 +348,41 @@ function ReasonModal({ title, label, confirmLabel, placeholder, onClose, onConfi
   );
 }
 
+const DIALOG_FOCUS_SELECTOR = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+function dialogFocusables(dialog) {
+  return dialog ? [...dialog.querySelectorAll(DIALOG_FOCUS_SELECTOR)].filter((node) => node.getClientRects().length > 0) : [];
+}
+function useDialogFocus(onClose) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    const dialog = dialogRef.current;
+    const frame = requestAnimationFrame(() => (dialogFocusables(dialog)[0] || dialog)?.focus());
+    return () => {
+      cancelAnimationFrame(frame);
+      if (previous?.isConnected && typeof previous.focus === 'function') previous.focus();
+    };
+  }, []);
+
+  const onDialogKeyDown = useCallback((e) => {
+    if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+    if (e.key !== 'Tab') return;
+    const nodes = dialogFocusables(e.currentTarget);
+    if (!nodes.length) { e.preventDefault(); return; }
+    const first = nodes[0], last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }, [onClose]);
+  return { dialogRef, onDialogKeyDown };
+}
 function Modal({ title, children, onClose, footer, wide }) {
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const titleId = useId();
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={wide ? { maxWidth: 760 } : null}>
-        <div className="modal-head"><h3>{title}</h3><button className="icon-btn" onClick={onClose}>✕</button></div>
+      <div ref={dialogRef} className="modal" style={wide ? { maxWidth: 760 } : null}
+        role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3 id={titleId}>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}>✕</button></div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
@@ -360,17 +407,13 @@ function Confirm({ title, message, requireReason, confirmLabel = 'Confirm', dang
     </Modal>
   );
 }
-function Empty({ icon, text, title, action }) {
+function Empty({ icon, text, title, action, tone = 'neutral' }) {
   return (
-    <div className="empty">
+    <div className={'empty empty-' + tone} role={tone === 'error' ? 'alert' : undefined}>
       <div className="ico" aria-hidden="true">
-        {icon
-          ? <span style={{ fontSize: 26, lineHeight: 1, opacity: .55 }}>{icon}</span>
-          : (
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .5 }}>
-              <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M3 12l9 4 9-4" />
-            </svg>
-          )}
+        {icon || <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .5 }}>
+          <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M3 12l9 4 9-4" />
+        </svg>}
       </div>
       {title && <h4 className="empty-title">{title}</h4>}
       <p>{text}</p>
@@ -379,22 +422,6 @@ function Empty({ icon, text, title, action }) {
   );
 }
 
-// Distinct treatment for a failed load — so "couldn't reach the server" never
-// looks identical to "no results". Keeps the caller's optional retry action.
-function ErrorState({ text, action }) {
-  return (
-    <div className="empty">
-      <div className="ico" aria-hidden="true" style={{ color: 'var(--danger, #D01827)' }}>
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-        </svg>
-      </div>
-      <h4 className="empty-title">Couldn’t load this</h4>
-      <p>{text || 'Something went wrong reaching the server. Try again in a moment.'}</p>
-      {action && <div className="empty-action">{action}</div>}
-    </div>
-  );
-}
 function Skeleton({ rows = 5 }) { return <div className="card-pad">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skeleton" style={{ width: (90 - i * 8) + '%' }} />)}</div>; }
 
 /* ----------------------------- Login ----------------------------- */
@@ -2802,8 +2829,8 @@ function RolesPage({ user }) {
   return (
     <div>
       <PageHead crumb="Administration / Roles" title="Roles & Permissions" sub="Toggle capabilities per role. Changes are enforced server-side and audited." />
-      <div className="roles-grid">
-        <div className="card"><div className="card-pad">
+      <div className="roles-layout">
+        <div className="card roles-list"><div className="card-pad">
           {roles.map((r) => (
             <button key={r.id} className={'nav-item' + (selected?.id === r.id ? ' active' : '')} onClick={() => pick(r)} aria-current={selected?.id === r.id ? 'true' : undefined}>
               <span>{r.name}</span>
@@ -2813,12 +2840,12 @@ function RolesPage({ user }) {
         <div className="card">
           <div className="card-head"><h3>{selected?.name} — {draft.length} permissions</h3>
             {canManage && <button className="btn btn-sm" onClick={save}>Save Changes</button>}</div>
-          <div className="card-pad">
+          <div className="card-pad permissions-panel">
             {Object.entries(groups).map(([res, perms]) => (
               <div key={res} style={{ marginBottom: 16 }}>
                 <div className="muted" style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: 11, marginBottom: 8 }}>{res}</div>
                 {perms.map((p) => (
-                  <label key={p.code} className="switch" style={{ display: 'inline-flex', width: '48%', marginBottom: 8 }}>
+                  <label key={p.code} className="switch permission-toggle">
                     <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> {p.description}
                   </label>
                 ))}
@@ -3014,10 +3041,9 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
         sub="Super-admin control of the whole app: turn buttons on/off, choose which notifications and emails go out and to whom, upload the logo, show or hide any built-in field, and add your own custom fields." />
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 18, flexWrap: 'wrap' }}>
+      <div className="control-tabs">
         {TABS.map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} className="btn btn-ghost"
-            style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--secondary)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--secondary)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>
+          <button key={k} onClick={() => setTab(k)} className={'control-tab' + (tab === k ? ' active' : '')}>{label}</button>
         ))}
       </div>
       {tab === 'buttons' && <ButtonsPanel user={user} />}
@@ -3230,7 +3256,8 @@ function BrandingLogoPanel({ user, branding, refreshBranding }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [logoVersion, setLogoVersion] = useState(Date.now());
-  const [f, setF] = useState({ app_name: branding?.app_name || 'Arabtec', button_color: branding?.button_color || '#d2232a' });
+  const [f, setF] = useState({ app_name: branding?.app_name || 'Arabtec', button_color: branding?.button_color || '#008064' });
+  const actionColorOk = hasWhiteTextContrast(f.button_color);
   const hasLogo = branding?.logo_stored_name;
   async function saveBranding() {
     setBusy(true);
@@ -3267,8 +3294,10 @@ function BrandingLogoPanel({ user, branding, refreshBranding }) {
       <div className="card card-pad">
         <div className="section-title" style={{ marginTop: 0 }}>Identity</div>
         <div className="field"><label>App Name</label><input value={f.app_name} onChange={(e) => setF((s) => ({ ...s, app_name: e.target.value }))} /></div>
-        <div className="field"><label>Primary Color</label><input type="color" value={f.button_color} onChange={(e) => setF((s) => ({ ...s, button_color: e.target.value }))} style={{ width: 60, height: 32, padding: 2 }} /></div>
-        <button className="btn" onClick={saveBranding} disabled={busy} style={{ marginTop: 10 }}>{busy ? 'Saving…' : 'Save'}</button>
+        <div className="field"><label>Primary Action Color</label><input type="color" value={f.button_color} onChange={(e) => setF((s) => ({ ...s, button_color: e.target.value }))} style={{ width: 60, height: 32, padding: 2 }} />
+          {!actionColorOk && <div className="field-hint" role="alert">Choose a darker color so white button text remains readable.</div>}
+        </div>
+        <button className="btn" onClick={saveBranding} disabled={busy || !actionColorOk} style={{ marginTop: 10 }}>{busy ? 'Saving…' : 'Save'}</button>
       </div>
     </div>
   );
@@ -3402,9 +3431,10 @@ function CustomFieldsPanel({ user }) {
 
 function BrandingPage({ user, branding, refreshBranding }) {
   const toast = useToast();
-  const [f, setF] = useState(branding || {});
+  const [f, setF] = useState({ button_color: '#008064', ...(branding || {}) });
   const [busy, setBusy] = useState(false);
   const canManage = can(user, 'branding.manage');
+  const actionColorOk = hasWhiteTextContrast(f.button_color);
   const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); applyBranding({ ...f, [k]: v }); };
 
   async function save() {
@@ -3417,7 +3447,7 @@ function BrandingPage({ user, branding, refreshBranding }) {
   return (
     <div>
       <PageHead crumb="Configuration / Branding" title="Branding & Theme" sub="Live-preview changes apply to the whole UI immediately; Save persists them."
-        actions={canManage && <><button className="btn btn-ghost" onClick={reset}>Revert</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save Branding'}</button></>} />
+        actions={canManage && <><button className="btn btn-ghost" onClick={reset}>Revert</button><button className="btn" onClick={save} disabled={busy || !actionColorOk}>{busy ? 'Saving…' : 'Save Branding'}</button></>} />
       {!canManage && <div className="error-banner">You have read-only access to branding.</div>}
       <div className="card card-pad" style={{ marginBottom: 16 }}>
         <div className="field"><label>Company / App Name</label><input value={f.company_name || ''} disabled={!canManage} onChange={(e) => set('company_name', e.target.value)} /></div>
@@ -3431,6 +3461,7 @@ function BrandingPage({ user, branding, refreshBranding }) {
       </div>
       <div className="card card-pad">
         <div className="section-title" style={{ marginTop: 0 }}>Color Palette</div>
+        {!actionColorOk && <div className="error-banner" role="alert">Primary action color needs stronger contrast with white text before it can be saved.</div>}
         <div className="form-grid">
           {BRAND_COLORS.map(([k, label]) => (
             <div className="field" key={k}><label>{label}</label>
@@ -4041,7 +4072,7 @@ function AiShortlistTab({ request, user }) {
   if (state === 'error') {
     return (
       <div className="card card-pad">
-        <ErrorState text={error || 'The shortlist could not be generated.'}
+        <Empty icon="⚠" tone="error" title="No shortlist" text={error}
           action={<button className="btn btn-secondary" onClick={run}>Try again</button>} />
       </div>
     );
@@ -4385,9 +4416,9 @@ function FeedbackComposer({ req, apps, onPosted }) {
 // Minimal, corporate post styling — no emoji. A small left rail color + optional label chip.
 function postMeta(p) {
   const map = {
-    message: { rail: 'var(--ticket-accent)', tint: 'transparent', label: null },
+    message: { rail: 'var(--green-border)', tint: 'transparent', label: null },
     file: { rail: '#6b7480', tint: 'var(--surface-2, #fbfcfd)', label: 'Attachment' },
-    cv: { rail: 'var(--ticket-accent)', tint: 'var(--ticket-chip-bg)', label: 'CV' },
+    cv: { rail: 'var(--green)', tint: 'var(--ticket-chip-bg)', label: 'CV' },
     feedback: { rail: '#b7791f', tint: '#fbf5e8', label: 'Feedback' },
     system: { rail: 'var(--border)', tint: 'var(--surface-2, #fbfcfd)', label: 'Update' },
   };
@@ -4511,7 +4542,7 @@ function Info({ label, children }) { return <div style={{ marginBottom: 14 }}><d
 function FieldChip({ label, children, full }) {
   return (
     <div style={{ gridColumn: full ? '1 / -1' : 'auto', background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 8, padding: '9px 12px' }}>
-      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--ticket-accent, #b0202e)', fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--green-700)', fontWeight: 700 }}>{label}</div>
       <div style={{ fontWeight: 500, marginTop: 3, color: 'var(--text-dark)', whiteSpace: full ? 'pre-wrap' : 'normal', lineHeight: 1.5 }}>{children ?? '—'}</div>
     </div>
   );
@@ -5177,7 +5208,7 @@ function TalentPipeline({
     return [...m.entries()];
   }, [apps, linkRequests]);
   if (loadError) {
-    return <div className="card"><ErrorState text={loadError || 'The pipeline could not be loaded.'}
+    return <div className="card"><Empty icon="⚠" tone="error" title="Could not load the pipeline" text={loadError}
       action={<button className="btn" onClick={load}>Retry</button>} /></div>;
   }
   if (!apps) return <ListSkeleton rows={6} />;
@@ -5282,12 +5313,13 @@ function TalentPipeline({
 function CandidateQuickView({ app, user, onClose, onChanged }) {
   const c = app.candidate || {};
   const toast = useToast();
+  const titleId = useId();
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   const [tab, setTab] = useState('profile'); // profile | assessment
   const [cand, setCand] = useState(c);
   const [resumeBusy, setResumeBusy] = useState(false);
   const canEditCand = user?.permissions?.includes('candidate.edit');
   const canFeedback = user?.permissions?.includes('interview.feedback');
-
   async function viewResume() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
   // D-02: re-run the parser against the résumé already on file.
   async function reparseResume() {
@@ -5308,17 +5340,19 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
 
   return (
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ maxWidth: 560, marginLeft: 'auto', height: '100vh', borderRadius: 0, display: 'flex', flexDirection: 'column' }}>
-        <div className="modal-head" style={{ borderTop: '4px solid var(--ticket-accent, #b0202e)' }}>
+      <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex="-1" onKeyDown={onDialogKeyDown}
+        style={{ maxWidth: 560, marginLeft: 'auto', height: '100vh', borderRadius: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-head" style={{ borderTop: '4px solid var(--green)' }}>
           <div>
-            <h3 style={{ margin: 0 }}>{c.fullName}</h3>
+            <h3 id={titleId} style={{ margin: 0 }}>{c.fullName}</h3>
             <div className="muted" style={{ fontSize: 12 }}>{c.candidateNo} · {app.applicationNo} · <AppStatusBadge status={app.status} /></div>
           </div>
-          <button className="icon-btn" onClick={onClose}>✕</button>
+          <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={onClose}>✕</button>
         </div>
         <div style={{ display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid var(--border)' }}>
           {[['profile', 'Candidate'], ['assessment', 'Interview Assessment']].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--ticket-accent, #b0202e)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--ticket-accent, #b0202e)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>
+            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>
           ))}
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
@@ -5326,7 +5360,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
             <>
               <div style={{ background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--ticket-accent, #b0202e)', fontWeight: 700 }}>Resume</div>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--green-700)', fontWeight: 700 }}>Resume</div>
                   <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? (cand.resumeName || 'Attached résumé') : <span className="muted">No résumé attached</span>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -5486,7 +5520,7 @@ function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved }) {
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
   return (
-    <div className="card card-pad" style={{ borderTop: '3px solid var(--ticket-accent, #b0202e)' }}>
+    <div className="card card-pad" style={{ borderTop: '3px solid var(--green)' }}>
       <div className="section-title" style={{ marginTop: 0 }}>Final Decision (shared — recruiter &amp; technical interviewer)</div>
       <div className="field"><label>Decision</label>
         <select value={decision} disabled={!canFeedback} onChange={(e) => setDecision(e.target.value)}>
@@ -6593,7 +6627,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
       )}
 
       {loadError ? (
-        <div className="card"><ErrorState text={loadError || 'Candidates could not be loaded.'}
+        <div className="card"><Empty icon="⚠" tone="error" title="Could not load candidates" text={loadError}
           action={<button className="btn" onClick={load}>Retry</button>} /></div>
       ) : !candidates ? <ListSkeleton rows={7} /> : shown.length === 0 ? (
         <div className="card"><Empty icon="👤"
@@ -8048,6 +8082,32 @@ class ErrorBoundary extends React.Component {
 }
 
 /* ----------------------------- Root App ----------------------------- */
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error, info) { console.error('ui.render_failed', error, info); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <main className="fatal-state" id="main-content" role="alert">
+        <div className="card card-pad fatal-state-card">
+          <div className="fatal-state-mark" aria-hidden="true">!</div>
+          <p className="eyebrow">Interface recovery</p>
+          <h1>We could not display this page.</h1>
+          <p className="muted">Your recruitment data is safe. Reload the interface, or sign out and start a fresh session.</p>
+          <div className="fatal-state-actions">
+            <button className="btn" onClick={() => window.location.reload()}>Reload interface</button>
+            <button className="btn btn-ghost" onClick={this.props.onSignOut}>Sign out</button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+}
+
 function App() {
   const [booting, setBooting] = useState(true);
   const [user, setUser] = useState(null);
@@ -8087,7 +8147,9 @@ function App() {
   }
   return (
     <AppCtx.Provider value={{ user }}>
-      <Shell user={user} branding={branding} onLogout={onLogout} refreshBranding={loadBranding} />
+      <AppErrorBoundary key={user.id} onSignOut={onLogout}>
+        <Shell user={user} branding={branding} onLogout={onLogout} refreshBranding={loadBranding} />
+      </AppErrorBoundary>
     </AppCtx.Provider>
   );
 }

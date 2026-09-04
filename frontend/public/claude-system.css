@@ -156,7 +156,7 @@
 /* --------------------------------------------------------- 6. buttons */
 /* The de-pilling. Claude buttons are 10px rounded rectangles at every size. */
 .btn, button.btn, a.btn {
-  min-height: var(--cl-ctl-md);
+  min-height: var(--cl-ctl-lg);   /* 40px — matches claude.ai's measured button and PR #6's --at-control-h */
   padding: 0 var(--cl-5);
   border-radius: var(--cl-r-lg);
   border-width: 1px;
@@ -207,7 +207,7 @@ input[type=checkbox], input[type=radio] { width: 16px; height: 16px; }
 input[type=checkbox] { border-radius: var(--cl-r-xs); }
 
 /* ------------------------------------------------ 8. tabs + segmented */
-.tabbar, .profile-tabs, .seg-tabs, .tabs {
+.tabbar, .profile-tabs, .seg-tabs, .tabs, .control-tabs {
   padding: var(--cl-1); gap: 2px; border-radius: var(--cl-r-md);
 }
 .tabbar-btn, .profile-tab, .seg-tab, .tabs button {
@@ -310,5 +310,7 @@ table.table tbody td, .table tbody td, table tbody td {
   .modal-head { padding: var(--cl-5) var(--cl-5) var(--cl-3); }
   .modal-body { padding: 0 var(--cl-5) var(--cl-5); }
   .modal-foot { padding: var(--cl-3) var(--cl-5) var(--cl-5); }
-  .btn, button.btn, a.btn { min-height: var(--cl-ctl-lg); }
+  /* 44px, not 40: the UI-readiness release set this touch target deliberately
+     and this layer loads after it, so it must not quietly shrink it. */
+  .btn, button.btn, a.btn, .btn-sm, .btn.small { min-height: 44px; }
 }
