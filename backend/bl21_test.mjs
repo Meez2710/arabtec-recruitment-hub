@@ -27,7 +27,14 @@ for (;;) {
     if (r.status !== 503) break;
   } catch { /* not up */ }
   if (Date.now() > DEADLINE) throw new Error('server never became ready');
-  await new Promise((r) => setTimeout(r, 150));
+  // Poll the readiness gate instead of guessing at a sleep. The app answers every
+// request with HTTP 503 until schema + seed finish, and a fixed delay is a race
+// the slower CI job loses: /api/auth/login returns 503, the helper below reads
+// `.json.token` off that body as undefined, and every later call goes out with
+// no Authorization header — surfacing as a baffling 401 several assertions
+// later rather than as "the server was not up yet".
+const { waitForReady } = await import('./test-support/wait-ready.mjs');
+await waitForReady('http://localhost:4138');
 }
 
 let pass = 0; let fail = 0;
@@ -41,8 +48,13 @@ async function api(p, { method = 'GET', token, body } = {}) {
   let j = null; try { j = await r.json(); } catch {}
   return { status: r.status, json: j };
 }
-const login = async (e, p = 'Arabtec@123') =>
-  (await api('/api/auth/login', { method: 'POST', body: { email: e, password: p } })).json.token;
+const login = async (e, p = 'Arabtec@123') => {
+  const r = await api('/api/auth/login', { method: 'POST', body: { email: e, password: p } });
+  // Fail HERE, with the status, rather than returning undefined and letting
+  // every later request go out unauthenticated.
+  if (!r.json?.token) throw new Error(`login failed for ${e}: HTTP ${r.status} ${JSON.stringify(r.json)}`);
+  return r.json.token;
+};
 const { get, all, exec } = await import('./src/lib/db.js');
 
 const snap = (id) => ({
