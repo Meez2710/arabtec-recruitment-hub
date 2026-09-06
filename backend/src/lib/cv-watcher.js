@@ -22,26 +22,26 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { getParser } from './parsing/registry.js';
-import { toCandidatePayload } from './cv-mapper.js';
+import { importInboxFile, inboxDirectory, isInboxFile } from './cv-import.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const DEFAULT_INBOX = path.resolve(__dirname, '../../cv_inbox');
 const DEFAULT_INTERVAL_MIN = 60;
-const WATCHED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.txt'];
 
 let watcherTimer = null;
 let lastScanAt = null;
 let lastScanResult = null;
 let scanCount = 0;
 
-const isWatched = (file) => WATCHED_EXTENSIONS.includes(path.extname(file).toLowerCase());
+const isWatched = isInboxFile;
+const intervalMinutes = () => {
+  const value = Number.parseInt(process.env.CV_WATCH_INTERVAL_MIN, 10);
+  return Number.isNaN(value) ? DEFAULT_INTERVAL_MIN : value;
+};
+let scanRunning = false;
 
 export function getWatcherStatus() {
-  const inboxDir = process.env.CV_INBOX || DEFAULT_INBOX;
+  const inboxDir = inboxDirectory();
   const exists = fs.existsSync(inboxDir);
   let fileCount = 0;
   if (exists) {
@@ -54,7 +54,7 @@ export function getWatcherStatus() {
   return {
     running: watcherTimer !== null,
     engine,
-    intervalMin: parseInt(process.env.CV_WATCH_INTERVAL_MIN, 10) || DEFAULT_INTERVAL_MIN,
+    intervalMin: intervalMinutes(),
     inboxDir,
     inboxExists: exists,
     pendingFiles: fileCount,
@@ -64,66 +64,17 @@ export function getWatcherStatus() {
   };
 }
 
-/**
- * Import one file. Returns why it was skipped, or the candidate it created.
- *
- * Only values the parser marked persistable are written, exactly as the upload
- * route does — the watcher has no privileged path into the candidate table.
- */
-async function importFile(filePath, file, models) {
-  const { Candidates, CandidateDocuments, CandidateActivity } = models;
-
-  const entities = await getParser().parseEntities(filePath);
-  const { payload } = toCandidatePayload(entities);
-
-  if (entities.metadata.parse_status === 'failed' || !payload.fullName) {
-    return {
-      skipped: true,
-      reason: entities.metadata.parse_status_reason
-        || 'no candidate name was supported by the document',
-    };
-  }
-
-  if (payload.email) {
-    const duplicates = Candidates.findDuplicates({ email: payload.email });
-    if (duplicates.length) {
-      return { skipped: true, reason: `duplicate email (${duplicates[0].candidate_no})` };
-    }
-  }
-
-  const candidateNo = Candidates.nextNo();
-  const created = Candidates.create({
-    candidateNo,
-    ...payload,
-    source: 'folder_drop',
-    ownerRecruiterId: null,
-    createdBy: null,
-    resumeName: file,
-    resumePath: filePath,
-  });
-
-  CandidateDocuments.add({
-    candidateId: created.id, docType: 'cv', fileName: file, fileHash: null, uploadedBy: null,
-  });
-  CandidateActivity.add({
-    candidateId: created.id, actorId: null, actorName: 'watcher',
-    type: 'candidate_created', note: `${candidateNo} (folder_drop: ${file})`,
-  });
-
-  return { skipped: false, created, candidateNo };
-}
-
 export function startWatcher() {
   if (watcherTimer) return;
-  const intervalMin = parseInt(process.env.CV_WATCH_INTERVAL_MIN, 10) || DEFAULT_INTERVAL_MIN;
+  const intervalMin = intervalMinutes();
   if (intervalMin <= 0) return;
 
   const doScan = async () => {
-    const inboxDir = process.env.CV_INBOX || DEFAULT_INBOX;
-    if (!fs.existsSync(inboxDir)) return;
+    const inboxDir = inboxDirectory();
+    if (scanRunning || !fs.existsSync(inboxDir)) return;
+    scanRunning = true;
 
     try {
-      const models = await import('./models.js');
       const { writeAudit } = await import('./audit.js');
 
       const files = fs.readdirSync(inboxDir).filter(isWatched);
@@ -133,7 +84,7 @@ export function startWatcher() {
       for (const file of files) {
         const filePath = path.join(inboxDir, file);
         try {
-          const result = await importFile(filePath, file, models);
+          const result = await importInboxFile(filePath);
           if (result.skipped) { skipped += 1; continue; }
           try {
             writeAudit(null, {
@@ -165,7 +116,7 @@ export function startWatcher() {
       console.log(`[watcher] Scan #${scanCount}: ${imported} imported, ${skipped} skipped`);
     } catch (e) {
       console.error('[watcher] Scan error:', e.message);
-    }
+    } finally { scanRunning = false; }
   };
 
   void doScan();

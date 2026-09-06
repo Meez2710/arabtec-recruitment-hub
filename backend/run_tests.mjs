@@ -45,6 +45,13 @@ const SUITES = [
   'bl04_test.mjs',            // BL-04 reopen restores seat capacity atomically
   'bl27_test.mjs',            // BL-27 one joined application per candidate, globally
   'pg_tx_test.mjs',           // real-PostgreSQL transaction affinity (skips if embedded-postgres absent)
+  'parse_jobs_security_test.mjs', // parse result ownership and retention
+  'production_security_test.mjs', // failed startup, protected diagnostics and encoded paths
+  'ingestion_regression_test.mjs', // bounded durable uploads and shared scanner imports
+  'anyhelp_test.mjs',         // scoped read-only AI tools and bounded provider loop
+  'anyhelp_route_test.mjs',   // session, input, rate limits, timeout and safe errors
+  'deploy_ref_test.mjs',      // branch/tag/SHA deployment with dirty-tree protection
+  'deploy_readiness_test.mjs', // strict readiness verification
 ];
 
 // LEGACY suites — written before the Phase-0 workflow stage rename; they assert

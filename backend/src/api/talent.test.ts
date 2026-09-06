@@ -20,9 +20,8 @@ import { InMemoryDocumentStore } from '../modules/talent/infrastructure/document
 
 const SECRET = 'test-secret';
 const PERMS = [
-  'candidate.create', 'candidate.edit', 'candidate.view_all', 'candidate.view_own',
-  'candidate.upload_document', 'candidate.delete_document',
-  'candidate.change_state', 'candidate.assign_owner', 'candidate.review_proposal',
+  'candidate.add', 'candidate.edit', 'candidate.view',
+  'candidate.move_stage',
 ];
 
 const principal = (over: Partial<Principal> = {}): Principal => ({
@@ -33,7 +32,7 @@ const principal = (over: Partial<Principal> = {}): Principal => ({
 
 const PRINCIPALS = new Map<number, Principal>([
   [7, principal()],
-  [8, principal({ userId: 8, userName: 'Read Only', permissions: ['candidate.view_all'] })],
+  [8, principal({ userId: 8, userName: 'Read Only', permissions: ['candidate.view'] })],
 ]);
 
 let harness: TestDatabase;
@@ -426,12 +425,15 @@ describe('talent read model', () => {
     await get('/candidates/99999/activity').expect(404);
   });
 
-  it('pins a VIEW_OWN caller to candidates they own', async () => {
-    await create();                                   // owner defaults to user 7
+  it('requires the legacy candidate.view permission and rejects obsolete view grants', async () => {
+    await create();
     const limited = new Map(PRINCIPALS);
     limited.set(30, principal({
-      userId: 30, userName: 'Own Only',
-      permissions: PERMS.filter((p) => p !== 'candidate.view_all'),
+      userId: 30, userName: 'Obsolete Grant',
+      permissions: ['candidate.view_own', 'candidate.view_all'],
+    }));
+    limited.set(31, principal({
+      userId: 31, userName: 'Reader', permissions: ['candidate.view'],
     }));
     const scopedApp = createApiApp({
       app: compose(harness.db, { documents: store, year: () => 2026 }),
@@ -439,12 +441,12 @@ describe('talent read model', () => {
       principals: new StaticPrincipalResolver(limited),
     });
 
-    const own = await request(scopedApp).get(`${API_PREFIX}/candidates`)
-      .set('Authorization', auth(30)).expect(200);
-    expect(own.body.total).toBe(0);
-    // Asking for someone else's id must not widen it.
-    const widened = await request(scopedApp).get(`${API_PREFIX}/candidates?ownerRecruiterId=7`)
-      .set('Authorization', auth(30)).expect(200);
-    expect(widened.body.total).toBe(0);
+    await request(scopedApp).get(`${API_PREFIX}/candidates`)
+      .set('Authorization', auth(30)).expect(403);
+    await request(scopedApp).get(`${API_PREFIX}/candidates?ownerRecruiterId=7`)
+      .set('Authorization', auth(30)).expect(403);
+    const visible = await request(scopedApp).get(`${API_PREFIX}/candidates`)
+      .set('Authorization', auth(31)).expect(200);
+    expect(visible.body.total).toBe(1);
   });
 });

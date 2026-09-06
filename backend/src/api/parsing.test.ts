@@ -27,8 +27,7 @@ import type {
 
 const SECRET = 'test-secret';
 const PERMS = [
-  'candidate.create', 'candidate.edit', 'candidate.view_all', 'candidate.view_own',
-  'candidate.upload_document', 'candidate.review_proposal',
+  'candidate.add', 'candidate.edit', 'candidate.view',
 ];
 
 const principal = (over: Partial<Principal> = {}): Principal => ({
@@ -214,13 +213,16 @@ describe('resume parsing', () => {
 
   it('applies only what a human accepts, with AI provenance', async () => {
     const id = await createCandidate(aiApp);
-    await uploadCv(aiApp, id, 'Ahmed Hassan');
+    await uploadCv(aiApp, id, 'Ahmed Hassan\nahmed.hassan@example.com\nSite Engineer at Orascom');
     await withAi.aiWorker!.drainUntilEmpty();
 
     const detail = await request(aiApp).get(`${API_PREFIX}/candidates/${id}`)
       .set('Authorization', auth()).expect(200);
     const proposalId = detail.body.pendingProposal.id as number;
-    expect(detail.body.ai.pendingProposalFieldCount).toBeGreaterThan(5);
+    expect(detail.body.pendingProposal.fields.map((field: { field: string }) => field.field))
+      .toEqual(expect.arrayContaining(['fullName', 'email', 'currentPosition', 'currentCompany']));
+    expect(detail.body.pendingProposal.fields.map((field: { field: string }) => field.field))
+      .not.toContain('location');
 
     await post(aiApp, `/candidates/proposals/${proposalId}/review`, {
       decisions: { fullName: true, currentPosition: true },

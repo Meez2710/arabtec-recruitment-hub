@@ -27,8 +27,7 @@ import type {
 
 const SECRET = 'test-secret';
 const PERMS = [
-  'candidate.create', 'candidate.edit', 'candidate.view_all', 'candidate.view_own',
-  'candidate.upload_document', 'candidate.review_proposal',
+  'candidate.add', 'candidate.edit', 'candidate.view',
 ];
 
 const principal = (over: Partial<Principal> = {}): Principal => ({
@@ -159,7 +158,7 @@ describe('bulk upload stages files without creating candidates', () => {
 
 describe('parsing an intake batch', () => {
   it('records extraction on the item, not on any candidate', async () => {
-    const batch = await uploadBatch([{ name: 'a.txt', text: 'Ahmed Hassan\nEngineer' }]);
+    const batch = await uploadBatch([{ name: 'a.txt', text: 'Ahmed Hassan\nahmed.hassan@example.com\nCairo\nSite Engineer at Orascom' }]);
     await composed.aiWorker!.drainUntilEmpty();
 
     const detail = await request(app).get(`${API_PREFIX}/cv-intake/${batch.id}`)
@@ -190,7 +189,7 @@ describe('parsing an intake batch', () => {
 
 describe('conversion creates a real Candidate under the ordinary invariants', () => {
   const parsedBatch = async (): Promise<{ id: number; itemId: string }> => {
-    const batch = await uploadBatch([{ name: 'a.txt', text: 'Ahmed Hassan\nEngineer' }]);
+    const batch = await uploadBatch([{ name: 'a.txt', text: 'Ahmed Hassan\nahmed.hassan@example.com\nCairo\nSite Engineer at Orascom' }]);
     await composed.aiWorker!.drainUntilEmpty();
     return { id: batch.id, itemId: batch.items[0]!.itemId };
   };

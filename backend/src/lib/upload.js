@@ -28,64 +28,103 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const MAX_BYTES = 20 * 1024 * 1024; // 20 MB cap (approved for CV uploads)
 const ALLOWED = new Set(['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt']);
 
-// Express middleware: parses multipart body, writes the file to disk, sets
-// req.uploadedFile = { storedPath, originalName, size, ext } and req.fields = {...}.
+// Retain at most MAX_BYTES from the request, including multipart framing.
+// An oversized or interrupted stream settles once and releases retained chunks.
 export function multipart(req, res, next) {
   const ct = req.headers['content-type'] || '';
-  if (!ct.startsWith('multipart/form-data')) return res.status(400).json({ error: 'Expected multipart/form-data.' });
-  const m = ct.match(/boundary=(.+)$/);
-  if (!m) return res.status(400).json({ error: 'Missing multipart boundary.' });
-  const boundary = Buffer.from('--' + m[1]);
-
+  if (!/^multipart\/form-data(?:;|$)/i.test(ct)) return res.status(400).json({ error: 'Expected multipart/form-data.' });
+  const m = ct.match(/;\s*boundary=(?:"([^"\r\n]+)"|([^;\s]+))/i);
+  const token = m?.[1] || m?.[2];
+  if (!token || token.length > 70) return res.status(400).json({ error: 'Missing or invalid multipart boundary.' });
   const chunks = [];
   let total = 0;
-  let tooBig = false;
-  req.on('data', (c) => { total += c.length; if (total > MAX_BYTES) { tooBig = true; } chunks.push(c); });
-  req.on('end', () => {
-    if (tooBig) return res.status(413).json({ error: 'File too large (max 20MB).' });
-    try {
-      const body = Buffer.concat(chunks);
-      const parts = splitBuffer(body, boundary);
-      req.fields = {};
-      req.uploadedFile = null;
-      for (const part of parts) {
-        const headerEnd = part.indexOf('\r\n\r\n');
-        if (headerEnd < 0) continue;
-        const header = part.slice(0, headerEnd).toString('utf8');
-        let content = part.slice(headerEnd + 4);
-        // trailing CRLF
-        if (content.slice(-2).toString() === '\r\n') content = content.slice(0, -2);
-        const nameM = header.match(/name="([^"]*)"/);
-        const fileM = header.match(/filename="([^"]*)"/);
-        if (!nameM) continue;
-        const field = nameM[1];
-        if (fileM && fileM[1]) {
-          const original = path.basename(fileM[1]);
-          const ext = path.extname(original).toLowerCase();
-          if (!ALLOWED.has(ext)) return res.status(400).json({ error: `File type ${ext || '(none)'} not allowed.` });
-          const stored = crypto.randomUUID() + ext;
-          // Durable: store bytes in the DB (survives redeploys everywhere).
-          saveBlob(stored, original, mimeForExt(ext), content);
-          // Best-effort local cache copy (ignored if dir not writable).
-          try { fs.writeFileSync(path.join(UPLOAD_DIR, stored), content); } catch {}
-          req.uploadedFile = { storedName: stored, originalName: original, size: content.length, ext };
-        } else {
-          req.fields[field] = content.toString('utf8');
-        }
-      }
-      next();
-    } catch (e) { res.status(400).json({ error: 'Failed to parse upload.' }); }
+  let settled = false;
+  const fail = (status, error) => {
+    if (settled) return;
+    settled = true;
+    chunks.length = 0;
+    res.status(status).json({ error });
+    req.resume(); // Drain without retaining bytes, allowing the 413 to reach the client.
+  };
+  req.on('data', (chunk) => {
+    if (settled) return;
+    total += chunk.length;
+    if (total > MAX_BYTES) return fail(413, 'File too large (max 20MB).');
+    chunks.push(chunk);
   });
-  req.on('error', () => res.status(400).json({ error: 'Upload stream error.' }));
+  req.on('error', () => fail(400, 'Upload stream error.'));
+  req.on('aborted', () => fail(400, 'Upload interrupted.'));
+  req.on('end', () => {
+    if (settled) return;
+    let parsed;
+    try { parsed = parseMultipart(Buffer.concat(chunks, total), token); }
+    catch (error) { return fail(400, error.message); }
+    chunks.length = 0;
+    req.fields = parsed.fields;
+    req.uploadedFile = null;
+    if (parsed.file) {
+      try { req.uploadedFile = storeFile(parsed.file.originalName, parsed.file.content); }
+      catch { return fail(503, 'Unable to persist upload. Please retry.'); }
+    }
+    settled = true;
+    next();
+  });
+  if (Number(req.headers['content-length']) > MAX_BYTES) fail(413, 'File too large (max 20MB).');
 }
 
-function splitBuffer(buf, sep) {
-  const parts = []; let start = 0; let idx;
-  while ((idx = buf.indexOf(sep, start)) !== -1) {
-    if (idx > start) parts.push(buf.slice(start, idx));
-    start = idx + sep.length;
+function parseMultipart(body, token) {
+  const boundary = Buffer.from('--' + token);
+  const delimiter = Buffer.from('\r\n--' + token);
+  if (!body.subarray(0, boundary.length).equals(boundary)) throw new Error('Invalid multipart body.');
+  let offset = boundary.length;
+  let file = null;
+  const fields = Object.create(null);
+  let parts = 0;
+  while (true) {
+    if (body.subarray(offset, offset + 2).toString() === '--') return { fields, file };
+    if (body.subarray(offset, offset + 2).toString() !== '\r\n') throw new Error('Invalid multipart body.');
+    offset += 2;
+    if (++parts > 32) throw new Error('Too many multipart fields.');
+    const headerEnd = body.indexOf('\r\n\r\n', offset);
+    if (headerEnd < 0 || headerEnd - offset > 8192) throw new Error('Invalid multipart headers.');
+    const header = body.subarray(offset, headerEnd).toString('utf8');
+    const name = header.match(/(?:^|;)\s*name="([^"\r\n]*)"/im)?.[1];
+    const filename = header.match(/(?:^|;)\s*filename="([^"\r\n]*)"/im)?.[1];
+    if (name == null) throw new Error('Missing multipart field name.');
+    let end = headerEnd + 4;
+    while (true) {
+      end = body.indexOf(delimiter, end);
+      if (end < 0) throw new Error('Incomplete multipart body.');
+      const suffix = body.subarray(end + delimiter.length, end + delimiter.length + 2).toString();
+      if (suffix === '--' || suffix === '\r\n') break;
+      end += delimiter.length;
+    }
+    const content = body.subarray(headerEnd + 4, end);
+    if (filename) {
+      if (file) throw new Error('Only one file is allowed per upload.');
+      const originalName = path.basename(filename.replace(/\\/g, '/'));
+      const ext = path.extname(originalName).toLowerCase();
+      if (!ALLOWED.has(ext)) throw new Error(`File type ${ext || '(none)'} not allowed.`);
+      file = { originalName, content };
+    } else fields[name] = content.toString('utf8');
+    offset = end + delimiter.length;
   }
-  return parts.filter((p) => p.length > 4); // drop boundary noise / trailing "--"
+}
+
+// DB persistence is required. Callers may include this in a synchronous tx().
+// Folder imports cache only after commit so a rollback leaves no disk orphan.
+export function storeFile(originalName, content, { cache = true } = {}) {
+  const ext = path.extname(originalName).toLowerCase();
+  if (!ALLOWED.has(ext)) throw new Error('File type not allowed.');
+  if (content.length > MAX_BYTES) throw new Error('File too large (max 20MB).');
+  const storedName = crypto.randomUUID() + ext;
+  saveBlob(storedName, originalName, mimeForExt(ext), content);
+  if (cache) cacheFile(storedName, content);
+  return { storedName, originalName, size: content.length, ext };
+}
+
+export function cacheFile(storedName, content) {
+  try { fs.writeFileSync(path.join(UPLOAD_DIR, storedName), content); } catch { /* durable DB copy exists */ }
 }
 
 function mimeForExt(ext) {
@@ -99,10 +138,8 @@ function mimeForExt(ext) {
 // Persist file bytes in the DB. node:sqlite takes a Uint8Array for BLOB params;
 // the Postgres path stores base64 text transparently (see db.js binary handling).
 function saveBlob(storedName, originalName, mime, buf) {
-  try {
-    run('INSERT INTO file_blob (stored_name, original_name, mime, size, data) VALUES (?,?,?,?,?)',
-      [storedName, originalName, mime, buf.length, new Uint8Array(buf)]);
-  } catch (e) { /* if blob store unavailable, disk copy still serves locally */ }
+  run('INSERT INTO file_blob (stored_name, original_name, mime, size, data) VALUES (?,?,?,?,?)',
+    [storedName, originalName, mime, buf.length, new Uint8Array(buf)]);
 }
 
 // Read a stored file as a Buffer — DB first (durable), disk fallback (cache).
@@ -145,4 +182,4 @@ export function fileExists(storedName) {
   try { if (get('SELECT 1 AS x FROM file_blob WHERE stored_name=?', [storedName])) return true; } catch {}
   return fs.existsSync(path.join(UPLOAD_DIR, storedName));
 }
-export { UPLOAD_DIR };
+export { UPLOAD_DIR, MAX_BYTES };

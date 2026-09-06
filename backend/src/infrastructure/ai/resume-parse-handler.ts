@@ -297,10 +297,9 @@ export const buildProposedFields = (input: BuildFieldsInput): {
     const value = claim.value;
     if (value === undefined || value === null) continue;
 
-    const source: keyof typeof CONFIDENCE = 'ai';
-
     /* 2a. IS IT IN THE DOCUMENT? */
     const evidence = findEvidence(structure, field, value);
+    let derivedAnchor: ReturnType<typeof derivationAnchor> = null;
     if (evidence.length === 0 && DERIVABLE.has(field)) {
       // Derived, not quoted. The total never appears as text, but the dates it
       // was computed FROM do — so cite those. A reviewer checking a derived
@@ -316,16 +315,9 @@ export const buildProposedFields = (input: BuildFieldsInput): {
         });
         continue;
       }
-      fields.push({
-        field,
-        value,
-        confidence: CONFIDENCE.derived,
-        evidence: `Derived from the employment dates in this CV, not stated verbatim. ${anchor.snippet}`.trim(),
-        evidenceRef: refOf(anchor),
-      });
-      continue;
+      derivedAnchor = anchor;
     }
-    if (evidence.length === 0) {
+    if (evidence.length === 0 && derivedAnchor === null) {
       // THE HALLUCINATION GATE. A value the document does not contain is not
       // proposed at all — not proposed with low confidence, not flagged for
       // review. There is nothing for a reviewer to check it against.
@@ -335,6 +327,8 @@ export const buildProposedFields = (input: BuildFieldsInput): {
       continue;
     }
 
+    // Derived totals must pass the same validation and cross-field checks
+    // as quoted values; a source anchor alone does not validate the arithmetic.
     /* 3b. IS IT WELL-FORMED? */
     const validation = validateField(field, value);
     if (validation.state === 'invalid') {
@@ -345,14 +339,16 @@ export const buildProposedFields = (input: BuildFieldsInput): {
     }
 
     accepted.set(field, value);
-    const first = evidence[0];
+    const first = derivedAnchor ?? evidence[0];
     fields.push({
       field,
       value,
-      confidence: source === 'ai'
-        ? Math.min(input.aiConfidence, CONFIDENCE.ai)
-        : CONFIDENCE[source],
-      evidence: first?.snippet ?? null,
+      confidence: derivedAnchor !== null
+        ? CONFIDENCE.derived
+        : Math.min(input.aiConfidence, CONFIDENCE.ai),
+      evidence: derivedAnchor !== null
+        ? `Derived from the employment dates in this CV, not stated verbatim. ${derivedAnchor.snippet}`.trim()
+        : first?.snippet ?? null,
       ...(first !== undefined ? { evidenceRef: refOf(first) } : {}),
     });
   }

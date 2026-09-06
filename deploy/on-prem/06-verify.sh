@@ -20,8 +20,8 @@ printf '%-44s' "running tree == the tree that was built"
 echo "=== health ==="
 ck "GET /api/health"             curl -fsS --max-time 10 "$URL/api/health"
 ck "GET /api/health/db"          curl -fsS --max-time 10 "$URL/api/health/db"
-echo -n "  watcher : "; curl -fsS --max-time 10 "$URL/api/health/watcher" 2>/dev/null || echo "(unreachable)"
-echo; echo -n "  parsing : "; curl -fsS --max-time 25 "$URL/api/health/parsing" 2>/dev/null || echo "(unreachable)"
+ck "GET /api/health/ready"       curl -fsS --max-time 10 "$URL/api/health/ready"
+echo "  Watcher and parsing diagnostics require an authenticated administrator session."
 echo
 
 echo "=== the SPA is really being served (not just a 200) ==="

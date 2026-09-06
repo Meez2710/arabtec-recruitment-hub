@@ -171,10 +171,18 @@
 .btn-ghost, .btn-link { border-width: 1px; }
 .btn:focus-visible { outline-width: 2px; outline-offset: 2px; }
 
-.icon-btn, .view-toggle-btn {
+.icon-btn {
   width: var(--cl-ctl-md); height: var(--cl-ctl-md);
   border-radius: var(--cl-r-md); border-width: 1px;
   display: inline-grid; place-items: center; padding: 0;
+}
+/* View switches contain labels (Cards / Table / Board), not just an icon.
+   A 36px square makes their text escape the hit area at ordinary font sizes. */
+.view-toggle-btn {
+  width: auto; height: auto; min-height: var(--cl-ctl-md);
+  padding: var(--cl-2) var(--cl-4); flex: 0 0 auto;
+  border-radius: var(--cl-r-md); border-width: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .btn-row, .btn-group, .actions, .card-actions, .modal-foot { gap: var(--cl-3); }
 
@@ -313,4 +321,5 @@ table.table tbody td, .table tbody td, table tbody td {
   /* 44px, not 40: the UI-readiness release set this touch target deliberately
      and this layer loads after it, so it must not quietly shrink it. */
   .btn, button.btn, a.btn, .btn-sm, .btn.small { min-height: 44px; }
+  .view-toggle-btn { min-height: 44px; }
 }

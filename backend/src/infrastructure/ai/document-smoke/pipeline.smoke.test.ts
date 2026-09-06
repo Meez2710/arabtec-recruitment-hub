@@ -119,6 +119,16 @@ const NORMAL_CV = [
   '## SKILLS', '', '- AutoCAD', '- ETABS',
 ].join('\n');
 
+// The model is the only field reader. These literal claims exercise the
+// downstream evidence/validation contract, not real model extraction quality.
+const NORMAL_RESUME: ExtractedResume = {
+  ...EMPTY_RESUME,
+  fullName: 'Ahmed Hassan', email: 'ahmed.hassan@example.test',
+  location: 'Cairo, Egypt', skills: ['AutoCAD', 'ETABS'],
+  employment: [{ employer: 'Arabtec Construction', title: 'Senior Structural Engineer', current: true }],
+  education: [{ institution: 'Cairo University', field: 'Civil Engineering', to: '2015' }],
+};
+
 const textPipeline = (markdown = NORMAL_CV, ocrEngine?: OcrEngine) =>
   new DocumentUnderstandingPipeline({
     textParser: new PlainTextDocumentParser(),
@@ -225,7 +235,7 @@ describe('3. DOCX', () => {
       filename: 'ahmed.docx',
       mimeType: 'application/octet-stream',
       bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]),
-    }));
+    }), NORMAL_RESUME);
     expect(get(fields, 'fullName')?.value).toBe('Ahmed Hassan');
   });
 });
@@ -247,11 +257,13 @@ describe('4. Arabic and mixed-language CV', () => {
     expect(canonical).toContain('education');
   });
 
-  it('reads an Arabic-Indic phone number that an ASCII rule cannot see', async () => {
-    const { parsed, fields } = await run(textPipeline(ARABIC_CV), source());
+  it('grounds normalized model claims against Arabic-script source text', async () => {
+    const { parsed, fields } = await run(textPipeline(ARABIC_CV), source(), {
+      ...EMPTY_RESUME, phone: '01001234567', fullName: 'أحمد حسن',
+    });
     if ('abstained' in parsed) throw new Error('unexpected abstention');
     expect(parsed.content.detectedLanguage).toMatch(/^ar/);
-    // The measured Arabic failure: "٠١٠٠١٢٣٤٥٦٧" matched no [0-9] rule at all.
+    // Evidence lookup must match Arabic-Indic digits to the normalized claim.
     expect(get(fields, 'phone')?.value).toBe('01001234567');
     // The Arabic name survives in its own script — never transliterated.
     expect(get(fields, 'fullName')?.value).toBe('أحمد حسن');
@@ -352,8 +364,8 @@ describe('6. partial OCR — one bad page among good ones', () => {
 /* -------------------------- 7. structured extraction ----------------------- */
 
 describe('7. structured extraction', () => {
-  it('reads every stated field from a normal CV with rules alone', async () => {
-    const { fields } = await run(textPipeline(), source());
+  it('grounds each model-extracted field against the normal CV', async () => {
+    const { fields } = await run(textPipeline(), source(), NORMAL_RESUME);
     expect(get(fields, 'fullName')?.value).toBe('Ahmed Hassan');
     expect(get(fields, 'email')?.value).toBe('ahmed.hassan@example.test');
     expect(get(fields, 'location')?.value).toBe('Cairo, Egypt');
@@ -367,7 +379,7 @@ describe('7. structured extraction', () => {
   it('does not invent a major from the word "education" in prose', async () => {
     const { fields } = await run(textPipeline([
       '# Sara Ali', 'sara.ali@example.test', '', 'I have no education section on this CV.',
-    ].join('\n')), source());
+    ].join('\n')), source(), { ...EMPTY_RESUME, education: [{ institution: 'Unknown', field: 'Education' }] });
     // The measured failure: a global keyword search made this "major: Education".
     expect(get(fields, 'major')).toBeUndefined();
   });
@@ -375,7 +387,7 @@ describe('7. structured extraction', () => {
   it('does not accept a section heading as a person\'s name', async () => {
     const { fields } = await run(textPipeline([
       '## CONTACT INFORMATION', 'someone@example.test',
-    ].join('\n')), source());
+    ].join('\n')), source(), { ...EMPTY_RESUME, fullName: 'CONTACT INFORMATION' });
     expect(get(fields, 'fullName')).toBeUndefined();
   });
 });
@@ -384,7 +396,7 @@ describe('7. structured extraction', () => {
 
 describe('8. evidence and 9. provenance', () => {
   it('every proposed field cites a page and a block that exist in the document', async () => {
-    const { parsed, fields } = await run(textPipeline(), source());
+    const { parsed, fields } = await run(textPipeline(), source(), NORMAL_RESUME);
     if ('abstained' in parsed) throw new Error('unexpected abstention');
     const blockIds = new Set(parsed.content.structure?.blocks.map((b) => b.id));
 
@@ -398,7 +410,7 @@ describe('8. evidence and 9. provenance', () => {
   });
 
   it('the citation survives being raised onto the CandidateProposal aggregate', async () => {
-    const { fields } = await run(textPipeline(), source());
+    const { fields } = await run(textPipeline(), source(), NORMAL_RESUME);
     const proposal = CandidateProposal.raise({
       id: 1, tenantId: 1, candidateId: 7, origin: 'resume.extract',
       fields, now: new Date(),
@@ -434,7 +446,10 @@ describe('10. deterministic validation', () => {
       '# Sara Ali', 'sara@example.test', '',
       '## SUMMARY', 'I have 40 years of experience.', '',
       '## EDUCATION', 'BSc in Civil Engineering, Cairo University, 2020',
-    ].join('\n')), source());
+    ].join('\n')), source(), {
+      ...EMPTY_RESUME, totalYearsExperience: 40,
+      education: [{ institution: 'Cairo University', to: '2020' }],
+    });
     expect(get(fields, 'yearsExperience')).toBeUndefined();
     expect(withheldFor(withheld, 'yearsExperience')?.reason).toMatch(/not reconcilable/);
   });
@@ -458,14 +473,14 @@ describe('11. unsupported values and abstention', () => {
     expect(get(fields, 'location')).toBeUndefined();
     expect(withheldFor(withheld, 'location')?.reason).toMatch(/could not be located/);
 
-    // The name IS in the document and a rule found it too — agreement is earned.
-    expect(get(fields, 'fullName')?.confidence).toBe(0.9);
+    // Located model claims are capped; deterministic validation is not an
+    // independent extraction and must not earn an agreement bonus.
+    expect(get(fields, 'fullName')?.confidence).toBe(0.75);
   });
 
-  it('never gives a model-only value the confidence of a rule', async () => {
+  it('caps the model confidence even for grounded language claims', async () => {
     const extracted = (await stubExtractor({
-      // Stated in the prose but under no LANGUAGES heading, so the
-      // section-scoped rule stays silent and the model is the only reader.
+      // Stated in prose without a LANGUAGES heading.
       languages: ['Arabic', 'English'],
     }, 1).extract({ text: '', pageCount: 1, pages: [] }) as { content: ExtractedResume }).content;
 
@@ -475,9 +490,7 @@ describe('11. unsupported values and abstention', () => {
     );
     const languages = get(fields, 'languages');
     expect(languages?.value).toEqual(['Arabic', 'English']);
-    // Located and well-formed, so usable — but capped below a rule's weight
-    // however confident the model claimed to be.
-    expect(languages?.confidence).toBeLessThanOrEqual(0.5);
+    expect(languages?.confidence).toBe(0.75);
   });
 
   it('proposes nothing when the document supports nothing', async () => {
@@ -490,9 +503,45 @@ describe('11. unsupported values and abstention', () => {
 
 describe('12. the proposable whitelist', () => {
   it('never proposes a field the Candidate aggregate would refuse', async () => {
-    const { fields } = await run(textPipeline(), source());
+    const { fields } = await run(textPipeline(), source(), {
+      ...NORMAL_RESUME, headline: 'Senior Structural Engineer',
+      education: [{ institution: 'Cairo University', qualification: 'BSc', field: 'Civil Engineering' }],
+    });
     // `degree` and `headline` are extracted but are not proposable fields.
     expect(fields.map((f) => f.field)).not.toContain('degree');
     expect(fields.map((f) => f.field)).not.toContain('headline');
+  });
+});
+
+describe('derived experience validation', () => {
+  const cv = '# Sara Ali\nEngineer at Acme, 2018 - Present\nCairo University, 2020';
+  const resume = (years: number): ExtractedResume => ({
+    ...EMPTY_RESUME, totalYearsExperience: years,
+    employment: [{ employer: 'Acme', title: 'Engineer', from: '2018', current: true }],
+    education: [{ institution: 'Cairo University', to: '2020' }],
+  });
+
+  it.each([-1, 100, 1.5])('withholds invalid derived years %s even with a source anchor', async (years) => {
+    const { fields, withheld } = await run(textPipeline(cv), source(), resume(years));
+    expect(get(fields, 'yearsExperience')).toBeUndefined();
+    expect(withheldFor(withheld, 'yearsExperience')?.reason).toMatch(/plausible range/);
+  });
+
+  it('cross-validates derived experience against the accepted graduation year', async () => {
+    const { fields, withheld } = await run(textPipeline(cv), source(), resume(40));
+    expect(get(fields, 'yearsExperience')).toBeUndefined();
+    expect(withheldFor(withheld, 'yearsExperience')?.reason).toMatch(/not reconcilable/);
+  });
+
+  it('keeps supported plausible derived experience with its lower-confidence citation', async () => {
+    const { fields } = await run(textPipeline(cv), source(), resume(8));
+    expect(get(fields, 'yearsExperience')).toMatchObject({ value: 8, confidence: 0.5 });
+    expect(get(fields, 'yearsExperience')?.evidence).toMatch(/Derived from the employment dates/);
+    expect(get(fields, 'yearsExperience')?.evidenceRef?.blockId).toBeDefined();
+  });
+
+  it('does not infer claims when the extractor returned none', async () => {
+    const { fields } = await run(textPipeline(), source(), EMPTY_RESUME);
+    expect(fields).toEqual([]);
   });
 });

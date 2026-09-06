@@ -20,7 +20,7 @@ import type {
 
 const SECRET = 'test-secret';
 const PERMS = [
-  'candidate.create', 'candidate.view_all',
+  'candidate.add', 'candidate.view',
   'requisition.create', 'requisition.view_all', 'requisition.view_own',
 ];
 
@@ -137,7 +137,7 @@ describe('candidate search', () => {
   it('hides erased records', async () => {
     const id = await makeCandidate({});
     await post(app, `/candidates/${id}/state`, { state: 'ERASED', reason: 'erasure' })
-      .expect(403); // no candidate.change_state in this suite's permissions
+      .expect(403); // no candidate.move_stage in this suite's permissions
 
     // Erase directly to prove the search filter, not the endpoint.
     const { candidate } = await import('../infrastructure/db/schema/index.js');
