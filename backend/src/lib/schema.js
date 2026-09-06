@@ -699,6 +699,19 @@ export function ensureSchema() {
   // Proposable list fields. Nullable TEXT holding a JSON array, which is the
   // convention `tags` already uses on this table — no new storage idea, and no
   // existing row changes meaning: NULL keeps reading as "not stated".
+  // Microsoft connection: a generation counter and a cross-process scan lease.
+  //   generation  bumped on every connect and disconnect. The MSAL cache plugin
+  //               captures it when it loads and writes back only if it still
+  //               matches, so a refresh that finishes after a disconnect — or
+  //               after a disconnect AND a reconnect — cannot overwrite the
+  //               newer grant with the stale one it was holding.
+  //   sync_lease_* the `running` flag in mailbox-sync.js is per-PROCESS, and
+  //               on-prem the 08:00 timer is a different process from the web
+  //               API, so it could never have serialised those two. The lease
+  //               is taken in the database, where both can see it.
+  addColumnIfMissing('microsoft_connection', 'generation', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
+  addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
   addColumnIfMissing('candidate_intake', 'request_id', 'INTEGER');
   addColumnIfMissing('candidate_intake', 'application_id', 'INTEGER');
   addColumnIfMissing('candidate', 'skills', 'TEXT');

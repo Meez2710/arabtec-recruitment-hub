@@ -518,13 +518,17 @@ console.log('\n- Reconnect required -');
 // Force MSAL to re-acquire from the refresh token by expiring the cached access
 // token, then make the refresh fail the way Entra does after a revoked grant.
 (() => {
-  const cache = JSON.parse(decrypt(store.connectionRow().token_cache));
+  const row = store.connectionRow();
+  const cache = JSON.parse(decrypt(row.token_cache));
   const stale = String(Math.floor(Date.now() / 1000) - 600);
   for (const key of Object.keys(cache.AccessToken || {})) {
     cache.AccessToken[key].expires_on = stale;
     cache.AccessToken[key].extended_expires_on = stale;
   }
-  store.saveTokenCache(JSON.stringify(cache));
+  // saveTokenCache is generation-bound now: pass the generation this cache was
+  // read at, exactly as the MSAL plugin does.
+  const wrote = store.saveTokenCache(JSON.stringify(cache), Number(row.generation ?? 0));
+  c('the test can expire the cached access token', wrote === true);
 })();
 cloud.refreshFails = true;
 resetClient();
@@ -628,6 +632,106 @@ c('test connection still succeeds', testedAgain.status === 200 && testedAgain.j.
 c('test connection never calls Graph /me',
   !calls.graph.some((g) => g.path === '/me' || g.path.startsWith('/me?')),
   calls.graph.map((g) => g.path.split('?')[0]).join(' '));
+
+/* ---------------- regressions from the SECOND PR #10 review ---------------- */
+console.log('\n- Second review regressions -');
+await connectAs();
+
+// Generation binding: a refresh that finishes after disconnect+reconnect must
+// not overwrite the NEW grant with the stale cache it was holding. A status
+// check alone could not see this — the row is CONNECTED with the same account.
+const genBefore = Number(store.connectionRow().generation ?? 0);
+store.clearConnection(1);
+await connectAs();
+const genAfter = Number(store.connectionRow().generation ?? 0);
+c('connect and disconnect each bump the generation', genAfter >= genBefore + 2,
+  `${genBefore} -> ${genAfter}`);
+const staleWrite = store.saveTokenCache(JSON.stringify({ RefreshToken: { stale: {} } }), genBefore);
+c('a cache write from an older generation is refused', staleWrite === false);
+c('the current grant survived the stale write',
+  JSON.parse(decrypt(store.connectionRow().token_cache)).RefreshToken.stale === undefined);
+
+// Cross-process lease: the in-process flag cannot serialise the timer against
+// the web API, so the lease has to live in the database.
+const leaseA = store.acquireSyncLease('probe-A');
+const leaseB = store.acquireSyncLease('probe-B');
+c('a second process cannot take a held scan lease', leaseA.acquired === true && leaseB.acquired === false,
+  JSON.stringify({ a: leaseA.acquired, b: leaseB.acquired }));
+store.releaseSyncLease('probe-A');
+c('the lease is retakeable once released', store.acquireSyncLease('probe-C').acquired === true);
+store.releaseSyncLease('probe-C');
+
+// A retryable parse (no CV reader configured) must NOT be recorded as handled,
+// and the watermark must not move past it — otherwise wiring the reader up
+// later could never recover that CV.
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+const retryAt = new Date(Date.now() + 5000).toISOString();
+seedMessage({
+  id: 'msg-noreader', internetMessageId: '<noreader@example.test>', receivedDateTime: retryAt,
+  attachments: [{ id: 'att-noreader', name: 'Unreadable For Now.pdf', bytes: Buffer.from('%PDF-1.4 retry me') }],
+});
+const noReader = async () => ({ ok: false, permanent: false, reason: 'No CV reader is configured.', fields: [], preview: [] });
+const beforeRetry = countIntakes();
+const retryScan = await runMailboxSync({ parse: noReader });
+c('a retryable parse is not counted as skipped', retryScan.retryable === 1 && retryScan.imported === 0,
+  JSON.stringify({ retryable: retryScan.retryable, skipped: retryScan.skipped }));
+c('no ledger row claims it was handled',
+  db.get("SELECT COUNT(*) AS c FROM mailbox_ingestion WHERE attachment_name='Unreadable For Now.pdf'").c === 0);
+c('the watermark did not advance past the unfinished message',
+  retryScan.watermark <= retryAt, `watermark=${retryScan.watermark} msg=${retryAt}`);
+
+// ...and once a reader exists, the very same message imports.
+const recovered = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Recovered Person')) });
+c('the same CV imports once the reader is available',
+  recovered.imported === 1 && countIntakes() === beforeRetry + 1,
+  JSON.stringify({ imported: recovered.imported }));
+
+// An undecryptable cache is a reconnect, not an endless ERROR retry.
+const { classify: classifyErr, CODES: ERRCODES } = await import('./src/lib/microsoft/msal-client.js');
+const corrupt = Object.assign(new Error('bad envelope'), { name: 'TokenEncryptionError', code: 'corrupt' });
+c('a corrupt token cache classifies as reconnect-required',
+  classifyErr(corrupt).code === ERRCODES.RECONNECT_REQUIRED, classifyErr(corrupt).code);
+const noKey = Object.assign(new Error('no key'), { name: 'TokenEncryptionError', code: 'missing-key' });
+c('a missing encryption key classifies as not-configured',
+  classifyErr(noKey).code === ERRCODES.NOT_CONFIGURED, classifyErr(noKey).code);
+
+// A mid-scan 401 is an expired access token, not a revoked grant.
+calls.token.length = 0;
+let served401 = false;
+const realFetch401 = globalThis.fetch;
+globalThis.fetch = async (input, init = {}) => {
+  const u = typeof input === 'string' ? input : String(input?.url ?? input);
+  if (!served401 && u.includes('/me/mailFolders/inbox?')) {
+    served401 = true;
+    return new Response(JSON.stringify({ error: { code: 'InvalidAuthenticationToken' } }),
+      { status: 401, headers: { 'content-type': 'application/json' } });
+  }
+  return realFetch401(input, init);
+};
+const probe401 = await call('/api/integrations/microsoft/test', { method: 'POST', token: admin });
+globalThis.fetch = realFetch401;
+c('a mid-scan 401 renews the token instead of demanding a new sign-in',
+  served401 === true && probe401.status === 200 && probe401.j.ok === true,
+  JSON.stringify(probe401.j).slice(0, 110));
+
+// A Graph send that fails AFTER dispatch must not fall back to SMTP.
+process.env.MAIL_PROVIDER = 'auto';
+process.env.SMTP_USER = 'x@y.test'; process.env.SMTP_PASS = 'p';
+delete process.env.SMTP_TRANSPORT;                       // let provider selection run
+const mailerMod = await import('./src/lib/mailer.js');
+const realFetchMail = globalThis.fetch;
+globalThis.fetch = async (input, init = {}) => {
+  const u = typeof input === 'string' ? input : String(input?.url ?? input);
+  if (u.includes('/me/sendMail')) throw new Error('socket hang up after POST');
+  return realFetchMail(input, init);
+};
+const ambiguous = await mailerMod.sendMail({ to: 'candidate@example.test', subject: 'Ambiguous', html: '<p>x</p>' });
+globalThis.fetch = realFetchMail;
+process.env.SMTP_TRANSPORT = 'json';
+delete process.env.SMTP_USER; delete process.env.SMTP_PASS;
+c('a post-dispatch Graph failure does NOT fall back to SMTP',
+  ambiguous.ok === false && ambiguous.ambiguous === true && ambiguous.provider === 'graph',
+  JSON.stringify(ambiguous).slice(0, 110));
 
 /* ------------------------------ disconnect -------------------------------- */
 console.log('\n- Disconnect -');

@@ -62,6 +62,22 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
     );
   }
   if (response.status === 401) {
+    // A scan takes ONE token and then spends minutes on document parses and up
+    // to twenty pages of messages, so the commonest 401 here is simply an access
+    // token that expired mid-pass while the refresh grant is perfectly healthy.
+    // Treating that as "sign in again" halted the scan and told the
+    // administrator to do something they did not need to do. Renew silently and
+    // retry once; only a renewal that itself fails is a real reconnect.
+    if (attempt < MAX_RETRIES) {
+      let renewed = null;
+      // forceRefresh, or MSAL simply returns the cached token Graph just
+      // refused and the retry is guaranteed to fail the same way.
+      try { renewed = (await acquireGraphToken({ forceRefresh: true })).accessToken; }
+      catch (e) { throw classify(e); }
+      if (renewed) {
+        return graphRequest(path, { method, json, raw, accessToken: renewed, attempt: attempt + 1 });
+      }
+    }
     // The token was accepted by MSAL but rejected by Graph — consent revoked,
     // password changed, or the account was removed from the app.
     throw new MicrosoftAuthError('Microsoft 365 connection requires sign-in again.',

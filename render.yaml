@@ -63,6 +63,17 @@ services:
       # URL + /api/integrations/microsoft/callback, and it must be registered as
       # a Web redirect URI on the Entra app. Render's free tier has no persistent
       # disk, but that does not matter here — the token cache lives in Postgres.
+      #
+      # THERE IS NO SCHEDULED MAILBOX SCAN ON RENDER, and that is deliberate.
+      # Unattended scanning is the on-prem systemd timer (arabtec-m365-sync.timer,
+      # 08:00 Africa/Cairo); this service exposes only the System-Admin-triggered
+      # POST /api/integrations/microsoft/sync. Setting the variables below on
+      # Render therefore enables Connect and manual scans but NOT automatic
+      # ingestion — mail would sit unread until someone pressed the button.
+      # On-prem is the system of record and Render is being decommissioned
+      # (deploy/on-prem/07-decommission-render.md), so no Render cron is added
+      # here. If Render ever becomes the deployment of record, add a Render cron
+      # job hitting that route, or this integration is only half-wired.
       - key: MS_TENANT_ID
         sync: false
       - key: MS_CLIENT_ID

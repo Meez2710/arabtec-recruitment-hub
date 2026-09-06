@@ -27,6 +27,7 @@ import { listInboxMessages, listAttachments, downloadAttachment } from './graph.
 import {
   claimAttachment, completeAttachment, releaseAttachment, connectionRow,
   markAttempt, markError, markReconnectRequired, markSyncSuccess, STATUS,
+  acquireSyncLease, releaseSyncLease,
 } from './connection-store.js';
 
 const FILE_ATTACHMENT = '#microsoft.graph.fileAttachment';
@@ -109,13 +110,30 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     return { ok: false, code: CODES.NOT_CONNECTED, error: 'Microsoft 365 is not connected.' };
   }
 
+  // The in-process flag above cannot see the OTHER process. On-prem the 08:00
+  // timer runs m365-sync.mjs separately from the web API, so a manual scan and
+  // the scheduled one could overlap, and the loser would still advance the
+  // shared watermark past messages the winner had merely claimed. The lease
+  // lives in the database, which is the only thing both processes share.
+  const leaseOwner = `${process.pid}@${startedAtLabel()}`;
+  const lease = acquireSyncLease(leaseOwner);
+  if (!lease.acquired) {
+    return {
+      ok: false, code: 'already-running',
+      error: `A mailbox scan is already in progress (held until ${lease.until ?? 'unknown'}).`,
+    };
+  }
+
   running = true;
   const mailbox = row.mailbox || configuredMailbox();
   const startedAt = new Date();
   const since = syncWindowStart(row);
   const summary = {
     mailbox, since, messages: 0, attachments: 0, imported: 0, skipped: 0, failed: 0,
-    intakeIds: [], startedAt: startedAt.toISOString(),
+    retryable: 0, intakeIds: [], startedAt: startedAt.toISOString(),
+    // receivedDateTime of every message this pass did NOT finish. The watermark
+    // may not move past the earliest of them.
+    unfinished: [],
   };
 
   try {
@@ -155,10 +173,19 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     // PROCESSED is the furthest the watermark may honestly move — anything
     // beyond it was never fetched, and advancing over it would lose those CVs
     // exactly the way dropping @odata.nextLink used to.
-    const watermark = summary.truncated
+    // THE WATERMARK MAY NEVER PASS UNFINISHED WORK. Two things can leave work
+    // unfinished: a capped page walk (messages never fetched) and a message this
+    // pass could not complete — held by a concurrent scan, failed, or awaiting a
+    // parser that is not configured yet. Advancing past either is precisely how
+    // a CV disappears for good, so the watermark stops at the earliest of them.
+    const earliestUnfinished = summary.unfinished.filter(Boolean).sort()[0] ?? null;
+    let watermark = summary.truncated
       ? (messages.reduce((newest, m) => (m.receivedDateTime && m.receivedDateTime > newest
         ? m.receivedDateTime : newest), since) || since)
       : startedAt.toISOString();
+    if (earliestUnfinished && earliestUnfinished < watermark) watermark = earliestUnfinished;
+    summary.watermark = watermark;
+    delete summary.unfinished;   // an internal working set, not a result
     markSyncSuccess(summary, watermark);
     log({ msg: 'microsoft.sync.complete', ...summary, imported: summary.imported });
     // ALWAYS audited. This used to be gated on `req || actor`, which meant the
@@ -189,8 +216,12 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     return { ok: false, code: error.code, error: error.message, ...summary };
   } finally {
     running = false;
+    try { releaseSyncLease(leaseOwner); } catch { /* the lease expires on its own */ }
   }
 }
+
+/** Stable-ish label for the lease owner; the clock is only used for display. */
+function startedAtLabel() { return new Date().toISOString(); }
 
 async function ingestMessage({ message, mailbox, accessToken, actor, req, summary, parse }) {
   const attachments = await listAttachments(message.id, { accessToken });
@@ -211,7 +242,13 @@ async function ingestMessage({ message, mailbox, accessToken, actor, req, summar
     });
 
     // Seen before — by an earlier scan, by the overlap window, or by a restart.
-    if (!claim.claimed) { summary.skipped += 1; continue; }
+    if (!claim.claimed) {
+      // 'in-progress' means ANOTHER scan holds it right now. It is not done, so
+      // this scan must not let the watermark move past it.
+      if (claim.reason === 'in-progress') summary.unfinished.push(message.receivedDateTime ?? null);
+      summary.skipped += 1;
+      continue;
+    }
 
     if (!verdict.accept) {
       completeAttachment(claim.key, { status: 'SKIPPED', reason: verdict.reason });
@@ -239,6 +276,23 @@ async function ingestMessage({ message, mailbox, accessToken, actor, req, summar
       const parsed = await parse(uploadPath(stored.storedName));
 
       if (!parsed.ok || parsed.fields.length === 0) {
+        // RETRYABLE vs FINAL, and the difference decides whether this CV is ever
+        // seen again. With no ANTHROPIC_API_KEY — a configuration startup
+        // explicitly allows — parseDocument returns { ok:false, permanent:false },
+        // and so do transient OCR/parser faults. Recording those as SKIPPED
+        // marked them permanently handled, so wiring the reader up later could
+        // never recover them. Release the claim instead and hold the watermark,
+        // so the next scan genuinely retries.
+        if (parsed.permanent === false) {
+          releaseAttachment(claim.key);
+          summary.retryable += 1;
+          summary.unfinished.push(message.receivedDateTime ?? null);
+          warn({
+            msg: 'microsoft.sync.parse_retryable', attachment: attachment.name ?? null,
+            reason: parsed.reason || 'the CV reader is not available',
+          });
+          continue;
+        }
         completeAttachment(claim.key, {
           status: 'SKIPPED',
           reason: parsed.reason || 'No candidate field could be supported by the document.',
@@ -297,6 +351,7 @@ async function ingestMessage({ message, mailbox, accessToken, actor, req, summar
       }
       completeAttachment(claim.key, { status: 'FAILED', reason: error.message });
       summary.failed += 1;
+      summary.unfinished.push(message.receivedDateTime ?? null);
       warn({ msg: 'microsoft.sync.attachment_failed', attachment: attachment.name ?? null, error: error.message });
     }
   }

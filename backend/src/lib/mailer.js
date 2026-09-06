@@ -143,18 +143,37 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
   if (!to || !subject) return { ok: false, error: 'Recipient and subject are required.' };
 
   if (provider === 'graph') {
+    // THE FALLBACK IS ONLY SAFE BEFORE THE MESSAGE IS DISPATCHED. Once the POST
+    // to Graph is in flight, a network error tells us nothing about whether
+    // Microsoft accepted it — and falling back then delivers the same
+    // notification twice, to a candidate. So the two phases are separated: a
+    // token that cannot be acquired is unambiguously pre-dispatch and may fall
+    // back; anything that goes wrong at or after the POST may not.
+    let accessToken = null;
     try {
-      await sendMailAs({ to, subject, html, text, replyTo });
-      console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: 'graph', to, subject }));
-      return { ok: true, provider: 'graph' };
+      ({ accessToken } = await acquireGraphToken());
     } catch (e) {
       const error = String((e && e.message) || e);
-      console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'graph', to, subject, error }));
-      // BACKWARD COMPATIBILITY. A Graph failure falls back to SMTP only when
-      // SMTP is genuinely configured and Graph was not pinned — a notification
-      // that used to send must not start disappearing because the Microsoft
-      // connection lapsed.
+      console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'graph',
+        phase: 'token', to, subject, error }));
+      // Nothing was sent — falling back is safe, and is what keeps notifications
+      // working when the Microsoft grant lapses.
       if (preferredProvider() === 'graph' || !smtpConfigured()) return { ok: false, provider: 'graph', error };
+      accessToken = null;
+    }
+    if (accessToken) {
+      try {
+        await sendMailAs({ to, subject, html, text, replyTo, accessToken });
+        console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: 'graph', to, subject }));
+        return { ok: true, provider: 'graph' };
+      } catch (e) {
+        const error = String((e && e.message) || e);
+        console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'graph',
+          phase: 'dispatch', to, subject, error, fallback: 'suppressed' }));
+        // Deliberately NO fallback: the delivery outcome is unknown, and a
+        // duplicate to a candidate is worse than a miss an operator can see.
+        return { ok: false, provider: 'graph', error, ambiguous: true };
+      }
     }
   }
 

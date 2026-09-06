@@ -81,13 +81,22 @@ function baseConfig(cfg, cachePlugin) {
  * both see whatever the other last wrote, and a process restart loses nothing.
  */
 function persistentCachePlugin() {
+  // The generation read alongside the blob. The write is conditional on it, so
+  // a refresh that completes after a disconnect — or after a disconnect and a
+  // fresh reconnect — cannot overwrite the newer grant with this stale one.
+  let loadedGeneration = null;
   return {
     async beforeCacheAccess(cacheContext) {
-      const blob = loadTokenCache();
-      if (blob) cacheContext.tokenCache.deserialize(blob);
+      const loaded = loadTokenCache();
+      if (loaded) {
+        loadedGeneration = loaded.generation;
+        cacheContext.tokenCache.deserialize(loaded.blob);
+      }
     },
     async afterCacheAccess(cacheContext) {
-      if (cacheContext.cacheHasChanged) saveTokenCache(cacheContext.tokenCache.serialize());
+      if (cacheContext.cacheHasChanged && loadedGeneration !== null) {
+        saveTokenCache(cacheContext.tokenCache.serialize(), loadedGeneration);
+      }
     },
   };
 }
@@ -187,7 +196,7 @@ export async function exchangeCodeForAccount({ code, state }) {
  * and throws — it never crashes a scheduled scan and never silently returns a
  * token that is not there.
  */
-export async function acquireGraphToken({ scopes = GRAPH_SCOPES } = {}) {
+export async function acquireGraphToken({ scopes = GRAPH_SCOPES, forceRefresh = false } = {}) {
   requireConfigured();
   const row = connectionRow();
   if (!row || row.status === 'DISCONNECTED' || !row.home_account_id) {
@@ -211,7 +220,10 @@ export async function acquireGraphToken({ scopes = GRAPH_SCOPES } = {}) {
   }
 
   try {
-    const result = await client.acquireTokenSilent({ account, scopes: [...scopes] });
+    // forceRefresh bypasses the cached access token. Used after Graph answers
+    // 401: the cache would hand back the very token Graph just rejected, so
+    // asking for "a token" is not enough — we need a NEW one.
+    const result = await client.acquireTokenSilent({ account, scopes: [...scopes], forceRefresh });
     if (!result || !result.accessToken) {
       markReconnectRequired(RECONNECT_MESSAGE);
       throw new MicrosoftAuthError(RECONNECT_MESSAGE, CODES.RECONNECT_REQUIRED);
@@ -236,6 +248,24 @@ export async function acquireGraphToken({ scopes = GRAPH_SCOPES } = {}) {
  */
 export function classify(error) {
   if (error instanceof MicrosoftAuthError) return error;
+
+  // A token cache that will not decrypt is a DEAD GRANT, not a transient fault.
+  // Left as UNEXPECTED it became ERROR, and the daily timer then retried a cache
+  // it can never read, forever, while the admin panel said nothing actionable.
+  // A rotated MICROSOFT_TOKEN_ENCRYPTION_KEY is the common cause and the only
+  // cure is a new sign-in.
+  if (error?.name === 'TokenEncryptionError' || error?.code === 'cache-not-encrypted') {
+    if (error.code === 'missing-key' || error.code === 'invalid-key') {
+      return new MicrosoftAuthError(
+        'MICROSOFT_TOKEN_ENCRYPTION_KEY is missing or malformed, so the stored Microsoft '
+        + 'token cache cannot be read. Fix the variable and restart.',
+        CODES.NOT_CONFIGURED, { errorCode: error.code },
+      );
+    }
+    return new MicrosoftAuthError(RECONNECT_MESSAGE, CODES.RECONNECT_REQUIRED,
+      { errorCode: error.code || 'corrupt' });
+  }
+
   const code = String(error?.errorCode || '');
   const message = String(error?.errorMessage || error?.message || error || '');
   const haystack = `${code} ${message}`.toLowerCase();

@@ -92,6 +92,7 @@ export function saveConnection({ mailbox, tenantId, homeAccountId, serializedCac
                 -- so the scan resumes from the real watermark.
                 baseline_at=COALESCE(baseline_at, ?), connected_at=?, last_error=NULL, last_attempt_at=?,
                 updated_by=?, updated_at=?,
+                generation=COALESCE(generation,0)+1,
                 created_by=COALESCE(created_by, ?)
           WHERE provider=?`,
     [String(mailbox).toLowerCase(), tenantId, homeAccountId, encrypt(serializedCache),
@@ -106,20 +107,23 @@ export function saveConnection({ mailbox, tenantId, homeAccountId, serializedCac
  * Only ever called from the MSAL cache plugin, and only when MSAL reports the
  * in-memory cache actually changed.
  */
-export function saveTokenCache(serializedCache) {
+export function saveTokenCache(serializedCache, generation) {
   const row = connectionRow();
   if (!row) return false;
-  // GUARDED, because this is the one write that races a disconnect. MSAL calls
-  // it from its cache plugin whenever a token is renewed; if that lands after
-  // clearConnection(), an unconditional UPDATE writes a usable refresh token
-  // back into the row the administrator was just told had been emptied. The
-  // WHERE clause makes a post-disconnect write a no-op instead.
+  // BOUND TO THE GENERATION IT WAS LOADED FROM. A status check alone was not
+  // enough: disconnect → reconnect leaves the row CONNECTED with the same
+  // home_account_id (same mailbox, same oid.tid), so a refresh still in flight
+  // from before the disconnect would overwrite the BRAND NEW grant with the
+  // stale cache it was holding — discarding the connection the administrator
+  // just made. The generation changes on every connect and disconnect, so a
+  // write from a previous generation simply matches no rows.
   const written = run(`UPDATE microsoft_connection SET token_cache=?, updated_at=?
-                        WHERE provider=? AND status<>? AND home_account_id IS NOT NULL`,
-  [encrypt(serializedCache), nowISO(), MICROSOFT_PROVIDER, STATUS.DISCONNECTED]);
+                        WHERE provider=? AND status<>? AND home_account_id IS NOT NULL
+                          AND COALESCE(generation,0)=?`,
+  [encrypt(serializedCache), nowISO(), MICROSOFT_PROVIDER, STATUS.DISCONNECTED, Number(generation)]);
   if (!written?.changes) {
     console.log(JSON.stringify({ level: 'warn', msg: 'microsoft.token_cache.write_ignored',
-      reason: 'connection is disconnected' }));
+      reason: 'connection changed since this token was loaded', generation: Number(generation) }));
     return false;
   }
   return true;
@@ -140,7 +144,7 @@ export function loadTokenCache() {
     throw Object.assign(new Error('The stored Microsoft token cache is not encrypted. Reconnect Microsoft 365.'),
       { code: 'cache-not-encrypted' });
   }
-  return decrypt(row.token_cache);
+  return { blob: decrypt(row.token_cache), generation: Number(row.generation ?? 0) };
 }
 
 /** Mark the connection as needing an interactive sign-in again. */
@@ -199,10 +203,46 @@ export function clearConnection(actorId = null) {
           -- everything that arrived while the mailbox was disconnected.
           SET token_cache=NULL, home_account_id=NULL, status=?, connected_at=NULL,
               last_error=NULL, last_result=NULL,
+              generation=COALESCE(generation,0)+1,
+              sync_lease_owner=NULL, sync_lease_until=NULL,
               updated_by=?, updated_at=?
         WHERE provider=?`,
   [STATUS.DISCONNECTED, actorId, nowISO(), MICROSOFT_PROVIDER]);
   return connectionStatus();
+}
+
+/* ------------------------------- scan lease -------------------------------- */
+
+/** How long a scan may hold the lease before another process may steal it. */
+const LEASE_MS = 30 * 60 * 1000;
+
+/**
+ * Take the scan lease, or report who holds it.
+ *
+ * The `running` flag in mailbox-sync.js is a module variable, so it only ever
+ * serialised scans WITHIN one process. On-prem the 08:00 timer runs
+ * m365-sync.mjs as a separate process from the web API, so a manual "Scan inbox
+ * now" and the scheduled run could overlap with neither aware of the other. The
+ * conditional UPDATE below is the arbitration point both processes share.
+ *
+ * The lease expires so a crashed scan cannot wedge the timer permanently.
+ */
+export function acquireSyncLease(owner) {
+  const now = new Date();
+  const until = new Date(now.getTime() + LEASE_MS).toISOString();
+  const written = run(`UPDATE microsoft_connection
+                          SET sync_lease_owner=?, sync_lease_until=?, updated_at=?
+                        WHERE provider=?
+                          AND (sync_lease_until IS NULL OR sync_lease_until < ?)`,
+  [owner, until, now.toISOString(), MICROSOFT_PROVIDER, now.toISOString()]);
+  if (written?.changes) return { acquired: true, until };
+  const row = connectionRow();
+  return { acquired: false, heldBy: row?.sync_lease_owner ?? null, until: row?.sync_lease_until ?? null };
+}
+
+export function releaseSyncLease(owner) {
+  run(`UPDATE microsoft_connection SET sync_lease_owner=NULL, sync_lease_until=NULL, updated_at=?
+        WHERE provider=? AND sync_lease_owner=?`, [nowISO(), MICROSOFT_PROVIDER, owner]);
 }
 
 /* --------------------------- the ingestion ledger -------------------------- */
