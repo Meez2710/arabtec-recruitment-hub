@@ -21,6 +21,7 @@ import {
 import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
+import { importInboxFile, inboxDirectory, isInboxFile } from '../lib/cv-import.js';
 import { interpretSearch } from '../lib/ai/recruiter-ai.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -460,7 +461,7 @@ router.post('/parse-cv-async', requirePermission('candidate.add'), multipart, (r
     }
   }
 
-  const jobId = createJob();
+  const jobId = createJob(req.user.id);
   res.status(202).json({ jobId });
 
   // NOT AWAITED. The response above has already gone out — this is the exact
@@ -517,7 +518,7 @@ router.post('/parse-cv-async', requirePermission('candidate.add'), multipart, (r
 });
 
 router.get('/parse-cv-async/:jobId', requirePermission('candidate.add'), (req, res) => {
-  const job = getJob(req.params.jobId);
+  const job = getJob(req.params.jobId, req.user.id);
   if (!job) return res.status(404).json({ error: 'Job not found or expired.' });
   res.json(job);
 });
@@ -676,7 +677,7 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
 
 /* ---------------- SCAN INBOX (folder-drop CV import) ---------------- */
 router.post('/inbox-scan', requirePermission('candidate.add'), async (req, res) => {
-  const inboxDir = process.env.CV_INBOX || path.resolve(process.cwd(), '../../cv_inbox');
+  const inboxDir = inboxDirectory();
   if (!fs.existsSync(inboxDir)) {
     // Render's free tier has no persistent disk — CV_INBOX has nowhere durable
     // to point to, so this is an environment limitation, not a broken feature.
@@ -691,96 +692,54 @@ router.post('/inbox-scan', requirePermission('candidate.add'), async (req, res) 
   const skipped = [];
   const errors = [];
 
-  const files = fs.readdirSync(inboxDir).filter(f => {
-    const ext = path.extname(f).toLowerCase();
-    return ['.pdf', '.docx', '.doc'].includes(ext);
-  });
+  const files = fs.readdirSync(inboxDir).filter(isInboxFile);
 
   for (const file of files) {
     const filePath = path.join(inboxDir, file);
     try {
-      const parsed = await getParser().parseLegacy(filePath);
-      if (parsed.extraction_status === 'failed') {
-        skipped.push({ file, reason: 'Could not extract text' });
+      const result = await importInboxFile(filePath, {
+        user: req.user,
+        // Keep optional application creation in the same transaction as the
+        // candidate, document and durable bytes. A failed link is retryable.
+        onCreated(created) {
+          let linkedApp = null;
+          if (requestId && req.user.permissions.includes('candidate.link')) {
+            const request = Requests.byId(requestId);
+            if (request && !['closed', 'cancelled', 'rejected', 'filled'].includes(request.status)) {
+              if (!Applications.existing(created.id, requestId)) {
+                linkedApp = Applications.create({
+                  applicationNo: Applications.nextNo(),
+                  candidateId: created.id,
+                  requestId,
+                  positionApplied: request.title,
+                  status: 'sourced',
+                  recruiterId: req.user.id,
+                  source: 'folder_drop',
+                  createdBy: req.user.id,
+                });
+                StageHistory.add(linkedApp.id, null, 'sourced', req.user);
+              }
+            }
+          }
+          writeAudit(req, {
+            action: 'candidate.created', entityType: 'candidate', entityId: created.id,
+            newValue: { candidateNo: created.candidate_no, fullName: created.full_name, source: 'folder_drop' },
+          });
+          return linkedApp;
+        },
+      });
+      if (result.skipped) {
+        skipped.push({ file, reason: result.reason });
         continue;
       }
-
-      // Check for duplicates by email
-      if (parsed.email) {
-        const dups = Candidates.findDuplicates({ email: parsed.email });
-        if (dups.length) {
-          skipped.push({ file, reason: `Duplicate email: ${parsed.email} (existing: ${dups[0].candidate_no})` });
-          continue;
-        }
-      }
-
-      const candidateNo = Candidates.nextNo();
-      const created = Candidates.create({
-        candidateNo,
-        fullName: parsed.full_name,
-        email: parsed.email,
-        phone: parsed.phone,
-        yearsExperience: parsed.years_experience,
-        source: 'folder_drop',
-        ownerRecruiterId: req.user.id,
-        createdBy: req.user.id,
-        resumeName: file,
-        resumePath: filePath,
-      });
-
-      CandidateDocuments.add({
-        candidateId: created.id,
-        docType: 'cv',
-        fileName: file,
-        fileHash: null,
-        uploadedBy: req.user.id,
-      });
-
-      CandidateActivity.add({
-        candidateId: created.id,
-        actorId: req.user.id,
-        actorName: req.user.fullName,
-        type: 'candidate_created',
-        note: `${candidateNo} (folder_drop: ${file})`,
-      });
-
-      writeAudit(req, {
-        action: 'candidate.created',
-        entityType: 'candidate',
-        entityId: created.id,
-        newValue: { candidateNo, fullName: created.full_name, source: 'folder_drop' },
-      });
-
-      // Auto-link to request if provided
-      let linkedApp = null;
-      if (requestId && req.user.permissions.includes('candidate.link')) {
-        const request = Requests.byId(requestId);
-        if (request && !['closed', 'cancelled', 'rejected', 'filled'].includes(request.status)) {
-          const existing = Applications.existing(created.id, requestId);
-          if (!existing) {
-            const appNo = Applications.nextNo();
-            const app = Applications.create({
-              applicationNo: appNo,
-              candidateId: created.id,
-              requestId,
-              positionApplied: request.title,
-              status: 'sourced',
-              recruiterId: req.user.id,
-              source: 'folder_drop',
-              createdBy: req.user.id,
-            });
-            StageHistory.add(app.id, null, 'sourced', req.user);
-            linkedApp = app;
-          }
-        }
-      }
+      const { created, extra: linkedApp } = result;
 
       imported.push({
         file,
         candidateNo: created.candidate_no,
         fullName: created.full_name,
-        email: parsed.email,
-        phone: parsed.phone,
+        email: created.email,
+        phone: created.phone,
         applicationNo: linkedApp?.application_no || null,
       });
     } catch (e) {

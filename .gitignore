@@ -42,6 +42,9 @@ deploy/docling-sidecar/__pycache__/
 
 .worktrees/
 
+# Written after a successful on-prem build; not source or operator edits.
+/DEPLOYED_SHA
+
 # Confidential user-credential handover artefacts. Generated on the server into
 # /var/lib/arabtec-ats/handover/ — these patterns are a backstop in case a copy
 # ever lands inside the repo. NEVER commit plaintext credentials or the private

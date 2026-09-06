@@ -65,20 +65,10 @@ const waitHealthy = async (port, pid, timeoutMs = 60000) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      // /api/health is LIVENESS — it answers as soon as the port is open. The
-      // app then holds a separate readiness gate that 503s every /api call
-      // until schema and seed finish (server.js:148-153). Waiting on liveness
-      // alone produced 503s on the first real request, so wait for READINESS:
-      // any non-503 answer from a real API route means the gate has opened.
-      const live = await fetch(`http://127.0.0.1:${port}/api/health`);
-      if (live.ok) {
-        const gated = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: 'readiness@probe.invalid', password: 'x' }),
-        });
-        if (gated.status !== 503) return true;
-      }
+      // Use the explicit readiness probe. Repeated login probes can hit the
+      // auth rate limiter and mistake a 429 for completed initialization.
+      const ready = await fetch(`http://127.0.0.1:${port}/api/health/ready`);
+      if (ready.ok && (await ready.json()).ready === true) return true;
     } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -131,7 +121,10 @@ export async function startCluster(opts = {}) {
   for (const t of all(
     "SELECT tablename FROM pg_tables WHERE schemaname='public'",
   )) exec(`DROP TABLE IF EXISTS "${t.tablename}" CASCADE`);
-  await import('../prisma/seed.js');
+  // Importing seed.js only creates the schema; its CLI auto-run is guarded.
+  // Complete fixture seeding explicitly before starting concurrent children.
+  const { seed } = await import('../prisma/seed.js');
+  await seed({ demo: true });
 
   const children = [];
   for (let i = 0; i < count; i += 1) {

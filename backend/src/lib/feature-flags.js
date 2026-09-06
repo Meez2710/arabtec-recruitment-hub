@@ -45,9 +45,8 @@ export const DEFAULT_FEATURE_FLAGS = [
 // Idempotent: seed flags that don't exist yet.
 export function ensureFeatureFlags() {
   for (const [key, value] of DEFAULT_FEATURE_FLAGS) {
-    const existing = get('SELECT id FROM system_setting WHERE key = ?', [key]);
-    if (!existing) {
-      run('INSERT INTO system_setting (key, value) VALUES (?, ?)', [key, value]);
-    }
+    // Multiple processes can initialize together. Let the unique key arbitrate
+    // the insert atomically while preserving any administrator's existing value.
+    run('INSERT INTO system_setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', [key, value]);
   }
 }

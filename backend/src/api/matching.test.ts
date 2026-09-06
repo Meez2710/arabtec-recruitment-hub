@@ -22,7 +22,7 @@ import type {
 
 const SECRET = 'test-secret';
 const PERMS = [
-  'candidate.create', 'candidate.view_all', 'candidate.link',
+  'candidate.add', 'candidate.view', 'candidate.link',
   'requisition.create', 'requisition.submit', 'requisition.assign_recruiter',
   'matching.view', 'matching.request', 'matching.resolve',
 ];

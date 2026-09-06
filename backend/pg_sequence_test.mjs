@@ -22,6 +22,14 @@ try {
   const { get, all, exec } = db;
   const { nextSequence } = await import('./src/lib/models.js');
   const { tx } = await import('./src/lib/db.js');
+  const { ensureFeatureFlags, DEFAULT_FEATURE_FLAGS, setFlag, isEnabled } = await import('./src/lib/feature-flags.js');
+
+  c('concurrent startup creates every feature flag exactly once',
+    DEFAULT_FEATURE_FLAGS.every(([key]) => get('SELECT COUNT(*) c FROM system_setting WHERE key=?', [key]).c === 1));
+  setFlag('ai_scoring', true);
+  ensureFeatureFlags();
+  c('reinitialization preserves administrator flag values', isEnabled('ai_scoring'));
+  setFlag('ai_scoring', false);
 
   /* ------------------------- helper semantics --------------------------- */
   console.log('\n— nextSequence() semantics —');

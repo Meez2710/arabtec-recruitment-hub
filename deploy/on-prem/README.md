@@ -108,10 +108,16 @@ deleting Render.
 ## Redeploying later
 
 ```bash
-ssh ats@10.20.0.9 'cd ~/arabtec-deploy && bash 04-app.sh && bash 06-verify.sh && sudo systemctl restart arabtec-ats'
+ssh ats@10.20.0.9 'cd ~/arabtec-deploy && bash 04-app.sh && sudo systemctl restart arabtec-ats && bash 06-verify.sh'
 ```
 
 Pin an older build after a bad release: `ATS_REF=<sha> bash 04-app.sh`.
+Use the scripts from the release being deployed, not an outdated copy in
+`~/arabtec-deploy`. Wait for `/api/health/ready` to return 200 after restart;
+then run `06-verify.sh`. A 200 from `/api/health` alone only proves liveness.
+For a code rollback, rebuild the previous SHA, restart, and verify again.
+Do not reset the database, reseed users, or restore old candidate data as part
+of a routine code rollback. Verify a current backup separately before updating.
 
 ## Not in this package
 

@@ -9,9 +9,9 @@ const TOKEN_KEY = 'arabtec_token';
 const api = {
   token: localStorage.getItem(TOKEN_KEY) || null,
   setToken(t) { this.token = t; t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); },
-  async call(path, { method = 'GET', body } = {}) {
+  async call(path, { method = 'GET', body, signal } = {}) {
     const res = await fetch('/api' + path, {
-      method,
+      method, signal,
       headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -702,83 +702,26 @@ function navCount(key, counts) {
      scopes a conversation to a hiring request, so the dock asks which request
      when the page you are on is not already one.
 
-   ANYHELP — the assistant, wired to the product's existing Anthropic-backed
-     endpoints. A full audit of every branch in this repository (see the report
-     accompanying this change) found exactly two AI HTTP surfaces on main:
-
-        GET  /api/candidates/smart-search?q=…          → plain-English talent search
-        POST /api/requests/:id/suggest-candidates      → AI shortlist for a request
-
-     There is NO conversational endpoint, on main or on any feature branch, so
-     the dock does not pretend there is one: free text is routed to whichever of
-     the two real capabilities fits, and everything shown comes back from the
-     server. When neither fits, the dock says so in a clearly-labelled UI notice
-     rather than generating an answer.
-
-     Both endpoints run under the caller's own token and re-use the same scoping
-     and salary rules as every other listing, so the assistant cannot surface a
-     record the user could not already open. The dock renders results as text
-     nodes (never HTML), and it holds no write capability at all — which is why
-     there is no "confirm this action" step to fake.
-
-   TO CONNECT A REAL CONVERSATIONAL BACKEND: implement `anyhelpAsk` below against
-   the new endpoint and return the same shape. Nothing else in this component
-   needs to change; the status vocabulary already covers proposed/confirming/
-   executing/done/failed for a backend that can act.
+   ANYHELP — bounded conversation at POST /api/ai/chat. The server resolves the
+     authenticated user's permissions and exposes read-only record tools.
+     Messages and source labels render as text; conversation is held only in
+     this component and resets on user change. Stop/unmount cancels the request.
    ========================================================================= */
 const ANYHELP_TEAM_NOTE = 'Team chat is the hiring-request conversation. It is stored on the request, so what is said here stays on the record.';
-const ANYHELP_AI_NOTE = 'anyhelp reads. It searches the talent pool in plain English and ranks candidates against a request. It cannot change records, stages, salary or approvals.';
+const ANYHELP_AI_NOTE = 'Ask in English or Arabic about records you can access, or draft a message. anyhelp cannot change records, send messages, or approve actions.';
 
 function anyhelpTime(iso) {
   const d = iso ? new Date(iso) : new Date();
   return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-/* The assistant's single transport. Returns
-     { role, text, items? }            → an answer the server produced, or
-     throws                            → the server's own refusal / failure.
-   Every branch here calls a real endpoint. Nothing is generated locally except
-   the two explicitly-labelled "not available" notices. */
-async function anyhelpAsk(text, { user, requestId }) {
-  const wantsShortlist = /shortlist|suggest|rank|who (should|could) (i|we)|best candidates?/i.test(text);
-
-  if (wantsShortlist && requestId) {
-    if (!can(user, 'candidate.view')) {
-      return { role: 'Not available', kind: 'system', text: 'Your role cannot view candidates, so a shortlist is not something anyhelp can show you.' };
-    }
-    const r = await api.post(`/requests/${requestId}/suggest-candidates`, { limit: 5 });
-    const items = (r.suggestions || []).map((s) => ({
-      title: s.fullName,
-      sub: [s.score != null ? `Score ${s.score}` : null, s.currentPosition, s.currentCompany, s.reason]
-        .filter(Boolean).join(' · '),
-    }));
-    return {
-      role: 'AI shortlist', kind: 'ai', items,
-      text: items.length
-        ? `${items.length} candidate${items.length === 1 ? '' : 's'} from your talent pool, ranked against this request`
-          + (r.poolCapped ? ', drawn from a capped pool rather than the whole database' : '')
-          + '. Nothing is linked until you link it on the request itself.'
-        : 'The shortlist ran against your talent pool and matched nobody for this request. An empty answer is a real answer.',
-    };
-  }
-
-  if (!can(user, 'candidate.view')) {
-    return { role: 'Not available', kind: 'system', text: 'Your role cannot search the talent pool, and there is no other assistant capability connected yet.' };
-  }
-  const r = await api.get('/candidates/smart-search?q=' + encodeURIComponent(text) + '&pageSize=5');
-  const items = (r.candidates || []).map((c) => ({
-    title: c.fullName,
-    sub: [c.currentPosition, c.currentCompany, c.location,
-      c.yearsExperience != null ? `${c.yearsExperience}y` : null].filter(Boolean).join(' · ') || '—',
-  }));
-  const total = r.pagination ? r.pagination.total : items.length;
-  return {
-    role: 'Talent pool search', kind: 'ai', items,
-    text: (r.interpretation ? `Read as: ${r.interpretation}. ` : '')
-      + (items.length
-        ? `${total} match${total === 1 ? '' : 'es'} in the talent pool${total > items.length ? `, showing the first ${items.length}` : ''}.`
-        : 'Nobody in the talent pool matches that.'),
-  };
+/* The assistant's single transport returns server text and retrieved sources. */
+async function anyhelpAsk(text, { requestId, history, signal }) {
+  const answer = await api.call('/ai/chat', {
+    method: 'POST', signal,
+    body: { message: text, history, contextRequestId: requestId || null },
+  });
+  return { role: 'Assistant', kind: 'ai', text: answer.text, sources: answer.sources || [] };
 }
 
 /* The backend's own words beat a generic sentence: a 503 "AI is not configured"
@@ -799,6 +742,15 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
 
   const [thread, setThread] = useState({ state: 'idle', posts: [], error: '' });
   const [aiLog, setAiLog] = useState([]);
+  const aiController = useRef(null);
+  const aiEpoch = useRef(0);
+  useEffect(() => {
+    aiEpoch.current++;
+    aiController.current?.abort();
+    aiController.current = null;
+    setAiLog([]); setDraft(''); setStatus('idle');
+    return () => { aiEpoch.current++; aiController.current?.abort(); };
+  }, [user.id]);
   // Team chat is per hiring request. When the page is not a request, the user
   // picks one from the requests they can already see — no new visibility.
   const [pickable, setPickable] = useState(null);
@@ -862,17 +814,42 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
   }
 
   async function sendAnyhelp(text) {
-    setAiLog((l) => [...l, { who: user.fullName, role: 'You', time: anyhelpTime(), text, kind: 'mine' }]);
+    if (aiController.current) return;
+    const controller = new AbortController();
+    aiController.current = controller;
+    const epoch = aiEpoch.current;
+    let budget = 6000;
+    const history = [];
+    for (const entry of aiLog.filter(m => m.kind === 'mine' || m.kind === 'ai').slice(-8).reverse()) {
+      const content = entry.text.slice(0, 2000);
+      if (content.length > budget) break;
+      history.unshift({ role: entry.kind === 'mine' ? 'user' : 'assistant', content });
+      budget -= content.length;
+    }
+    setAiLog((l) => [...l.slice(-39), { who: user.fullName, role: 'You', time: anyhelpTime(), text, kind: 'mine' }]);
     setDraft('');
     setStatus('thinking');
     try {
-      const answer = await anyhelpAsk(text, { user, requestId: contextRequestId });
-      setAiLog((l) => [...l, { who: 'anyhelp', time: anyhelpTime(), ...answer }]);
+      const answer = await anyhelpAsk(text, { requestId: contextRequestId, history, signal: controller.signal });
+      if (epoch !== aiEpoch.current || controller.signal.aborted) return;
+      setAiLog((l) => [...l.slice(-39), { who: 'anyhelp', time: anyhelpTime(), ...answer }]);
       setStatus('idle');
     } catch (e) {
+      if (epoch !== aiEpoch.current || controller.signal.aborted) return;
       setAiLog((l) => [...l, { who: 'anyhelp', role: 'Failed', kind: 'failed', time: anyhelpTime(), text: serverReason(e) }]);
+      setDraft(text);
       setStatus('failed');
+    } finally {
+      if (aiController.current === controller) aiController.current = null;
     }
+  }
+
+  function stopAnyhelp(clear = false) {
+    aiEpoch.current++;
+    aiController.current?.abort();
+    aiController.current = null;
+    setStatus('idle');
+    if (clear) { setAiLog([]); setDraft(''); }
   }
 
   function submit(e) {
@@ -920,6 +897,10 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
           </div>
 
           <div className="anyhelp-notice">{tab === 'team' ? ANYHELP_TEAM_NOTE : ANYHELP_AI_NOTE}</div>
+          {tab === 'anyhelp' && <div className="btn-row" style={{ padding: '8px 14px' }}>
+            <button type="button" className="btn btn-sm" disabled={!aiLog.length} onClick={() => stopAnyhelp(true)}>New conversation</button>
+            {status === 'thinking' && <button type="button" className="btn btn-sm" onClick={() => stopAnyhelp()}>Stop</button>}
+          </div>}
 
           <div className="anyhelp-thread" ref={threadRef}>
             {tab === 'team' ? (
@@ -957,13 +938,16 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
             ) : (
               aiLog.length === 0
                 ? <div className="anyhelp-empty">
-                  Ask in plain English — “quantity surveyors in Cairo with 8+ years”.
-                  {contextRequestId ? ' With a hiring request open you can also ask for a shortlist.' : ''}
+                  Ask in English or Arabic — search candidates, summarize a hiring request, or draft a message.
+                  {contextRequestId ? ' The current hiring request provides context.' : ''}
                 </div>
                 : aiLog.map((m, i) => (
                   <article key={i} className={'anyhelp-msg ' + (m.kind === 'mine' ? 'mine' : m.kind === 'ai' ? 'ai' : m.kind)}>
                     <div className="anyhelp-who"><b>{m.who}</b><span>{m.role} · {m.time}</span></div>
                     <p>{m.text}</p>
+                    {m.sources && m.sources.length > 0 && <ul className="anyhelp-results">
+                      {m.sources.map((s) => <li key={s.type + ':' + s.id}><small>{s.label} [{s.type}:{s.id}]</small></li>)}
+                    </ul>}
                     {m.items && m.items.length > 0 && (
                       <>
                         <ul className="anyhelp-results">
@@ -975,7 +959,7 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
                   </article>
                 ))
             )}
-            {status === 'thinking' && <div className="anyhelp-status" aria-live="polite">anyhelp is reading your talent pool…</div>}
+            {status === 'thinking' && <div className="anyhelp-status" aria-live="polite">anyhelp is preparing your answer…</div>}
             {status === 'sending' && <div className="anyhelp-status" aria-live="polite">Sending…</div>}
             {tab === 'team' && status === 'failed' && thread.error && (
               <div className="anyhelp-status failed" aria-live="assertive">Not sent — {thread.error}</div>
@@ -985,6 +969,7 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
           <form className="anyhelp-composer" onSubmit={submit}>
             <label className="sr-only" htmlFor="anyhelp-input">Message anyhelp</label>
             <textarea id="anyhelp-input" rows="2" value={draft} onChange={(e) => setDraft(e.target.value)}
+              maxLength={tab === 'anyhelp' ? 4000 : undefined}
               disabled={busy || (tab === 'team' && !requestId)}
               placeholder={tab === 'team'
                 ? (requestId ? 'Message the team on this request…' : 'Pick a hiring request first…')

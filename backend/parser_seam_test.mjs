@@ -55,7 +55,9 @@ await test('the live route resolves every parse through getParser()', () => {
   const src = fs.readFileSync(ROUTE, 'utf8');
   assert.match(src, /import \{ getParser \} from '\.\.\/lib\/parsing\/registry\.js'/);
   // Every call site goes through the seam; none call an implementation.
-  const viaSeam = (src.match(/getParser\(\)\.(parseLegacy|parseEntities)\(/g) || []).length;
+  // Inbox parsing is now shared by the route and automatic watcher.
+  const importer = fs.readFileSync(path.join(__dirname, 'src/lib/cv-import.js'), 'utf8');
+  const viaSeam = ((src + importer).match(/getParser\(\)\.(parseLegacy|parseEntities)\(/g) || []).length;
   assert.ok(viaSeam >= 3, `expected >=3 seam call sites, found ${viaSeam}`);
   assert.equal(/await parseCV\(/.test(src), false, 'a direct parseCV() call remains');
   assert.equal(/await parseEntitiesFromFile\(/.test(src), false,

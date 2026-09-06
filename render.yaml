@@ -22,7 +22,7 @@ services:
     # and the document pipeline has to be compiled before the server starts.
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
-    healthCheckPath: /api/health
+    healthCheckPath: /api/health/ready
     autoDeploy: true
     envVars:
       # NODE_OPTIONS=--experimental-sqlite removed: production uses PostgreSQL, so the
@@ -99,7 +99,7 @@ services:
     # and the document pipeline has to be compiled before the server starts.
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
-    healthCheckPath: /api/health
+    healthCheckPath: /api/health/ready
     autoDeploy: true
     envVars:
       # NODE_OPTIONS=--experimental-sqlite removed: production uses PostgreSQL, so the

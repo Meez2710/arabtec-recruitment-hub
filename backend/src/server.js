@@ -18,6 +18,7 @@ import { get as dbGet } from './lib/db.js';
 import { initObservability, requestLogger, captureError } from './lib/observability.js';
 import { securityHeaders, securityConfigSummary } from './lib/security-headers.js';
 import { validateConfigOrThrow } from './lib/config.js';
+import { requireAuth, requirePermission } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import roleRoutes from './routes/roles.js';
@@ -34,6 +35,7 @@ import assessmentRoutes from './routes/assessments.js';
 import threadRoutes from './routes/thread.js';
 import adminUiRoutes from './routes/admin-ui.js';
 import notificationRoutes from './routes/notifications.js';
+import aiRoutes, { aiJson, aiJsonError } from './routes/ai.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +87,7 @@ app.use(cors({
   },
   credentials: true,
 }));
+app.use('/api/ai', aiJson, aiJsonError);
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
@@ -100,7 +103,7 @@ const GLOBAL_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000); 
 const apiHits = new Map();
 setInterval(() => apiHits.clear(), GLOBAL_WINDOW_MS).unref?.(); // periodic reset; don't hold the event loop
 app.use('/api', (req, res, next) => {
-  if (req.path === '/health' || req.path === '/health/db') return next();
+  if (req.path === '/health' || req.path === '/health/db' || req.path === '/health/ready') return next();
   if (process.env.NODE_ENV === 'test' || process.env.RATE_LIMIT_DISABLED === 'true') return next();
   const key = req.ip;
   const rec = apiHits.get(key) || { count: 0, ts: Date.now() };
@@ -137,25 +140,14 @@ app.get('/api/health', (req, res) => {
   try { dbGet('SELECT 1 AS ok'); db = 'up'; } catch { db = 'starting'; }
   res.json({ ok: true, service: 'arabtec-recruitment-hub', db });
 });
-app.get('/api/health/watcher', (req, res) => {
-  res.json(getWatcherStatus());
-});
-
-// Read-only: what composeAI() actually wired from this process's environment.
-// No other endpoint answers "is Claude really configured, or did the build
-// silently fall back to something else" — this exists to make that visible
-// from outside the process rather than guessed at from response timing.
-app.get('/api/health/parsing', async (req, res) => {
-  try {
-    res.json(await pipelineDescription());
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+app.get('/api/health/ready', (req, res) => {
+  if (!APP_READY) res.setHeader('Retry-After', '5');
+  res.status(APP_READY ? 200 : 503).json({ ok: APP_READY, ready: APP_READY });
 });
 
 app.get('/api/health/db', (req, res) => {
   try { dbGet('SELECT 1 AS ok'); res.json({ ok: true, db: 'up' }); }
-  catch (e) { res.status(503).json({ ok: false, db: 'down', error: String(e && e.message || e).slice(0, 300) }); }
+  catch { res.status(503).json({ ok: false, db: 'down', error: 'Database unavailable.' }); }
 });
 
 // Readiness gate: until schema+seed finish, API calls return 503 (with Retry-After)
@@ -164,6 +156,20 @@ app.use('/api', (req, res, next) => {
   if (APP_READY) return next();
   res.setHeader('Retry-After', '5');
   return res.status(503).json({ error: 'Service starting, please retry in a moment.' });
+});
+
+// Operational details are visible only to authenticated system administrators,
+// after initialization succeeds. Public health probes never expose diagnostics.
+app.get('/api/health/watcher', requireAuth, requirePermission('system.manage'), (req, res) => {
+  res.json(getWatcherStatus());
+});
+app.get('/api/health/parsing', requireAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    res.json(await pipelineDescription());
+  } catch (e) {
+    console.error('Parsing diagnostics failed:', e.message);
+    res.status(500).json({ error: 'Parsing diagnostics unavailable.' });
+  }
 });
 
 // API routes
@@ -183,6 +189,7 @@ app.use('/api/assessments', assessmentRoutes);
 app.use('/api/thread', threadRoutes);
 app.use('/api/admin-ui', adminUiRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Serve the frontend (single-page app) from ../../frontend/public.
 // Cache policy: the HTML shell must ALWAYS revalidate so a version bump on
@@ -193,9 +200,15 @@ const frontendDir = path.resolve(__dirname, '../../frontend/public');
 // Only the SPA shell is a servable HTML document. Any other *.html in the static
 // dir (design mockups, editor/preview pages) is not part of the app and must not
 // be reachable by direct URL — some have carried hard-coded demo credentials.
-app.get(/\.html$/i, (req, res, next) => {
-  if (req.path === '/' || req.path === '/index.html') return next();
-  res.status(404).end();
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  let decoded;
+  try { decoded = decodeURIComponent(req.path); }
+  catch { return res.status(400).end(); }
+  if (decoded.includes('\0') || decoded.includes('\\')) return res.status(400).end();
+  const canonical = path.posix.normalize(decoded);
+  if (/\.html(?:\/|$)/i.test(canonical) && canonical !== '/index.html') return res.status(404).end();
+  next();
 });
 app.use(express.static(frontendDir, {
   etag: true,
@@ -235,7 +248,8 @@ async function bootSeedIfEmpty() {
       console.log('  ✓ Initial data seeded.');
     }
   } catch (e) {
-    console.error('  ! Boot-seed check failed (continuing):', e.message);
+    console.error('  ! Boot-seed check failed:', e.message);
+    throw e;
   }
 }
 
@@ -268,8 +282,9 @@ app.listen(PORT, () => {
       }
     } catch (e) {
       console.error('  ! Initialisation failed:', e.message);
-      // Open the gate anyway so the operator can see real errors rather than 503s.
-      APP_READY = true;
+      // Fail closed: liveness remains available, but readiness and API traffic
+      // stay unavailable until a successful initialization on restart.
+      APP_READY = false;
     }
   })();
 });
