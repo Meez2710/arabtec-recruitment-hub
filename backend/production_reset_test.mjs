@@ -187,19 +187,69 @@ const roRun = node(['prisma/reset-transactional-data.mjs'],
   { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET', CV_INBOX: ROI });
 c('a read-only CV_INBOX with files refuses BEFORE the wipe', roRun.status !== 0, `status=${roRun.status}`);
 c('the refusal names the inbox as the reason',
-  /CV_INBOX holds files but cannot be written/.test(`${roRun.stdout}${roRun.stderr}`));
+  /could not be drained|cannot move/.test(`${roRun.stdout}${roRun.stderr}`));
 c('nothing was deleted by the refused run',
   JSON.stringify(snapshot(PIPELINE)) === JSON.stringify(beforeRO));
 
-// ...and an explicit writable archive target unblocks it.
+// An archive path CANNOT rescue a read-only source: removing the original needs
+// write access on the inbox itself. The earlier revision claimed otherwise and
+// its test only passed because the probe checked the destination alone.
 const ALT = `/tmp/arabtec_reset_alt_${process.pid}`;
 fs.rmSync(ALT, { recursive: true, force: true });
 const altRun = node(['prisma/reset-transactional-data.mjs'],
   { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET', CV_INBOX: ROI, ARABTEC_RESET_INBOX_ARCHIVE: ALT });
-c('ARABTEC_RESET_INBOX_ARCHIVE unblocks a read-only inbox', altRun.status === 0, `status=${altRun.status}`);
+c('an archive path does NOT pretend to fix a read-only inbox', altRun.status !== 0, `status=${altRun.status}`);
+// The informed override is the only way through, and it is explicit.
+const ackRun = node(['prisma/reset-transactional-data.mjs'],
+  { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET', CV_INBOX: ROI, ARABTEC_RESET_INBOX_ACKNOWLEDGED: 'true' });
+c('an explicit acknowledgement is the only way past a read-only inbox',
+  ackRun.status === 0, `status=${ackRun.status}`);
 fs.chmodSync(ROI, 0o755);
 fs.rmSync(ROI, { recursive: true, force: true });
 fs.rmSync(ALT, { recursive: true, force: true });
+
+console.log('\n— fourth review regressions —');
+
+// The preflight used to test only the DESTINATION. rename() also has to unlink
+// the SOURCE, which a read-only share forbids — and that failure landed after
+// the wipe. Draining now happens first, so a refusal changes nothing.
+const RO2 = `/tmp/arabtec_reset_ro2_${process.pid}`;
+fs.rmSync(RO2, { recursive: true, force: true });
+fs.mkdirSync(RO2, { recursive: true });
+fs.writeFileSync(`${RO2}/stuck.pdf`, '%PDF-1.4 stuck');
+fs.chmodSync(RO2, 0o555);
+const beforeRO2 = snapshot(PIPELINE);
+const roRun2 = node(['prisma/reset-transactional-data.mjs'],
+  { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET', CV_INBOX: RO2 });
+c('a read-only inbox refuses before anything is deleted', roRun2.status !== 0, `status=${roRun2.status}`);
+c('the refusal explains the inbox could not be drained',
+  /could not be drained|cannot move/.test(`${roRun2.stdout}${roRun2.stderr}`));
+c('the pipeline is untouched after that refusal',
+  JSON.stringify(snapshot(PIPELINE)) === JSON.stringify(beforeRO2));
+fs.chmodSync(RO2, 0o755);
+fs.rmSync(RO2, { recursive: true, force: true });
+
+// A CV uploaded but never attached to a row (parse abstained, request rejected)
+// is invisible to the row-based purge and survived go-live.
+(() => {
+  const db2 = open();
+  db2.prepare("INSERT INTO file_blob (stored_name,original_name,mime,size,data) VALUES ('orphan-1.pdf','Someones CV.pdf','application/pdf',3,X'010203')").run();
+  db2.prepare("INSERT INTO file_blob (stored_name,original_name,mime,size,data) VALUES ('brand2.png','logo.png','image/png',3,X'010203')").run();
+  db2.close();
+})();
+const orphanRun = node(['prisma/reset-transactional-data.mjs'], { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET' });
+c('an orphaned CV blob is purged', (() => {
+  const db2 = open();
+  const n = db2.prepare("SELECT COUNT(*) c FROM file_blob WHERE stored_name='orphan-1.pdf'").get().c;
+  db2.close();
+  return orphanRun.status === 0 && n === 0;
+})(), `status=${orphanRun.status}`);
+c('a non-CV company asset is NOT purged as an orphan', (() => {
+  const db2 = open();
+  const n = db2.prepare("SELECT COUNT(*) c FROM file_blob WHERE stored_name='brand2.png'").get().c;
+  db2.close();
+  return n === 1;
+})());
 
 console.log('\n— running it twice is safe —');
 const again = node(['prisma/reset-transactional-data.mjs'], { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET' });

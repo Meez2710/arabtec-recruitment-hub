@@ -153,13 +153,27 @@ requests that are not the client's. `backend/prisma/reset-transactional-data.mjs
 removes exactly those and leaves the company alone — users, the 41 managers, the
 org data, branding, settings and the audit log all stay:
 
+**Stop the writers first.** The reset's transaction isolates only its own
+connection. The ATS service and the scan timers are separate processes, and a
+CV parse or a recruiter action committing mid-reset leaves the "pristine"
+pipeline non-empty — the reset detects that and fails, but only after the fact.
+
 ```bash
-# see what would go, change nothing:
+# 1. quiesce every writer
+sudo systemctl stop arabtec-cv-scan.timer arabtec-m365-sync.timer
+sudo systemctl stop arabtec-ats
+
+# 2. see what would go, change nothing:
 sudo bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh \
   prisma/reset-transactional-data.mjs --dry-run
-# then, to actually clear it:
+
+# 3. then actually clear it:
 sudo ARABTEC_RESET_CONFIRM=RESET bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh \
   prisma/reset-transactional-data.mjs
+
+# 4. bring everything back
+sudo systemctl start arabtec-ats
+sudo systemctl start arabtec-cv-scan.timer arabtec-m365-sync.timer
 ```
 
 The reset also **archives whatever is still sitting in `CV_INBOX`** into a
