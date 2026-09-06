@@ -22,12 +22,56 @@ import { ensureSchema } from '../src/lib/schema.js';
 import { get, run, all } from '../src/lib/db.js';
 
 dotenv.config();
+
+/* --------------------------- FAIL CLOSED, FIRST ---------------------------
+ * This script deletes every candidate, application, interview, offer and
+ * recruitment request in the database it is pointed at. Until now it did that
+ * with no confirmation of any kind: `node prisma/migrate-arabtec-data.mjs`
+ * against a production DATABASE_URL destroyed the live pipeline, silently and
+ * immediately. A destructive tool that fails OPEN is the wrong default.
+ *
+ * ARABTEC_MANAGER_PASSWORD is what makes it deliberate, and it does double
+ * duty: it is also the initial password for the 41 real manager accounts this
+ * migration creates. That used to fall back to a hard-coded 'Arabtec@2026',
+ * which meant a run with the variable unset both wiped the database AND stood
+ * up 41 accounts on a password published in the repository. Requiring it
+ * closes both holes with one check.
+ *
+ * The check runs BEFORE ensureSchema() and before any DELETE, so a refusal
+ * leaves the database exactly as it was.
+ * ------------------------------------------------------------------------ */
+const MANAGER_PW = (process.env.ARABTEC_MANAGER_PASSWORD || '').trim();
+if (!MANAGER_PW) {
+  console.error([
+    '',
+    'REFUSING TO RUN — ARABTEC_MANAGER_PASSWORD is not set.',
+    '',
+    'This migration WIPES all candidates, applications, interviews, offers and',
+    'recruitment requests, then loads the real Arabtec org data. Set the variable',
+    'to the initial password for the imported manager accounts to confirm you',
+    'intend that, on this database:',
+    '',
+    `  DATABASE_URL=${process.env.DATABASE_URL ? '<the database you mean>' : '<set this too>'} \\`,
+    '  ARABTEC_MANAGER_PASSWORD=<initial manager password> \\',
+    '  node --experimental-sqlite prisma/migrate-arabtec-data.mjs',
+    '',
+    'Nothing has been changed.',
+    '',
+  ].join('\n'));
+  process.exit(1);
+}
+if (MANAGER_PW.length < 12) {
+  console.error('\nREFUSING TO RUN — ARABTEC_MANAGER_PASSWORD must be at least 12 characters.'
+    + '\nIt becomes the initial password for every imported manager account.'
+    + '\nNothing has been changed.\n');
+  process.exit(1);
+}
+
 ensureSchema();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOADSET = JSON.parse(fs.readFileSync(path.join(__dirname, 'arabtec-loadset.json'), 'utf8'));
 const ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
-const MANAGER_PW = process.env.ARABTEC_MANAGER_PASSWORD || 'Arabtec@2026';
 const NOW = new Date().toISOString();
 
 const ok = (m) => console.log('  ✓ ' + m);
