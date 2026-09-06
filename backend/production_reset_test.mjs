@@ -118,6 +118,60 @@ c('the reset recorded itself in the audit log', (() => {
   return row.c === 1;
 })());
 
+console.log('\n— review regressions —');
+
+// A refused run must not even open the database (db.js opens it in its module
+// body, so a static import mutated the target before the guard could refuse).
+const VIRGIN = `/tmp/arabtec_prod_reset_virgin_${process.pid}.db`;
+for (const f of [VIRGIN, `${VIRGIN}-journal`, `${VIRGIN}-wal`, `${VIRGIN}-shm`]) { try { fs.rmSync(f); } catch {} }
+const refusedVirgin = node(['prisma/reset-transactional-data.mjs'],
+  { ...baseEnv, DATABASE_URL: `file:${VIRGIN}`, ARABTEC_RESET_CONFIRM: '' });
+c('a refused reset does not create the database file',
+  refusedVirgin.status !== 0 && !fs.existsSync(VIRGIN),
+  fs.existsSync(VIRGIN) ? 'the file was created' : '');
+for (const f of [VIRGIN, `${VIRGIN}-journal`, `${VIRGIN}-wal`, `${VIRGIN}-shm`]) { try { fs.rmSync(f); } catch {} }
+
+// The CV bytes must go with the rows, or real people's CVs survive in the blob
+// store and in every backup taken afterwards.
+c('stored CV blobs were purged with their rows', (() => {
+  const db2 = open();
+  let orphans = 0;
+  try {
+    orphans = db2.prepare("SELECT COUNT(*) c FROM file_blob WHERE original_name LIKE '%.pdf'").get().c;
+  } catch { orphans = 0; }
+  db2.close();
+  return orphans === 0;
+})());
+
+// ...while assets that belong to the company survive.
+c('unrelated blobs are left alone', (() => {
+  const db2 = open();
+  db2.prepare("INSERT INTO file_blob (stored_name,original_name,mime,size,data) VALUES ('brand.png','logo.png','image/png',3,X'010203')").run();
+  db2.close();
+  const r = node(['prisma/reset-transactional-data.mjs'], { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET' });
+  const db3 = open();
+  const kept = db3.prepare("SELECT COUNT(*) c FROM file_blob WHERE stored_name='brand.png'").get().c;
+  db3.close();
+  return r.status === 0 && kept === 1;
+})());
+
+// A file left in CV_INBOX would be re-imported by the next scan and recreate
+// the candidates just deleted, because the scanner de-dupes on the very hashes
+// this reset removes.
+const INBOX = `/tmp/arabtec_reset_inbox_${process.pid}`;
+fs.rmSync(INBOX, { recursive: true, force: true });
+fs.mkdirSync(INBOX, { recursive: true });
+fs.writeFileSync(`${INBOX}/leftover-cv.pdf`, '%PDF-1.4 leftover');
+const withInbox = node(['prisma/reset-transactional-data.mjs'],
+  { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET', CV_INBOX: INBOX });
+c('the reset drains CV_INBOX so the next scan cannot re-import it',
+  withInbox.status === 0 && !fs.existsSync(`${INBOX}/leftover-cv.pdf`), 'the file was left in place');
+c('the drained file is archived, not destroyed', (() => {
+  const archives = fs.readdirSync(INBOX).filter((d) => d.startsWith('.pre-golive-'));
+  return archives.length === 1 && fs.existsSync(`${INBOX}/${archives[0]}/leftover-cv.pdf`);
+})());
+fs.rmSync(INBOX, { recursive: true, force: true });
+
 console.log('\n— running it twice is safe —');
 const again = node(['prisma/reset-transactional-data.mjs'], { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET' });
 c('second run succeeds and is a no-op', again.status === 0);
