@@ -20,7 +20,8 @@ import { storeFile, uploadPath, MAX_BYTES } from '../upload.js';
 import { parseDocument } from '../parsing/pipeline-provider.js';
 import { createIntake } from '../intake-store.js';
 import { writeAudit } from '../audit.js';
-import { get } from '../db.js';
+import fs from 'node:fs';
+import { get, run as dbRun } from '../db.js';
 import { CV_EXTENSIONS, configuredMailbox, overlapMinutes, syncBatchSize } from './config.js';
 import { acquireGraphToken, classify, CODES, MicrosoftAuthError } from './msal-client.js';
 import { listInboxMessages, listAttachments, downloadAttachment } from './graph.js';
@@ -77,6 +78,19 @@ export function classifyAttachment(attachment) {
   return { accept: true, ext };
 }
 
+/**
+ * Delete a stored upload that turned out not to be needed.
+ *
+ * Both copies: the durable file_blob row and the best-effort disk cache. Called
+ * only for a file this scan created moments ago and is abandoning, so there is
+ * no risk of removing something another record still points at.
+ */
+function discardStoredFile(storedName) {
+  if (!storedName) return;
+  try { dbRun('DELETE FROM file_blob WHERE stored_name=?', [storedName]); } catch { /* older schema */ }
+  try { fs.rmSync(uploadPath(storedName), { force: true }); } catch { /* cache copy may not exist */ }
+}
+
 /** A PENDING intake for these exact bytes is already waiting for a reviewer. */
 function pendingIntakeForHash(hash) {
   try {
@@ -115,6 +129,10 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
   // the scheduled one could overlap, and the loser would still advance the
   // shared watermark past messages the winner had merely claimed. The lease
   // lives in the database, which is the only thing both processes share.
+  // The connection this scan belongs to. If it changes underneath us — a
+  // disconnect, or a disconnect and reconnect — this scan's result must not be
+  // written onto the connection that replaced it.
+  const scanGeneration = Number(row.generation ?? 0);
   const leaseOwner = `${process.pid}@${startedAtLabel()}`;
   const lease = acquireSyncLease(leaseOwner);
   if (!lease.acquired) {
@@ -162,6 +180,12 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
         if (error.code === CODES.RECONNECT_REQUIRED || error.code === CODES.GRAPH_THROTTLED
           || error.code === CODES.GRAPH_UNAVAILABLE) throw error;
         summary.failed += 1;
+        // Nothing may have been claimed yet — listAttachments() can fail before
+        // the first claim exists — so there is no ledger row to find this
+        // message by later. Without this the scan reported success, advanced the
+        // watermark, and the message and every CV on it were never retried once
+        // the overlap window passed.
+        summary.unfinished.push(message?.receivedDateTime ?? null);
         warn({ msg: 'microsoft.sync.message_failed', messageId: message?.id ?? null, error: error.message });
       }
     }
@@ -186,7 +210,7 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     if (earliestUnfinished && earliestUnfinished < watermark) watermark = earliestUnfinished;
     summary.watermark = watermark;
     delete summary.unfinished;   // an internal working set, not a result
-    markSyncSuccess(summary, watermark);
+    markSyncSuccess(summary, watermark, scanGeneration);
     log({ msg: 'microsoft.sync.complete', ...summary, imported: summary.imported });
     // ALWAYS audited. This used to be gated on `req || actor`, which meant the
     // 08:00 timer — the authoritative ingestion path, and the only one that
@@ -210,7 +234,7 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     if (error.code === CODES.RECONNECT_REQUIRED || error.code === CODES.TOKEN_CACHE_MISSING) {
       markReconnectRequired(error.message);
     } else {
-      markError(error.message);
+      markError(error.message, scanGeneration);
     }
     warn({ msg: 'microsoft.sync.failed', code: error.code, error: error.message });
     return { ok: false, code: error.code, error: error.message, ...summary };
@@ -284,6 +308,13 @@ async function ingestMessage({ message, mailbox, accessToken, actor, req, summar
         // never recover them. Release the claim instead and hold the watermark,
         // so the next scan genuinely retries.
         if (parsed.permanent === false) {
+          // storeFile() already wrote a durable file_blob row AND a disk copy
+          // under a fresh random name. Releasing the claim alone meant every
+          // daily retry stored ANOTHER full copy of the same CV — unbounded, and
+          // guaranteed in the supported no-reader configuration. Discard this
+          // copy; the next attempt re-downloads from Graph, which is the only
+          // source of truth anyway.
+          discardStoredFile(stored.storedName);
           releaseAttachment(claim.key);
           summary.retryable += 1;
           summary.unfinished.push(message.receivedDateTime ?? null);

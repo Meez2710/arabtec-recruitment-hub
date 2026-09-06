@@ -161,7 +161,12 @@ router.get('/callback', async (req, res) => {
     const signedInAs = String(account.username || '').toLowerCase();
     const expected = configuredMailbox();
 
-    if (cfg.tenantId && account.tenantId && account.tenantId !== cfg.tenantId) {
+    // Case-insensitive: a GUID's spelling is, and MSAL returns the tenant id
+    // lower-cased while an operator may well paste it from Entra in upper case.
+    // A strict compare rejected the CORRECT directory as wrong-tenant.
+    const tenantMatches = !cfg.tenantId || !account.tenantId
+      || String(account.tenantId).toLowerCase() === String(cfg.tenantId).toLowerCase();
+    if (!tenantMatches) {
       auditRejection(req, actorId, 'wrong-tenant', signedInAs);
       return back({ microsoft: 'error', code: CODES.WRONG_TENANT });
     }

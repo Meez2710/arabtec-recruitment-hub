@@ -733,6 +733,88 @@ c('a post-dispatch Graph failure does NOT fall back to SMTP',
   ambiguous.ok === false && ambiguous.ambiguous === true && ambiguous.provider === 'graph',
   JSON.stringify(ambiguous).slice(0, 110));
 
+/* ---------------- regressions from the THIRD PR #10 review ----------------- */
+console.log('\n- Third review regressions -');
+await connectAs();
+
+// The schema columns must exist on a FRESH install, not only after a migration
+// that ran too early to see the table.
+c('microsoft_connection has generation and lease columns', (() => {
+  const cols = db.all('PRAGMA table_info(microsoft_connection)').map((r) => r.name);
+  return ['generation', 'sync_lease_owner', 'sync_lease_until'].every((n) => cols.includes(n));
+})());
+
+// A scan that finishes after a disconnect must not flip the row back.
+const genNow = Number(store.connectionRow().generation ?? 0);
+store.clearConnection(1);
+store.markSyncSuccess({ imported: 99 }, new Date().toISOString(), genNow);
+c('a scan completing after disconnect cannot restore CONNECTED',
+  store.connectionRow().status === 'DISCONNECTED', store.connectionRow().status);
+store.markError('stale failure', genNow);
+c('a failed scan cannot resurrect a disconnected connection',
+  store.connectionRow().status === 'DISCONNECTED', store.connectionRow().status);
+
+// Graph mail must survive a transient scan error.
+await connectAs();
+const mailerMod2 = await import('./src/lib/mailer.js');
+store.markError('throttled', Number(store.connectionRow().generation ?? 0));
+c('the connection is in ERROR after a transient scan failure',
+  store.connectionRow().status === 'ERROR');
+const savedTransport = process.env.SMTP_TRANSPORT;
+delete process.env.SMTP_TRANSPORT;
+c('Graph mail is still the provider while status is ERROR',
+  mailerMod2.activeProvider() === 'graph', mailerMod2.activeProvider());
+process.env.SMTP_TRANSPORT = savedTransport;
+
+// A retryable parse must not leave a new blob + disk copy behind on every run.
+await connectAs();
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+seedMessage({
+  id: 'msg-leak', internetMessageId: '<leak@example.test>',
+  receivedDateTime: new Date(Date.now() + 5000).toISOString(),
+  attachments: [{ id: 'att-leak', name: 'Leaky.pdf', bytes: Buffer.from('%PDF-1.4 leak test') }],
+});
+const noReader2 = async () => ({ ok: false, permanent: false, reason: 'No CV reader.', fields: [], preview: [] });
+const blobsBefore = db.get('SELECT COUNT(*) AS c FROM file_blob').c;
+await runMailboxSync({ parse: noReader2 });
+await runMailboxSync({ parse: noReader2 });
+await runMailboxSync({ parse: noReader2 });
+c('three retryable passes leak no stored files',
+  db.get('SELECT COUNT(*) AS c FROM file_blob').c === blobsBefore,
+  `blobs ${blobsBefore} -> ${db.get('SELECT COUNT(*) AS c FROM file_blob').c}`);
+
+// A message failing BEFORE any claim must still hold the watermark.
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+const failAt = new Date(Date.now() + 6000).toISOString();
+seedMessage({
+  id: 'msg-listfail', internetMessageId: '<listfail@example.test>', receivedDateTime: failAt,
+  attachments: [{ id: 'att-x', name: 'Never Listed.pdf' }],
+});
+const realFetchList = globalThis.fetch;
+globalThis.fetch = async (input, init = {}) => {
+  const u = typeof input === 'string' ? input : String(input?.url ?? input);
+  if (u.includes('/me/messages/msg-listfail/attachments')) {
+    return new Response(JSON.stringify({ error: { code: 'ErrorInternalServerError' } }),
+      { status: 400, headers: { 'content-type': 'application/json' } });
+  }
+  return realFetchList(input, init);
+};
+const listFail = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Never')) });
+globalThis.fetch = realFetchList;
+c('a message that fails before any claim holds the watermark',
+  listFail.failed === 1 && listFail.watermark <= failAt,
+  JSON.stringify({ failed: listFail.failed, watermark: listFail.watermark, msg: failAt }));
+
+// Tenant GUIDs are case-insensitive.
+const upperTenant = TENANT.toUpperCase();
+process.env.MS_TENANT_ID = upperTenant;
+resetClient();
+const mixedCase = await connectAs({ username: MAILBOX, tid: TENANT });
+c('an upper-case MS_TENANT_ID still matches the lower-case token tenant',
+  mixedCase.status === 302 && /microsoft=connected/.test(mixedCase.location || ''), mixedCase.location);
+process.env.MS_TENANT_ID = TENANT;
+resetClient();
+
 /* ------------------------------ disconnect -------------------------------- */
 console.log('\n- Disconnect -');
 await connectAs();

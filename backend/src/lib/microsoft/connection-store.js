@@ -159,14 +159,20 @@ export function markReconnectRequired(message) {
 }
 
 /** Record a failure that is NOT a reconnect condition (throttling, outage…). */
-export function markError(message) {
+export function markError(message, generation) {
   const row = connectionRow();
   if (!row) return connectionStatus();
-  // A transient failure must not downgrade a RECONNECT_REQUIRED connection back
-  // to a generic error — the admin action needed is different.
+  // Same fence as markSyncSuccess: a failed scan must not resurrect a
+  // DISCONNECTED row, nor stamp its error onto a connection made after it
+  // started. And a transient failure must not downgrade RECONNECT_REQUIRED —
+  // the admin action needed is different.
+  if (row.status === STATUS.DISCONNECTED) return connectionStatus();
   const status = row.status === STATUS.RECONNECT_REQUIRED ? STATUS.RECONNECT_REQUIRED : STATUS.ERROR;
+  const fence = generation === undefined ? '' : ' AND COALESCE(generation,0)=?';
+  const args = [status, message || null, nowISO(), nowISO(), MICROSOFT_PROVIDER];
+  if (generation !== undefined) args.push(Number(generation));
   run(`UPDATE microsoft_connection SET status=?, last_error=?, last_attempt_at=?, updated_at=?
-       WHERE provider=?`, [status, message || null, nowISO(), nowISO(), MICROSOFT_PROVIDER]);
+       WHERE provider=?${fence}`, args);
   return connectionStatus();
 }
 
@@ -178,12 +184,23 @@ export function markAttempt() {
 }
 
 /** A scan finished cleanly: clears the error and moves the sync watermark. */
-export function markSyncSuccess(result, syncedThrough) {
+export function markSyncSuccess(result, syncedThrough, generation) {
   if (!connectionRow()) return connectionStatus();
-  run(`UPDATE microsoft_connection
+  // FENCED on the generation the scan started with. A scan that finishes after
+  // an administrator disconnected would otherwise flip the row back to
+  // CONNECTED — and if they had already reconnected, overwrite the new
+  // connection's watermark and result with the old scan's.
+  const fence = generation === undefined ? '' : ' AND COALESCE(generation,0)=?';
+  const args = [STATUS.CONNECTED, syncedThrough || nowISO(), JSON.stringify(result ?? {}), nowISO(),
+    MICROSOFT_PROVIDER];
+  if (generation !== undefined) args.push(Number(generation));
+  const written = run(`UPDATE microsoft_connection
           SET status=?, last_successful_sync_at=?, last_result=?, last_error=NULL, updated_at=?
-        WHERE provider=?`,
-  [STATUS.CONNECTED, syncedThrough || nowISO(), JSON.stringify(result ?? {}), nowISO(), MICROSOFT_PROVIDER]);
+        WHERE provider=?${fence}`, args);
+  if (generation !== undefined && !written?.changes) {
+    console.log(JSON.stringify({ level: 'warn', msg: 'microsoft.sync.result_discarded',
+      reason: 'the connection changed while this scan was running', generation: Number(generation) }));
+  }
   return connectionStatus();
 }
 

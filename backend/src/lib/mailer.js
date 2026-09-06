@@ -78,7 +78,15 @@ function smtpConfigured() {
 function graphReady() {
   try {
     const row = connectionRow();
-    return !!(row && row.status === 'CONNECTED' && row.token_cache && row.home_account_id);
+    // ERROR counts as READY. It means the last mailbox SCAN hit something
+    // transient — throttling, a Graph blip — and says nothing about whether the
+    // token cache and account can still send. Excluding it meant that in the
+    // documented Graph-only setup (no SMTP), one throttled scan silenced every
+    // notification as `not_configured` until the next successful scan, possibly
+    // a day later. Only the two states that genuinely need a human — the grant
+    // is gone, or nobody has connected — make Graph unavailable.
+    const unusable = row?.status === 'DISCONNECTED' || row?.status === 'RECONNECT_REQUIRED';
+    return !!(row && !unusable && row.token_cache && row.home_account_id);
   } catch { return false; }
 }
 

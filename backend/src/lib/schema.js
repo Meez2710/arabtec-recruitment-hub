@@ -699,19 +699,6 @@ export function ensureSchema() {
   // Proposable list fields. Nullable TEXT holding a JSON array, which is the
   // convention `tags` already uses on this table — no new storage idea, and no
   // existing row changes meaning: NULL keeps reading as "not stated".
-  // Microsoft connection: a generation counter and a cross-process scan lease.
-  //   generation  bumped on every connect and disconnect. The MSAL cache plugin
-  //               captures it when it loads and writes back only if it still
-  //               matches, so a refresh that finishes after a disconnect — or
-  //               after a disconnect AND a reconnect — cannot overwrite the
-  //               newer grant with the stale one it was holding.
-  //   sync_lease_* the `running` flag in mailbox-sync.js is per-PROCESS, and
-  //               on-prem the 08:00 timer is a different process from the web
-  //               API, so it could never have serialised those two. The lease
-  //               is taken in the database, where both can see it.
-  addColumnIfMissing('microsoft_connection', 'generation', 'INTEGER NOT NULL DEFAULT 0');
-  addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
-  addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
   addColumnIfMissing('candidate_intake', 'request_id', 'INTEGER');
   addColumnIfMissing('candidate_intake', 'application_id', 'INTEGER');
   addColumnIfMissing('candidate', 'skills', 'TEXT');
@@ -894,6 +881,15 @@ export function ensureSchema() {
     home_account_id TEXT,
     token_cache TEXT,                                   -- AES-256-GCM envelope, never plaintext
     status TEXT NOT NULL DEFAULT 'DISCONNECTED',        -- CONNECTED|DISCONNECTED|RECONNECT_REQUIRED|ERROR
+    -- Bumped on every connect and disconnect. The MSAL cache plugin captures it
+    -- on load and writes back only if it still matches, so a refresh finishing
+    -- after a disconnect (or a disconnect AND reconnect) cannot overwrite the
+    -- newer grant. Scan completion is fenced on it for the same reason.
+    generation INTEGER NOT NULL DEFAULT 0,
+    -- Cross-process scan lease. The in-process flag cannot serialise the 08:00
+    -- timer against the web API; those are different processes.
+    sync_lease_owner TEXT,
+    sync_lease_until TEXT,
     -- Set at connect time. The first scan starts HERE, so connecting does not
     -- drag the whole historic inbox into the review queue.
     baseline_at TEXT,
@@ -954,6 +950,16 @@ export function ensureSchema() {
   );
   CREATE INDEX IF NOT EXISTS idx_msoauth_expires ON microsoft_oauth_state(expires_at);
   `);
+
+  // AFTER the DDL above, not before it. These same three calls used to sit in
+  // the migration block ~180 lines earlier, which runs before microsoft_connection
+  // is created — so addColumnIfMissing caught "no such table", the CREATE TABLE
+  // then made the table without them, and even a FRESH install came up missing
+  // `generation`. Every connect and every scan would have failed on a column
+  // that was never added. Ordering, not the DDL, was the bug.
+  addColumnIfMissing('microsoft_connection', 'generation', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
+  addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
 
   migrateWorkflowStages();
   migrateLegacyActionColor();
