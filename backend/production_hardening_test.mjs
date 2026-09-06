@@ -53,5 +53,22 @@ c('refusal happens before destructive org-data wipe',
   JSON.stringify(afterDepartments) === JSON.stringify(beforeDepartments),
   `before=${beforeDepartments.length} after=${afterDepartments.length}`);
 
+// Comparing departments alone was too weak. src/lib/db.js opens the database in
+// its MODULE BODY — on SQLite that creates the file, switches journal_mode and
+// creates/inserts/drops _journal_probe — so with a static import a refused run
+// still touched the target database while printing "Nothing has been changed".
+// The only assertion that catches it: point at a database that does not exist
+// and require that the refusal leaves it non-existent.
+const VIRGIN = `/tmp/arabtec_prod_hardening_virgin_${process.pid}.db`;
+for (const f of [VIRGIN, `${VIRGIN}-journal`, `${VIRGIN}-wal`, `${VIRGIN}-shm`]) { try { fs.rmSync(f); } catch {} }
+const virginRun = spawnSync('node', ['--experimental-sqlite', 'prisma/migrate-arabtec-data.mjs'], {
+  cwd: process.cwd(), encoding: 'utf8',
+  env: { ...baseEnv, DATABASE_URL: `file:${VIRGIN}`, ARABTEC_MANAGER_PASSWORD: '' },
+});
+c('a refused run against a fresh path refuses', virginRun.status !== 0, `status=${virginRun.status}`);
+c('a refused run does not even CREATE the database file', !fs.existsSync(VIRGIN),
+  fs.existsSync(VIRGIN) ? 'the file was created' : '');
+for (const f of [VIRGIN, `${VIRGIN}-journal`, `${VIRGIN}-wal`, `${VIRGIN}-shm`]) { try { fs.rmSync(f); } catch {} }
+
 console.log(`\n=== PRODUCTION HARDENING: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

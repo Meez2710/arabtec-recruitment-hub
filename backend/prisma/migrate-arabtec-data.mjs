@@ -18,9 +18,6 @@ import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ensureSchema } from '../src/lib/schema.js';
-import { get, run, all } from '../src/lib/db.js';
-
 dotenv.config();
 
 /* --------------------------- FAIL CLOSED, FIRST ---------------------------
@@ -37,8 +34,14 @@ dotenv.config();
  * up 41 accounts on a password published in the repository. Requiring it
  * closes both holes with one check.
  *
- * The check runs BEFORE ensureSchema() and before any DELETE, so a refusal
- * leaves the database exactly as it was.
+ * The check runs before ANY database module is loaded, which is stronger than
+ * it first appears. src/lib/db.js opens the database in its module body — on
+ * SQLite that creates the file, switches journal_mode, and creates, inserts
+ * into and drops a _journal_probe table. With a static import those side
+ * effects happened while the import graph was evaluating, i.e. BEFORE this
+ * guard could run, so a refused invocation still touched the target database
+ * while printing "Nothing has been changed". The database and schema modules
+ * are therefore imported dynamically, below, only once the guard has passed.
  * ------------------------------------------------------------------------ */
 const MANAGER_PW = (process.env.ARABTEC_MANAGER_PASSWORD || '').trim();
 if (!MANAGER_PW) {
@@ -67,6 +70,9 @@ if (MANAGER_PW.length < 12) {
   process.exit(1);
 }
 
+// Only now — after the guard — is it safe to touch the database at all.
+const { ensureSchema } = await import('../src/lib/schema.js');
+const { get, run, all } = await import('../src/lib/db.js');
 ensureSchema();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
