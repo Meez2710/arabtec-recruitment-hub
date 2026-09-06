@@ -128,7 +128,70 @@ function storedNamesToPurge() {
   collect('SELECT stored_path AS n FROM candidate_document WHERE stored_path IS NOT NULL');
   collect('SELECT stored_name AS n FROM candidate_intake WHERE stored_name IS NOT NULL');
   collect('SELECT resume_path AS n FROM candidate WHERE resume_path IS NOT NULL');
+  // Requests and ticket threads carry uploads too — a job description on the
+  // requisition, a file or CV posted into the thread — and both owning tables
+  // are wiped below. Missing them destroyed the only reference while leaving
+  // the file itself in file_blob, UPLOAD_DIR and every later backup.
+  collect('SELECT attachment_path AS n FROM recruitment_request WHERE attachment_path IS NOT NULL');
+  collect('SELECT file_path AS n FROM ticket_post WHERE file_path IS NOT NULL');
   return [...names];
+}
+
+/**
+ * Can the inbox actually be drained, and is there anything to drain?
+ *
+ * Resolved BEFORE the transaction on purpose. ats.env.template says the HR share
+ * may be mounted read-only, so mkdir can fail — and it used to fail AFTER the
+ * commit, leaving the candidates deleted, the files still armed, and the
+ * de-duplication records (document hashes, candidate emails) gone, so the next
+ * scan would re-import every one of them as brand new. Refusing up front costs
+ * nothing; discovering it afterwards is unrecoverable.
+ */
+function planInboxDrain() {
+  const inbox = process.env.CV_INBOX;
+  if (!inbox || !fs.existsSync(inbox)) return { files: [], target: null, blocked: false };
+  const files = fs.readdirSync(inbox).filter((f) => /\.(pdf|docx?|txt)$/i.test(f));
+  if (!files.length) return { files: [], target: null, blocked: false };
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const override = process.env.ARABTEC_RESET_INBOX_ARCHIVE;
+  const target = override ? path.join(override, `pre-golive-${stamp}`)
+    : path.join(inbox, `.pre-golive-${stamp}`);
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    // Prove we can actually MOVE into it, not merely create it: a read-only
+    // bind mount can still allow mkdir on the parent in some configurations.
+    const probe = path.join(target, '.writable-probe');
+    fs.writeFileSync(probe, 'x'); fs.rmSync(probe, { force: true });
+    return { files, target, blocked: false, inbox };
+  } catch (e) {
+    return { files, target, blocked: true, inbox, reason: String(e.message || e) };
+  }
+}
+
+const drain = DRY ? { files: [], blocked: false } : planInboxDrain();
+if (!DRY && drain.blocked) {
+  console.error([
+    '',
+    'REFUSING TO RUN — CV_INBOX holds files but cannot be written to.',
+    '',
+    `  inbox:  ${drain.inbox}`,
+    `  files:  ${drain.files.length}`,
+    `  reason: ${drain.reason}`,
+    '',
+    'Those files must be moved out BEFORE the database is cleared. The scanner',
+    'de-duplicates on document hashes and candidate emails, and this reset',
+    'deletes both — so leaving them in place means the next scan re-imports',
+    'every one of them as a new candidate.',
+    '',
+    'Either clear the share by hand, or archive somewhere writable:',
+    '',
+    '  ARABTEC_RESET_INBOX_ARCHIVE=/var/lib/arabtec-ats/cv_inbox_archive \\',
+    '    ARABTEC_RESET_CONFIRM=RESET node --experimental-sqlite prisma/reset-transactional-data.mjs',
+    '',
+    'Nothing has been changed.',
+    '',
+  ].join('\n'));
+  process.exit(1);
 }
 
 const doomedFiles = storedNamesToPurge();
@@ -188,32 +251,24 @@ if (!DRY && doomedFiles.length) {
   ok(`${removed} cached copy/copies removed from ${dir}`);
 }
 
-/**
- * The CV inbox folder, which the reset would otherwise leave armed.
- *
- * The folder scanner de-duplicates on candidate_document hashes and candidate
- * emails — both of which this reset has just deleted. Any file still sitting in
- * CV_INBOX would therefore be re-imported by the next scan and recreate exactly
- * the candidates that were removed. Archiving is deliberate rather than
- * deleting: these are real documents, and an operator may want them back.
- */
+// The inbox drain, using the plan resolved BEFORE the transaction — so by the
+// time we get here the target directory is known to exist and to be writable.
 if (!DRY) {
-  const inbox = process.env.CV_INBOX;
-  if (inbox && fs.existsSync(inbox)) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const archive = path.join(inbox, `.pre-golive-${stamp}`);
-    const files = fs.readdirSync(inbox).filter((f) => /\.(pdf|docx?|txt)$/i.test(f));
-    if (files.length) {
-      fs.mkdirSync(archive, { recursive: true });
-      for (const f of files) {
-        try { fs.renameSync(path.join(inbox, f), path.join(archive, f)); } catch { /* leave it */ }
-      }
-      ok(`${files.length} file(s) moved out of CV_INBOX into ${archive} — otherwise the next scan would re-import them`);
-    } else {
-      info('CV_INBOX is empty — nothing to archive');
+  if (drain.files.length) {
+    let moved = 0;
+    for (const f of drain.files) {
+      try { fs.renameSync(path.join(drain.inbox, f), path.join(drain.target, f)); moved += 1; }
+      catch { /* reported below as a shortfall */ }
     }
-  } else if (!inbox) {
+    ok(`${moved}/${drain.files.length} file(s) moved out of CV_INBOX into ${drain.target}`);
+    if (moved < drain.files.length) {
+      console.error(`  ! ${drain.files.length - moved} file(s) could NOT be moved — clear them by hand `
+        + 'before the next scan, or they will be re-imported as new candidates.');
+    }
+  } else if (!process.env.CV_INBOX) {
     info('CV_INBOX is not set in this environment — check the folder by hand before go-live');
+  } else {
+    info('CV_INBOX is empty — nothing to archive');
   }
 }
 

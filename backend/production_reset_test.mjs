@@ -172,6 +172,35 @@ c('the drained file is archived, not destroyed', (() => {
 })());
 fs.rmSync(INBOX, { recursive: true, force: true });
 
+console.log('\n— third review regressions —');
+
+// A read-only CV_INBOX is explicitly supported (ats.env.template says so). The
+// drain used to fail AFTER the commit, leaving candidates deleted, files armed,
+// and the de-dup records gone — so the next scan re-imported them all as new.
+const ROI = `/tmp/arabtec_reset_ro_${process.pid}`;
+fs.rmSync(ROI, { recursive: true, force: true });
+fs.mkdirSync(ROI, { recursive: true });
+fs.writeFileSync(`${ROI}/locked-cv.pdf`, '%PDF-1.4 locked');
+fs.chmodSync(ROI, 0o555);
+const beforeRO = snapshot(PIPELINE);
+const roRun = node(['prisma/reset-transactional-data.mjs'],
+  { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET', CV_INBOX: ROI });
+c('a read-only CV_INBOX with files refuses BEFORE the wipe', roRun.status !== 0, `status=${roRun.status}`);
+c('the refusal names the inbox as the reason',
+  /CV_INBOX holds files but cannot be written/.test(`${roRun.stdout}${roRun.stderr}`));
+c('nothing was deleted by the refused run',
+  JSON.stringify(snapshot(PIPELINE)) === JSON.stringify(beforeRO));
+
+// ...and an explicit writable archive target unblocks it.
+const ALT = `/tmp/arabtec_reset_alt_${process.pid}`;
+fs.rmSync(ALT, { recursive: true, force: true });
+const altRun = node(['prisma/reset-transactional-data.mjs'],
+  { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET', CV_INBOX: ROI, ARABTEC_RESET_INBOX_ARCHIVE: ALT });
+c('ARABTEC_RESET_INBOX_ARCHIVE unblocks a read-only inbox', altRun.status === 0, `status=${altRun.status}`);
+fs.chmodSync(ROI, 0o755);
+fs.rmSync(ROI, { recursive: true, force: true });
+fs.rmSync(ALT, { recursive: true, force: true });
+
 console.log('\n— running it twice is safe —');
 const again = node(['prisma/reset-transactional-data.mjs'], { ...baseEnv, ARABTEC_RESET_CONFIRM: 'RESET' });
 c('second run succeeds and is a no-op', again.status === 0);

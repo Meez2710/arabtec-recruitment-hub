@@ -35,7 +35,12 @@ case "$DATABASE_URL" in
      exit 1;;
 esac
 
-echo "==> $(basename "$1") against ${DATABASE_URL%%\?*} as $APP_USER"
+# Redact the authority. Stripping only the query string still printed
+# postgres://user:PASSWORD@host/db on every maintenance run — leaking a secret
+# that is supposed to stay inside the root-owned env file into the operator's
+# terminal and any captured output.
+SAFE_TARGET=$(printf '%s' "$DATABASE_URL" | sed -E 's#^([a-z+]+://)[^@/]*@#\1***:***@#; s#\?.*$##')
+echo "==> $(basename "$1") against $SAFE_TARGET as $APP_USER"
 SCRIPT=$1; shift
 # Pass through the confirmation variables explicitly — sudo -u drops the rest.
 exec sudo -u "$APP_USER" env \
@@ -45,5 +50,8 @@ exec sudo -u "$APP_USER" env \
   NODE_ENV="${NODE_ENV:-production}" \
   BCRYPT_ROUNDS="${BCRYPT_ROUNDS:-10}" \
   ARABTEC_RESET_CONFIRM="${ARABTEC_RESET_CONFIRM:-}" \
+  ARABTEC_RESET_INBOX_ARCHIVE="${ARABTEC_RESET_INBOX_ARCHIVE:-}" \
   ARABTEC_MANAGER_PASSWORD="${ARABTEC_MANAGER_PASSWORD:-}" \
+  ARABTEC_MIGRATION_ROTATE_EXISTING="${ARABTEC_MIGRATION_ROTATE_EXISTING:-}" \
+  SEED_ADMIN_EMAIL="${SEED_ADMIN_EMAIL:-}" \
   node --experimental-sqlite "$APP_DIR/$SCRIPT" "$@"
