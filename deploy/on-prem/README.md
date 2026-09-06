@@ -125,3 +125,73 @@ Master data import (the 17 projects / 17 depts / 41 managers / 459 designations)
 is a separate `backend/prisma/migrate-arabtec-data.mjs` run against
 `DATABASE_URL` — do it only if you did **not** import the Render database, and
 only after a dry run.
+
+That script **wipes every candidate, application, interview, offer and
+recruitment request** before it loads. It therefore refuses to start unless
+`ARABTEC_MANAGER_PASSWORD` is set, which is also the initial password for the
+41 imported manager accounts:
+
+```bash
+sudo ARABTEC_MANAGER_PASSWORD='<initial manager password>' \
+  bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh prisma/migrate-arabtec-data.mjs
+```
+
+Use `ats-run.sh`, not a bare `node` command. `DATABASE_URL` lives only in the
+root-owned `/etc/arabtec-ats/ats.env`; systemd injects it into the service, not
+into your shell, so a direct `node prisma/...` run finds no `DATABASE_URL`,
+falls back to a local SQLite file, and reports success while production is
+untouched. The wrapper loads the real environment, runs as `arabtec-ats`, and
+refuses outright if `DATABASE_URL` is not a `postgres://` URL.
+
+Take a backup first (`backup.sh`). The refusal happens before any DELETE, so a
+run without the variable changes nothing.
+
+## Go-live: clearing the test data
+
+The ATS was hand-tested before go-live, so the box carries candidates and hiring
+requests that are not the client's. `backend/prisma/reset-transactional-data.mjs`
+removes exactly those and leaves the company alone — users, the 41 managers, the
+org data, branding, settings and the audit log all stay:
+
+**Stop the writers first.** The reset's transaction isolates only its own
+connection. The ATS service and the scan timers are separate processes, and a
+CV parse or a recruiter action committing mid-reset leaves the "pristine"
+pipeline non-empty — the reset detects that and fails, but only after the fact.
+
+```bash
+# 1. quiesce EVERY writer. arabtec-cv-mailbox.* is the deprecated app-only
+#    bridge — if it is still installed it writes into CV_INBOX every 10 minutes
+#    and would refill the folder after the reset drained it. Stopping a .timer
+#    does not stop a .service already running, so stop both.
+sudo systemctl stop arabtec-cv-scan.timer arabtec-m365-sync.timer arabtec-cv-mailbox.timer 2>/dev/null || true
+sudo systemctl stop arabtec-cv-scan.service arabtec-m365-sync.service arabtec-cv-mailbox.service 2>/dev/null || true
+sudo systemctl stop arabtec-ats
+# confirm nothing is still writing:
+systemctl list-units --state=running 'arabtec-*'
+
+# 2. see what would go, change nothing:
+sudo bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh \
+  prisma/reset-transactional-data.mjs --dry-run
+
+# 3. then actually clear it:
+sudo ARABTEC_RESET_CONFIRM=RESET bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh \
+  prisma/reset-transactional-data.mjs
+
+# 4. bring everything back
+sudo systemctl start arabtec-ats
+sudo systemctl start arabtec-cv-scan.timer arabtec-m365-sync.timer
+# NOTE: arabtec-cv-mailbox.timer is deliberately NOT restarted — it is the
+# deprecated app-only bridge, superseded by the delegated integration.
+```
+
+The reset also **archives whatever is still sitting in `CV_INBOX`** into a
+timestamped `.pre-golive-*` folder inside it. Without that, the next folder scan
+would re-import those files and recreate the very candidates just deleted — the
+scanner de-duplicates on document hashes and candidate emails, both of which the
+reset removes. It also deletes the stored CV bytes (`file_blob` rows and their
+`UPLOAD_DIR` copies) for the rows it clears, so real people's CVs do not survive
+in the database and in every later backup.
+
+Use this rather than re-running `migrate-arabtec-data.mjs`: that one also wipes
+and reloads the org data, which reverts any correction made to it since the
+import and re-creates the manager accounts. Run `backup.sh` first either way.

@@ -18,16 +18,67 @@ import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ensureSchema } from '../src/lib/schema.js';
-import { get, run, all } from '../src/lib/db.js';
-
 dotenv.config();
+
+/* --------------------------- FAIL CLOSED, FIRST ---------------------------
+ * This script deletes every candidate, application, interview, offer and
+ * recruitment request in the database it is pointed at. Until now it did that
+ * with no confirmation of any kind: `node prisma/migrate-arabtec-data.mjs`
+ * against a production DATABASE_URL destroyed the live pipeline, silently and
+ * immediately. A destructive tool that fails OPEN is the wrong default.
+ *
+ * ARABTEC_MANAGER_PASSWORD is what makes it deliberate, and it does double
+ * duty: it is also the initial password for the 41 real manager accounts this
+ * migration creates. That used to fall back to a hard-coded 'Arabtec@2026',
+ * which meant a run with the variable unset both wiped the database AND stood
+ * up 41 accounts on a password published in the repository. Requiring it
+ * closes both holes with one check.
+ *
+ * The check runs before ANY database module is loaded, which is stronger than
+ * it first appears. src/lib/db.js opens the database in its module body — on
+ * SQLite that creates the file, switches journal_mode, and creates, inserts
+ * into and drops a _journal_probe table. With a static import those side
+ * effects happened while the import graph was evaluating, i.e. BEFORE this
+ * guard could run, so a refused invocation still touched the target database
+ * while printing "Nothing has been changed". The database and schema modules
+ * are therefore imported dynamically, below, only once the guard has passed.
+ * ------------------------------------------------------------------------ */
+const MANAGER_PW = (process.env.ARABTEC_MANAGER_PASSWORD || '').trim();
+if (!MANAGER_PW) {
+  console.error([
+    '',
+    'REFUSING TO RUN — ARABTEC_MANAGER_PASSWORD is not set.',
+    '',
+    'This migration WIPES all candidates, applications, interviews, offers and',
+    'recruitment requests, then loads the real Arabtec org data. Set the variable',
+    'to the initial password for manager accounts it CREATES (existing accounts',
+    'keep their current password unless ARABTEC_MIGRATION_ROTATE_EXISTING=true)',
+    'to confirm you intend that, on this database:',
+    '',
+    `  DATABASE_URL=${process.env.DATABASE_URL ? '<the database you mean>' : '<set this too>'} \\`,
+    '  ARABTEC_MANAGER_PASSWORD=<initial manager password> \\',
+    '  node --experimental-sqlite prisma/migrate-arabtec-data.mjs',
+    '',
+    'Nothing has been changed.',
+    '',
+  ].join('\n'));
+  process.exit(1);
+}
+if (MANAGER_PW.length < 12) {
+  console.error('\nREFUSING TO RUN — ARABTEC_MANAGER_PASSWORD must be at least 12 characters.'
+    + '\nIt becomes the initial password for every imported manager account.'
+    + '\nNothing has been changed.\n');
+  process.exit(1);
+}
+
+// Only now — after the guard — is it safe to touch the database at all.
+const { ensureSchema } = await import('../src/lib/schema.js');
+const { get, run, all } = await import('../src/lib/db.js');
 ensureSchema();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOADSET = JSON.parse(fs.readFileSync(path.join(__dirname, 'arabtec-loadset.json'), 'utf8'));
 const ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
-const MANAGER_PW = process.env.ARABTEC_MANAGER_PASSWORD || 'Arabtec@2026';
 const NOW = new Date().toISOString();
 
 const ok = (m) => console.log('  ✓ ' + m);
@@ -149,7 +200,14 @@ console.log('\n[4/7] Loading managers as user accounts…');
 const managerHash = await bcrypt.hash(MANAGER_PW, ROUNDS);
 const roleIdByCode = Object.fromEntries(all('SELECT id, code FROM role').map((r) => [r.code, r.id]));
 const userIdByEmpNo = {};
+// Opt-in on a re-run. By default an existing manager KEEPS the credential they
+// already have — silently resetting 41 live passwords because someone re-ran a
+// load script is not a safe default. Set ARABTEC_MIGRATION_ROTATE_EXISTING=true
+// to apply the supplied password to everyone.
+const ROTATE_EXISTING = String(process.env.ARABTEC_MIGRATION_ROTATE_EXISTING || '').toLowerCase() === 'true';
 let created = 0;
+let rotated = 0;
+let kept = 0;
 for (const m of LOADSET.managers) {
   const email = m.email.toLowerCase();
   let u = get('SELECT * FROM users WHERE email = ? OR employee_no = ?', [email, m.employee_no]);
@@ -158,6 +216,13 @@ for (const m of LOADSET.managers) {
     run(`UPDATE users SET employee_no=?, full_name=?, phone=?, job_title=?, department_id=?,
          status='active', updated_at=? WHERE id=?`,
       [m.employee_no, m.full_name, m.phone, m.job_title, deptId, NOW, u.id]);
+    if (ROTATE_EXISTING) {
+      run('UPDATE users SET password_hash=?, must_change_password=1, failed_login_count=0, locked_until=NULL WHERE id=?',
+        [managerHash, u.id]);
+      rotated += 1;
+    } else {
+      kept += 1;
+    }
   } else {
     run(`INSERT INTO users (employee_no,full_name,email,phone,job_title,password_hash,status,
          department_id,must_change_password,created_at,updated_at)
@@ -173,7 +238,18 @@ for (const m of LOADSET.managers) {
   const rid = roleIdByCode[m.role];
   if (rid) run('INSERT INTO user_role (user_id,role_id) VALUES (?,?)', [u.id, rid]);
 }
-ok(`${LOADSET.managers.length} managers (${created} new); password "${MANAGER_PW}", must-change-on-login`);
+// Report what ACTUALLY happened per account. The old line said the supplied
+// password belonged to all of them, which on a re-run was false for everyone
+// who already existed — they kept their previous credential and could not sign
+// in with the value this script printed.
+ok(`${LOADSET.managers.length} managers: ${created} created with password "${MANAGER_PW}" (must-change-on-login)`
+  + (rotated ? `, ${rotated} existing rotated to the same password` : '')
+  + (kept ? `, ${kept} existing KEPT their current password (unchanged)` : ''));
+if (kept) {
+  info(`the ${kept} pre-existing manager account(s) still use whatever credential they had. `
+    + 'Re-run with ARABTEC_MIGRATION_ROTATE_EXISTING=true to reset them too, '
+    + 'or rotate them through deploy/on-prem/run-handover.sh.');
+}
 
 // department heads
 let heads = 0;
