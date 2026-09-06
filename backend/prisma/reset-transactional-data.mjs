@@ -241,10 +241,17 @@ const PIPELINE_TABLES = existingTables([
   'ticket_post', 'request_activity', 'request_approval', 'requisition_seat', 'recruitment_request',
 ]);
 
+// These two were left outside the preflight, and on PostgreSQL a single
+// undefined-table error aborts the WHOLE transaction — so a schema missing
+// either of them rolled the entire reset back despite `wipe()` treating a
+// missing table as a supported difference.
+const HAS_CUSTOM_FIELD_VALUE = count('custom_field_value') !== null;
+const HAS_NOTIFICATION = count('notification') !== null;
+
 if (DRY) {
   for (const t of PIPELINE_TABLES) wipe(t);
-  wipe('custom_field_value', "entity IN ('request','candidate','application')");
-  wipe('notification');
+  if (HAS_CUSTOM_FIELD_VALUE) wipe('custom_field_value', "entity IN ('request','candidate','application')");
+  if (HAS_NOTIFICATION) wipe('notification');
   const cur = all("SELECT key, value FROM system_setting WHERE key LIKE '%_counter'")
     .filter((r) => r.value !== '0').map((r) => `${r.key}=${r.value}`);
   if (cur.length) info(`would reset counters: ${cur.join(', ')}`);
@@ -285,8 +292,8 @@ if (DRY) {
       '',
       'If those files have ALREADY been processed and you accept that any left',
       'behind will be re-imported, proceed deliberately:',
-      '  ARABTEC_RESET_INBOX_ACKNOWLEDGED=true ARABTEC_RESET_CONFIRM=RESET \\',
-      '    node --experimental-sqlite prisma/reset-transactional-data.mjs', '',
+      '  sudo ARABTEC_RESET_INBOX_ACKNOWLEDGED=true ARABTEC_RESET_CONFIRM=RESET \\',
+      '    bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh prisma/reset-transactional-data.mjs', '',
     ].join('\n'));
     process.exit(1);
     }
@@ -299,8 +306,8 @@ if (DRY) {
   const orphans = orphanCvBlobs(doomedFiles);
   tx(() => {
     for (const t of PIPELINE_TABLES) wipe(t);
-    wipe('custom_field_value', "entity IN ('request','candidate','application')");
-    wipe('notification');
+    if (HAS_CUSTOM_FIELD_VALUE) wipe('custom_field_value', "entity IN ('request','candidate','application')");
+    if (HAS_NOTIFICATION) wipe('notification');
     for (const k of ['request_counter', 'candidate_counter', 'application_counter',
       'interview_counter', 'offer_counter']) {
       run('UPDATE system_setting SET value = ? WHERE key = ?', ['0', k]);

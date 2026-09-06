@@ -159,9 +159,15 @@ CV parse or a recruiter action committing mid-reset leaves the "pristine"
 pipeline non-empty — the reset detects that and fails, but only after the fact.
 
 ```bash
-# 1. quiesce every writer
-sudo systemctl stop arabtec-cv-scan.timer arabtec-m365-sync.timer
+# 1. quiesce EVERY writer. arabtec-cv-mailbox.* is the deprecated app-only
+#    bridge — if it is still installed it writes into CV_INBOX every 10 minutes
+#    and would refill the folder after the reset drained it. Stopping a .timer
+#    does not stop a .service already running, so stop both.
+sudo systemctl stop arabtec-cv-scan.timer arabtec-m365-sync.timer arabtec-cv-mailbox.timer 2>/dev/null || true
+sudo systemctl stop arabtec-cv-scan.service arabtec-m365-sync.service arabtec-cv-mailbox.service 2>/dev/null || true
 sudo systemctl stop arabtec-ats
+# confirm nothing is still writing:
+systemctl list-units --state=running 'arabtec-*'
 
 # 2. see what would go, change nothing:
 sudo bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh \
@@ -174,6 +180,8 @@ sudo ARABTEC_RESET_CONFIRM=RESET bash /opt/arabtec-ats/deploy/on-prem/ats-run.sh
 # 4. bring everything back
 sudo systemctl start arabtec-ats
 sudo systemctl start arabtec-cv-scan.timer arabtec-m365-sync.timer
+# NOTE: arabtec-cv-mailbox.timer is deliberately NOT restarted — it is the
+# deprecated app-only bridge, superseded by the delegated integration.
 ```
 
 The reset also **archives whatever is still sitting in `CV_INBOX`** into a
