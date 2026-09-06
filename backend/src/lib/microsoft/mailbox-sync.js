@@ -28,7 +28,7 @@ import { listInboxMessages, listAttachments, downloadAttachment } from './graph.
 import {
   claimAttachment, completeAttachment, releaseAttachment, connectionRow,
   markAttempt, markError, markReconnectRequired, markSyncSuccess, STATUS,
-  acquireSyncLease, releaseSyncLease,
+  acquireSyncLease, releaseSyncLease, renewSyncLease,
 } from './connection-store.js';
 
 const FILE_ATTACHMENT = '#microsoft.graph.fileAttachment';
@@ -175,6 +175,10 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     summary.truncated = messages.truncated === true;
 
     for (const message of messages) {
+      // The pass may run for a long time on a big mailbox; keep the
+      // cross-process lease alive so the other process never concludes it was
+      // abandoned and starts a second scan alongside this one.
+      try { renewSyncLease(leaseOwner); } catch { /* the lease still has headroom */ }
       try {
         await ingestMessage({ message, mailbox, tokenRef, actor, req, summary, parse });
       } catch (e) {
@@ -206,12 +210,26 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     // pass could not complete — held by a concurrent scan, failed, or awaiting a
     // parser that is not configured yet. Advancing past either is precisely how
     // a CV disappears for good, so the watermark stops at the earliest of them.
-    const earliestUnfinished = summary.unfinished.filter(Boolean).sort()[0] ?? null;
+    // AS INSTANTS, not strings. Graph may return receivedDateTime without
+    // fractional seconds while toISOString() always has them, and
+    // "…00Z" sorts AFTER "…00.500Z" lexicographically while being earlier in
+    // time. With MS_SYNC_OVERLAP_MIN=0 — which the config accepts — that
+    // reversal let the watermark step over an unfinished message inside the
+    // same second, losing its CV for good.
+    const ms = (t) => { const n = Date.parse(t); return Number.isNaN(n) ? null : n; };
+    const earliestUnfinished = summary.unfinished
+      .filter(Boolean).map((t) => [t, ms(t)]).filter(([, n]) => n !== null)
+      .sort((a, b) => a[1] - b[1])[0]?.[0] ?? null;
     let watermark = summary.truncated
-      ? (messages.reduce((newest, m) => (m.receivedDateTime && m.receivedDateTime > newest
-        ? m.receivedDateTime : newest), since) || since)
+      ? (messages.reduce((newest, m) => {
+        const a = ms(m.receivedDateTime); const b = ms(newest);
+        return a !== null && (b === null || a > b) ? m.receivedDateTime : newest;
+      }, since) || since)
       : startedAt.toISOString();
-    if (earliestUnfinished && earliestUnfinished < watermark) watermark = earliestUnfinished;
+    if (earliestUnfinished) {
+      const u = ms(earliestUnfinished); const w = ms(watermark);
+      if (u !== null && (w === null || u < w)) watermark = earliestUnfinished;
+    }
     summary.watermark = watermark;
     delete summary.unfinished;   // an internal working set, not a result
     markSyncSuccess(summary, watermark, scanGeneration);
@@ -314,7 +332,13 @@ async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, 
         // marked them permanently handled, so wiring the reader up later could
         // never recover them. Release the claim instead and hold the watermark,
         // so the next scan genuinely retries.
-        if (parsed.permanent === false) {
+        // `permanent !== true`, not `=== false`. parseDocument omits the field
+        // entirely when it cannot READ the file from storage — which happens if
+        // storeFile's best-effort disk cache write failed while the durable
+        // blob was written fine. The strict check treated that as permanent and
+        // de-duplicated the attachment forever, despite its bytes existing.
+        // Only an explicit permanent:true may close an attachment.
+        if (parsed.permanent !== true) {
           // storeFile() already wrote a durable file_blob row AND a disk copy
           // under a fresh random name. Releasing the claim alone meant every
           // daily retry stored ANOTHER full copy of the same CV — unbounded, and

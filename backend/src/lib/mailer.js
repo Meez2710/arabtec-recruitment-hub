@@ -24,9 +24,10 @@
 //   MAIL_FROM_NAME  display name, used by both providers
 import nodemailer from 'nodemailer';
 
-import { connectionRow } from './microsoft/connection-store.js';
 import { sendMailAs } from './microsoft/graph.js';
-import { acquireGraphToken } from './microsoft/msal-client.js';
+import { acquireGraphToken, classify as classifyMicrosoft, CODES as MS_CODES,
+  RECONNECT_MESSAGE } from './microsoft/msal-client.js';
+import { connectionRow, markReconnectRequired } from './microsoft/connection-store.js';
 
 let transport = null;
 
@@ -158,6 +159,9 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
     // token that cannot be acquired is unambiguously pre-dispatch and may fall
     // back; anything that goes wrong at or after the POST may not.
     let accessToken = null;
+    // Captured before the send so a refusal is recorded against the connection
+    // that actually made the attempt, not one established since.
+    const generation = Number(connectionRow()?.generation ?? 0);
     try {
       ({ accessToken } = await acquireGraphToken());
     } catch (e) {
@@ -175,12 +179,29 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
         console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: 'graph', to, subject }));
         return { ok: true, provider: 'graph' };
       } catch (e) {
+        const classified = classifyMicrosoft(e);
         const error = String((e && e.message) || e);
-        console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'graph',
-          phase: 'dispatch', to, subject, error, fallback: 'suppressed' }));
-        // Deliberately NO fallback: the delivery outcome is unknown, and a
-        // duplicate to a candidate is worse than a miss an operator can see.
-        return { ok: false, provider: 'graph', error, ambiguous: true };
+
+        // A 401 that survived the forced refresh, or a 403, means Graph REFUSED
+        // the request — nothing was sent, and nothing will be until someone
+        // signs in again. That is not ambiguous, and leaving the connection
+        // CONNECTED wedged every later notification on a provider that cannot
+        // deliver. Record it against the generation this send used, then fall
+        // back like any other pre-delivery failure.
+        if (classified.code === MS_CODES.RECONNECT_REQUIRED) {
+          try { markReconnectRequired(RECONNECT_MESSAGE, generation); } catch { /* status is best effort */ }
+          console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'graph',
+            phase: 'refused', to, subject, error, marked: 'reconnect-required' }));
+          if (preferredProvider() === 'graph' || !smtpConfigured()) {
+            return { ok: false, provider: 'graph', error: RECONNECT_MESSAGE };
+          }
+        } else {
+          console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'graph',
+            phase: 'dispatch', to, subject, error, fallback: 'suppressed' }));
+          // Deliberately NO fallback: the delivery outcome is unknown, and a
+          // duplicate to a candidate is worse than a miss an operator can see.
+          return { ok: false, provider: 'graph', error, ambiguous: true };
+        }
       }
     }
   }

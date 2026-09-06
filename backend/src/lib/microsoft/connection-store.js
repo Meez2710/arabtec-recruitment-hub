@@ -80,7 +80,24 @@ export function connectionStatus() {
 export function saveConnection({ mailbox, tenantId, homeAccountId, serializedCache, actorId = null }) {
   const at = nowISO();
   return tx(() => {
-    ensureRow();
+    const before = ensureRow();
+    // Preserving the baseline and the watermark is right for a RECONNECT — same
+    // mailbox, resume where we left off. It is wrong for a DIFFERENT mailbox:
+    // the new account would start from the old account's watermark instead of
+    // its own connection time, and pull in an arbitrary amount of mail that
+    // predates it, breaking the documented no-history guarantee. Identity here
+    // is the mailbox address and the tenant.
+    const sameIdentity = !!before?.mailbox
+      && String(before.mailbox).toLowerCase() === String(mailbox).toLowerCase()
+      && String(before.tenant_id || '').toLowerCase() === String(tenantId || '').toLowerCase();
+    if (!sameIdentity) {
+      run(`UPDATE microsoft_connection SET baseline_at=NULL, last_successful_sync_at=NULL,
+             last_result=NULL WHERE provider=?`, [MICROSOFT_PROVIDER]);
+      if (before?.mailbox) {
+        console.log(JSON.stringify({ level: 'info', msg: 'microsoft.identity_changed',
+          detail: 'a different mailbox or tenant connected — baseline and watermark reset' }));
+      }
+    }
     run(`UPDATE microsoft_connection
             SET mailbox=?, tenant_id=?, home_account_id=?, token_cache=?, status=?,
                 -- COALESCE, not assignment. A reconnect after an expired grant
@@ -238,8 +255,17 @@ export function clearConnection(actorId = null) {
 
 /* ------------------------------- scan lease -------------------------------- */
 
-/** How long a scan may hold the lease before another process may steal it. */
-const LEASE_MS = 30 * 60 * 1000;
+/**
+ * How long a scan may hold the lease before another process may steal it.
+ *
+ * The systemd unit allows a pass up to 2h (TimeoutStartSec), so a 30-minute
+ * lease expired UNDER a still-running scan: a manual scan could then start
+ * alongside the scheduled one, and once a PROCESSING claim passed its stale
+ * threshold both would reclaim and parse the same attachment. The lease is
+ * renewed by the running scan (see renewSyncLease) and its window comfortably
+ * exceeds the unit's own limit so a crash still frees it in bounded time.
+ */
+const LEASE_MS = 3 * 60 * 60 * 1000;
 
 /**
  * Take the scan lease, or report who holds it.
@@ -263,6 +289,15 @@ export function acquireSyncLease(owner) {
   if (written?.changes) return { acquired: true, until };
   const row = connectionRow();
   return { acquired: false, heldBy: row?.sync_lease_owner ?? null, until: row?.sync_lease_until ?? null };
+}
+
+/** Push the lease forward while a scan is still working. */
+export function renewSyncLease(owner) {
+  const until = new Date(Date.now() + LEASE_MS).toISOString();
+  const r = run(`UPDATE microsoft_connection SET sync_lease_until=?, updated_at=?
+                  WHERE provider=? AND sync_lease_owner=?`,
+  [until, nowISO(), MICROSOFT_PROVIDER, owner]);
+  return !!r?.changes;
 }
 
 export function releaseSyncLease(owner) {

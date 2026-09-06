@@ -896,6 +896,63 @@ c('the scan completes after one mid-scan renewal',
 c('the renewed token is reused, not re-derived per request',
   four01s === 1, `401s served: ${four01s} (one renewal expected, not one per request)`);
 
+/* ---------------- regressions from the FIFTH PR #10 review ----------------- */
+console.log('\n- Fifth review regressions -');
+await connectAs();
+
+// Connecting a DIFFERENT mailbox must not inherit the old one's watermark.
+db.run("UPDATE microsoft_connection SET last_successful_sync_at='2020-01-01T00:00:00.000Z'");
+const otherBox = await connectAs({ username: MAILBOX });     // same identity
+c('reconnecting the SAME mailbox keeps the watermark',
+  store.connectionRow().last_successful_sync_at === '2020-01-01T00:00:00.000Z',
+  String(store.connectionRow().last_successful_sync_at));
+process.env.MS_MAILBOX = 'other.box@arabtecegy.com';
+resetClient();
+const switched = await connectAs({ username: 'other.box@arabtecegy.com' });
+c('connecting a DIFFERENT mailbox resets baseline and watermark',
+  switched.status === 302 && /microsoft=connected/.test(switched.location || '')
+  && store.connectionRow().last_successful_sync_at === null,
+  String(store.connectionRow().last_successful_sync_at));
+process.env.MS_MAILBOX = MAILBOX;
+resetClient();
+await connectAs();
+
+// A parse that could not READ the file omits `permanent` entirely; the strict
+// === false check closed the attachment forever despite durable bytes existing.
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+seedMessage({
+  id: 'msg-unreadable', internetMessageId: '<unreadable@example.test>',
+  receivedDateTime: new Date(Date.now() + 9000).toISOString(),
+  attachments: [{ id: 'att-unread', name: 'Storage Blip.pdf', bytes: Buffer.from('%PDF blip') }],
+});
+const unreadable = async () => ({ ok: false, reason: 'The document could not be read from storage.', fields: [], preview: [] });
+const blipScan = await runMailboxSync({ parse: unreadable });
+c('a parse with no `permanent` field is retryable, not skipped',
+  blipScan.retryable === 1 && blipScan.skipped === 0,
+  JSON.stringify({ retryable: blipScan.retryable, skipped: blipScan.skipped }));
+c('nothing claims that attachment as handled',
+  db.get("SELECT COUNT(*) AS c FROM mailbox_ingestion WHERE attachment_name='Storage Blip.pdf'").c === 0);
+const afterBlip = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Recovered Blip')) });
+c('it imports once storage recovers', afterBlip.imported === 1);
+
+// Watermarks must compare as instants: "…00Z" sorts AFTER "…00.500Z" as a
+// string while being earlier in time.
+c('the watermark comparison is not lexicographic', (() => {
+  const a = '2026-09-06T18:00:00Z'; const b = '2026-09-06T18:00:00.500Z';
+  return (a > b) && (Date.parse(a) < Date.parse(b));   // the trap, and the truth
+})());
+
+// The lease must outlive a long pass, and be renewable.
+const leaseRow = store.connectionRow();
+store.acquireSyncLease('long-runner');
+const heldUntil = store.connectionRow().sync_lease_until;
+c('the lease window comfortably exceeds the unit timeout',
+  new Date(heldUntil).getTime() - Date.now() > 2 * 60 * 60 * 1000,
+  `until ${heldUntil}`);
+c('a running scan can renew its own lease', store.renewSyncLease('long-runner') === true);
+c('another owner cannot renew it', store.renewSyncLease('someone-else') === false);
+store.releaseSyncLease('long-runner');
+
 /* ------------------------------ disconnect -------------------------------- */
 console.log('\n- Disconnect -');
 await connectAs();
