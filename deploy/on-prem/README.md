@@ -139,3 +139,23 @@ ARABTEC_MANAGER_PASSWORD='<initial manager password>' \
 
 Take a backup first (`backup.sh`). The refusal happens before any DELETE, so a
 run without the variable changes nothing.
+
+## Go-live: clearing the test data
+
+The ATS was hand-tested before go-live, so the box carries candidates and hiring
+requests that are not the client's. `backend/prisma/reset-transactional-data.mjs`
+removes exactly those and leaves the company alone — users, the 41 managers, the
+org data, branding, settings and the audit log all stay:
+
+```bash
+cd /opt/arabtec-ats/backend
+# see what would go, change nothing:
+node --experimental-sqlite prisma/reset-transactional-data.mjs --dry-run
+# then, to actually clear it:
+ARABTEC_RESET_CONFIRM=RESET \
+  node --experimental-sqlite prisma/reset-transactional-data.mjs
+```
+
+Use this rather than re-running `migrate-arabtec-data.mjs`: that one also wipes
+and reloads the org data, which reverts any correction made to it since the
+import and re-creates the manager accounts. Run `backup.sh` first either way.

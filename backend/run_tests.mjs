@@ -22,6 +22,7 @@ const SUITES = [
   'connections_audit_test.mjs', // every action lands in its designed path
   'hardening_test.mjs',       // security hardening gate items
   'production_hardening_test.mjs', // destructive migration must fail closed before wiping data
+  'production_reset_test.mjs', // go-live reset clears the pipeline and keeps the company
   'auth_security_test.mjs',   // C1.1 rotation + C1.3 password policy + lockout
   'rate_limit_test.mjs',      // C1.4 global rate limiter
   'email_test.mjs',           // C2.2 email module (SMTP, dry-run)
