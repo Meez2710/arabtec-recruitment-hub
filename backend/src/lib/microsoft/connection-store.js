@@ -148,13 +148,21 @@ export function loadTokenCache() {
 }
 
 /** Mark the connection as needing an interactive sign-in again. */
-export function markReconnectRequired(message) {
+export function markReconnectRequired(message, generation) {
   const row = connectionRow();
   if (!row) return connectionStatus();
+  // FENCED, like markSyncSuccess and markError. A token acquisition or Graph
+  // call that started under the OLD grant can finish after an administrator has
+  // disconnected and reconnected — and without the fence it stamped
+  // RECONNECT_REQUIRED onto the brand new, perfectly healthy connection, telling
+  // them to sign in again immediately after they just did.
+  if (row.status === STATUS.DISCONNECTED) return connectionStatus();
+  const fence = generation === undefined ? '' : ' AND COALESCE(generation,0)=?';
+  const args = [STATUS.RECONNECT_REQUIRED, message || 'Microsoft 365 connection requires sign-in again.',
+    nowISO(), nowISO(), MICROSOFT_PROVIDER];
+  if (generation !== undefined) args.push(Number(generation));
   run(`UPDATE microsoft_connection SET status=?, last_error=?, last_attempt_at=?, updated_at=?
-       WHERE provider=?`,
-  [STATUS.RECONNECT_REQUIRED, message || 'Microsoft 365 connection requires sign-in again.',
-    nowISO(), nowISO(), MICROSOFT_PROVIDER]);
+       WHERE provider=?${fence}`, args);
   return connectionStatus();
 }
 

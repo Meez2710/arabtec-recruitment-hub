@@ -99,6 +99,7 @@ const cloud = {
   bytes: new Map(),             // `${messageId}/${attachmentId}` -> Buffer
   throttleOnce: new Set(),      // request paths that 429 exactly once
   pageSize: 0,                  // >0 makes the inbox listing paginate
+  attachPageSize: 0,            // >0 makes the attachment listing paginate
   failDownload: new Set(),      // `${messageId}/${attachmentId}` that fails
   sentMail: [],
 };
@@ -178,7 +179,23 @@ globalThis.fetch = async function fakeFetch(input, init = {}) {
       return json({ value: all });
     }
     let m = bare.match(/^\/me\/messages\/([^/]+)\/attachments$/);
-    if (m) return json({ value: cloud.attachments.get(decodeURIComponent(m[1])) || [] });
+    if (m) {
+      const list = cloud.attachments.get(decodeURIComponent(m[1])) || [];
+      if (cloud.attachPageSize) {
+        const u2 = new URL(url);
+        const skip = Number(u2.searchParams.get('$skip') || 0);
+        const value = list.slice(skip, skip + cloud.attachPageSize);
+        const nextSkip = skip + cloud.attachPageSize;
+        const body = { value };
+        if (nextSkip < list.length) {
+          const np = new URLSearchParams(u2.searchParams);
+          np.set('$skip', String(nextSkip));
+          body['@odata.nextLink'] = `https://graph.microsoft.com/v1.0${bare}?${np.toString()}`;
+        }
+        return json(body);
+      }
+      return json({ value: list });
+    }
 
     m = bare.match(/^\/me\/messages\/([^/]+)\/attachments\/([^/]+)\/\$value$/);
     if (m) {
@@ -814,6 +831,70 @@ c('an upper-case MS_TENANT_ID still matches the lower-case token tenant',
   mixedCase.status === 302 && /microsoft=connected/.test(mixedCase.location || ''), mixedCase.location);
 process.env.MS_TENANT_ID = TENANT;
 resetClient();
+
+/* ---------------- regressions from the FOURTH PR #10 review ---------------- */
+console.log('\n- Fourth review regressions -');
+await connectAs();
+
+// Attachment collections paginate too — reading page 1 only silently completed
+// the message and let the watermark move past the CVs on later pages.
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+seedMessage({
+  id: 'msg-manyatt', internetMessageId: '<manyatt@example.test>',
+  receivedDateTime: new Date(Date.now() + 4000).toISOString(),
+  attachments: [1, 2, 3, 4, 5].map((i) => ({
+    id: `ma-${i}`, name: `Attachment CV ${i}.pdf`, bytes: Buffer.from(`%PDF-1.4 att ${i}`),
+  })),
+});
+cloud.attachPageSize = 2;                       // 5 attachments over 3 pages
+const attIntakesBefore = countIntakes();
+const attScan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Attachment Person')) });
+c('every attachment page is followed',
+  attScan.imported === 5 && countIntakes() === attIntakesBefore + 5,
+  JSON.stringify({ imported: attScan.imported, attachments: attScan.attachments }));
+cloud.attachPageSize = 0;
+
+// markReconnectRequired must be fenced like the other two writers.
+const genR = Number(store.connectionRow().generation ?? 0);
+store.clearConnection(1);
+await connectAs();
+store.markReconnectRequired('stale token failure', genR);
+c('a stale reconnect verdict cannot mark the NEW connection broken',
+  store.connectionRow().status === 'CONNECTED', store.connectionRow().status);
+
+// A renewed token must reach the rest of the scan, not just the request that
+// triggered the renewal.
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+for (let i = 1; i <= 3; i++) {
+  seedMessage({
+    id: `tok-${i}`, internetMessageId: `<tok${i}@example.test>`,
+    receivedDateTime: new Date(Date.now() + 7000 + i).toISOString(),
+    attachments: [{ id: `tok-att-${i}`, name: `Token CV ${i}.pdf`, bytes: Buffer.from(`%PDF tok ${i}`) }],
+  });
+}
+let four01s = 0;
+let firstToken = null;
+const realFetchTok = globalThis.fetch;
+globalThis.fetch = async (input, init = {}) => {
+  const u = typeof input === 'string' ? input : String(input?.url ?? input);
+  const auth = (init.headers && (init.headers.authorization || init.headers.Authorization)) || '';
+  if (u.startsWith('https://graph.microsoft.com/') && auth) {
+    if (firstToken === null) firstToken = auth;
+    // The originally-issued token is now rejected; anything newer is accepted.
+    if (auth === firstToken && !u.includes('/mailFolders/inbox?')) {
+      four01s += 1;
+      return new Response(JSON.stringify({ error: { code: 'InvalidAuthenticationToken' } }),
+        { status: 401, headers: { 'content-type': 'application/json' } });
+    }
+  }
+  return realFetchTok(input, init);
+};
+const tokScan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Token Person')) });
+globalThis.fetch = realFetchTok;
+c('the scan completes after one mid-scan renewal',
+  tokScan.ok === true && tokScan.imported === 3, JSON.stringify({ imported: tokScan.imported }));
+c('the renewed token is reused, not re-derived per request',
+  four01s === 1, `401s served: ${four01s} (one renewal expected, not one per request)`);
 
 /* ------------------------------ disconnect -------------------------------- */
 console.log('\n- Disconnect -');

@@ -202,8 +202,9 @@ export async function acquireGraphToken({ scopes = GRAPH_SCOPES, forceRefresh = 
   if (!row || row.status === 'DISCONNECTED' || !row.home_account_id) {
     throw new MicrosoftAuthError('Microsoft 365 is not connected yet.', CODES.NOT_CONNECTED);
   }
+  const opGeneration = Number(row.generation ?? 0);
   if (!row.token_cache) {
-    markReconnectRequired(RECONNECT_MESSAGE);
+    markReconnectRequired(RECONNECT_MESSAGE, opGeneration);
     throw new MicrosoftAuthError(RECONNECT_MESSAGE, CODES.TOKEN_CACHE_MISSING);
   }
 
@@ -215,7 +216,7 @@ export async function acquireGraphToken({ scopes = GRAPH_SCOPES, forceRefresh = 
     throw classify(e);
   }
   if (!account) {
-    markReconnectRequired(RECONNECT_MESSAGE);
+    markReconnectRequired(RECONNECT_MESSAGE, opGeneration);
     throw new MicrosoftAuthError(RECONNECT_MESSAGE, CODES.RECONNECT_REQUIRED);
   }
 
@@ -225,13 +226,13 @@ export async function acquireGraphToken({ scopes = GRAPH_SCOPES, forceRefresh = 
     // asking for "a token" is not enough — we need a NEW one.
     const result = await client.acquireTokenSilent({ account, scopes: [...scopes], forceRefresh });
     if (!result || !result.accessToken) {
-      markReconnectRequired(RECONNECT_MESSAGE);
+      markReconnectRequired(RECONNECT_MESSAGE, opGeneration);
       throw new MicrosoftAuthError(RECONNECT_MESSAGE, CODES.RECONNECT_REQUIRED);
     }
     return { accessToken: result.accessToken, account: result.account ?? account, expiresOn: result.expiresOn ?? null };
   } catch (e) {
     const error = classify(e);
-    if (error.code === CODES.RECONNECT_REQUIRED) markReconnectRequired(RECONNECT_MESSAGE);
+    if (error.code === CODES.RECONNECT_REQUIRED) markReconnectRequired(RECONNECT_MESSAGE, opGeneration);
     throw error;
   }
 }

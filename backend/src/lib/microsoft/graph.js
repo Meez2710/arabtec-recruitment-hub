@@ -26,8 +26,13 @@ const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref?.
  * The header is capped so a hostile or mistaken value cannot park a scheduled
  * scan for an hour.
  */
-export async function graphRequest(path, { method = 'GET', json, raw = false, accessToken = null, attempt = 0 } = {}) {
-  const token = accessToken ?? (await acquireGraphToken()).accessToken;
+export async function graphRequest(path, { method = 'GET', json, raw = false, accessToken = null, tokenRef = null, attempt = 0 } = {}) {
+  // tokenRef is a shared { value } the caller holds for the whole scan. Without
+  // it a renewal here fixed only THIS request: the scan kept handing its
+  // original expired token to every later attachment call, each of which 401'd
+  // and forced another refresh — a burst of token requests at Entra precisely
+  // when a long scan is already the thing under strain.
+  const token = accessToken ?? tokenRef?.value ?? (await acquireGraphToken()).accessToken;
   const url = path.startsWith('http') ? path : GRAPH_BASE + path;
 
   let response;
@@ -52,7 +57,7 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
       MAX_RETRY_AFTER_MS,
     );
     await sleep(waitMs);
-    return graphRequest(path, { method, json, raw, accessToken: token, attempt: attempt + 1 });
+    return graphRequest(path, { method, json, raw, accessToken: token, tokenRef, attempt: attempt + 1 });
   }
 
   if (response.status === 429) {
@@ -75,7 +80,8 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
       try { renewed = (await acquireGraphToken({ forceRefresh: true })).accessToken; }
       catch (e) { throw classify(e); }
       if (renewed) {
-        return graphRequest(path, { method, json, raw, accessToken: renewed, attempt: attempt + 1 });
+        if (tokenRef) tokenRef.value = renewed;   // every later request sees it
+        return graphRequest(path, { method, json, raw, accessToken: renewed, tokenRef, attempt: attempt + 1 });
       }
     }
     // The token was accepted by MSAL but rejected by Graph — consent revoked,
@@ -125,7 +131,7 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
  * `receivedDateTime` leads the filter because Graph requires the $orderby
  * property to appear first when $filter mixes properties.
  */
-export async function listInboxMessages({ sinceIso, top = 50, accessToken = null, maxPages = 20 }) {
+export async function listInboxMessages({ sinceIso, top = 50, accessToken = null, tokenRef = null, maxPages = 20 }) {
   const filter = encodeURIComponent(`receivedDateTime ge ${sinceIso} and hasAttachments eq true`);
   const select = encodeURIComponent('id,internetMessageId,subject,receivedDateTime,from,hasAttachments');
   let path = `/me/mailFolders/inbox/messages?$filter=${filter}&$select=${select}`
@@ -138,7 +144,7 @@ export async function listInboxMessages({ sinceIso, top = 50, accessToken = null
   // were never seen again. A busy Monday is exactly when that happens.
   const messages = [];
   for (let page = 0; page < maxPages && path; page += 1) {
-    const body = await graphRequest(path, { accessToken });
+    const body = await graphRequest(path, { accessToken, tokenRef });
     if (Array.isArray(body?.value)) messages.push(...body.value);
     path = body?.['@odata.nextLink'] ?? null;
   }
@@ -156,18 +162,32 @@ export async function listInboxMessages({ sinceIso, top = 50, accessToken = null
 }
 
 /** Attachment metadata for one message. Never fetches contentBytes. */
-export async function listAttachments(messageId, { accessToken = null } = {}) {
+export async function listAttachments(messageId, { accessToken = null, tokenRef = null, maxPages = 10 } = {}) {
   const select = encodeURIComponent('id,name,contentType,size,isInline,@odata.type');
-  const body = await graphRequest(`/me/messages/${encodeURIComponent(messageId)}/attachments?$select=${select}`,
-    { accessToken });
-  return Array.isArray(body?.value) ? body.value : [];
+  let next = `/me/messages/${encodeURIComponent(messageId)}/attachments?$select=${select}`;
+  // A message's attachment collection paginates as well. Reading only the first
+  // page silently completed the message and let the watermark move past it, so
+  // CVs on later pages were never imported — not even by a later scan. Same
+  // defect as the message listing had, one level down.
+  const attachments = [];
+  for (let page = 0; page < maxPages && next; page += 1) {
+    const body = await graphRequest(next, { accessToken, tokenRef });
+    if (Array.isArray(body?.value)) attachments.push(...body.value);
+    next = body?.['@odata.nextLink'] ?? null;
+  }
+  if (next) {
+    console.log(JSON.stringify({ level: 'warn', msg: 'microsoft.graph.attachment_pagination_capped',
+      messageId, pages: maxPages, collected: attachments.length }));
+    return Object.assign(attachments, { truncated: true });
+  }
+  return attachments;
 }
 
 /** The attachment's bytes. */
-export function downloadAttachment(messageId, attachmentId, { accessToken = null } = {}) {
+export function downloadAttachment(messageId, attachmentId, { accessToken = null, tokenRef = null } = {}) {
   return graphRequest(
     `/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/$value`,
-    { raw: true, accessToken },
+    { raw: true, accessToken, tokenRef },
   );
 }
 
@@ -178,8 +198,8 @@ export function downloadAttachment(messageId, attachmentId, { accessToken = null
 // waiting for whoever calls it.
 
 /** Cheapest possible proof that Mail.Read reaches THIS mailbox. */
-export function inboxProbe({ accessToken = null } = {}) {
-  return graphRequest('/me/mailFolders/inbox?$select=id,displayName,totalItemCount', { accessToken });
+export function inboxProbe({ accessToken = null, tokenRef = null } = {}) {
+  return graphRequest('/me/mailFolders/inbox?$select=id,displayName,totalItemCount', { accessToken, tokenRef });
 }
 
 /* -------------------------------- mail send ------------------------------- */

@@ -3635,6 +3635,13 @@ function MicrosoftPage({ user, params }) {
 
   const state = MS_STATE[data.status] || MS_STATE.DISCONNECTED;
   const connected = data.connected === true;
+  // ERROR describes the last SCAN, not the grant. The backend accepts Test and
+  // Scan in that state and tries to recover, so disabling them here pushed an
+  // administrator toward an unnecessary OAuth reconnect — or a day's wait for
+  // the next timer — for what may have been a moment's throttling. Only the two
+  // states that genuinely need a new sign-in disable the recovery actions.
+  const canAttempt = data.hasTokenCache === true
+    && data.status !== 'DISCONNECTED' && data.status !== 'RECONNECT_REQUIRED';
 
   return (
     <div>
@@ -3708,11 +3715,11 @@ function MicrosoftPage({ user, params }) {
               {busy === 'connect' ? 'Opening Microsoft…'
                 : connected ? 'Reconnect' : 'Connect Microsoft 365'}
             </button>
-            <button className="btn btn-ghost" disabled={!connected || busy !== null}
+            <button className="btn btn-ghost" disabled={!canAttempt || busy !== null}
               onClick={() => act('test', '/integrations/microsoft/test', (r) => r.message || 'Connection is healthy.')}>
               {busy === 'test' ? 'Testing…' : 'Test connection'}
             </button>
-            <button className="btn btn-ghost" disabled={!connected || busy !== null}
+            <button className="btn btn-ghost" disabled={!canAttempt || busy !== null}
               onClick={() => act('sync', '/integrations/microsoft/sync',
                 (r) => `Scan complete: ${r.imported} imported, ${r.skipped} skipped, ${r.failed} failed.`)}>
               {busy === 'sync' ? 'Scanning…' : 'Scan inbox now'}

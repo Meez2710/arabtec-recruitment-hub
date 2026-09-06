@@ -161,8 +161,12 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     // refresh token; an interaction-required condition surfaces here, once,
     // rather than on every message.
     const { accessToken } = await acquireGraphToken();
+    // Shared for the whole pass: a renewal inside any request updates this, so
+    // later requests use the new token instead of each re-discovering the
+    // expiry and forcing its own refresh.
+    const tokenRef = { value: accessToken };
 
-    const messages = await listInboxMessages({ sinceIso: since, top: syncBatchSize(), accessToken });
+    const messages = await listInboxMessages({ sinceIso: since, top: syncBatchSize(), tokenRef });
     summary.messages = messages.length;
     // listInboxMessages sets this when it stopped with pages outstanding. The
     // watermark cannot express "I read up to here but not past it", so in that
@@ -172,7 +176,7 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
 
     for (const message of messages) {
       try {
-        await ingestMessage({ message, mailbox, accessToken, actor, req, summary, parse });
+        await ingestMessage({ message, mailbox, tokenRef, actor, req, summary, parse });
       } catch (e) {
         const error = classify(e);
         // A connection-level failure mid-batch stops the pass; anything else is
@@ -247,8 +251,11 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
 /** Stable-ish label for the lease owner; the clock is only used for display. */
 function startedAtLabel() { return new Date().toISOString(); }
 
-async function ingestMessage({ message, mailbox, accessToken, actor, req, summary, parse }) {
-  const attachments = await listAttachments(message.id, { accessToken });
+async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, parse }) {
+  const attachments = await listAttachments(message.id, { tokenRef });
+  // A capped attachment walk means CVs on later pages were never seen. The
+  // message is NOT complete, so the watermark must not move past it.
+  if (attachments.truncated === true) summary.unfinished.push(message.receivedDateTime ?? null);
   const messageKey = message.internetMessageId || message.id;
 
   for (const attachment of attachments) {
@@ -281,7 +288,7 @@ async function ingestMessage({ message, mailbox, accessToken, actor, req, summar
     }
 
     try {
-      const bytes = await downloadAttachment(message.id, attachment.id, { accessToken });
+      const bytes = await downloadAttachment(message.id, attachment.id, { tokenRef });
       const hash = crypto.createHash('sha256').update(bytes).digest('hex');
 
       const alreadyPending = pendingIntakeForHash(hash);
