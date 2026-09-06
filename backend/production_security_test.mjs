@@ -9,6 +9,59 @@ import { fileURLToPath } from 'node:url';
 
 const mode = process.env.SECURITY_TEST_CASE;
 if (!mode) {
+  // An OPTIONAL integration must never stop the app from serving.
+  //
+  // Listing the MS_* keys in render.yaml is enough for the platform to CREATE
+  // those entries, so a blank-but-present variable made validateConfigOrThrow
+  // refuse to boot and took a working production deploy down (Render,
+  // 6 Sep 2026). Nothing was at risk: the integration reports itself off and
+  // every route refuses with the list of what is missing. Only DATABASE_URL and
+  // JWT_SECRET may be fatal.
+  test('an optional integration cannot block production startup', () => {
+    const base = {
+      ...process.env,
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgres://user@host/db',
+      JWT_SECRET: 'a'.repeat(40),
+      CORS_ORIGINS: 'https://arabtec.onrender.com',
+      MS_TENANT_ID: '', MS_CLIENT_ID: '', MS_CLIENT_SECRET: '',
+      MICROSOFT_TOKEN_ENCRYPTION_KEY: '',
+    };
+    const validate = (extra) => {
+      const child = spawnSync(process.execPath, ['--experimental-sqlite', '-e',
+        "import('./src/lib/config.js').then(m=>{const r=m.validateConfig();"
+        + "process.stdout.write(JSON.stringify({ok:r.ok,ms:r.summary.microsoftMailbox}));})"],
+      { cwd: process.cwd(), env: { ...base, ...extra }, encoding: 'utf8', timeout: 30000 });
+      return JSON.parse(child.stdout || '{}');
+    };
+
+    // Exactly the Render failure: one MS var present, no encryption key.
+    const half = validate({ MS_CLIENT_ID: 'set-but-incomplete' });
+    assert.equal(half.ok, true, 'a half-configured M365 must not refuse startup');
+    assert.equal(half.ms, false, 'and must report itself off');
+
+    const noKey = validate({ MS_TENANT_ID: 't', MS_CLIENT_ID: 'c', MS_CLIENT_SECRET: 's' });
+    assert.equal(noKey.ok, true, 'a missing encryption key must not refuse startup');
+    assert.equal(noKey.ms, false);
+
+    const badKey = validate({ MS_TENANT_ID: 't', MS_CLIENT_ID: 'c', MS_CLIENT_SECRET: 's',
+      MICROSOFT_TOKEN_ENCRYPTION_KEY: 'too-short' });
+    assert.equal(badKey.ok, true, 'a malformed encryption key must not refuse startup');
+    assert.equal(badKey.ms, false);
+
+    const good = validate({ MS_TENANT_ID: 't', MS_CLIENT_ID: 'c', MS_CLIENT_SECRET: 's',
+      MICROSOFT_TOKEN_ENCRYPTION_KEY: 'ab'.repeat(32) });
+    assert.equal(good.ok, true);
+    assert.equal(good.ms, true, 'a fully configured M365 must still report enabled');
+
+    // The two that genuinely must be fatal are unchanged.
+    const noCore = spawnSync(process.execPath, ['--experimental-sqlite', '-e',
+      "import('./src/lib/config.js').then(m=>{process.stdout.write(String(m.validateConfig().ok));})"],
+    { cwd: process.cwd(), encoding: 'utf8', timeout: 30000,
+      env: { ...base, DATABASE_URL: '', JWT_SECRET: '' } });
+    assert.equal(noCore.stdout.trim(), 'false', 'DATABASE_URL / JWT_SECRET must still be fatal');
+  });
+
   for (const scenario of ['schema-failure', 'flags-failure', 'seed-failure', 'http-boundaries']) {
     test(scenario, () => {
       const child = spawnSync(process.execPath, ['--experimental-sqlite', fileURLToPath(import.meta.url)], {
