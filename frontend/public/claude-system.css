@@ -107,11 +107,33 @@
 /* ------------------------------------------ 4. page heads + type rhythm */
 .page-head, .dash-head {
   margin-bottom: var(--cl-7); gap: var(--cl-5); align-items: flex-start;
+  /* The header is a flex ROW whose actions block refuses to shrink
+     (.page-head-actions is flex-shrink:0) while .page-head-main is allowed to
+     collapse (min-width:0, set so long titles truncate rather than overflow).
+     On Talent Pool the actions come to ~790px — wider than the 697px header at
+     a 1024px window — so with nowrap the only thing that could give was the
+     title block, which went to width:0 and rendered the subtitle one word per
+     line, 18 lines tall. Letting the row wrap puts the actions on their own
+     line instead, which is what the layout wanted all along. */
+  flex-wrap: wrap;
 }
+/* A real basis, so the title block claims a full row once the actions wrap
+   rather than sharing one and collapsing again. min-width:0 stays: it is what
+   lets a long title ellipsize instead of forcing the row wider. */
+.page-head-main { flex: 1 1 320px; min-width: 0; }
 .page-title, .page-head .page-title, .dash-head .page-title {
   font-size: 28px; line-height: 1.3; font-weight: 600; letter-spacing: -.012em;
 }
 .page-sub { font-size: 14px; line-height: 1.5; margin-top: var(--cl-2); max-width: 68ch; }
+
+/* A status pill must never let its label out of its own border. .status-chip
+   already sets white-space:nowrap; .badge never did, so in a narrow column
+   "Pending Approval" wrapped to two lines inside a pill still drawn at its
+   24px single-line height and the second line rendered outside the border.
+   Measured on Hiring Requests at 1024px: text box 47.4x30.9 in a 65.4x24 pill.
+   Same rule, same result — the pill grows to fit its text, and the table's
+   existing overflow-x owner handles the rest. */
+.badge { white-space: nowrap; }
 
 /* Claude never shouts an eyebrow: sentence case, normal tracking. */
 .breadcrumb, .page-head .breadcrumb, .dash-eyebrow {
