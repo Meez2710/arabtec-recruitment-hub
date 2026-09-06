@@ -48,17 +48,51 @@ the related feature stays off.
 | `PG_DATA` | PGlite persistence directory. |
 | `PG_NO_SSL` | `true` disables TLS to Postgres (same-box/self-hosted only). |
 
+## Microsoft 365 careers mailbox — delegated OAuth (optional; leave blank = OFF)
+
+Set these together, or none of them. Setting any of the first three without
+`MICROSOFT_TOKEN_ENCRYPTION_KEY` is a **startup error** — half-configured is the
+one state that looks wired in the admin panel and then fails at the first token
+write.
+
+A System Admin connects the mailbox ONCE from **Configuration → Microsoft 365**;
+MSAL keeps it alive with silent refresh, so there is no daily interactive login.
+
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `MS_TENANT_ID` | with the group | — | Directory (tenant) ID of the Arabtec M365 tenant. |
+| `MS_CLIENT_ID` | with the group | — | Application (client) ID of the Entra app registration. |
+| `MS_CLIENT_SECRET` | with the group | — | Client secret **value**. Backend only; never returned by any API. |
+| `MS_MAILBOX` | — | `career@arabtecegy.com` | The ONLY account allowed to connect. Any other sign-in is refused. |
+| `MS_REDIRECT_URI` | with the group | derived from `CORS_ORIGINS` | `https://<ATS public host>/api/integrations/microsoft/callback`. Must match a **Web** redirect URI on the app registration exactly. Entra accepts only `https://` (or `http://localhost`). |
+| `MICROSOFT_TOKEN_ENCRYPTION_KEY` | ✅ when enabled | — | AES-256-GCM key for the MSAL token cache at rest. 32 bytes: `openssl rand -hex 32`. **Never commit.** Changing it invalidates the stored connection — reconnect after a rotation. |
+| `MS_SYNC_OVERLAP_MIN` | — | `10` | Minutes a scan reaches back past the last success, to cover clock skew. Duplicates are impossible regardless (`mailbox_ingestion.dedup_key` is UNIQUE). |
+| `MS_SYNC_BATCH` | — | `50` | Messages examined per pass (max 200). |
+| `MS_AUTHORITY_METADATA` | — | — | Pre-fetched Entra OIDC discovery document (JSON). Optional: saves a discovery round trip on a slow-egress host. Used by the tests. |
+| `MS_CLOUD_DISCOVERY_METADATA` | — | — | Pre-fetched instance-discovery document (JSON). Same purpose. |
+
+**Delegated scopes only:** `openid`, `profile`, `offline_access`,
+`https://graph.microsoft.com/Mail.Read`, `https://graph.microsoft.com/Mail.Send`.
+No application permissions, no `.default`, no `Mail.ReadWrite`, no directory
+scopes. The ATS never marks mail read, moves it or deletes it — de-duplication
+is a database constraint inside the ATS instead.
+
 ## Email — feature: notifications (optional; leave blank = OFF)
+
+Provider order is **dry-run → Graph → SMTP**. With Microsoft 365 connected there
+is no SMTP password anywhere: mail is sent as the careers mailbox through
+`POST /me/sendMail` on the same delegated grant that reads the inbox.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `SMTP_HOST` | `smtp.gmail.com` | SMTP server (`smtp.office365.com` for M365). |
+| `MAIL_PROVIDER` | `auto` | `auto` = Graph when the Microsoft connection is healthy, else SMTP. `graph` = Graph only (never falls back). `smtp` = SMTP only. |
+| `SMTP_HOST` | `smtp.office365.com` | SMTP server. **Fallback provider only.** |
 | `SMTP_PORT` | `587` | 587 = STARTTLS, 465 = implicit TLS. |
-| `SMTP_USER` | — | Mailbox / sender login. **Required to send email.** |
-| `SMTP_PASS` | — | App password (not the account password). **Required to send email.** |
-| `MAIL_FROM` | = `SMTP_USER` | From address. |
+| `SMTP_USER` | — | Mailbox / sender login. Required only for the SMTP fallback. |
+| `SMTP_PASS` | — | App password (not the account password). Required only for the SMTP fallback. |
+| `MAIL_FROM` | = `SMTP_USER` | From address (SMTP path). |
 | `MAIL_FROM_NAME` | `Arabtec Careers` | From display name. |
-| `SMTP_TRANSPORT` | unset | `json` = dry-run (tests). |
+| `SMTP_TRANSPORT` | unset | `json` = dry-run. Wins over **every** provider, so an automated test can never post real mail; `run_tests.mjs` pins it for the whole suite. |
 
 ## AI CV parsing (optional; leave blank = heuristic parser)
 

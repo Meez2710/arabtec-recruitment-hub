@@ -35,6 +35,7 @@ import assessmentRoutes from './routes/assessments.js';
 import threadRoutes from './routes/thread.js';
 import adminUiRoutes from './routes/admin-ui.js';
 import notificationRoutes from './routes/notifications.js';
+import microsoftIntegrationRoutes from './routes/integrations-microsoft.js';
 import aiRoutes, { aiJson, aiJsonError } from './routes/ai.js';
 
 
@@ -189,6 +190,7 @@ app.use('/api/assessments', assessmentRoutes);
 app.use('/api/thread', threadRoutes);
 app.use('/api/admin-ui', adminUiRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/integrations/microsoft', microsoftIntegrationRoutes);
 app.use('/api/ai', aiRoutes);
 
 // Serve the frontend (single-page app) from ../../frontend/public.

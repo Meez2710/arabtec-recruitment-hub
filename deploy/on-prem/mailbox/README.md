@@ -1,3 +1,42 @@
+> ## DEPRECATED — superseded by the delegated OAuth integration
+>
+> **Do not install this.** It is kept only so a live host that already runs it
+> has something to roll back to, and it will be deleted once the delegated
+> integration has been validated on `ats@10.20.0.9`.
+>
+> The replacement is **`docs/MICROSOFT_365_INTEGRATION.md`**: a System Admin
+> signs in once as `career@arabtecegy.com` and the ATS holds a delegated grant.
+>
+> What that removes, and why it matters:
+>
+> | This connector needs | The delegated one needs |
+> |---|---|
+> | Tenant-wide **Application** `Mail.Read` + `Mail.ReadWrite` | Delegated `Mail.Read` + `Mail.Send` for one signed-in mailbox |
+> | Global admin consent across the directory | The mailbox owner consenting for their own mailbox |
+> | Exchange `New-ApplicationAccessPolicy` to scope it back down | nothing |
+> | PowerShell and a security distribution group | nothing |
+> | Marking mail read and moving it to `Processed-ATS` to de-duplicate | a UNIQUE constraint in the ATS database |
+> | A file drop into `CV_INBOX`, which created candidates with no review | the reviewed CV intake queue |
+>
+> The `Mail.ReadWrite` grant on **every mailbox in the tenant** existed only so
+> this script could mark a message read. Moving de-duplication into the ATS
+> removed the reason for it.
+>
+> **On a host already running it:**
+> ```bash
+> sudo systemctl disable --now arabtec-cv-mailbox.timer
+> ```
+> `05-install-services.sh` also does this automatically. Once the delegated path
+> has run clean for a few days, revoke the app registration's Application
+> permissions and remove the application access policy — see
+> `docs/MICROSOFT_365_INTEGRATION.md`.
+>
+> Note the mailbox address below is `careers@` (plural). The correct production
+> mailbox is **`career@arabtecegy.com`**. It is left as-is here because changing
+> a deprecated file's config would only make a rollback harder.
+
+---
+
 # Careers mailbox → CV inbox bridge
 
 The ATS folder watcher and the 08:00 `inbox-scan` both read a **filesystem

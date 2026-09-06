@@ -1,0 +1,29 @@
+[Unit]
+Description=Arabtec ATS — delegated Microsoft 365 careers-mailbox scan into the CV intake queue
+After=network-online.target arabtec-ats.service
+Wants=network-online.target
+Requires=arabtec-ats.service
+
+[Service]
+Type=oneshot
+# systemd 255 ships DefaultTimeoutStartSec=90s, and a Type=oneshot service is
+# subject to it: a pass that reads several pages of mail and runs an AI parse per
+# CV comfortably exceeds 90 seconds, and systemd would SIGTERM it mid-scan. The
+# scan is idempotent and holds a database lease that expires, so a generous
+# bound is safe; 2h is far above any real pass while still not being infinite.
+TimeoutStartSec=2h
+User=arabtec-ats
+Group=arabtec-ats
+# The SAME environment file the app reads. The Microsoft client secret and
+# MICROSOFT_TOKEN_ENCRYPTION_KEY are already there because the app needs them;
+# this unit adds no new secret and needs no ATS login.
+EnvironmentFile=/etc/arabtec-ats/ats.env
+Environment=ATS_APP_ROOT=/opt/arabtec-ats
+ExecStart=/usr/bin/node /opt/arabtec-ats/deploy/on-prem/m365-sync.mjs
+StandardOutput=append:/var/log/arabtec-ats/m365-sync.log
+StandardError=append:/var/log/arabtec-ats/m365-sync.log
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/arabtec-ats /var/log/arabtec-ats

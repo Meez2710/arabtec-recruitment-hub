@@ -74,6 +74,7 @@ const ICON_PATHS = {
   gear: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V19a2 2 0 11-4 0v-.1A1.6 1.6 0 007 17.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00-1.1-2.7H1a2 2 0 110-4h.1A1.6 1.6 0 002.6 7a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H7a1.6 1.6 0 001-1.5V1a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V7a1.6 1.6 0 001.5 1H23a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.2-4.2',
   scroll: 'M5 4h11a2 2 0 012 2v12a2 2 0 002 2H8a2 2 0 01-2-2V6a2 2 0 00-2-2zM9 8h6M9 12h6',
+  mail: 'M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zM3.5 6.5l8.5 6 8.5-6',
 };
 function Icon({ name, size = 17 }) {
   const d = ICON_PATHS[name];
@@ -507,6 +508,7 @@ const NAV = [
   { key: 'branding', label: 'Branding Settings', icon: 'palette', perm: 'branding.manage' },
   { key: 'buttons', label: 'Button Settings', icon: 'button', perm: 'button.manage' },
   { key: 'workflow', label: 'Workflow Settings', icon: 'flow', perm: 'workflow.manage' },
+  { key: 'microsoft', label: 'Microsoft 365', icon: 'mail', perm: 'system.manage' },
   { key: 'system', label: 'System Settings', icon: 'gear', perm: 'system.manage' },
   { key: 'audit', label: 'Audit Log', icon: 'scroll', perm: 'audit.view' },
 ];
@@ -1027,6 +1029,22 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     setRoute(r); setRouteParams(params); setMobileNavOpen(false); setMoreOpen(false);
   }, []);
 
+  // Deep link, read ONCE on mount. The route lives in React state, not in the
+  // URL, so a redirect from outside the app — the Microsoft OAuth callback
+  // returns the browser to /#microsoft?microsoft=connected — would otherwise
+  // land on the dashboard with the outcome lost. The hash is cleared after it
+  // is read so a refresh does not replay a stale banner.
+  useEffect(() => {
+    const raw = String(window.location.hash || '').replace(/^#/, '');
+    if (!raw) return;
+    const [key, query] = raw.split('?');
+    if (!key || !NAV.some((n) => n.key === key)) return;
+    const params = Object.fromEntries(new URLSearchParams(query || ''));
+    setRoute(key);
+    setRouteParams(Object.keys(params).length ? params : null);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
+
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
   const navItems = visibleNav.filter((n) => !n.section);
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
@@ -1052,6 +1070,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     branding: <BrandingPage user={user} branding={branding} refreshBranding={refreshBranding} />,
     buttons: <ButtonsPage user={user} />,
     workflow: <WorkflowPage user={user} />,
+    microsoft: can(user, 'system.manage')
+      ? <MicrosoftPage user={user} params={route === 'microsoft' ? routeParams : null} />
+      : <Forbidden what="Microsoft 365 Integration" need="System Admin" />,
     system: <SystemPage user={user} />,
     notifications: can(user, 'notification.manage')
       ? <NotificationsPanel user={user} />
@@ -3517,6 +3538,247 @@ function WorkflowPage({ user }) {
         </div>
       ))}
       <p className="muted">Visual editing of states &amp; transitions ships with the Admin Workflow Designer in a later phase.</p>
+    </div>
+  );
+}
+
+/* ----------------------------- Microsoft 365 ----------------------------- */
+/*
+   The delegated mailbox connection for career@arabtecegy.com.
+
+   One button does the whole setup: Connect sends the administrator to
+   Microsoft, they sign in as the careers mailbox, and the ATS keeps a
+   refreshable delegated grant. There is nothing here to paste — no tenant id,
+   no client secret, no password. Those live in the server environment and this
+   screen never sees them; it is told only WHICH variable names are still
+   missing, never a value.
+*/
+const MS_STATE = {
+  CONNECTED: { label: 'Connected', variant: 'success' },
+  RECONNECT_REQUIRED: { label: 'Reconnect required', variant: 'warning' },
+  DISCONNECTED: { label: 'Disconnected', variant: 'soft' },
+  ERROR: { label: 'Error', variant: 'critical' },
+};
+
+// The callback comes back with a code, not a sentence. One place turns each
+// distinguishable failure into something an administrator can act on.
+const MS_CALLBACK_MESSAGE = {
+  'wrong-account': (p) => `That Microsoft account is not the careers mailbox. Sign in as ${p.expected || 'the configured mailbox'} and try again.`,
+  'wrong-tenant': () => 'That Microsoft account belongs to a different tenant. Sign in with the Arabtec account.',
+  'consent-denied': () => 'Consent was not granted, so nothing was connected. Run Connect again and accept the requested permissions.',
+  'invalid-state': () => 'That sign-in link had expired or had already been used. Start again from Connect Microsoft 365.',
+  'missing-code': () => 'Microsoft did not return an authorization code. Start again from Connect Microsoft 365.',
+  'token-cache-missing': () => 'Microsoft returned no refresh token. Check that offline_access is granted on the app registration, then try again.',
+  'reconnect-required': () => 'Microsoft 365 connection requires sign-in again.',
+  'graph-unavailable': () => 'Microsoft could not be reached. Check the server’s outbound HTTPS access and try again.',
+  'graph-throttled': () => 'Microsoft is throttling requests. Wait a moment and try again.',
+  'not-configured': () => 'The integration is not configured on this server yet.',
+};
+
+function MicrosoftPage({ user, params }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(null);          // 'connect' | 'test' | 'sync' | 'disconnect'
+  const [result, setResult] = useState(null);      // last test / scan outcome, shown inline
+  const canManage = can(user, 'system.manage');
+
+  const load = useCallback(async () => {
+    try { setData(await api.get('/integrations/microsoft/status')); setErr(null); }
+    catch (e) { setErr(e.message || 'Could not read the Microsoft 365 connection.'); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // The outcome of an OAuth round trip, handed over in the redirect the callback
+  // issued. Shown once, then the shell has already cleared it from the URL.
+  useEffect(() => {
+    if (!params || !params.microsoft) return;
+    if (params.microsoft === 'connected') toast('Microsoft 365 connected.');
+    else {
+      const build = MS_CALLBACK_MESSAGE[params.code];
+      toast(build ? build(params) : 'The Microsoft 365 sign-in did not complete.', 'error');
+    }
+  }, [params, toast]);
+
+  async function connect() {
+    setBusy('connect');
+    try {
+      // The server builds the authorize URL (it holds the client id and the
+      // redirect URI); the browser makes the top-level navigation, which is what
+      // Microsoft requires. The API client sends a bearer token, so a plain link
+      // would arrive unauthenticated.
+      const r = await api.get('/integrations/microsoft/connect');
+      window.location.assign(r.authUrl);
+    } catch (e) {
+      setBusy(null);
+      toast(e.message || 'Could not start the Microsoft sign-in.', 'error');
+    }
+  }
+
+  async function act(kind, path, okMessage) {
+    setBusy(kind); setResult(null);
+    try {
+      const r = await api.post(path, {});
+      setResult({ kind, ok: true, body: r });
+      toast(typeof okMessage === 'function' ? okMessage(r) : okMessage);
+    } catch (e) {
+      setResult({ kind, ok: false, body: e.data || { error: e.message } });
+      toast(e.message || 'The request failed.', 'error');
+    } finally {
+      setBusy(null);
+      load();
+    }
+  }
+
+  if (err) return <div className="error-banner">{err}</div>;
+  if (!data) return <div className="card"><Skeleton rows={7} /></div>;
+
+  const state = MS_STATE[data.status] || MS_STATE.DISCONNECTED;
+  const connected = data.connected === true;
+  // ERROR describes the last SCAN, not the grant. The backend accepts Test and
+  // Scan in that state and tries to recover, so disabling them here pushed an
+  // administrator toward an unnecessary OAuth reconnect — or a day's wait for
+  // the next timer — for what may have been a moment's throttling. Only the two
+  // states that genuinely need a new sign-in disable the recovery actions.
+  const canAttempt = data.hasTokenCache === true
+    && data.status !== 'DISCONNECTED' && data.status !== 'RECONNECT_REQUIRED';
+
+  return (
+    <div>
+      <PageHead
+        crumb="Configuration / Microsoft 365"
+        title="Microsoft 365"
+        sub="Delegated mailbox connection for the careers inbox. CVs arriving by email enter the same reviewed intake queue as uploaded CVs."
+        actions={canManage && (
+          <button className="btn btn-ghost" onClick={load} disabled={busy !== null}>Refresh</button>
+        )}
+      />
+
+      {!data.configured && (
+        <div className="notice notice-warn card-pad" style={{ marginBottom: 14 }}>
+          <strong>Not configured on this server.</strong> The following environment
+          variables still need to be set before anyone can connect:{' '}
+          {(data.missing || []).length === 0 ? '—' : data.missing.map((name, i) => (
+            <React.Fragment key={name}>{i > 0 && ', '}<code>{name}</code></React.Fragment>
+          ))}.
+          They are set by an administrator on the server, never in this screen.
+        </div>
+      )}
+
+      {data.reconnectRequired && (
+        <div className="notice notice-warn card-pad" style={{ marginBottom: 14 }}>
+          <strong>Microsoft 365 connection requires sign-in again.</strong>{' '}
+          Scheduled inbox scans are paused until an administrator reconnects.
+        </div>
+      )}
+
+      <section className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h3>Connection</h3>
+          <Badge variant={state.variant}>{state.label}</Badge>
+        </div>
+        <div className="card-pad">
+          <div className="form-grid">
+            <Info label="Mailbox">
+              {connected ? `Connected as ${data.mailbox}` : (data.mailbox || '—')}
+            </Info>
+            <Info label="Connected">{data.connectedAt ? fmtDate(data.connectedAt) : '—'}</Info>
+            <Info label="Last inbox sync">{data.lastSuccessfulSyncAt ? fmtDate(data.lastSuccessfulSyncAt) : 'Never'}</Info>
+            <Info label="Last attempt">{data.lastAttemptAt ? fmtDate(data.lastAttemptAt) : '—'}</Info>
+            <Info label="Last sync result">
+              {data.lastResult
+                ? `${data.lastResult.imported ?? 0} imported, ${data.lastResult.skipped ?? 0} skipped, ${data.lastResult.failed ?? 0} failed`
+                : '—'}
+            </Info>
+            <Info label="Reads from">Inbox only, since {data.baselineAt ? fmtDate(data.baselineAt) : 'the connection date'}</Info>
+          </div>
+
+          {data.lastError && (
+            <div className="notice notice-warn card-pad" style={{ marginTop: 4 }}>
+              <strong>Last error:</strong> {data.lastError}
+            </div>
+          )}
+
+          <div className="muted" style={{ marginTop: 12, fontSize: 12 }}>
+            Permissions requested: {(data.scopes || []).join(', ')}. The ATS never
+            marks mail read, moves it, or deletes it — duplicates are prevented in
+            the ATS database instead.
+          </div>
+        </div>
+      </section>
+
+      {canManage && (
+        <section className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head"><h3>Actions</h3></div>
+          <div className="card-pad" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button className="btn" onClick={connect} disabled={!data.configured || busy !== null}>
+              {busy === 'connect' ? 'Opening Microsoft…'
+                : connected ? 'Reconnect' : 'Connect Microsoft 365'}
+            </button>
+            <button className="btn btn-ghost" disabled={!canAttempt || busy !== null}
+              onClick={() => act('test', '/integrations/microsoft/test', (r) => r.message || 'Connection is healthy.')}>
+              {busy === 'test' ? 'Testing…' : 'Test connection'}
+            </button>
+            <button className="btn btn-ghost" disabled={!canAttempt || busy !== null}
+              onClick={() => act('sync', '/integrations/microsoft/sync',
+                (r) => `Scan complete: ${r.imported} imported, ${r.skipped} skipped, ${r.failed} failed.`)}>
+              {busy === 'sync' ? 'Scanning…' : 'Scan inbox now'}
+            </button>
+            <div className="spacer" style={{ flex: 1 }} />
+            <button className="btn btn-danger" disabled={!data.hasTokenCache || busy !== null}
+              onClick={() => act('disconnect', '/integrations/microsoft/disconnect', 'Microsoft 365 disconnected.')}>
+              {busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </div>
+          <div className="card-pad" style={{ paddingTop: 0 }}>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+              Connect opens a Microsoft sign-in page. Sign in there as{' '}
+              <strong>{data.mailbox}</strong> — any other account is refused. The
+              password is entered at Microsoft and is never seen by the ATS.
+              Imported CVs appear in <strong>Candidate Review</strong> as pending
+              intakes; no candidate is created until a person approves one.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {result && (
+        <div className={'notice card-pad ' + (result.ok ? 'notice-info' : 'notice-warn')} style={{ marginBottom: 16 }}>
+          <strong>{result.kind === 'sync' ? 'Scan' : result.kind === 'test' ? 'Test' : 'Result'}:</strong>{' '}
+          {result.ok
+            ? (result.body.message
+              || `${result.body.imported ?? 0} imported, ${result.body.skipped ?? 0} skipped, ${result.body.failed ?? 0} failed.`)
+            : (result.body.error || 'The request failed.')}
+        </div>
+      )}
+
+      {(data.recentIngestions || []).length > 0 && (
+        <section className="card">
+          <div className="card-head"><h3>Recent mailbox attachments</h3>
+            <span className="dash-headnote">{data.recentIngestions.length} most recent</span></div>
+          <div className="table-wrap">
+            <table className="table responsive-table">
+              <thead><tr><th>Attachment</th><th>Received</th><th>Outcome</th><th>Detail</th></tr></thead>
+              <tbody>
+                {data.recentIngestions.map((r) => (
+                  <tr key={r.dedup_key}>
+                    <td data-label="Attachment">{r.attachment_name || '—'}</td>
+                    <td data-label="Received"><DateCell value={r.received_at || r.created_at} /></td>
+                    <td data-label="Outcome">
+                      <Badge variant={r.status === 'IMPORTED' ? 'success' : r.status === 'FAILED' ? 'critical' : 'soft'}>
+                        {r.status}
+                      </Badge>
+                    </td>
+                    <td data-label="Detail" className="muted">
+                      {r.intake_id ? `Intake #${r.intake_id}` : (r.reason || '—')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

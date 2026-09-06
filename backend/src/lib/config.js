@@ -13,6 +13,16 @@ function present(name) {
   return typeof v === 'string' && v.trim() !== '';
 }
 
+// A 32-byte key, written as 64 hex characters or base64 — the two things
+// `openssl rand -hex 32` and `openssl rand -base64 32` actually produce.
+// Checked here, at boot, so a bad key is a startup error and not a failed sync
+// six hours later. The VALUE is never logged; only whether it parsed.
+function validEncryptionKey(raw) {
+  const value = String(raw || '').trim();
+  if (/^[0-9a-f]{64}$/i.test(value)) return true;
+  try { return Buffer.from(value, 'base64').length === 32; } catch { return false; }
+}
+
 // Returns { ok, errors[], warnings[], summary{} }. Callers decide whether to throw.
 export function validateConfig() {
   const errors = [];
@@ -53,6 +63,46 @@ export function validateConfig() {
     warnings.push('ANTHROPIC_API_KEY is unset — no CV reader is wired. Uploads will be kept but nothing will be parsed.');
   }
 
+  // Microsoft 365 delegated mailbox (career@arabtecegy.com).
+  //
+  // HALF-CONFIGURED IS THE DANGEROUS STATE, so it is called out separately from
+  // "off". A host with MS_CLIENT_ID but no MICROSOFT_TOKEN_ENCRYPTION_KEY looks
+  // wired in the admin panel and then fails at the first token write, which is
+  // exactly the failure that should be visible at boot instead.
+  const msVars = ['MS_TENANT_ID', 'MS_CLIENT_ID', 'MS_CLIENT_SECRET'];
+  const msSet = msVars.filter(present);
+  const msRedirect = present('MS_REDIRECT_URI') || present('CORS_ORIGINS');
+  const msEnabled = msSet.length > 0;
+  if (msEnabled) {
+    const msMissing = msVars.filter((v) => !present(v));
+    if (msMissing.length) {
+      errors.push(`Microsoft 365 integration is half-configured: missing ${msMissing.join(', ')}. `
+        + 'Set all of MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET, or none.');
+    }
+    if (!present('MICROSOFT_TOKEN_ENCRYPTION_KEY')) {
+      errors.push('MICROSOFT_TOKEN_ENCRYPTION_KEY is required when the Microsoft 365 integration is '
+        + 'enabled — the MSAL token cache is encrypted at rest. Generate one with `openssl rand -hex 32`.');
+    } else if (!validEncryptionKey(process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY)) {
+      errors.push('MICROSOFT_TOKEN_ENCRYPTION_KEY must be 32 bytes — 64 hex characters or base64.');
+    }
+    if (!msRedirect) {
+      errors.push('MS_REDIRECT_URI is required when the Microsoft 365 integration is enabled '
+        + '(or set CORS_ORIGINS to the ATS public URL, which it is derived from).');
+    } else if (isProd) {
+      const uri = process.env.MS_REDIRECT_URI
+        || `${(process.env.CORS_ORIGINS || '').split(',')[0].trim().replace(/\/+$/, '')}/api/integrations/microsoft/callback`;
+      // Microsoft rejects a non-HTTPS web redirect URI for anything but
+      // localhost, so an http:// value here never completes a sign-in.
+      if (!/^https:\/\//i.test(uri)) {
+        warnings.push('The Microsoft redirect URI is not HTTPS. Entra only accepts https:// (or http://localhost), '
+          + 'so the connect flow will fail until the ATS is served over TLS.');
+      }
+    }
+  } else if (isProd) {
+    warnings.push('Microsoft 365 mailbox integration is OFF (MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET unset) '
+      + '— the careers mailbox will not be scanned.');
+  }
+
   // Monitoring
   if (!present('SENTRY_DSN') && isProd) {
     warnings.push('SENTRY_DSN is unset — error tracking is disabled in production.');
@@ -72,6 +122,8 @@ export function validateConfig() {
     aiParsing: hasAiKey,
     sentry: present('SENTRY_DSN'),
     watcher: present('CV_INBOX') || present('CV_WATCH_INTERVAL_MIN'),
+    microsoftMailbox: msEnabled && present('MICROSOFT_TOKEN_ENCRYPTION_KEY'),
+    mailProvider: process.env.MAIL_PROVIDER || 'auto',
     trustProxy: process.env.TRUST_PROXY ?? (isProd ? '1 (default)' : 'false (default)'),
   };
 

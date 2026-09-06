@@ -24,10 +24,36 @@ sudo install -m 0644 "$HERE/systemd/arabtec-cv-scan.service"     /etc/systemd/sy
 sudo install -m 0644 "$HERE/systemd/arabtec-cv-scan.timer"       /etc/systemd/system/
 sudo install -m 0644 "$HERE/systemd/arabtec-ats-backup.service"  /etc/systemd/system/
 sudo install -m 0644 "$HERE/systemd/arabtec-ats-backup.timer"    /etc/systemd/system/
+sudo install -m 0644 "$HERE/systemd/arabtec-m365-sync.service"   /etc/systemd/system/
+sudo install -m 0644 "$HERE/systemd/arabtec-m365-sync.timer"     /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now arabtec-ats.service
 sudo systemctl enable --now arabtec-cv-scan.timer
 sudo systemctl enable --now arabtec-ats-backup.timer
+
+# The careers mailbox: ONE scheduled trigger, 08:00 Africa/Cairo. The old
+# app-only connector (arabtec-cv-mailbox.timer, deploy/on-prem/mailbox/) is
+# deprecated — stop it here so the two can never both pull the same mail.
+if systemctl list-unit-files | grep -q '^arabtec-cv-mailbox.timer'; then
+  echo "==> retiring the deprecated app-only mailbox connector"
+  sudo systemctl disable --now arabtec-cv-mailbox.timer || true
+fi
+# Enabled only once Microsoft 365 is actually connected in the ATS; until then
+# every run would exit 0 with "not connected" and clutter the log.
+if sudo -u arabtec-ats ATS_APP_ROOT=/opt/arabtec-ats bash -c \
+     'set -a; . /etc/arabtec-ats/ats.env; set +a; node /opt/arabtec-ats/deploy/on-prem/m365-sync.mjs --status' >/dev/null 2>&1; then
+  sudo systemctl enable --now arabtec-m365-sync.timer
+  echo "    Microsoft 365 is connected — 08:00 Africa/Cairo mailbox scan enabled."
+else
+  # --now here too: plain `enable` only writes the boot symlink, so without it
+  # the timer stays inactive until the next reboot and the promised 08:00 scan
+  # never happens. Starting it now is harmless while disconnected — m365-sync.mjs
+  # exits 0 with "not connected" until someone connects the mailbox.
+  sudo systemctl enable --now arabtec-m365-sync.timer
+  echo "    Microsoft 365 is NOT connected yet. The timer is installed and running;"
+  echo "    connect the mailbox in the ATS (Configuration > Microsoft 365) and the"
+  echo "    next 08:00 Africa/Cairo run will pick it up."
+fi
 
 echo "==> apache reverse proxy"
 sudo a2enmod proxy proxy_http headers ssl rewrite >/dev/null

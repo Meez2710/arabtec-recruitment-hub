@@ -3,7 +3,8 @@ import {
   Branding, Buttons, Workflows, SystemSettings, NotificationConfig } from '../lib/models.js';
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { isConfigured as emailConfigured, verifyConnection, sendMail, DEFAULT_SMTP_HOST } from '../lib/mailer.js';
+import { isConfigured as emailConfigured, activeProvider, verifyConnection, sendMail, DEFAULT_SMTP_HOST } from '../lib/mailer.js';
+import { connectionStatus as microsoftStatus } from '../lib/microsoft/connection-store.js';
 import { NOTIFICATION_EVENTS, RECIPIENTS, EXTERNAL_RECIPIENTS } from '../lib/notification-catalog.js';
 import { testEmail } from '../lib/email_templates.js';
 import { allFlags, setFlag, isEnabled } from '../lib/feature-flags.js';
@@ -172,11 +173,23 @@ router.put('/system', requireAuth, requirePermission('system.manage'), (req, res
 
 // ---------------- Email (C2.2) ----------------
 // Status: is the mailbox connection configured? (admin-visible; no secrets returned)
+//
+// `provider` is what a send would ACTUALLY use right now. It matters because
+// mail can leave by two different routes: Microsoft Graph on the delegated
+// careers-mailbox connection, or the SMTP fallback. Reporting only the SMTP
+// host — as this endpoint used to — would name a transport that is not the one
+// carrying the mail, which is the same class of drift the DEFAULT_SMTP_HOST
+// comment in mailer.js records.
 router.get('/email/status', requireAuth, requireAnyPermission('system.manage', 'notification.manage'), (req, res) => {
+  const provider = activeProvider();
+  const microsoft = provider === 'graph' ? microsoftStatus() : null;
   res.json({
     configured: emailConfigured(),
+    provider,
     host: process.env.SMTP_HOST || DEFAULT_SMTP_HOST,
-    from: process.env.MAIL_FROM || process.env.SMTP_USER || '(not set)',
+    from: provider === 'graph' && microsoft?.mailbox
+      ? microsoft.mailbox
+      : (process.env.MAIL_FROM || process.env.SMTP_USER || '(not set)'),
   });
 });
 

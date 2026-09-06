@@ -1,5 +1,20 @@
 #!/usr/bin/env node
 // ============================================================================
+// DEPRECATED — DO NOT INSTALL. Superseded by the delegated OAuth integration:
+//   docs/MICROSOFT_365_INTEGRATION.md
+//   backend/src/lib/microsoft/mailbox-sync.js
+//   deploy/on-prem/m365-sync.mjs  (arabtec-m365-sync.timer, 08:00 Africa/Cairo)
+//
+// Kept ONLY as a rollback for a host that already runs it; delete once the
+// delegated path is validated on ats@10.20.0.9. This file needs tenant-wide
+// Application Mail.Read + Mail.ReadWrite, an Exchange application access
+// policy, and it MUTATES the mailbox (marks read, moves to Processed-ATS) to
+// de-duplicate. The replacement needs none of that: delegated scopes for one
+// signed-in mailbox, and a UNIQUE constraint in the ATS database.
+//
+// It also drops files into CV_INBOX, where the watcher created candidates with
+// no human review. The replacement files them as PENDING intakes instead.
+// ============================================================================
 // cv-mailbox-sync.mjs — pull CV attachments from the careers mailbox into the
 // ATS CV inbox folder, so the folder watcher (or the 08:00 inbox-scan) imports
 // them.

@@ -1,0 +1,26 @@
+[Unit]
+Description=Arabtec ATS — daily careers-mailbox scan at 08:00 Africa/Cairo
+
+# THE ONE AUTHORITATIVE MAILBOX TRIGGER. Nothing else pulls mail:
+#   • arabtec-cv-mailbox.timer (app-only Graph -> CV_INBOX) is DEPRECATED and
+#     must be disabled — see deploy/on-prem/mailbox/README.md.
+#   • The in-process folder watcher (CV_WATCH_INTERVAL_MIN) watches a disk
+#     folder, which the mailbox no longer writes into.
+#   • arabtec-cv-scan.timer scans the HR CV share, a different source.
+#
+# A timer, not an interval, for the reason cv-scan.sh already documents: an
+# interval cannot express "08:00 local", drifts across restarts and ignores DST.
+
+[Timer]
+# The timezone belongs IN the calendar expression. `Timezone=` is not a key
+# systemd defines for [Timer] — it logs "Unknown key name" and ignores it, so
+# the job silently ran at 08:00 in whatever zone the host uses (UTC on a default
+# Ubuntu server, i.e. 10:00 Cairo). A trailing zone on OnCalendar is supported
+# from systemd 252; Ubuntu 24.04 ships 255. Verify with:
+#   systemd-analyze calendar '*-*-* 08:00:00 Africa/Cairo'
+OnCalendar=*-*-* 08:00:00 Africa/Cairo
+Persistent=true
+Unit=arabtec-m365-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -25,7 +25,8 @@ const SUITES = [
   'production_reset_test.mjs', // go-live reset clears the pipeline and keeps the company
   'auth_security_test.mjs',   // C1.1 rotation + C1.3 password policy + lockout
   'rate_limit_test.mjs',      // C1.4 global rate limiter
-  'email_test.mjs',           // C2.2 email module (SMTP, dry-run)
+  'email_test.mjs',           // C2.2 email module (provider selection, dry-run)
+  'microsoft_integration_test.mjs', // M365 delegated OAuth mailbox: connect, scan, intake, idempotency
   'notifications_test.mjs',   // C2.3 in-app notifications + assignment/approval wiring
   'notification_e2e_test.mjs', // every catalogued event really fires, to the right people
   'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention

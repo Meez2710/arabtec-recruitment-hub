@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
+    "@azure/msal-node": "^6.0.0",
     "@types/multer": "^2.2.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
