@@ -125,3 +125,17 @@ Master data import (the 17 projects / 17 depts / 41 managers / 459 designations)
 is a separate `backend/prisma/migrate-arabtec-data.mjs` run against
 `DATABASE_URL` — do it only if you did **not** import the Render database, and
 only after a dry run.
+
+That script **wipes every candidate, application, interview, offer and
+recruitment request** before it loads. It therefore refuses to start unless
+`ARABTEC_MANAGER_PASSWORD` is set, which is also the initial password for the
+41 imported manager accounts:
+
+```bash
+cd /opt/arabtec-ats/backend
+ARABTEC_MANAGER_PASSWORD='<initial manager password>' \
+  node --experimental-sqlite prisma/migrate-arabtec-data.mjs
+```
+
+Take a backup first (`backup.sh`). The refusal happens before any DELETE, so a
+run without the variable changes nothing.

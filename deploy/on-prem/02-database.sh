@@ -46,4 +46,7 @@ echo
 echo "Next: either"
 echo "  • 03-import-from-render.sh   — bring the live Render data across, OR"
 echo "  • skip it and let the app seed a fresh admin-only DB on first boot"
-echo "    (then run backend/prisma/migrate-arabtec-data.mjs for the org data)."
+echo "    (then load the org data — the migration WIPES all candidate/request data,"
+echo "     so it refuses to run unless you confirm with ARABTEC_MANAGER_PASSWORD:"
+echo "       cd backend && ARABTEC_MANAGER_PASSWORD=<initial manager password> \\"
+echo "         node --experimental-sqlite prisma/migrate-arabtec-data.mjs )"
