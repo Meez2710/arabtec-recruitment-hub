@@ -864,6 +864,82 @@ export function ensureSchema() {
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_designation_dept ON designation(department_id);
+
+  -- ---- Microsoft 365 delegated mailbox connection ----
+  -- ONE row per provider (the unique index below enforces it). This is the
+  -- durable half of the OAuth connection: which account consented, and its
+  -- MSAL token cache, ENCRYPTED (AES-256-GCM, lib/microsoft/crypto.js).
+  --
+  -- The client secret is NOT here and never will be — it lives only in the
+  -- environment. Access tokens are not stored at all; MSAL keeps them in the
+  -- cache blob and renews them silently from the refresh token.
+  CREATE TABLE IF NOT EXISTS microsoft_connection (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL DEFAULT 'microsoft',
+    mailbox TEXT,
+    tenant_id TEXT,
+    home_account_id TEXT,
+    token_cache TEXT,                                   -- AES-256-GCM envelope, never plaintext
+    status TEXT NOT NULL DEFAULT 'DISCONNECTED',        -- CONNECTED|DISCONNECTED|RECONNECT_REQUIRED|ERROR
+    -- Set at connect time. The first scan starts HERE, so connecting does not
+    -- drag the whole historic inbox into the review queue.
+    baseline_at TEXT,
+    connected_at TEXT,
+    last_successful_sync_at TEXT,
+    last_attempt_at TEXT,
+    last_error TEXT,
+    last_result TEXT,                                   -- JSON summary of the last scan
+    created_by INTEGER REFERENCES users(id),
+    updated_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_msconn_provider ON microsoft_connection(provider);
+
+  -- ---- Mailbox ingestion ledger (idempotency) ----
+  -- THE reason the connector never needs Mail.ReadWrite. The retired app-only
+  -- design de-duplicated by MARKING MAIL READ and moving it to a Processed-ATS
+  -- folder — mailbox mutations that bought write permission on every message in
+  -- the tenant. This table does the same job inside the ATS: one row per
+  -- (mailbox, message, attachment), and dedup_key is UNIQUE, so a restart
+  -- mid-scan or an overlapping scan window can never produce a second intake.
+  CREATE TABLE IF NOT EXISTS mailbox_ingestion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL DEFAULT 'microsoft',
+    mailbox TEXT NOT NULL,
+    dedup_key TEXT NOT NULL,                            -- sha256(provider|mailbox|message|attachment)
+    message_id TEXT,
+    internet_message_id TEXT,
+    attachment_id TEXT,
+    attachment_name TEXT,
+    content_hash TEXT,
+    received_at TEXT,
+    status TEXT NOT NULL DEFAULT 'PROCESSING',          -- PROCESSING|IMPORTED|SKIPPED|FAILED
+    reason TEXT,
+    intake_id INTEGER,
+    stored_name TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_mailbox_ingestion_key ON mailbox_ingestion(dedup_key);
+  CREATE INDEX IF NOT EXISTS idx_mailbox_ingestion_status ON mailbox_ingestion(status, created_at);
+
+  -- ---- OAuth state (CSRF) ----
+  -- Stored HASHED and single-use, for the same reason password_reset_token is:
+  -- a database leak must not yield a replayable value. Bound to the System
+  -- Admin who started the flow, and to their session, so a state issued to one
+  -- administrator cannot be completed by anyone else.
+  CREATE TABLE IF NOT EXISTS microsoft_oauth_state (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    state_hash TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_hash TEXT,
+    redirect_uri TEXT,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_msoauth_expires ON microsoft_oauth_state(expires_at);
   `);
 
   migrateWorkflowStages();

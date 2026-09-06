@@ -6,7 +6,7 @@ As deployed on `ats@10.20.0.9` right now (`/api/health/watcher` + `/api/health/p
 |---|---|---|
 | CV reader (Claude) | **off** — `parsing` reports all `none` | `ANTHROPIC_API_KEY` is not set in `/etc/arabtec-ats/ats.env` |
 | Folder watcher | **off** — `watcher.running:false` | the `folder_watcher` feature flag is `disabled` (checked once at boot, `server.js`) |
-| Mail → folder feed | **none** | the watcher/`inbox-scan` read a **disk folder**; nothing copies mail into it (`/api/ingest/cv` is 404 on this build) |
+| Mailbox feed | **none** | replaced by the delegated Microsoft 365 integration — see step 3; it bypasses the folder entirely |
 
 All three must be on. Do them in this order.
 
@@ -50,25 +50,51 @@ at 08:00 Africa/Cairo. It needs a dedicated `candidate.add`-only account in
 `/etc/arabtec-ats/scan.env`. Use **one** trigger, not both — if you enable the
 timer, set `CV_WATCH_INTERVAL_MIN=0` so the folder isn't scanned twice.
 
-## 3. Feed the folder from the careers mailbox
+Both of these concern the **HR CV folder share** only. The careers mailbox has
+its own single trigger (`arabtec-m365-sync.timer`) and no longer writes into
+`CV_INBOX`, so the two sources cannot double-import the same CV.
 
-See **`deploy/on-prem/mailbox/README.md`**. Summary: an Azure AD app registration
-(`Mail.Read` application permission, scoped to the careers mailbox with an
-application access policy), then a systemd timer runs
-`deploy/on-prem/mailbox/cv-mailbox-sync.mjs` every 10 minutes to copy `.pdf/.docx/.doc`
-attachments from `careers@arabtecegy.com` into `CV_INBOX` and mark the mail
-handled. No npm dependencies.
+## 3. Connect the careers mailbox
 
-Once 1–3 are on: a CV emailed to the careers address becomes a candidate within
-~10–20 minutes, no recruiter action.
+This step no longer touches the folder at all. The mailbox is read directly by
+the ATS over **delegated** Microsoft Graph and files CVs straight into the
+review queue — see **`docs/MICROSOFT_365_INTEGRATION.md`** for the full
+procedure. In short:
 
-## What I need from you to finish step 3
+1. An Entra app registration with **delegated** `Mail.Read` + `Mail.Send` and a
+   Web redirect URI of `https://<ATS-PUBLIC-HOST>/api/integrations/microsoft/callback`.
+   No Application permissions, no admin consent across the directory, no
+   Exchange application access policy, no PowerShell.
+2. `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_MAILBOX`,
+   `MS_REDIRECT_URI` and `MICROSOFT_TOKEN_ENCRYPTION_KEY` in
+   `/etc/arabtec-ats/ats.env`, then `sudo systemctl restart arabtec-ats`.
+3. A System Admin signs in **once** at Configuration → Microsoft 365 →
+   **Connect Microsoft 365**, as `career@arabtecegy.com`.
+4. `sudo systemctl enable --now arabtec-m365-sync.timer` — 08:00 Africa/Cairo,
+   daily, the one authoritative mailbox trigger.
 
-1. The exact **careers mailbox address**.
-2. Whether you can create the **Azure AD app registration** (or who can) —
-   I need `tenant ID`, `client ID`, `client secret` set in
-   `/etc/arabtec-ats/mailbox.env` (never sent to me).
+```bash
+sudo systemctl disable --now arabtec-cv-mailbox.timer   # retire the old app-only bridge
+systemctl list-timers arabtec-m365-sync.timer
+```
+
+**What changes for recruiters:** a CV emailed to the careers address appears in
+**Candidate Review** as a pending intake at the next 08:00 run (or immediately
+via "Scan inbox now"). A candidate is created when a person approves it — an
+email arriving is no longer enough on its own. That is deliberate: the old
+folder-drop path created candidates from whatever the parser returned, with no
+review.
+
+## What I still need from you
+
+1. The **ATS public HTTPS hostname**. The Apache vhost still says
+   `ServerName ats.arabtec.local  # REPLACE` and `ats.env` still says
+   `CORS_ORIGINS=https://REPLACE_ME`. Microsoft will not accept a redirect URI
+   on plain `http://10.20.0.9:4001`, so the TLS vhost has to be finished first.
+2. Whether you can create the **Entra app registration** (or who can) — I need
+   `tenant ID`, `client ID` and a `client secret` placed in
+   `/etc/arabtec-ats/ats.env` on the server. **Do not send any of them to me.**
 3. Confirmation the server has **outbound HTTPS to `graph.microsoft.com` and
    `login.microsoftonline.com`**.
-4. Whether recruiters want new CVs **auto-linked to a specific open requisition**
-   or just landed in the Talent Pool (default).
+4. Whether the HR CV folder share (`arabtec-cv-scan.timer`) is still in use, or
+   whether the mailbox is now the only intake source.

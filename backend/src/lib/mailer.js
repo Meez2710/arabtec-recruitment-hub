@@ -1,22 +1,32 @@
-// Email sending (C2.2) — Microsoft 365 SMTP via nodemailer.
+// Email sending — one function, two providers.
 //
-// Design goals:
-//   • Zero-config safe: with no SMTP_USER / SMTP_PASS set, everything no-ops
-//     cleanly (sendMail returns {ok:false, skipped:true}) — the app runs exactly
-//     as before. Nothing crashes because email isn't wired yet.
-//   • One place that knows how to talk to the mailbox. Everything else calls sendMail().
-//   • Best-effort: a mail failure never throws into a request handler.
+// THE CALL SURFACE IS UNCHANGED. Every call site in the app (notify.js,
+// candidates.js, interviews.js, offers.js, settings.js) still calls
+// `sendMail({ to, subject, html })` and still gets a result object back that
+// never throws. Only the transport underneath it moved.
 //
-// Configuration (set in the server environment / Render, never in code):
-//   SMTP_HOST       default smtp.office365.com (arabtecegy.com is a Microsoft 365
-//                   tenant — its MX is arabtecegy-com.mail.protection.outlook.com
-//                   and its SPF includes spf.protection.outlook.com)
-//   SMTP_PORT       default 587  (STARTTLS)
-//   SMTP_USER       the Gmail address, e.g. career@arabtecegy.com   (REQUIRED)
-//   SMTP_PASS       Gmail app password (NOT your login password)    (REQUIRED)
-//   MAIL_FROM       default = SMTP_USER
-//   MAIL_FROM_NAME  default "Arabtec Careers"
+// PROVIDER ORDER, and why:
+//   1. dry-run   — SMTP_TRANSPORT=json. Wins over everything, unconditionally,
+//                  so an automated test can never post real mail from the
+//                  company mailbox. run_tests.mjs pins it for the whole suite.
+//   2. graph     — Microsoft Graph POST /me/sendMail on the SAME delegated
+//                  connection the inbox scan uses. No SMTP password exists in
+//                  this path; the mailbox consented once, in a browser.
+//   3. smtp      — the original nodemailer transport. Still here, still
+//                  working, and used only when SMTP_USER/SMTP_PASS are set.
+//                  It is a FALLBACK, not a peer: MAIL_PROVIDER=smtp pins it,
+//                  MAIL_PROVIDER=graph forbids it, and the default ("auto")
+//                  prefers Graph whenever the Microsoft connection is healthy.
+//
+// Configuration:
+//   MAIL_PROVIDER   auto (default) | graph | smtp
+//   SMTP_*          unchanged, see docs/ENVIRONMENT_VARIABLES.md
+//   MAIL_FROM_NAME  display name, used by both providers
 import nodemailer from 'nodemailer';
+
+import { connectionRow } from './microsoft/connection-store.js';
+import { sendMailAs } from './microsoft/graph.js';
+import { acquireGraphToken } from './microsoft/msal-client.js';
 
 let transport = null;
 
@@ -43,10 +53,47 @@ function cfg() {
 // jsonTransport). Used by tests/CI and for a safe "does the wiring work" check.
 function jsonMode() { return process.env.SMTP_TRANSPORT === 'json'; }
 
-export function isConfigured() {
-  if (jsonMode()) return true;
+/** Which provider is pinned by configuration: 'auto' | 'graph' | 'smtp'. */
+function preferredProvider() {
+  const value = String(process.env.MAIL_PROVIDER || 'auto').trim().toLowerCase();
+  return value === 'graph' || value === 'smtp' ? value : 'auto';
+}
+
+function smtpConfigured() {
   const c = cfg();
   return !!(c.user && c.pass);
+}
+
+/**
+ * Is the Microsoft delegated connection healthy enough to send through?
+ *
+ * Read from the connection row, never by calling Microsoft — this is consulted
+ * on every send and must stay cheap. A RECONNECT_REQUIRED connection answers
+ * false, so mail falls back (when SMTP is configured) rather than failing.
+ *
+ * connectionRow() already tolerates the table not existing, which is what makes
+ * a static import safe here: routes import this module before ensureSchema()
+ * has run.
+ */
+function graphReady() {
+  try {
+    const row = connectionRow();
+    return !!(row && row.status === 'CONNECTED' && row.token_cache && row.home_account_id);
+  } catch { return false; }
+}
+
+/** Which provider a send would use right now. Reported by /settings/email/status. */
+export function activeProvider() {
+  if (jsonMode()) return 'dry-run';
+  const preferred = preferredProvider();
+  if (preferred === 'smtp') return smtpConfigured() ? 'smtp' : 'none';
+  if (preferred === 'graph') return graphReady() ? 'graph' : 'none';
+  if (graphReady()) return 'graph';
+  return smtpConfigured() ? 'smtp' : 'none';
+}
+
+export function isConfigured() {
+  return activeProvider() !== 'none';
 }
 
 function getTransport() {
@@ -64,22 +111,53 @@ function getTransport() {
   return transport;
 }
 
-// Verify the SMTP connection/credentials without sending. Returns {ok, error?}.
+// Verify the mail connection without sending. Returns {ok, error?, provider}.
 export async function verifyConnection() {
-  if (!isConfigured()) return { ok: false, error: 'Email not configured (SMTP_USER / SMTP_PASS missing).' };
-  try { await getTransport().verify(); return { ok: true }; }
-  catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  const provider = activeProvider();
+  if (provider === 'none') {
+    return { ok: false, provider, error: 'Email is not configured. Connect Microsoft 365, or set SMTP_USER / SMTP_PASS.' };
+  }
+  if (provider === 'graph') {
+    // The delegated connection proves itself by acquiring a token silently —
+    // exactly what a send would do, minus the send.
+    try {
+      await acquireGraphToken();
+      return { ok: true, provider };
+    } catch (e) {
+      return { ok: false, provider, error: String((e && e.message) || e) };
+    }
+  }
+  try { await getTransport().verify(); return { ok: true, provider }; }
+  catch (e) { return { ok: false, provider, error: String((e && e.message) || e) }; }
 }
 
 // Send an email. Never throws — returns a result object the caller can log/audit.
 // { to, subject, html, text?, replyTo? }
 export async function sendMail({ to, subject, html, text, replyTo }) {
   const c = cfg();
-  if (!isConfigured()) {
+  const provider = activeProvider();
+  if (provider === 'none') {
     console.log(JSON.stringify({ level: 'info', msg: 'email.skipped', reason: 'not_configured', to, subject }));
     return { ok: false, skipped: true, reason: 'not_configured' };
   }
   if (!to || !subject) return { ok: false, error: 'Recipient and subject are required.' };
+
+  if (provider === 'graph') {
+    try {
+      await sendMailAs({ to, subject, html, text, replyTo });
+      console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: 'graph', to, subject }));
+      return { ok: true, provider: 'graph' };
+    } catch (e) {
+      const error = String((e && e.message) || e);
+      console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'graph', to, subject, error }));
+      // BACKWARD COMPATIBILITY. A Graph failure falls back to SMTP only when
+      // SMTP is genuinely configured and Graph was not pinned — a notification
+      // that used to send must not start disappearing because the Microsoft
+      // connection lapsed.
+      if (preferredProvider() === 'graph' || !smtpConfigured()) return { ok: false, provider: 'graph', error };
+    }
+  }
+
   try {
     const info = await getTransport().sendMail({
       from: `"${c.fromName}" <${c.from}>`,
@@ -87,10 +165,10 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
       text: text || html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
       replyTo: replyTo || c.from,
     });
-    console.log(JSON.stringify({ level: 'info', msg: 'email.sent', to, subject, messageId: info.messageId }));
-    return { ok: true, messageId: info.messageId };
+    console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: jsonMode() ? 'dry-run' : 'smtp', to, subject, messageId: info.messageId }));
+    return { ok: true, messageId: info.messageId, provider: jsonMode() ? 'dry-run' : 'smtp' };
   } catch (e) {
-    console.log(JSON.stringify({ level: 'error', msg: 'email.failed', to, subject, error: String(e && e.message || e) }));
+    console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'smtp', to, subject, error: String(e && e.message || e) }));
     return { ok: false, error: String(e && e.message || e) };
   }
 }

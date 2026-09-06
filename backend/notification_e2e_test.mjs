@@ -18,7 +18,7 @@ process.env.PORT = String(4830 + (process.pid % 60));
 process.env.SEED_ADMIN_PASSWORD = 'Admin@12345';   // what test-support/admin-session.mjs expects
 process.env.SEED_DEMO_DATA = 'true';
 process.env.SMTP_TRANSPORT = 'json';
-process.env.MAIL_FROM = 'careers@arabtecegy.com';
+process.env.MAIL_FROM = 'career@arabtecegy.com';   // the real careers mailbox (singular)
 process.env.RATE_LIMIT_DISABLED = 'true';
 
 import fs from 'node:fs';

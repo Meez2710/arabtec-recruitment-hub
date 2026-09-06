@@ -1,0 +1,281 @@
+// The delegated mailbox scan: career@arabtecegy.com -> the EXISTING CV intake.
+//
+// WHAT THIS DELIBERATELY DOES NOT DO. It does not create candidates. An email
+// arriving is not a decision to add someone to the talent pool, and the ATS
+// already has a reviewed path for that: parse the CV, propose fields with
+// evidence, and let a person approve. Attachments land as PENDING
+// `candidate_intake` rows through the very same seam POST /candidates/parse-cv
+// uses (parseDocument + createIntake), so mailbox CVs and uploaded CVs are the
+// same record, reviewed on the same screen, with the same audit trail.
+//
+// It replaces deploy/on-prem/mailbox/cv-mailbox-sync.mjs, which wrote files into
+// a folder for the watcher to pick up and which used client-credentials auth.
+// Both of those are gone here: delegated tokens, and a direct call into the
+// intake service rather than a file drop and an HTTP call back into ourselves.
+
+import path from 'node:path';
+import crypto from 'node:crypto';
+
+import { storeFile, uploadPath, MAX_BYTES } from '../upload.js';
+import { parseDocument } from '../parsing/pipeline-provider.js';
+import { createIntake } from '../intake-store.js';
+import { writeAudit } from '../audit.js';
+import { get } from '../db.js';
+import { CV_EXTENSIONS, configuredMailbox, overlapMinutes, syncBatchSize } from './config.js';
+import { acquireGraphToken, classify, CODES, MicrosoftAuthError } from './msal-client.js';
+import { listInboxMessages, listAttachments, downloadAttachment } from './graph.js';
+import {
+  claimAttachment, completeAttachment, releaseAttachment, connectionRow,
+  markAttempt, markError, markReconnectRequired, markSyncSuccess, STATUS,
+} from './connection-store.js';
+
+const FILE_ATTACHMENT = '#microsoft.graph.fileAttachment';
+
+/** One scan at a time, in this process. */
+let running = false;
+export const isSyncRunning = () => running;
+
+const log = (fields) => console.log(JSON.stringify({ level: 'info', ...fields }));
+const warn = (fields) => console.log(JSON.stringify({ level: 'warn', ...fields }));
+
+/**
+ * Where this scan starts reading.
+ *
+ * FIRST CONNECTION READS NOTHING HISTORIC. `baseline_at` is stamped when the
+ * administrator connects, and with no successful sync yet the window opens
+ * exactly there — a mailbox with ten years of applications does not become ten
+ * years of review queue because someone clicked Connect.
+ *
+ * Later scans reach back a small overlap before the last success, because
+ * "received at" is the server's clock and a message can be indexed a moment
+ * after the previous scan read the folder. The overlap is safe precisely
+ * because mailbox_ingestion makes re-reading a message a no-op.
+ */
+export function syncWindowStart(row, { overlapMin = overlapMinutes() } = {}) {
+  const baseline = row?.baseline_at ? new Date(row.baseline_at) : null;
+  const last = row?.last_successful_sync_at ? new Date(row.last_successful_sync_at) : null;
+  if (!last || Number.isNaN(last.getTime())) {
+    return (baseline && !Number.isNaN(baseline.getTime()) ? baseline : new Date()).toISOString();
+  }
+  const withOverlap = new Date(last.getTime() - overlapMin * 60 * 1000);
+  // Never reach back past the baseline — that is the historic mailbox.
+  if (baseline && !Number.isNaN(baseline.getTime()) && withOverlap < baseline) return baseline.toISOString();
+  return withOverlap.toISOString();
+}
+
+/** Is this attachment a CV the existing intake flow accepts? */
+export function classifyAttachment(attachment) {
+  if (attachment?.isInline === true) return { accept: false, reason: 'inline attachment' };
+  if (attachment?.['@odata.type'] !== FILE_ATTACHMENT) return { accept: false, reason: 'not a file attachment' };
+  const name = String(attachment?.name || '');
+  const ext = path.extname(name).toLowerCase();
+  if (!CV_EXTENSIONS.includes(ext)) return { accept: false, reason: `unsupported file type ${ext || '(none)'}` };
+  // The app's own 20 MB cap, read from upload.js rather than restated — one
+  // limit, defined where uploads are defined.
+  if (Number(attachment?.size) > MAX_BYTES) return { accept: false, reason: 'attachment exceeds the 20MB limit' };
+  return { accept: true, ext };
+}
+
+/** A PENDING intake for these exact bytes is already waiting for a reviewer. */
+function pendingIntakeForHash(hash) {
+  try {
+    return get("SELECT id FROM candidate_intake WHERE file_hash=? AND status='PENDING' LIMIT 1", [hash]) || null;
+  } catch { return null; }
+}
+
+/**
+ * Run one mailbox scan.
+ *
+ * NEVER THROWS for a per-message or per-attachment failure. A CV that will not
+ * parse, an attachment Graph refuses, an intake that produced no fields — each
+ * is recorded against its own ledger row and the batch continues. Only a
+ * connection-level failure (no token, throttled, Graph down) ends the pass, and
+ * even then it is returned, not thrown, so the caller can report it.
+ *
+ * `parse` defaults to the production CV reader and exists so the mailbox rules —
+ * filtering, idempotency, batch resilience, the baseline window — can be tested
+ * without an ANTHROPIC_API_KEY and without a network. It is the same seam
+ * lib/parsing/registry.js gives the upload route, scoped to one call site.
+ *
+ * @param {{ actor?: {id:number, fullName?:string}|null, req?: object|null,
+ *           parse?: (filePath: string) => Promise<object> }} options
+ */
+export async function runMailboxSync({ actor = null, req = null, parse = parseDocument } = {}) {
+  if (running) {
+    return { ok: false, code: 'already-running', error: 'A mailbox scan is already in progress.' };
+  }
+  const row = connectionRow();
+  if (!row || row.status === STATUS.DISCONNECTED || !row.home_account_id) {
+    return { ok: false, code: CODES.NOT_CONNECTED, error: 'Microsoft 365 is not connected.' };
+  }
+
+  running = true;
+  const mailbox = row.mailbox || configuredMailbox();
+  const startedAt = new Date();
+  const since = syncWindowStart(row);
+  const summary = {
+    mailbox, since, messages: 0, attachments: 0, imported: 0, skipped: 0, failed: 0,
+    intakeIds: [], startedAt: startedAt.toISOString(),
+  };
+
+  try {
+    markAttempt();
+
+    // One token for the whole pass. MSAL renews it silently from the stored
+    // refresh token; an interaction-required condition surfaces here, once,
+    // rather than on every message.
+    const { accessToken } = await acquireGraphToken();
+
+    const messages = await listInboxMessages({ sinceIso: since, top: syncBatchSize(), accessToken });
+    summary.messages = messages.length;
+
+    for (const message of messages) {
+      try {
+        await ingestMessage({ message, mailbox, accessToken, actor, req, summary, parse });
+      } catch (e) {
+        const error = classify(e);
+        // A connection-level failure mid-batch stops the pass; anything else is
+        // this message's problem and the next message still runs.
+        if (error.code === CODES.RECONNECT_REQUIRED || error.code === CODES.GRAPH_THROTTLED
+          || error.code === CODES.GRAPH_UNAVAILABLE) throw error;
+        summary.failed += 1;
+        warn({ msg: 'microsoft.sync.message_failed', messageId: message?.id ?? null, error: error.message });
+      }
+    }
+
+    // The watermark is the START of the scan, not its end: a message that
+    // arrived while the scan was running must be picked up next time.
+    markSyncSuccess(summary, startedAt.toISOString());
+    log({ msg: 'microsoft.sync.complete', ...summary, imported: summary.imported });
+    if (req || actor) {
+      try {
+        writeAudit(req ?? { user: actor, headers: {} }, {
+          action: 'microsoft.sync', entityType: 'integration', entityId: 'microsoft',
+          newValue: { imported: summary.imported, skipped: summary.skipped, failed: summary.failed, messages: summary.messages },
+        });
+      } catch { /* an audit failure must not lose a completed scan */ }
+    }
+    return { ok: true, ...summary, finishedAt: new Date().toISOString() };
+  } catch (e) {
+    const error = e instanceof MicrosoftAuthError ? e : classify(e);
+    if (error.code === CODES.RECONNECT_REQUIRED || error.code === CODES.TOKEN_CACHE_MISSING) {
+      markReconnectRequired(error.message);
+    } else {
+      markError(error.message);
+    }
+    warn({ msg: 'microsoft.sync.failed', code: error.code, error: error.message });
+    return { ok: false, code: error.code, error: error.message, ...summary };
+  } finally {
+    running = false;
+  }
+}
+
+async function ingestMessage({ message, mailbox, accessToken, actor, req, summary, parse }) {
+  const attachments = await listAttachments(message.id, { accessToken });
+  const messageKey = message.internetMessageId || message.id;
+
+  for (const attachment of attachments) {
+    summary.attachments += 1;
+    const verdict = classifyAttachment(attachment);
+    const claim = claimAttachment({
+      mailbox,
+      messageKey,
+      attachmentKey: `${attachment.id ?? ''}|${attachment.name ?? ''}`,
+      messageId: message.id,
+      internetMessageId: message.internetMessageId ?? null,
+      attachmentId: attachment.id ?? null,
+      attachmentName: attachment.name ?? null,
+      receivedAt: message.receivedDateTime ?? null,
+    });
+
+    // Seen before — by an earlier scan, by the overlap window, or by a restart.
+    if (!claim.claimed) { summary.skipped += 1; continue; }
+
+    if (!verdict.accept) {
+      completeAttachment(claim.key, { status: 'SKIPPED', reason: verdict.reason });
+      summary.skipped += 1;
+      continue;
+    }
+
+    try {
+      const bytes = await downloadAttachment(message.id, attachment.id, { accessToken });
+      const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+
+      const alreadyPending = pendingIntakeForHash(hash);
+      if (alreadyPending) {
+        completeAttachment(claim.key, {
+          status: 'SKIPPED', reason: `an identical CV is already awaiting review (intake ${alreadyPending.id})`,
+          intakeId: alreadyPending.id, contentHash: hash,
+        });
+        summary.skipped += 1;
+        continue;
+      }
+
+      // The SAME durable store an uploaded CV lands in, so the reviewer opens
+      // the original document from the same place.
+      const stored = storeFile(attachment.name, bytes);
+      const parsed = await parse(uploadPath(stored.storedName));
+
+      if (!parsed.ok || parsed.fields.length === 0) {
+        completeAttachment(claim.key, {
+          status: 'SKIPPED',
+          reason: parsed.reason || 'No candidate field could be supported by the document.',
+          storedName: stored.storedName, contentHash: hash,
+        });
+        summary.skipped += 1;
+        continue;
+      }
+
+      const intake = createIntake({
+        storedName: stored.storedName,
+        fileName: attachment.name,
+        mimeType: attachment.contentType || null,
+        fileHash: hash,
+        origin: 'mailbox.microsoft',
+        modelId: parsed.generation?.modelId ?? '',
+        documentId: parsed.documentId,
+        generation: parsed.generation,
+        fields: parsed.fields,
+        // No requisition: nothing in an email says which vacancy this is for.
+        // A reviewer links it, exactly as they do for an uploaded CV.
+        createdBy: actor?.id ?? null,
+      });
+
+      if (!intake) {
+        completeAttachment(claim.key, {
+          status: 'SKIPPED', reason: 'The parse produced no reviewable field.',
+          storedName: stored.storedName, contentHash: hash,
+        });
+        summary.skipped += 1;
+        continue;
+      }
+
+      completeAttachment(claim.key, {
+        status: 'IMPORTED', intakeId: intake.id, storedName: stored.storedName, contentHash: hash,
+      });
+      summary.imported += 1;
+      summary.intakeIds.push(intake.id);
+
+      try {
+        writeAudit(req ?? { user: actor, headers: {} }, {
+          action: 'candidate.intake_created', entityType: 'candidate_intake', entityId: intake.id,
+          newValue: {
+            fileName: attachment.name, fields: intake.fields.length,
+            source: 'microsoft-mailbox', mailbox,
+          },
+        });
+      } catch { /* an audit failure must not lose the intake */ }
+    } catch (e) {
+      const error = classify(e);
+      if (error.code === CODES.RECONNECT_REQUIRED || error.code === CODES.GRAPH_THROTTLED
+        || error.code === CODES.GRAPH_UNAVAILABLE) {
+        // Not this attachment's fault — let the next scan have it.
+        releaseAttachment(claim.key);
+        throw error;
+      }
+      completeAttachment(claim.key, { status: 'FAILED', reason: error.message });
+      summary.failed += 1;
+      warn({ msg: 'microsoft.sync.attachment_failed', attachment: attachment.name ?? null, error: error.message });
+    }
+  }
+}
