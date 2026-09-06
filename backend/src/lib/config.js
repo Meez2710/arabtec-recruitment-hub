@@ -65,29 +65,42 @@ export function validateConfig() {
 
   // Microsoft 365 delegated mailbox (career@arabtecegy.com).
   //
-  // HALF-CONFIGURED IS THE DANGEROUS STATE, so it is called out separately from
-  // "off". A host with MS_CLIENT_ID but no MICROSOFT_TOKEN_ENCRYPTION_KEY looks
-  // wired in the admin panel and then fails at the first token write, which is
-  // exactly the failure that should be visible at boot instead.
+  // WARNINGS, NEVER ERRORS. These were errors, on the reasoning that a
+  // half-configured integration looks wired in the admin panel and then fails
+  // at the first token write. That reasoning was right about the SIGNAL and
+  // badly wrong about the SEVERITY: an OPTIONAL feature must not stop the whole
+  // ATS from serving. Listing the MS_* keys in render.yaml is enough for the
+  // platform to create the entries, so a blank-but-present variable took a
+  // working production deploy down at boot — which is exactly what happened on
+  // Render.
+  //
+  // Refusing to start buys nothing here, because nothing is at risk: the
+  // integration reports itself not-configured, /status lists precisely which
+  // variables are missing, and every route refuses with that list rather than
+  // half-working. The app serves; the mailbox feature stays off until it is
+  // configured properly.
   const msVars = ['MS_TENANT_ID', 'MS_CLIENT_ID', 'MS_CLIENT_SECRET'];
   const msSet = msVars.filter(present);
   const msRedirect = present('MS_REDIRECT_URI') || present('CORS_ORIGINS');
   const msEnabled = msSet.length > 0;
+  const msKeyOk = present('MICROSOFT_TOKEN_ENCRYPTION_KEY')
+    && validEncryptionKey(process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY);
   if (msEnabled) {
     const msMissing = msVars.filter((v) => !present(v));
     if (msMissing.length) {
-      errors.push(`Microsoft 365 integration is half-configured: missing ${msMissing.join(', ')}. `
+      warnings.push(`Microsoft 365 integration is OFF — half-configured, missing ${msMissing.join(', ')}. `
         + 'Set all of MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET, or none.');
     }
     if (!present('MICROSOFT_TOKEN_ENCRYPTION_KEY')) {
-      errors.push('MICROSOFT_TOKEN_ENCRYPTION_KEY is required when the Microsoft 365 integration is '
-        + 'enabled — the MSAL token cache is encrypted at rest. Generate one with `openssl rand -hex 32`.');
-    } else if (!validEncryptionKey(process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY)) {
-      errors.push('MICROSOFT_TOKEN_ENCRYPTION_KEY must be 32 bytes — 64 hex characters or base64.');
+      warnings.push('Microsoft 365 integration is OFF — MICROSOFT_TOKEN_ENCRYPTION_KEY is unset, and the '
+        + 'MSAL token cache is encrypted at rest. Generate one with `openssl rand -hex 32`.');
+    } else if (!msKeyOk) {
+      warnings.push('Microsoft 365 integration is OFF — MICROSOFT_TOKEN_ENCRYPTION_KEY must be 32 bytes '
+        + '(64 hex characters or base64).');
     }
     if (!msRedirect) {
-      errors.push('MS_REDIRECT_URI is required when the Microsoft 365 integration is enabled '
-        + '(or set CORS_ORIGINS to the ATS public URL, which it is derived from).');
+      warnings.push('Microsoft 365 integration is OFF — MS_REDIRECT_URI is unset (or set CORS_ORIGINS to '
+        + 'the ATS public URL, which it is derived from).');
     } else if (isProd) {
       const uri = process.env.MS_REDIRECT_URI
         || `${(process.env.CORS_ORIGINS || '').split(',')[0].trim().replace(/\/+$/, '')}/api/integrations/microsoft/callback`;
@@ -122,7 +135,7 @@ export function validateConfig() {
     aiParsing: hasAiKey,
     sentry: present('SENTRY_DSN'),
     watcher: present('CV_INBOX') || present('CV_WATCH_INTERVAL_MIN'),
-    microsoftMailbox: msEnabled && present('MICROSOFT_TOKEN_ENCRYPTION_KEY'),
+    microsoftMailbox: msEnabled && msKeyOk && !!msRedirect,
     mailProvider: process.env.MAIL_PROVIDER || 'auto',
     trustProxy: process.env.TRUST_PROXY ?? (isProd ? '1 (default)' : 'false (default)'),
   };
