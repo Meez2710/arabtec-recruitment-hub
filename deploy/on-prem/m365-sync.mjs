@@ -70,15 +70,22 @@ if (statusOnly) {
   process.exit(status.connected ? 0 : 1);
 }
 
-if (!status.connected) {
-  // NOT an error worth waking anyone at 08:00 for if it is simply not set up
-  // yet; it IS one once someone has connected and the grant has lapsed.
-  if (status.status === 'RECONNECT_REQUIRED') {
-    fail('Microsoft 365 connection requires sign-in again — a System Admin must reconnect '
-      + 'from Configuration > Microsoft 365 in the ATS', status.lastError || null);
-  }
+// ONLY these two states stop a scheduled run, and the distinction matters.
+// `connected` is false for ERROR as well, so guarding on it meant a single
+// throttling event or Graph outage — which sets ERROR — retired the 08:00 timer
+// permanently: every later run saw "not connected" and skipped, long after
+// Microsoft had recovered. A transient failure must be retried by the next run,
+// because retrying IS the recovery.
+if (status.status === 'RECONNECT_REQUIRED') {
+  fail('Microsoft 365 connection requires sign-in again — a System Admin must reconnect '
+    + 'from Configuration > Microsoft 365 in the ATS', status.lastError || null);
+}
+if (status.status === 'DISCONNECTED') {
   log({ level: 'warn', msg: 'microsoft.not_connected', status: status.status });
   process.exit(0);
+}
+if (status.status === 'ERROR') {
+  log({ level: 'info', msg: 'microsoft.retry_after_error', lastError: status.lastError || null });
 }
 
 const result = await sync.runMailboxSync();

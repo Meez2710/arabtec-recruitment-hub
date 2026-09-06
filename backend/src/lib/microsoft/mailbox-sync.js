@@ -128,6 +128,11 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
 
     const messages = await listInboxMessages({ sinceIso: since, top: syncBatchSize(), accessToken });
     summary.messages = messages.length;
+    // listInboxMessages sets this when it stopped with pages outstanding. The
+    // watermark cannot express "I read up to here but not past it", so in that
+    // case it must NOT jump to the scan's start time — the next run has to
+    // re-open the same window and continue.
+    summary.truncated = messages.truncated === true;
 
     for (const message of messages) {
       try {
@@ -145,16 +150,33 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
 
     // The watermark is the START of the scan, not its end: a message that
     // arrived while the scan was running must be picked up next time.
-    markSyncSuccess(summary, startedAt.toISOString());
+    //
+    // Unless the page walk was capped. Then the newest message actually
+    // PROCESSED is the furthest the watermark may honestly move — anything
+    // beyond it was never fetched, and advancing over it would lose those CVs
+    // exactly the way dropping @odata.nextLink used to.
+    const watermark = summary.truncated
+      ? (messages.reduce((newest, m) => (m.receivedDateTime && m.receivedDateTime > newest
+        ? m.receivedDateTime : newest), since) || since)
+      : startedAt.toISOString();
+    markSyncSuccess(summary, watermark);
     log({ msg: 'microsoft.sync.complete', ...summary, imported: summary.imported });
-    if (req || actor) {
-      try {
-        writeAudit(req ?? { user: actor, headers: {} }, {
-          action: 'microsoft.sync', entityType: 'integration', entityId: 'microsoft',
-          newValue: { imported: summary.imported, skipped: summary.skipped, failed: summary.failed, messages: summary.messages },
-        });
-      } catch { /* an audit failure must not lose a completed scan */ }
-    }
+    // ALWAYS audited. This used to be gated on `req || actor`, which meant the
+    // 08:00 timer — the authoritative ingestion path, and the only one that
+    // runs unattended — was the single scan that left no trace, including runs
+    // that imported CVs. A scan with no interactive actor is attributed to the
+    // scheduler rather than skipped.
+    try {
+      writeAudit(req ?? { user: actor, headers: {} }, {
+        action: 'microsoft.sync', entityType: 'integration', entityId: 'microsoft',
+        newValue: {
+          imported: summary.imported, skipped: summary.skipped, failed: summary.failed,
+          messages: summary.messages, truncated: summary.truncated === true,
+          trigger: actor ? 'manual' : 'scheduled',
+        },
+        comments: actor ? undefined : 'scheduled mailbox scan',
+      });
+    } catch { /* an audit failure must not lose a completed scan */ }
     return { ok: true, ...summary, finishedAt: new Date().toISOString() };
   } catch (e) {
     const error = e instanceof MicrosoftAuthError ? e : classify(e);

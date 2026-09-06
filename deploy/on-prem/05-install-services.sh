@@ -45,8 +45,12 @@ if sudo -u arabtec-ats ATS_APP_ROOT=/opt/arabtec-ats bash -c \
   sudo systemctl enable --now arabtec-m365-sync.timer
   echo "    Microsoft 365 is connected — 08:00 Africa/Cairo mailbox scan enabled."
 else
-  sudo systemctl enable arabtec-m365-sync.timer
-  echo "    Microsoft 365 is NOT connected yet. The timer is installed and enabled;"
+  # --now here too: plain `enable` only writes the boot symlink, so without it
+  # the timer stays inactive until the next reboot and the promised 08:00 scan
+  # never happens. Starting it now is harmless while disconnected — m365-sync.mjs
+  # exits 0 with "not connected" until someone connects the mailbox.
+  sudo systemctl enable --now arabtec-m365-sync.timer
+  echo "    Microsoft 365 is NOT connected yet. The timer is installed and running;"
   echo "    connect the mailbox in the ATS (Configuration > Microsoft 365) and the"
   echo "    next 08:00 Africa/Cairo run will pick it up."
 fi

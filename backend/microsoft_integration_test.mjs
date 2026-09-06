@@ -98,6 +98,7 @@ const cloud = {
   attachments: new Map(),       // messageId -> attachment metadata[]
   bytes: new Map(),             // `${messageId}/${attachmentId}` -> Buffer
   throttleOnce: new Set(),      // request paths that 429 exactly once
+  pageSize: 0,                  // >0 makes the inbox listing paginate
   failDownload: new Set(),      // `${messageId}/${attachmentId}` that fails
   sentMail: [],
 };
@@ -155,12 +156,26 @@ globalThis.fetch = async function fakeFetch(input, init = {}) {
     if (bare === '/me/mailFolders/inbox/messages') {
       // Honour the $filter the way Graph does, so the baseline window is really
       // exercised rather than assumed.
-      const filter = decodeURIComponent(new URL(url).searchParams.get('$filter') || '');
+      const u = new URL(url);
+      const filter = decodeURIComponent(u.searchParams.get('$filter') || '');
       const since = filter.match(/receivedDateTime ge ([^ ]+)/)?.[1];
-      const value = cloud.messages
+      const all = cloud.messages
         .filter((m) => (since ? new Date(m.receivedDateTime) >= new Date(since) : true))
         .filter((m) => m.hasAttachments !== false);
-      return json({ value });
+      // Page the way Graph does when there are more results than $top.
+      if (cloud.pageSize) {
+        const skip = Number(u.searchParams.get('$skip') || 0);
+        const value = all.slice(skip, skip + cloud.pageSize);
+        const nextSkip = skip + cloud.pageSize;
+        const body = { value };
+        if (nextSkip < all.length) {
+          const nextParams = new URLSearchParams(u.searchParams);
+          nextParams.set('$skip', String(nextSkip));   // set, not append
+          body['@odata.nextLink'] = `https://graph.microsoft.com/v1.0${bare}?${nextParams.toString()}`;
+        }
+        return json(body);
+      }
+      return json({ value: all });
     }
     let m = bare.match(/^\/me\/messages\/([^/]+)\/attachments$/);
     if (m) return json({ value: cloud.attachments.get(decodeURIComponent(m[1])) || [] });
@@ -175,7 +190,8 @@ globalThis.fetch = async function fakeFetch(input, init = {}) {
     }
     if (bare === '/me/sendMail') {
       cloud.sentMail.push(JSON.parse(String(init.body || '{}')));
-      return new Response(null, { status: 202 });
+      // Graph really does answer 202 Accepted with a zero-length body here.
+      return new Response('', { status: 202, headers: { 'content-type': 'application/json' } });
     }
     return json({ error: { code: 'UnknownRoute', message: bare } }, 404);
   }
@@ -542,16 +558,90 @@ c('a send builds a message without contacting Microsoft or SMTP',
 c('no outbound request reached anything but the fake Microsoft cloud',
   calls.other.length === 0, calls.other.join(', '));
 
+/* ------------------- regressions from the PR #10 review -------------------- */
+console.log('\n- Review regressions -');
+
+// F8 — Graph answers POST /me/sendMail with 202 and an EMPTY body. Parsing that
+// reported failure for mail Microsoft had already accepted, and in `auto` mode
+// it then fell through to SMTP and sent the message twice.
+const { sendMailAs } = await import('./src/lib/microsoft/graph.js');
+await connectAs();
+cloud.sentMail.length = 0;
+let sendThrew = null;
+try { await sendMailAs({ to: 'someone@example.test', subject: 'Probe', html: '<p>x</p>' }); }
+catch (e) { sendThrew = e.message; }
+c('a 202 with an empty body is success, not a parse failure', sendThrew === null, String(sendThrew));
+c('the message really reached Graph', cloud.sentMail.length === 1);
+
+// F2 — more messages than one page. Dropping @odata.nextLink lost every message
+// past the first page, permanently, because the watermark still advanced.
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+const lastSync = store.connectionRow().last_successful_sync_at;
+const pageBase = (lastSync ? new Date(lastSync).getTime() : Date.now()) + 60_000;
+for (let i = 1; i <= 7; i++) {
+  seedMessage({
+    id: `pg-${i}`, internetMessageId: `<pg${i}@example.test>`,
+    receivedDateTime: new Date(pageBase + i * 1000).toISOString(),
+    // Unique bytes per attachment: identical bytes are correctly collapsed by
+    // the content-hash dedup, which would mask whether paging worked at all.
+    attachments: [{ id: `pg-att-${i}`, name: `Paged Candidate ${i}.pdf`,
+      bytes: Buffer.from(`%PDF-1.4\n% paged cv ${i}\n%%EOF\n`) }],
+  });
+}
+cloud.pageSize = 2;                       // 7 messages over 4 pages
+const intakesBeforePaging = countIntakes();
+const paged = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Paged Person')) });
+c('the scan follows @odata.nextLink across every page',
+  paged.ok === true && paged.messages === 7,
+  JSON.stringify({ messages: paged.messages, imported: paged.imported }));
+c('every paged message was imported, not just the first page',
+  countIntakes() === intakesBeforePaging + 7,
+  `intakes ${intakesBeforePaging} -> ${countIntakes()}`);
+cloud.pageSize = 0;
+
+// F3 — reconnecting must not stamp a new baseline over the outage window.
+const baselineBeforeReconnect = store.connectionRow().baseline_at;
+await connectAs();
+c('a reconnect preserves the original baseline',
+  store.connectionRow().baseline_at === baselineBeforeReconnect,
+  `${baselineBeforeReconnect} -> ${store.connectionRow().baseline_at}`);
+
+// F6 — a token refresh landing after a disconnect must not resurrect tokens.
+store.clearConnection(1);
+const resurrect = store.saveTokenCache(JSON.stringify({ RefreshToken: { leaked: { secret: 'x' } } }));
+c('a cache write after disconnect is refused', resurrect === false);
+c('the disconnected row still holds no token material', !store.connectionRow().token_cache);
+
+// F7 — the 08:00 timer runs with no actor and no request; it was the ONE scan
+// that never wrote an audit entry.
+await connectAs();
+db.run("DELETE FROM audit_log WHERE action='microsoft.sync'");
+await runMailboxSync({ parse: fakeParse(NAME_FIELD('Scheduled Person')) });
+const scheduled = db.get("SELECT COUNT(*) AS c FROM audit_log WHERE action='microsoft.sync'");
+c('a scheduled scan (no actor, no req) is audited', scheduled.c === 1, `rows=${scheduled.c}`);
+
+// F5 — /me needs User.Read, which this integration does not request.
+calls.graph.length = 0;
+const testedAgain = await call('/api/integrations/microsoft/test', { method: 'POST', token: admin });
+c('test connection still succeeds', testedAgain.status === 200 && testedAgain.j.ok === true,
+  JSON.stringify(testedAgain.j).slice(0, 120));
+c('test connection never calls Graph /me',
+  !calls.graph.some((g) => g.path === '/me' || g.path.startsWith('/me?')),
+  calls.graph.map((g) => g.path.split('?')[0]).join(' '));
+
 /* ------------------------------ disconnect -------------------------------- */
 console.log('\n- Disconnect -');
 await connectAs();
 c('reconnecting restores CONNECTED', store.connectionRow().status === 'CONNECTED');
+const intakesBeforeDisconnect = countIntakes();
 const disconnected = await call('/api/integrations/microsoft/disconnect', { method: 'POST', token: admin });
 c('disconnect succeeds', disconnected.status === 200 && disconnected.j.status === 'DISCONNECTED');
 c('disconnect removes the token cache',
   !store.connectionRow().token_cache && !store.connectionRow().home_account_id);
 c('disconnect leaves the ingestion ledger and the intakes alone',
-  db.get('SELECT COUNT(*) AS c FROM mailbox_ingestion').c > 0 && countIntakes() === intakesBefore + 2);
+  db.get('SELECT COUNT(*) AS c FROM mailbox_ingestion').c > 0
+  && countIntakes() === intakesBeforeDisconnect,
+  `intakes ${intakesBeforeDisconnect} -> ${countIntakes()}`);
 c('disconnect creates no candidates', countCandidates() === candidatesBefore);
 const afterDisconnect = await call('/api/integrations/microsoft/sync', { method: 'POST', token: admin });
 c('a sync after disconnect is refused',

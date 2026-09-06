@@ -27,7 +27,7 @@ import {
   buildAuthCodeUrl, exchangeCodeForAccount, acquireGraphToken, classify,
   MicrosoftAuthError, CODES, RECONNECT_MESSAGE,
 } from '../lib/microsoft/msal-client.js';
-import { whoAmI, inboxProbe } from '../lib/microsoft/graph.js';
+import { inboxProbe } from '../lib/microsoft/graph.js';
 import { runMailboxSync, isSyncRunning } from '../lib/microsoft/mailbox-sync.js';
 
 const router = Router();
@@ -233,10 +233,16 @@ router.post('/test', ...adminOnly, async (req, res) => {
     return res.status(400).json({ ok: false, code: CODES.NOT_CONNECTED, error: 'Microsoft 365 is not connected yet.' });
   }
   try {
-    const { accessToken } = await acquireGraphToken();
-    const me = await whoAmI({ accessToken });
+    // The identity comes from the MSAL account, NOT from Graph /me. The
+    // least-privileged permission for /me is User.Read, which this integration
+    // deliberately does not request — so calling it would 403 on a correctly
+    // configured tenant and this route would report "sign in again" for a
+    // connection that is actually healthy. The account on the token already
+    // carries the username, and /me/mailFolders/inbox proves Mail.Read reaches
+    // this mailbox, which is the thing worth testing.
+    const { accessToken, account } = await acquireGraphToken();
     const inbox = await inboxProbe({ accessToken });
-    const signedInAs = String(me.mail || me.userPrincipalName || '').toLowerCase();
+    const signedInAs = String(account?.username || '').toLowerCase();
     const expected = configuredMailbox();
     if (signedInAs && signedInAs !== expected) {
       writeAudit(req, {

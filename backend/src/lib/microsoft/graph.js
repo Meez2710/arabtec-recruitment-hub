@@ -87,8 +87,18 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
   }
 
   if (raw) return Buffer.from(await response.arrayBuffer());
-  if (response.status === 204) return null;
-  return response.json();
+  // Graph signals success with an EMPTY body on more than one status: 204 for
+  // most deletes, and 202 Accepted for POST /me/sendMail. Parsing that empty
+  // body threw, so a message Microsoft had already accepted was reported as a
+  // failure — and in `auto` mail mode that failure fell through to SMTP and
+  // delivered the same mail twice. Decide on the body, not on a status list.
+  const body = await response.text();
+  if (body === '') return null;
+  try { return JSON.parse(body); }
+  catch {
+    throw new MicrosoftAuthError('Microsoft Graph returned a response that could not be read.',
+      CODES.UNEXPECTED, { status: response.status });
+  }
 }
 
 /* ------------------------------- mail reads ------------------------------- */
@@ -99,13 +109,34 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
  * `receivedDateTime` leads the filter because Graph requires the $orderby
  * property to appear first when $filter mixes properties.
  */
-export async function listInboxMessages({ sinceIso, top = 50, accessToken = null }) {
+export async function listInboxMessages({ sinceIso, top = 50, accessToken = null, maxPages = 20 }) {
   const filter = encodeURIComponent(`receivedDateTime ge ${sinceIso} and hasAttachments eq true`);
   const select = encodeURIComponent('id,internetMessageId,subject,receivedDateTime,from,hasAttachments');
-  const path = `/me/mailFolders/inbox/messages?$filter=${filter}&$select=${select}`
+  let path = `/me/mailFolders/inbox/messages?$filter=${filter}&$select=${select}`
     + `&$orderby=receivedDateTime asc&$top=${Math.max(1, Math.min(Number(top) || 50, 200))}`;
-  const body = await graphRequest(path, { accessToken });
-  return Array.isArray(body?.value) ? body.value : [];
+
+  // PAGINATION IS NOT OPTIONAL HERE. Graph returns one page plus
+  // @odata.nextLink; the sync then records its START time as the new watermark.
+  // Dropping the next link therefore did not merely defer the rest of the page
+  // set — it put those messages permanently behind the watermark, and their CVs
+  // were never seen again. A busy Monday is exactly when that happens.
+  const messages = [];
+  for (let page = 0; page < maxPages && path; page += 1) {
+    const body = await graphRequest(path, { accessToken });
+    if (Array.isArray(body?.value)) messages.push(...body.value);
+    path = body?.['@odata.nextLink'] ?? null;
+  }
+  // A cap, so a pathological mailbox cannot spin forever — but it must be LOUD,
+  // because stopping early with pages outstanding is the very condition the
+  // watermark cannot represent. runMailboxSync treats this as a partial pass.
+  if (path) {
+    console.log(JSON.stringify({
+      level: 'warn', msg: 'microsoft.graph.pagination_capped',
+      pages: maxPages, collected: messages.length,
+    }));
+    return Object.assign(messages, { truncated: true });
+  }
+  return messages;
 }
 
 /** Attachment metadata for one message. Never fetches contentBytes. */
@@ -124,10 +155,11 @@ export function downloadAttachment(messageId, attachmentId, { accessToken = null
   );
 }
 
-/** Cheapest possible proof that the delegated connection works. */
-export function whoAmI({ accessToken = null } = {}) {
-  return graphRequest('/me?$select=id,displayName,mail,userPrincipalName', { accessToken });
-}
+// NO /me HELPER HERE, deliberately. Graph's /me user endpoint needs delegated
+// User.Read, which this integration does not request and should not: the
+// mailbox identity is already on the MSAL account, and Mail.Read is proven by
+// reaching the inbox itself. A convenience wrapper for /me would be a 403
+// waiting for whoever calls it.
 
 /** Cheapest possible proof that Mail.Read reaches THIS mailbox. */
 export function inboxProbe({ accessToken = null } = {}) {

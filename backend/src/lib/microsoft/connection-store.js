@@ -83,7 +83,14 @@ export function saveConnection({ mailbox, tenantId, homeAccountId, serializedCac
     ensureRow();
     run(`UPDATE microsoft_connection
             SET mailbox=?, tenant_id=?, home_account_id=?, token_cache=?, status=?,
-                baseline_at=?, connected_at=?, last_error=NULL, last_attempt_at=?,
+                -- COALESCE, not assignment. A reconnect after an expired grant
+                -- would otherwise stamp a NEW baseline, and syncWindowStart()
+                -- clamps to the baseline — so every message that arrived during
+                -- the outage fell outside the window forever. The baseline is
+                -- "when this mailbox was first connected", and it is answered
+                -- once. last_successful_sync_at is deliberately untouched here
+                -- so the scan resumes from the real watermark.
+                baseline_at=COALESCE(baseline_at, ?), connected_at=?, last_error=NULL, last_attempt_at=?,
                 updated_by=?, updated_at=?,
                 created_by=COALESCE(created_by, ?)
           WHERE provider=?`,
@@ -102,8 +109,19 @@ export function saveConnection({ mailbox, tenantId, homeAccountId, serializedCac
 export function saveTokenCache(serializedCache) {
   const row = connectionRow();
   if (!row) return false;
-  run('UPDATE microsoft_connection SET token_cache=?, updated_at=? WHERE provider=?',
-    [encrypt(serializedCache), nowISO(), MICROSOFT_PROVIDER]);
+  // GUARDED, because this is the one write that races a disconnect. MSAL calls
+  // it from its cache plugin whenever a token is renewed; if that lands after
+  // clearConnection(), an unconditional UPDATE writes a usable refresh token
+  // back into the row the administrator was just told had been emptied. The
+  // WHERE clause makes a post-disconnect write a no-op instead.
+  const written = run(`UPDATE microsoft_connection SET token_cache=?, updated_at=?
+                        WHERE provider=? AND status<>? AND home_account_id IS NOT NULL`,
+  [encrypt(serializedCache), nowISO(), MICROSOFT_PROVIDER, STATUS.DISCONNECTED]);
+  if (!written?.changes) {
+    console.log(JSON.stringify({ level: 'warn', msg: 'microsoft.token_cache.write_ignored',
+      reason: 'connection is disconnected' }));
+    return false;
+  }
   return true;
 }
 
@@ -176,8 +194,11 @@ export function clearConnection(actorId = null) {
   const row = connectionRow();
   if (!row) return connectionStatus();
   run(`UPDATE microsoft_connection
+          -- baseline_at survives on purpose: it is a watermark, not token
+          -- material, and clearing it would make a later reconnect skip
+          -- everything that arrived while the mailbox was disconnected.
           SET token_cache=NULL, home_account_id=NULL, status=?, connected_at=NULL,
-              baseline_at=NULL, last_error=NULL, last_result=NULL,
+              last_error=NULL, last_result=NULL,
               updated_by=?, updated_at=?
         WHERE provider=?`,
   [STATUS.DISCONNECTED, actorId, nowISO(), MICROSOFT_PROVIDER]);

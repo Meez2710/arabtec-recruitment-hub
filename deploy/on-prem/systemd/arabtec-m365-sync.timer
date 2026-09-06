@@ -12,8 +12,13 @@ Description=Arabtec ATS — daily careers-mailbox scan at 08:00 Africa/Cairo
 # interval cannot express "08:00 local", drifts across restarts and ignores DST.
 
 [Timer]
-OnCalendar=*-*-* 08:00:00
-Timezone=Africa/Cairo
+# The timezone belongs IN the calendar expression. `Timezone=` is not a key
+# systemd defines for [Timer] — it logs "Unknown key name" and ignores it, so
+# the job silently ran at 08:00 in whatever zone the host uses (UTC on a default
+# Ubuntu server, i.e. 10:00 Cairo). A trailing zone on OnCalendar is supported
+# from systemd 252; Ubuntu 24.04 ships 255. Verify with:
+#   systemd-analyze calendar '*-*-* 08:00:00 Africa/Cairo'
+OnCalendar=*-*-* 08:00:00 Africa/Cairo
 Persistent=true
 Unit=arabtec-m365-sync.service
 
