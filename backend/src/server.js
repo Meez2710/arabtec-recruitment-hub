@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ensureSchema } from './lib/schema.js';
+import { ensureOrganizationChartSchema, seedOrganizationChartIfEmpty } from './lib/org-chart-seed.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
 import { configureParsing } from './lib/parsing/composition.js';
@@ -273,8 +274,10 @@ app.listen(PORT, () => {
     try {
       await initObservability(); // Sentry (no-op without SENTRY_DSN)
       ensureSchema();            // create/upgrade tables + migrate workflow stages
+      ensureOrganizationChartSchema();
       ensureFeatureFlags();      // seed feature toggles (idempotent)
       await bootSeedIfEmpty();   // seed admin/reference data if empty
+      seedOrganizationChartIfEmpty();
       APP_READY = true;
       console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
       // Start the CV inbox folder watcher if the feature flag is enabled
