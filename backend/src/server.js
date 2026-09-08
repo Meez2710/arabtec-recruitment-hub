@@ -7,9 +7,12 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { ensureSchema } from './lib/schema.js';
+import { ensureOrganizationChartSchema, seedOrganizationChartIfEmpty } from './lib/org-chart-seed.js';
+import { withOrgStructurePage } from './lib/org-structure-app-patch.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
 import { configureParsing } from './lib/parsing/composition.js';
@@ -199,6 +202,22 @@ app.use('/api/ai', aiRoutes);
 // app to appear "reverted" to an old build). Other assets may be cached for a
 // short time and are revalidated via ETag; versioned URLs bust themselves.
 const frontendDir = path.resolve(__dirname, '../../frontend/public');
+
+// Organization Structure nav + page map are inserted here so the 476KB SPA file
+// does not need a full rewrite. Idempotent if app.jsx already contains the item.
+app.get('/app.jsx', (req, res, next) => {
+  try {
+    const filePath = path.join(frontendDir, 'app.jsx');
+    let src = fs.readFileSync(filePath, 'utf8');
+    src = withOrgStructurePage(src);
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(src);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Only the SPA shell is a servable HTML document. Any other *.html in the static
 // dir (design mockups, editor/preview pages) is not part of the app and must not
 // be reachable by direct URL — some have carried hard-coded demo credentials.
@@ -273,8 +292,10 @@ app.listen(PORT, () => {
     try {
       await initObservability(); // Sentry (no-op without SENTRY_DSN)
       ensureSchema();            // create/upgrade tables + migrate workflow stages
+      ensureOrganizationChartSchema();
       ensureFeatureFlags();      // seed feature toggles (idempotent)
       await bootSeedIfEmpty();   // seed admin/reference data if empty
+      seedOrganizationChartIfEmpty();
       APP_READY = true;
       console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
       // Start the CV inbox folder watcher if the feature flag is enabled
