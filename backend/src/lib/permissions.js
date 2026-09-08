@@ -59,6 +59,7 @@ export const PERMISSIONS = [
   ['app.manage_ui', 'app', 'manage_ui', 'Super-admin: control fields, custom fields, logo'],
   ['workflow.manage', 'workflow', 'manage', 'Manage workflow settings'],
   ['org.manage', 'org', 'manage', 'Manage projects/sites/departments'],
+  ['org_chart.manage', 'org_chart', 'manage', 'Manage organization structure'],
   ['system.manage', 'system', 'manage', 'Manage system settings'],
   // Separate from system.manage on purpose. Deciding that a rejection email
   // goes out is a recruiting decision, not a systems one, and the people who
@@ -93,7 +94,7 @@ export const ROLE_PERMISSIONS = {
     'request.assign_recruiter', 'request.hold',
     'candidate.view', 'candidate.privacy', 'salary.view',
     'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
-    'interview.view_all', 'report.export', 'audit.view', 'org.manage',
+    'interview.view_all', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
     'notification.manage',
   ],
   hr_manager: [
@@ -105,7 +106,7 @@ export const ROLE_PERMISSIONS = {
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',
     'salary.view', 'offer.view',
     'offer.create', 'offer.edit', 'offer.approve', 'offer.send', 'offer.result_update',
-    'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view', 'org.manage',
+    'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
     'notification.manage',
   ],
   recruitment_manager: [
