@@ -49,7 +49,7 @@
 
   /* Ink */
   --ink: #1A1A1A; --text-strong: #1A1A1A; --text: #1A1A1A; --primary: #1A1A1A;
-  --ink-soft: #4A4641; --muted: #6F6A64; --faint: #8A867F; --text-gray: #6F6A64; --text-dark: #1A1A1A;
+  --ink-soft: #4A4641; --muted: #6F6A64; --faint: #736E66; --text-gray: #6F6A64; --text-dark: #1A1A1A;
 
   /* Hairlines */
   --line: rgba(26, 26, 26, .10); --line-strong: rgba(26, 26, 26, .18);
