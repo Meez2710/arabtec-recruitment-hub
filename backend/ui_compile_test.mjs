@@ -12,8 +12,9 @@ const context = {};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(publicDir, 'vendor/babel.min.js'), 'utf8'), context);
 
+const FILES = ['intake-review.jsx', 'org-structure.jsx', 'app.jsx'];
 let failed = 0;
-for (const file of ['intake-review.jsx', 'app.jsx']) {
+for (const file of FILES) {
   try {
     context.Babel.transform(fs.readFileSync(path.join(publicDir, file), 'utf8'), { presets: ['react'] });
     console.log(`  ✓ ${file} compiles with the production Babel runtime`);
@@ -24,5 +25,5 @@ for (const file of ['intake-review.jsx', 'app.jsx']) {
   }
 }
 
-console.log(`\n=== UI COMPILE: ${2 - failed} passed, ${failed} failed ===\n`);
+console.log(`\n=== UI COMPILE: ${FILES.length - failed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
