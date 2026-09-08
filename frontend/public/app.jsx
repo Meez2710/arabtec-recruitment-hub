@@ -1073,7 +1073,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     microsoft: can(user, 'system.manage')
       ? <MicrosoftPage user={user} params={route === 'microsoft' ? routeParams : null} />
       : <Forbidden what="Microsoft 365 Integration" need="System Admin" />,
-    system: <SystemPage user={user} />,
+    system: can(user, 'system.manage')
+      ? <SystemPage user={user} />
+      : <Forbidden what="System Settings" need="System Admin" />,
     notifications: can(user, 'notification.manage')
       ? <NotificationsPanel user={user} />
       : <Forbidden what="Notification Settings" need="HR, Recruitment or System Admin" />,
@@ -2812,6 +2814,20 @@ function RolesPage({ user }) {
   const [draft, setDraft] = useState([]);
   const canManage = can(user, 'role.manage');
 
+  // P0-4: switching roles (or leaving the page) must not silently drop unsaved
+  // toggles. `dirty` compares the working draft to the selected role's stored
+  // permissions as sets, so order does not matter.
+  const dirty = useMemo(() => {
+    const a = new Set(draft), b = new Set(selected?.permissions || []);
+    return a.size !== b.size || [...a].some((x) => !b.has(x));
+  }, [draft, selected]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
   const load = useCallback(async () => {
     const [r, p] = await Promise.all([api.get('/roles'), api.get('/roles/permissions')]);
     setRoles(r.roles); setCatalog(p.permissions);
@@ -2819,7 +2835,11 @@ function RolesPage({ user }) {
   }, [selected]);
   useEffect(() => { load(); }, []);
 
-  function pick(role) { setSelected(role); setDraft(role.permissions); }
+  function pick(role) {
+    if (role.id === selected?.id) return;
+    if (dirty && !window.confirm(`Discard unsaved permission changes for ${selected.name}?`)) return;
+    setSelected(role); setDraft(role.permissions);
+  }
   function toggle(code) { setDraft((d) => d.includes(code) ? d.filter((x) => x !== code) : [...d, code]); }
   async function save() {
     try { await api.put(`/roles/${selected.id}/permissions`, { permissionCodes: draft }); toast('Permissions updated'); load(); }
@@ -2844,7 +2864,7 @@ function RolesPage({ user }) {
           ))}
         </div></div>
         <div className="card">
-          <div className="card-head"><h3>{selected?.name} — {draft.length} permissions</h3>
+          <div className="card-head"><h3>{selected?.name} — {draft.length} permissions{dirty && <span className="muted" style={{ fontWeight: 400 }}> · unsaved</span>}</h3>
             {canManage && <button className="btn btn-sm" onClick={save}>Save Changes</button>}</div>
           <div className="card-pad permissions-panel">
             {Object.entries(groups).map(([res, perms]) => (
@@ -3800,7 +3820,8 @@ function SystemPage({ user }) {
       <div className="card card-pad"><div className="form-grid">
         {Object.entries(s).map(([k, v]) => (
           <div className="field" key={k}><label>{k.replace(/_/g, ' ')}</label>
-            <input value={v} disabled={!canManage} onChange={(e) => set(k, e.target.value)} /></div>
+            <input type={/pass|secret|token|credential|pwd|api[_-]?key|_key$/i.test(k) ? 'password' : 'text'}
+              autoComplete="off" value={v} disabled={!canManage} onChange={(e) => set(k, e.target.value)} /></div>
         ))}
       </div></div>
     </div>
