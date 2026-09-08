@@ -4,9 +4,11 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { registerOrgChartRoutes } from './org-chart-routes.js';
 
 const router = Router();
 router.use(requireAuth);
+registerOrgChartRoutes(router);
 
 const userName = (id) => { const u = id ? Users.byId(id) : null; return u ? { id: u.id, name: u.full_name } : null; };
 
