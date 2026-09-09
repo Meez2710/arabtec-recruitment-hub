@@ -280,10 +280,10 @@
 
     if (error && !intake) {
       return h('div', { className: 'intake-list-state' },
-        h(Banner, { tone: 'danger', title: 'Unable to load intake' }, error),
+        h(window.ARABTEC_UI.LoadError, { title: 'Unable to load intake', text: error, onRetry: load }),
         h('button', { className: 'btn btn-secondary', onClick: onBack }, 'Back'));
     }
-    if (!intake) return h('div', { className: 'intake-list-state' }, 'Loading extracted fields…');
+    if (!intake) return h(window.ARABTEC_UI.Skeleton, { shape: 'detail' });
 
     const blocked = !!(conflict && conflict.blocked);
     return h('div', null,
@@ -458,7 +458,7 @@
         'Upload creates a pending intake only. The candidate and any application are created after a complete human review.'),
 
       notice ? h(Banner, { tone: notice.tone, title: notice.title }, notice.text) : null,
-      error ? h(Banner, { tone: 'danger', title: 'Unable to load intakes' }, error) : null,
+      error ? h(window.ARABTEC_UI.LoadError, { title: 'Unable to load intakes', text: error, onRetry: load }) : null,
 
       result && result.candidate
         ? h('div', null,
@@ -474,11 +474,9 @@
           h('h3', null, 'Pending CVs'),
           h('span', { className: 'muted' }, 'No automatic persistence')),
         loading
-          ? h('div', { className: 'intake-list-state' }, 'Loading pending CV reviews…')
-          : !items.length
-            ? h('div', { className: 'intake-list-state' },
-              h('strong', null, 'No pending reviews'),
-              h('span', null, 'New CV uploads appear here before a candidate is created.'))
+          ? h(window.ARABTEC_UI.Skeleton, { shape: 'list' })
+          : error ? null : !items.length
+            ? h(window.ARABTEC_UI.Empty, { art: 'all-clear', title: 'No pending reviews', text: 'New CV uploads appear here before a candidate is created.' })
             : h('div', { className: 'intake-list' }, items.map((x) => h('button', {
               key: x.id, className: 'intake-list-row', onClick: () => setActive(x.id),
             },

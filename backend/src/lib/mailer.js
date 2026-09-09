@@ -23,32 +23,15 @@
 //   SMTP_*          unchanged, see docs/ENVIRONMENT_VARIABLES.md
 //   MAIL_FROM_NAME  display name, used by both providers
 import nodemailer from 'nodemailer';
+import { effectiveMailSettings, publicMailSettings, safeMailError, recordMailDelivery, DEFAULT_SMTP_HOST } from './mail-settings.js';
+export { DEFAULT_SMTP_HOST } from './mail-settings.js';
 
 import { sendMailAs } from './microsoft/graph.js';
 import { acquireGraphToken, classify as classifyMicrosoft, CODES as MS_CODES,
   RECONNECT_MESSAGE } from './microsoft/msal-client.js';
 import { connectionRow, markReconnectRequired } from './microsoft/connection-store.js';
 
-let transport = null;
-
-// The default host is exported so the settings endpoint reports the host mail is
-// ACTUALLY sent through. These two had drifted apart: this module defaulted to
-// smtp.gmail.com while /email/status reported smtp.office365.com, so with
-// SMTP_HOST unset the console would have shown a healthy-looking Microsoft host
-// while every message was really being offered to Gmail, which rejects
-// arabtecegy.com addresses outright. One constant, one answer.
-export const DEFAULT_SMTP_HOST = 'smtp.office365.com';
-
-function cfg() {
-  return {
-    host: process.env.SMTP_HOST || DEFAULT_SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    user: process.env.SMTP_USER || '',
-    pass: process.env.SMTP_PASS || '',
-    from: process.env.MAIL_FROM || process.env.SMTP_USER || '',
-    fromName: process.env.MAIL_FROM_NAME || 'Arabtec Careers',
-  };
-}
+function cfg(includePassword = true) { return effectiveMailSettings(undefined, {includePassword}); }
 
 // Dry-run mode: SMTP_TRANSPORT=json builds messages without sending (nodemailer
 // jsonTransport). Used by tests/CI and for a safe "does the wiring work" check.
@@ -56,13 +39,12 @@ function jsonMode() { return process.env.SMTP_TRANSPORT === 'json'; }
 
 /** Which provider is pinned by configuration: 'auto' | 'graph' | 'smtp'. */
 function preferredProvider() {
-  const value = String(process.env.MAIL_PROVIDER || 'auto').trim().toLowerCase();
+  const value = String(publicMailSettings().provider || 'auto').trim().toLowerCase();
   return value === 'graph' || value === 'smtp' ? value : 'auto';
 }
 
 function smtpConfigured() {
-  const c = cfg();
-  return !!(c.user && c.pass);
+  try { const c = publicMailSettings(); return !!(c.user && c.passwordSet); } catch { return false; }
 }
 
 /**
@@ -105,19 +87,38 @@ export function isConfigured() {
   return activeProvider() !== 'none';
 }
 
-function getTransport() {
-  if (transport) return transport;
-  if (jsonMode()) { transport = nodemailer.createTransport({ jsonTransport: true }); return transport; }
-  const c = cfg();
-  transport = nodemailer.createTransport({
-    host: c.host,
-    port: c.port,
-    secure: c.port === 465,          // 465 = implicit TLS; 587 = STARTTLS (secure:false)
+function getTransport(c = cfg()) {
+  if (jsonMode()) return nodemailer.createTransport({ jsonTransport: true });
+  return nodemailer.createTransport({
+    host: c.host, port: c.port,
+    secure: c.encryption === 'tls', requireTLS: c.encryption === 'starttls',
+    ignoreTLS: c.encryption === 'none',
     auth: { user: c.user, pass: c.pass },
-    // M365 uses STARTTLS on 587; require TLS but keep default cert validation.
-    requireTLS: c.port === 587,
+    connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000,
   });
-  return transport;
+}
+
+// Test a draft with no database writes. No fallback to saved SMTP configuration:
+// the administrator must see the result for the values currently in the form.
+export async function testMailSettings(draft, to, message) {
+  let c;
+  try {
+    c = effectiveMailSettings(draft, {includePassword:false});
+    const graph = c.provider === 'graph' || (c.provider === 'auto' && graphReady());
+    if (!jsonMode() && graph) {
+      const { accessToken } = await acquireGraphToken();
+      if (to) await sendMailAs({ ...message, to, replyTo: c.replyTo || undefined, accessToken });
+      return { ok: true, provider: 'graph', verifiedAt: new Date().toISOString() };
+    }
+    if (!jsonMode()) c = effectiveMailSettings(draft);
+    if (!jsonMode() && (!c.user || !c.pass || !c.from)) return {ok:false, provider:'smtp', error:'SMTP requires a username, password, and From address.'};
+    const transport = getTransport(c);
+    try {
+      if (to) await transport.sendMail({ ...message, to, from: {name:c.fromName,address:c.from}, replyTo:c.replyTo || c.from });
+      else if (!jsonMode()) await transport.verify();
+      return {ok:true, provider:jsonMode()?'dry-run':'smtp', verifiedAt:new Date().toISOString()};
+    } finally { transport.close(); }
+  } catch (e) { return {ok:false,error:safeMailError(e,c)}; }
 }
 
 // Verify the mail connection without sending. Returns {ok, error?, provider}.
@@ -133,17 +134,17 @@ export async function verifyConnection() {
       await acquireGraphToken();
       return { ok: true, provider };
     } catch (e) {
-      return { ok: false, provider, error: String((e && e.message) || e) };
+      return { ok: false, provider, error: safeMailError(e) };
     }
   }
-  try { await getTransport().verify(); return { ok: true, provider }; }
-  catch (e) { return { ok: false, provider, error: String((e && e.message) || e) }; }
+  return testMailSettings(undefined);
 }
 
 // Send an email. Never throws — returns a result object the caller can log/audit.
 // { to, subject, html, text?, replyTo? }
 export async function sendMail({ to, subject, html, text, replyTo }) {
-  const c = cfg();
+  let c;
+  try { c = cfg(false); } catch (e) { return {ok:false,error:safeMailError(e)}; }
   const provider = activeProvider();
   if (provider === 'none') {
     console.log(JSON.stringify({ level: 'info', msg: 'email.skipped', reason: 'not_configured', to, subject }));
@@ -175,8 +176,9 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
     }
     if (accessToken) {
       try {
-        await sendMailAs({ to, subject, html, text, replyTo, accessToken });
+        await sendMailAs({ to, subject, html, text, replyTo: replyTo || c.replyTo || undefined, accessToken });
         console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: 'graph', to, subject }));
+        recordMailDelivery();
         return { ok: true, provider: 'graph' };
       } catch (e) {
         const classified = classifyMicrosoft(e);
@@ -207,16 +209,18 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
   }
 
   try {
-    const info = await getTransport().sendMail({
-      from: `"${c.fromName}" <${c.from}>`,
+    if (!jsonMode()) c = cfg();
+    const info = await getTransport(c).sendMail({
+      from: { name: c.fromName, address: c.from },
       to, subject, html,
       text: text || html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
-      replyTo: replyTo || c.from,
+      replyTo: replyTo || c.replyTo || c.from,
     });
     console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: jsonMode() ? 'dry-run' : 'smtp', to, subject, messageId: info.messageId }));
+    if (!jsonMode()) recordMailDelivery();
     return { ok: true, messageId: info.messageId, provider: jsonMode() ? 'dry-run' : 'smtp' };
   } catch (e) {
-    console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'smtp', to, subject, error: String(e && e.message || e) }));
-    return { ok: false, error: String(e && e.message || e) };
+    console.log(JSON.stringify({ level: 'error', msg: 'email.failed', provider: 'smtp', to, subject, error: safeMailError(e, c) }));
+    return { ok: false, error: safeMailError(e, c) };
   }
 }

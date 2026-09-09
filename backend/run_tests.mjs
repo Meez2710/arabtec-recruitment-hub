@@ -25,6 +25,7 @@ const SUITES = [
   'production_reset_test.mjs', // go-live reset clears the pipeline and keeps the company
   'auth_security_test.mjs',   // C1.1 rotation + C1.3 password policy + lockout
   'rate_limit_test.mjs',      // C1.4 global rate limiter
+  'email_settings_test.mjs', // encrypted settings, draft test and RBAC
   'email_test.mjs',           // C2.2 email module (provider selection, dry-run)
   'microsoft_integration_test.mjs', // M365 delegated OAuth mailbox: connect, scan, intake, idempotency
   'notifications_test.mjs',   // C2.3 in-app notifications + assignment/approval wiring
@@ -32,6 +33,7 @@ const SUITES = [
   'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
+  'ui_behavior_test.mjs', // approved navigation, pipeline and mail UI behaviors
   'ui_compile_test.mjs',      // production JSX compiles in the vendored browser Babel
   'ui_readiness_test.mjs',    // production UI release-contract regression checks
   'branding_migration_test.mjs', // legacy red actions migrate without overwriting custom values
@@ -54,6 +56,7 @@ const SUITES = [
   'ingestion_regression_test.mjs', // bounded durable uploads and shared scanner imports
   'anyhelp_test.mjs',         // scoped read-only AI tools and bounded provider loop
   'anyhelp_route_test.mjs',   // session, input, rate limits, timeout and safe errors
+  'backup_script_test.mjs', // first backup and weekly retention initialization
   'deploy_ref_test.mjs',      // branch/tag/SHA deployment with dirty-tree protection
   'deploy_readiness_test.mjs', // strict readiness verification
 ];

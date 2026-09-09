@@ -1037,3 +1037,20 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .review-table { min-width: 760px; }
   .review-summary { grid-template-columns: 1fr; }
 }
+
+/* Approved shared control and pipeline inks. Geometry is in claude-system.css. */
+.empty .ico { opacity: 1; background: transparent; }
+.btn-secondary, .btn-ghost { border-color: rgba(26,26,26,.18); }
+.role-choice { background: var(--surface); border-color: transparent; color: var(--ink); }
+.role-choice:hover { background: var(--green-050, #E6F4F0); }
+.role-choice.active { background: var(--green-050, #E6F4F0); border-color: var(--action); color: var(--action-dark); font-weight: 600; }
+.permissions-save { background: var(--surface); }
+.permission-code { color: var(--muted); }
+button.pcard-name { color: var(--ink); background: transparent; }
+.pcard-menu-trigger, .pipeline-menu .menu-item { color: var(--ink); background: transparent; }
+.pipeline-menu .menu-item:hover, .pipeline-menu .menu-item:focus-visible { background: var(--green-050, #E6F4F0); }
+.pipeline-menu .menu-danger { color: #B01420; }
+.pcard-facts, .pcard-request, .pcard-residual { color: #5B6472; }
+.pcard-footer { border-color: rgba(26,26,26,.10); }
+.pcard-match { color: var(--action-dark); }
+.kan-drop-active { outline: 2px dashed var(--action); outline-offset: -2px; }

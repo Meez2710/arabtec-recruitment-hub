@@ -33,10 +33,20 @@ if [ "$DOW" = "7" ]; then
   cp -p "$DEST/uploads-$STAMP.tgz"  "$DEST/weekly-uploads-$STAMP.tgz"
 fi
 
-# retention: 14 dailies, 8 weeklies
-ls -1t "$DEST"/db-*.dump         2>/dev/null | tail -n +15 | xargs -r rm -f
-ls -1t "$DEST"/uploads-*.tgz     2>/dev/null | tail -n +15 | xargs -r rm -f
-ls -1t "$DEST"/weekly-db-*.dump  2>/dev/null | tail -n +9  | xargs -r rm -f
-ls -1t "$DEST"/weekly-uploads-*.tgz 2>/dev/null | tail -n +9 | xargs -r rm -f
+# Retention is a no-op when a family has no archives yet. With pipefail,
+# `ls weekly-*.dump` used to abort every weekday before the first Sunday.
+shopt -s nullglob
+prune_archives() {
+  local keep=$1; shift
+  [ "$#" -gt "$keep" ] || return 0
+  # Timestamped filenames sort chronologically; no locale or mtime ambiguity.
+  local -a sorted
+  mapfile -t sorted < <(printf '%s\n' "$@" | LC_ALL=C sort -r)
+  rm -f -- "${sorted[@]:keep}"
+}
+prune_archives 14 "$DEST"/db-*.dump
+prune_archives 14 "$DEST"/uploads-*.tgz
+prune_archives 8 "$DEST"/weekly-db-*.dump
+prune_archives 8 "$DEST"/weekly-uploads-*.tgz
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) backup ok: db-$STAMP.dump ($(du -h "$DEST/db-$STAMP.dump" | cut -f1))"

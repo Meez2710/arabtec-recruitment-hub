@@ -57,29 +57,38 @@ window.ARABTEC_API = api;
 /* ----------------------------- Helpers ----------------------------- */
 function initials(name) { return (name || '?').split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase(); }
 // Minimal line-icon set (stroke-based, inherits color). Keeps the UI emoji-free.
-const ICON_PATHS = {
-  dashboard: 'M3 3h7v7H3zM14 3h7v4h-7zM14 11h7v10h-7zM3 14h7v7H3z',
-  ticket: 'M4 5h16a1 1 0 011 1v3a2 2 0 000 4v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3a2 2 0 000-4V6a1 1 0 011-1zM12 6v12',
-  user: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0',
-  users: 'M9 11a4 4 0 100-8 4 4 0 000 8zM2 21a7 7 0 0114 0M17 11a4 4 0 000-8M22 21a7 7 0 00-5-6.7',
-  calendar: 'M4 5h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zM3 9h18M8 3v4M16 3v4',
-  doc: 'M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9zM14 3v6h6',
-  shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
-  building: 'M4 21V5a1 1 0 011-1h7a1 1 0 011 1v16M13 21V9a1 1 0 011-1h5a1 1 0 011 1v12M7 8h2M7 12h2M16 12h1M16 16h1M3 21h18',
-  pin: 'M12 21s7-5.5 7-11a7 7 0 00-14 0c0 5.5 7 11 7 11zM12 12a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
-  hardhat: 'M3 18h18v2H3zM5 18v-3a7 7 0 0114 0v3M10 5a2 2 0 014 0v3h-4z',
-  palette: 'M12 3a9 9 0 100 18c1.5 0 2-1 2-2s-.5-1.5-.5-2 .5-1 1.5-1H18a3 3 0 003-3c0-4-4-7-9-7zM7.5 12a1 1 0 100-2 1 1 0 000 2zM10.5 8a1 1 0 100-2 1 1 0 000 2zM15 8a1 1 0 100-2 1 1 0 000 2z',
-  button: 'M3 9a3 3 0 013-3h12a3 3 0 013 3v6a3 3 0 01-3 3H6a3 3 0 01-3-3zM9 12h6',
-  flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6M17 16v-2',
-  gear: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V19a2 2 0 11-4 0v-.1A1.6 1.6 0 007 17.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00-1.1-2.7H1a2 2 0 110-4h.1A1.6 1.6 0 002.6 7a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H7a1.6 1.6 0 001-1.5V1a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V7a1.6 1.6 0 001.5 1H23a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z',
-  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.2-4.2',
-  scroll: 'M5 4h11a2 2 0 012 2v12a2 2 0 002 2H8a2 2 0 01-2-2V6a2 2 0 00-2-2zM9 8h6M9 12h6',
-  mail: 'M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zM3.5 6.5l8.5 6 8.5-6',
+const ICON_MARKS = {
+  dashboard: <><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></>,
+  ticket: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 3v3h6V3" /><path d="M8.5 11h7M8.5 15h4.5" /></>,
+  user: <><path d="M12 12a4 4 0 100-8 4 4 0 000 8z" /><path d="M4 21a8 8 0 0116 0" /></>,
+  users: <><circle cx="9" cy="8" r="3.5" /><path d="M3 20a6 6 0 0112 0" /><path d="M16 5.5a3.5 3.5 0 010 5M18.5 19.5a6 6 0 00-2.5-4.9" /></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></>,
+  doc: <><path d="M13.5 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8.5z" /><path d="M13.5 3v5.5H19" /><path d="M9 13h6M9 16.5h4" /></>,
+  shield: <><path d="M12 3l7 2.5v5.8c0 4.3-2.9 7.2-7 8.7-4.1-1.5-7-4.4-7-8.7V5.5z" /><path d="M9.2 11.8l2 2 3.6-3.6" /></>,
+  building: <><path d="M12 3l8 4.5-8 4.5-8-4.5z" /><path d="M4 12.5l8 4.5 8-4.5" /></>,
+  pin: <><path d="M12 21c-4-4.5-6-7.7-6-10.5A6 6 0 0118 10.5C18 13.3 16 16.5 12 21z" /><circle cx="12" cy="10.5" r="2.25" /></>,
+  hardhat: <><path d="M3 18h18v2H3z" /><path d="M5 18v-3a7 7 0 0114 0v3" /><path d="M10 5a2 2 0 014 0v3h-4z" /></>,
+  palette: <><path d="M12 3a9 9 0 100 18c1.5 0 2-1 2-2s-.5-1.5-.5-2 .5-1 1.5-1H18a3 3 0 003-3c0-4-4-7-9-7z" /><path d="M7.5 12a1 1 0 100-2 1 1 0 000 2z" /><path d="M10.5 8a1 1 0 100-2 1 1 0 000 2z" /><path d="M15 8a1 1 0 100-2 1 1 0 000 2z" /></>,
+  button: <><path d="M3 9a3 3 0 013-3h12a3 3 0 013 3v6a3 3 0 01-3 3H6a3 3 0 01-3-3z" /><path d="M9 12h6" /></>,
+  flow: <><rect x="9" y="3" width="6" height="5" rx="1.5" /><path d="M12 8v3.5M5 21v-3.5M12 11.5H5v2M12 11.5h7v2M19 21v-3.5" /><rect x="3" y="16" width="4" height="5" rx="1.5" /><rect x="17" y="16" width="4" height="5" rx="1.5" /></>,
+  gear: <><circle cx="12" cy="12" r="3" /><path d="M12 4v2.5M12 17.5V20M4 12h2.5M17.5 12H20M6.3 6.3l1.8 1.8M15.9 15.9l1.8 1.8M17.7 6.3l-1.8 1.8M8.1 15.9l-1.8 1.8" /></>,
+  search: <><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z" /><path d="M20 20l-4.2-4.2" /></>,
+  scroll: <><path d="M5 4h11a2 2 0 012 2v12a2 2 0 002 2H8a2 2 0 01-2-2V6a2 2 0 00-2-2z" /><path d="M9 8h6" /><path d="M9 12h6" /></>,
+  mail: <><path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" /><path d="M3.5 6.5l8.5 6 8.5-6" /></>,
+  reports: <><path d="M4 20h16" /><path d="M7 20v-6M12 20V7M17 20v-9" /></>,
+  close: <><path d="m6 6 12 12M18 6 6 18" /></>,
+  chevronDown: <><path d="m6 9 6 6 6-6" /></>,
+  chevronUp: <><path d="m6 15 6-6 6 6" /></>,
+  arrowUp: <><path d="M12 20V4m-6 6 6-6 6 6" /></>,
+  arrowDown: <><path d="M12 4v16m-6-6 6 6 6-6" /></>,
+  back: <><path d="M20 12H4m6-6-6 6 6 6" /></>,
+  filter: <><path d="M4 6h16M7 12h10M10 18h4" /></>,
+  sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m6-11-3 3 3 3" /></>,
+  more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
+  bell: <><path d="M6 9a6 6 0 0112 0v5l2 3H4l2-3z" /><path d="M10 20h4" /></>,
 };
-function Icon({ name, size = 17 }) {
-  const d = ICON_PATHS[name];
-  if (!d) return <span style={{ width: size, display: 'inline-block' }} />;
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }} aria-hidden="true"><path d={d} /></svg>;
+function Icon({ name, size = 18, children }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">{children || ICON_MARKS[name]}</svg>;
 }
 
 // Brand mark — the Arabtec red twin-peak "A". Inline SVG so it inherits color/scale anywhere.
@@ -383,7 +392,7 @@ function Modal({ title, children, onClose, footer, wide }) {
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="modal" style={wide ? { maxWidth: 760 } : null}
         role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex="-1" onKeyDown={onDialogKeyDown}>
-        <div className="modal-head"><h3 id={titleId}>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}>✕</button></div>
+        <div className="modal-head"><h3 id={titleId}>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
@@ -408,22 +417,63 @@ function Confirm({ title, message, requireReason, confirmLabel = 'Confirm', dang
     </Modal>
   );
 }
-function Empty({ icon, text, title, action, tone = 'neutral' }) {
-  return (
-    <div className={'empty empty-' + tone} role={tone === 'error' ? 'alert' : undefined}>
-      <div className="ico" aria-hidden="true">
-        {icon || <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .5 }}>
-          <path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M3 12l9 4 9-4" />
-        </svg>}
-      </div>
-      {title && <h4 className="empty-title">{title}</h4>}
-      <p>{text}</p>
-      {action && <div className="empty-action">{action}</div>}
-    </div>
-  );
+function EmptyArt({ name = 'none-yet' }) {
+  const marks = {
+    'none-yet': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#C7C4BF" strokeWidth="1.25" strokeLinecap="round" />
+              <rect x="20" y="14" width="32" height="42" rx="2" stroke="#5B6472" strokeWidth="1.25" />
+              <path d="M29 14v-3h14v3" stroke="#5B6472" strokeWidth="1.25" strokeLinejoin="round" />
+              <path d="M27 26h18M27 33h18M27 40h11" stroke="#5B6472" strokeWidth="1.25" strokeLinecap="round" />
+              <path d="M20 60h32" stroke="#C7C4BF" strokeWidth="1.25" strokeDasharray="3 4" strokeLinecap="round" />
+              <path d="M36 56v8" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" />
+              <path d="M32 60h8" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" />
+            </svg>,
+    'no-match': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#C7C4BF" strokeWidth="1.25" strokeLinecap="round" />
+              <path d="M16 20h40M16 30h40M16 40h40M16 50h40" stroke="#C7C4BF" strokeWidth="1.25" strokeDasharray="3 4" strokeLinecap="round" />
+              <circle cx="33" cy="33" r="13" stroke="#5B6472" strokeWidth="1.25" />
+              <path d="M42.5 42.5L54 54" stroke="#5B6472" strokeWidth="1.25" strokeLinecap="round" />
+              <path d="M27 33h12" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" />
+            </svg>,
+    'failed': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#E7B9BF" strokeWidth="1.25" strokeLinecap="round" />
+              <rect x="14" y="24" width="18" height="24" rx="2" stroke="#B01420" strokeWidth="1.25" />
+              <rect x="40" y="24" width="18" height="24" rx="2" stroke="#B01420" strokeWidth="1.25" />
+              <path d="M32 36h2.5M37.5 36H40" stroke="#B01420" strokeWidth="1.25" strokeLinecap="round" />
+              <path d="M36 30v3M36 39v3" stroke="#D01827" strokeWidth="1.25" strokeLinecap="round" />
+              <path d="M20 32h6M20 38h6M46 32h6M46 38h6" stroke="#E7B9BF" strokeWidth="1.25" strokeLinecap="round" />
+            </svg>,
+    'all-clear': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#B7DCD3" strokeWidth="1.25" strokeLinecap="round" />
+              <rect x="18" y="18" width="36" height="36" rx="2" stroke="#00664F" strokeWidth="1.25" />
+              <path d="M27 36.5l6.5 6.5L46 30" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M18 60h36" stroke="#B7DCD3" strokeWidth="1.25" strokeDasharray="3 4" strokeLinecap="round" />
+            </svg>,
+  };
+  return marks[name] || marks['none-yet'];
 }
-
-function Skeleton({ rows = 5 }) { return <div className="card-pad">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skeleton" style={{ width: (90 - i * 8) + '%' }} />)}</div>; }
+function Empty({ art, text, title, action, tone = 'neutral' }) {
+  const mark = tone === 'error' ? 'failed' : (art || 'none-yet');
+  return <div className={'empty empty-' + tone} role={tone === 'error' ? 'alert' : undefined}>
+    <div className="ico" aria-hidden="true"><EmptyArt name={mark} /></div>
+    {title && <h4 className="empty-title">{title}</h4>}<p>{text}</p>
+    {action && <div className="empty-action">{action}</div>}
+  </div>;
+}
+function LoadError({ text, onRetry, title = 'Could not load this page' }) {
+  return <div className="card"><Empty tone="error" title={title} text={text}
+    action={<button className="btn" onClick={onRetry}>Retry</button>} /></div>;
+}
+function Skeleton({ rows = 6, shape = 'detail' }) {
+  if (shape === 'dashboard') return <DashboardSkeleton />;
+  if (shape === 'list') return <div className="card flush list-skel" role="status" aria-label="Loading list" aria-busy="true">
+    <div className="list-skel-head" />{Array.from({ length: rows }).map((_, i) => <div className="list-skel-row" key={i}>
+      <div className="skeleton" style={{ width: 70 }} /><div className="skeleton" style={{ flex: 1, maxWidth: 260 }} />
+      <div className="skeleton" style={{ width: 110 }} /><div className="skeleton" style={{ width: 76 }} />
+    </div>)}</div>;
+  return <div className="card-pad" role="status" aria-label="Loading details" aria-busy="true">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skeleton" style={{ width: Math.max(25, 90 - i * 8) + '%' }} />)}</div>;
+}
+window.ARABTEC_UI = { Empty, LoadError, Skeleton, Icon };
 
 /* ----------------------------- Login ----------------------------- */
 function Login({ branding, onLogin }) {
@@ -509,10 +559,24 @@ const NAV = [
   { key: 'buttons', label: 'Button Settings', icon: 'button', perm: 'button.manage' },
   { key: 'workflow', label: 'Workflow Settings', icon: 'flow', perm: 'workflow.manage' },
   { key: 'microsoft', label: 'Microsoft 365', icon: 'mail', perm: 'system.manage' },
+  { key: 'email', label: 'Email & Mailbox', icon: 'mail', perm: 'system.manage' },
   { key: 'system', label: 'System Settings', icon: 'gear', perm: 'system.manage' },
   { key: 'audit', label: 'Audit Log', icon: 'scroll', perm: 'audit.view' },
 ];
 
+function confirmPageExit() {
+  return window.dispatchEvent(new Event('ats:before-navigate', { cancelable: true }));
+}
+const MOBILE_NAV = {
+  interviewer: ['dashboard', 'interviews', 'requests', 'candidates'],
+  executive: ['dashboard', 'reports', 'requests', 'offers'],
+  director: ['dashboard', 'requests', 'offers', 'reports'],
+  manager: ['dashboard', 'requests', 'candidates', 'interviews'],
+  recruiter: ['dashboard', 'requests', 'candidates', 'interviews'],
+};
+function mobileNavItems(items, persona) {
+  return (MOBILE_NAV[persona] || MOBILE_NAV.recruiter).map(key => items.find(n => n.key === key)).filter(Boolean);
+}
 /* ----------------------------- Shell ----------------------------- */
 /* ----------------------------- Notification bell ----------------------------- */
 function NotificationBell({ onNavigate }) {
@@ -1026,37 +1090,39 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   // filter it wants the landing page pre-scoped to; a plain nav click passes
   // nothing, which clears whatever the previous jump left behind.
   const go = useCallback((r, params = null) => {
+    if (!confirmPageExit()) return false;
     setRoute(r); setRouteParams(params); setMobileNavOpen(false); setMoreOpen(false);
   }, []);
 
-  // Deep link, read ONCE on mount. The route lives in React state, not in the
-  // URL, so a redirect from outside the app — the Microsoft OAuth callback
-  // returns the browser to /#microsoft?microsoft=connected — would otherwise
-  // land on the dashboard with the outcome lost. The hash is cleared after it
-  // is read so a refresh does not replay a stale banner.
+  // Accept OAuth deep links and in-app settings links through the same guarded
+  // navigation path. Clear recognized hashes so a refresh cannot replay a banner.
   useEffect(() => {
-    const raw = String(window.location.hash || '').replace(/^#/, '');
-    if (!raw) return;
-    const [key, query] = raw.split('?');
-    if (!key || !NAV.some((n) => n.key === key)) return;
-    const params = Object.fromEntries(new URLSearchParams(query || ''));
-    setRoute(key);
-    setRouteParams(Object.keys(params).length ? params : null);
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-  }, []);
+    const followHash = () => {
+      const raw = String(window.location.hash || '').replace(/^#/, '');
+      const [key, query] = raw.split('?');
+      if (!key || !NAV.some((n) => n.key === key)) return;
+      const params = Object.fromEntries(new URLSearchParams(query || ''));
+      go(key, Object.keys(params).length ? params : null);
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    };
+    followHash();
+    window.addEventListener('hashchange', followHash);
+    return () => window.removeEventListener('hashchange', followHash);
+  }, [go]);
 
   const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
   const navItems = visibleNav.filter((n) => !n.section);
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
-  const primaryMobile = navItems.slice(0, 4);
+  const primaryMobile = mobileNavItems(navItems, persona);
 
   const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
+  const EmailSettingsPage = window.ArabtecEmailSettingsPage;
   const Page = {
     dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} initialFilters={route === 'requests' ? routeParams : null} />,
     candidates: <CandidatesPage user={user} onNavigate={go} initialFilters={route === 'candidates' ? routeParams : null} />,
-    candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <div className="error-banner">Candidate Review module failed to load.</div>,
+    candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <LoadError text="Candidate Review module failed to load." onRetry={() => window.location.reload()} />,
     interviews: <InterviewsPage user={user} initialFilters={route === 'interviews' ? routeParams : null} />,
     offers: <OffersPage user={user} initialFilters={route === 'offers' ? routeParams : null} />,
     users: can(user, 'user.manage')
@@ -1076,6 +1142,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     system: can(user, 'system.manage')
       ? <SystemPage user={user} />
       : <Forbidden what="System Settings" need="System Admin" />,
+    email: can(user, 'system.manage')
+      ? (EmailSettingsPage ? <EmailSettingsPage PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} /> : <LoadError text="Email settings module failed to load." onRetry={() => window.location.reload()} />)
+      : <Forbidden what="Email Settings" need="System Admin" />,
     notifications: can(user, 'notification.manage')
       ? <NotificationsPanel user={user} />
       : <Forbidden what="Notification Settings" need="HR, Recruitment or System Admin" />,
@@ -1141,7 +1210,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
           </button>
           <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+            <Icon name="sidebar" size={18} />
           </button>
           <div className="tb-brand">
             <span className="bn">
@@ -1174,7 +1243,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
                   <Icon name="shield" size={15} /> Change Password
                 </div>
                 <div style={{ borderTop: '1px solid var(--border)' }} />
-                <div className="menu-item" onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="menu-item" onClick={() => { if (confirmPageExit()) onLogout(); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
                   Logout
                 </div>
@@ -1182,7 +1251,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
             )}
           </div>
         </header>
-        <main id="main-content" className={'content density-' + density} tabIndex="-1">
+        <main id="main-content" className={'content has-dock density-' + density} tabIndex="-1">
           <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
         </main>
 
@@ -1213,7 +1282,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
           <button key={n.key} className={route === n.key ? 'active' : ''} onClick={() => go(n.key)}
             aria-current={route === n.key ? 'page' : undefined}>
             <Icon name={n.icon} size={18} />
-            <span>{n.label}</span>
+            <span>{({ dashboard: 'Home', candidates: 'Talent', requests: 'Requests' })[n.key] || n.label}</span>
           </button>
         ))}
         <button className={moreOpen ? 'active' : ''} onClick={() => setMoreOpen((o) => !o)} aria-expanded={moreOpen}>
@@ -1245,7 +1314,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
 const CHART_COLORS = ['#008064', '#00664F', '#4E9C88', '#8A5A00', '#E09600', '#D01827', '#6F6A64', '#8A867F'];
 function BarChart({ data, height = 160 }) {
   const items = data.filter((d) => d.count > 0);
-  if (!items.length) return <Empty icon="📊" text="No data yet." />;
+  if (!items.length) return <Empty art="none-yet" text="No data yet." />;
   const max = Math.max(...items.map((d) => d.count), 1);
   const bw = 100 / items.length;
   return (
@@ -1271,7 +1340,7 @@ function Funnel({ data }) {
   const order = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
   const map = Object.fromEntries(data.map((d) => [d.status, d.count]));
   const rows = order.filter((s) => map[s]).map((s) => ({ status: s, count: map[s] }));
-  if (!rows.length) return <Empty icon="🔻" text="No applications yet." />;
+  if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return <div>{rows.map((r, i) => (
     <div key={r.status} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '3px 0' }}>
@@ -1353,7 +1422,7 @@ function DashKpi({ label, value, unit, hint, icon, tone }) {
 }
 
 function DashBars({ rows, empty, icon = '📊' }) {
-  if (!rows || !rows.length) return <Empty icon={icon} text={empty} />;
+  if (!rows || !rows.length) return <Empty art="none-yet" text={empty} />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return (
     <div className="dash-bars">
@@ -1383,7 +1452,7 @@ function DashFunnel({ data }) {
   const rows = order.map((s) => ({ status: s, count: map[s] || 0 }));
   const closed = (map.rejected || 0) + (map.offer_declined || 0);
   const live = rows.reduce((s, r) => s + r.count, 0);
-  if (!live && !closed) return <Empty icon="🔻" text="No candidates in the pipeline yet. Import CVs against a hiring request to get started." />;
+  if (!live && !closed) return <Empty art="none-yet" text="No candidates in the pipeline yet. Import CVs against a hiring request to get started." />;
   const top = Math.max(...rows.map((r) => r.count), 1);
   const entered = rows[0].count || live;
   return (
@@ -1680,7 +1749,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
           {can(user, 'candidate.add') && <button className="btn" onClick={() => onNavigate('candidates')}>Add candidate</button>}
         </>} />
 
-      <div className="dash-kpi-row">
+      <div className="dash-kpi-row kpi-4">
         <KpiCard label="Overdue actions" value={overdue} tone={overdue ? 'kpi-risk' : ''}
           meta={stalled.length ? `Oldest role open ${Math.max(...stalled.map((r) => (r.health || {}).daysOpen || 0))} days` : 'Nothing overdue'}
           onClick={() => onNavigate('interviews', { status: 'completed' })} />
@@ -1699,7 +1768,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
         <section className="card">
           <div className="card-head"><div><h3>Waiting on you</h3></div><span className="dash-headnote">Sorted by what blocks others first</span></div>
           {actions.length === 0
-            ? <Empty icon="✓" title="Nothing is waiting on you" text="No overdue feedback, no stalled roles, no unsourced requests in your scope." />
+            ? <Empty art="all-clear" title="Nothing is waiting on you" text="No overdue feedback, no stalled roles, no unsourced requests in your scope." />
             : <>
               <div className="action-list">
                 {actions.slice(0, 6).map((a, i) => (
@@ -1715,7 +1784,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
           <div className="card-head"><div><h3>Today</h3></div><span className="dash-headnote">Owned appointments</span></div>
           <div className="event-list">
             {todays.length === 0 && stalled.length === 0
-              ? <Empty icon="🗓" text="Nothing is scheduled for today." />
+              ? <Empty art="none-yet" text="Nothing is scheduled for today." />
               : <>
                 {todays.map((i) => (
                   <EventCard key={i.id} tone="good"
@@ -1735,7 +1804,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>My roles</h3></div><span className="dash-headnote">Current status and how long each has been open</span></div>
         {mine.length === 0
-          ? <Empty icon="🗂" text="No open hiring requests are assigned to you." />
+          ? <Empty art="none-yet" text="No open hiring requests are assigned to you." />
           : <div className="role-health">{mine.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
       </section>
     </div>
@@ -1876,7 +1945,7 @@ function ManagerDashboard({ user, data, onNavigate }) {
           <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Workload at a glance — no ranking.</span></div>
           <div className="card-pad">
             {!workloadRows.length
-              ? <Empty icon="👥" text="No open request is assigned to a recruiter yet." />
+              ? <Empty art="none-yet" text="No open request is assigned to a recruiter yet." />
               : <>
                 <div className="table-wrap"><table className="table responsive-table">
                   <thead><tr><th>Recruiter</th><th>Workload</th><th>Commitments</th><th>Overdue</th><th>Status / Cause</th></tr></thead>
@@ -1929,7 +1998,7 @@ function ManagerDashboard({ user, data, onNavigate }) {
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>Roles requiring attention</h3></div><span className="dash-headnote">Stage-idle time replaces total days open.</span></div>
         {!attentionRows.length
-          ? <Empty icon="✓" title="Nothing needs escalation" text="No stalled, unassigned or at-risk requests right now." />
+          ? <Empty art="all-clear" title="Nothing needs escalation" text="No stalled, unassigned or at-risk requests right now." />
           : <div className="table-wrap"><table className="table responsive-table">
             <thead><tr><th>Role</th><th>Owner</th><th>Stage / Idle</th><th>Blocker</th><th>Next action</th></tr></thead>
             <tbody>{attentionRows.map((r) => (
@@ -1980,7 +2049,7 @@ function planRows(requests, key) {
 }
 
 function PlanTable({ rows, unit }) {
-  if (!rows.length) return <Empty icon="📋" text="No hiring requests to summarise yet." />;
+  if (!rows.length) return <Empty art="none-yet" text="No hiring requests to summarise yet." />;
   return (
     <div className="table-wrap">
       <table className="table responsive-table">
@@ -2042,7 +2111,7 @@ function DirectorDashboard({ user, data, onNavigate }) {
         <section className="card">
           <div className="card-head"><div><h3>Recruitment health</h3></div><span className="dash-headnote">Open requests by age</span></div>
           <div className="card-pad">
-            {!d ? <Empty icon="🗓" text="No data." /> : (
+            {!d ? <Empty art="none-yet" text="No data." /> : (
               <div className="dash-sla-rows">
                 <div className="dash-kv"><span><i style={{ background: 'var(--green)' }} />On track <em>0–30 days</em></span><strong>{d.aging['0-30'] || 0}</strong></div>
                 <div className="dash-kv"><span><i style={{ background: 'var(--warning)' }} />At risk <em>31–60 days</em></span><strong>{d.aging['31-60'] || 0}</strong></div>
@@ -2057,7 +2126,7 @@ function DirectorDashboard({ user, data, onNavigate }) {
         <section className="card">
           <div className="card-head"><div><h3>Waiting on your decision</h3></div><span className="dash-headnote">Requests and offers held for approval</span></div>
         {!awaitingApproval.length && !pendingOffers
-          ? <Empty icon="✓" title="Nothing is waiting on you" text="No hiring request or offer is held for a decision." />
+          ? <Empty art="all-clear" title="Nothing is waiting on you" text="No hiring request or offer is held for a decision." />
           : <div className="action-list">
             {awaitingApproval.slice(0, 6).map((r) => (
               <ActionItem key={r.id} tone="warn" title={`Approve ${shortReqCode(r.ticketNo)} — ${r.title}`}
@@ -2074,7 +2143,7 @@ function DirectorDashboard({ user, data, onNavigate }) {
 
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>Open roles</h3></div><span className="dash-headnote">{open.length} in scope</span></div>
-        {!open.length ? <Empty icon="🗂" text="No open hiring requests." />
+        {!open.length ? <Empty art="none-yet" text="No open hiring requests." />
           : <div className="role-health">{open.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
       </section>
     </div>
@@ -2111,7 +2180,7 @@ function ExecutiveDashboard({ user, data, onNavigate }) {
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>Critical vacancies</h3></div><span className="dash-headnote">Roles flagged critical and still open</span></div>
         {!criticalOpen.length
-          ? <Empty icon="✓" title="No critical vacancies" text="Nothing flagged critical is still open." />
+          ? <Empty art="all-clear" title="No critical vacancies" text="Nothing flagged critical is still open." />
           : <div className="table-wrap">
             <table className="table responsive-table">
               <thead><tr><th>Role</th><th>Project</th><th>Seats</th><th>Days open</th><th>Health</th></tr></thead>
@@ -2171,7 +2240,7 @@ function InterviewerDashboard({ user, data, onNavigate }) {
       <section className="card">
         <div className="card-head"><div><h3>Pending assessments</h3></div><span className="dash-headnote">Feedback the panel is waiting on</span></div>
         {!feedbackDue.length
-          ? <Empty icon="✓" title="No assessment is outstanding" text="Every interview you have run has feedback recorded." />
+          ? <Empty art="all-clear" title="No assessment is outstanding" text="Every interview you have run has feedback recorded." />
           : <div className="action-list">
             {feedbackDue.map((i) => (
               <ActionItem key={i.id} tone="risk" title={`Submit feedback — ${(i.candidate || {}).fullName || 'Candidate'}`}
@@ -2184,7 +2253,7 @@ function InterviewerDashboard({ user, data, onNavigate }) {
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>Upcoming</h3></div><span className="dash-headnote">Assigned to you</span></div>
         {!upcoming.length
-          ? <Empty icon="🗓" text="No interviews are scheduled for you." />
+          ? <Empty art="none-yet" text="No interviews are scheduled for you." />
           : <div className="event-list">
             {upcoming.slice(0, 8).map((i) => (
               <EventCard key={i.id} tone={isToday(i.scheduledAt) ? 'warn' : ''}
@@ -2207,19 +2276,12 @@ function Dashboard({ user, onNavigate, dash }) {
   }
   if (data.loading) {
     return (<div>
-      <DashHead eyebrow="Recruitment workspace" title="Loading…" sub="Fetching your scoped recruitment overview." />
-      <DashboardSkeleton />
+      <DashHead eyebrow="Recruitment workspace" title="Dashboard" sub="Your scoped recruitment overview." />
+      <Skeleton shape="dashboard" />
     </div>);
   }
-  if (data.err) {
-    return (<div>
-      <DashHead eyebrow="Recruitment workspace" title="Dashboard unavailable" sub={data.err} />
-      <div className="card"><div className="dash-state">
-        <div className="dash-state-ico"><Icon name="shield" size={26} /></div>
-        <h3>Dashboard unavailable</h3><p>{data.err}</p>
-      </div></div>
-    </div>);
-  }
+  if (data.err) return <div><DashHead eyebrow="Recruitment workspace" title="Dashboard" />
+    <LoadError title="Could not load the dashboard" text={data.err} onRetry={data.reload} /></div>;
 
   const props = { user, data, onNavigate };
   if (persona === 'manager') return <ManagerDashboard {...props} />;
@@ -2233,7 +2295,7 @@ function Dashboard({ user, onNavigate, dash }) {
 // A horizontal bar metric row (label · proportional fill · value).
 function MetricBar({ rows, labeler = (s) => s, max }) {
   const items = (rows || []).filter((r) => r.count > 0);
-  if (!items.length) return <Empty icon="📊" text="No data yet." />;
+  if (!items.length) return <Empty art="none-yet" text="No data yet." />;
   const m = max || Math.max(...items.map((r) => r.count), 1);
   return <div>{items.map((r, i) => (
     <div className="metric-row" key={i}>
@@ -2247,7 +2309,7 @@ function MetricBar({ rows, labeler = (s) => s, max }) {
 function ReportFunnel({ data }) {
   const map = Object.fromEntries((data || []).map((d) => [d.status, d.count]));
   const rows = FUNNEL_ORDER.filter((s) => map[s] != null).map((s) => ({ status: s, count: map[s] }));
-  if (!rows.length) return <Empty icon="🔻" text="No applications yet." />;
+  if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return <div>{rows.map((r, i) => {
     const prev = i > 0 ? rows[i - 1].count : null;
@@ -2266,10 +2328,12 @@ function ReportsPage({ user }) {
   const toast = useToast();
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
-  useEffect(() => {
+  const load = useCallback(() => {
+    setErr(null);
     if (!can(user, 'dashboard.view')) { setErr('You do not have analytics access.'); return; }
     api.get('/dashboard').then(setD).catch((e) => setErr(e.message));
-  }, []);
+  }, [user]);
+  useEffect(load, [load]);
 
   function exportCsv() {
     if (!d) return;
@@ -2290,19 +2354,11 @@ function ReportsPage({ user }) {
     toast('Report exported');
   }
 
-  if (err) return (
-    <div>
-      <PageHead crumb="Overview / Reports" title="Recruitment Reports" sub="Read-only analytics · No salary data." />
-      <div className="card"><div className="dash-state">
-        <div className="dash-state-ico"><Icon name="shield" size={26} /></div>
-        <h3>Reports unavailable</h3><p>{err}</p>
-      </div></div>
-    </div>
-  );
+  if (err) return <LoadError title="Could not load reports" text={err} onRetry={load} />;
   if (!d) return (
     <div>
       <PageHead crumb="Overview / Reports" title="Recruitment Reports" sub="Loading analytics…" />
-      <div className="dash-kpi-row">{[0, 1, 2, 3].map((i) => <div className="dash-kpi dash-kpi-skel" key={i}><div className="skeleton" style={{ width: '52%' }} /><div className="skeleton" style={{ width: '34%', height: 26, margin: '12px 0 8px' }} /><div className="skeleton" style={{ width: '66%' }} /></div>)}</div>
+      <div className="dash-kpi-row kpi-4">{[0, 1, 2, 3].map((i) => <div className="dash-kpi dash-kpi-skel" key={i}><div className="skeleton" style={{ width: '52%' }} /><div className="skeleton" style={{ width: '34%', height: 26, margin: '12px 0 8px' }} /><div className="skeleton" style={{ width: '66%' }} /></div>)}</div>
       <div className="report-grid"><div className="card"><Skeleton rows={6} /></div><div className="card"><Skeleton rows={6} /></div></div>
     </div>
   );
@@ -2318,7 +2374,7 @@ function ReportsPage({ user }) {
           <button className="btn btn-secondary" onClick={exportCsv}>Export CSV</button>
         </>} />
 
-      <div className="dash-kpi-row">
+      <div className="dash-kpi-row kpi-4">
         <DashKpi label="Avg Time-to-Fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays} unit={k.timeToFillDays == null ? null : ' days'} hint={k.timeToFillDays == null ? 'no filled requests yet' : 'across filled requests'} icon="scroll" tone="var(--brand-primary)" />
         <DashKpi label="Fill Rate" value={k.fillRate} unit="%" hint={`${k.headcountFilled} of ${k.headcountTotal} seats filled`} icon="dashboard" tone="var(--action-success)" />
         <DashKpi label="Offer Acceptance" value={k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate} unit={k.offerAcceptanceRate == null ? null : '%'} hint={k.offerAcceptanceRate == null ? 'no decided offers yet' : 'accepted of decided'} icon="shield" tone="var(--action-success)" />
@@ -2362,10 +2418,11 @@ function ReportsPage({ user }) {
 }
 
 /* ----------------------------- Users page ----------------------------- */
-function PageHead({ crumb, title, sub, actions }) {
+function PageHead({ crumb, title, sub, actions, back }) {
   return (
     <div className="page-head">
       <div className="page-head-main">
+        {back && <div className="detail-back">{back}</div>}
         {crumb && <div className="breadcrumb">{crumb}</div>}
         <h1 className="page-title">{title}</h1>
         {sub && <p className="page-sub">{sub}</p>}
@@ -2373,6 +2430,19 @@ function PageHead({ crumb, title, sub, actions }) {
       {actions && <div className="page-head-actions">{actions}</div>}
     </div>
   );
+}
+
+function FilterToolbar({ search, children, count, activeCount = 0 }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  return <div className="toolbar filter-toolbar">
+    <div className="toolbar-search">{search}</div>
+    <button className="btn btn-secondary filter-toggle" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(v => !v)}>
+      <Icon name="filter" size={16} />Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+    </button>
+    <div id={id} className={'toolbar-secondary' + (expanded ? ' expanded' : '')}>{children}</div>
+    <div className="toolbar-count">{count}</div>
+  </div>;
 }
 
 // Segmented view switcher shared by the list pages (Cards / Table, Board / Table).
@@ -2512,7 +2582,7 @@ function ForcedPasswordChange({ user, onDone, onLogout }) {
         </div>
         <ChangePasswordForm forced onDone={onDone} />
         <div className="forced-pw-foot">
-          <button className="btn btn-ghost btn-sm" onClick={onLogout}>Sign out instead</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { if (confirmPageExit()) onLogout(); }}>Sign out instead</button>
         </div>
       </div>
     </div>
@@ -2808,6 +2878,7 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
 /* ----------------------------- Roles & Permissions ----------------------------- */
 function RolesPage({ user }) {
   const toast = useToast();
+  const [loadError, setLoadError] = useState(null);
   const [roles, setRoles] = useState(null);
   const [catalog, setCatalog] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -2824,14 +2895,19 @@ function RolesPage({ user }) {
   useEffect(() => {
     if (!dirty) return;
     const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    const navigate = (e) => { if (!window.confirm('Discard unsaved permission changes?')) e.preventDefault(); };
     window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
+    window.addEventListener('ats:before-navigate', navigate);
+    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('ats:before-navigate', navigate); };
   }, [dirty]);
 
   const load = useCallback(async () => {
+    setLoadError(null);
+    try {
     const [r, p] = await Promise.all([api.get('/roles'), api.get('/roles/permissions')]);
     setRoles(r.roles); setCatalog(p.permissions);
     if (!selected && r.roles[0]) { setSelected(r.roles[0]); setDraft(r.roles[0].permissions); }
+    } catch (e) { setLoadError(e.message); }
   }, [selected]);
   useEffect(() => { load(); }, []);
 
@@ -2842,7 +2918,7 @@ function RolesPage({ user }) {
   }
   function toggle(code) { setDraft((d) => d.includes(code) ? d.filter((x) => x !== code) : [...d, code]); }
   async function save() {
-    try { await api.put(`/roles/${selected.id}/permissions`, { permissionCodes: draft }); toast('Permissions updated'); load(); }
+    try { await api.put(`/roles/${selected.id}/permissions`, { permissionCodes: draft }); setSelected((role) => ({ ...role, permissions: [...draft] })); setRoles((all) => all.map(role => role.id === selected.id ? { ...role, permissions: [...draft] } : role)); toast('Permissions updated'); }
     catch (e) { toast(e.message, 'error'); }
   }
   const groups = useMemo(() => {
@@ -2851,6 +2927,7 @@ function RolesPage({ user }) {
     return g;
   }, [catalog]);
 
+  if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!roles) return <Skeleton rows={8} />;
   return (
     <div>
@@ -2858,21 +2935,21 @@ function RolesPage({ user }) {
       <div className="roles-layout">
         <div className="card roles-list"><div className="card-pad">
           {roles.map((r) => (
-            <button key={r.id} className={'nav-item' + (selected?.id === r.id ? ' active' : '')} onClick={() => pick(r)} aria-current={selected?.id === r.id ? 'true' : undefined}>
+            <button key={r.id} className={'role-choice' + (selected?.id === r.id ? ' active' : '')} onClick={() => pick(r)} aria-current={selected?.id === r.id ? 'true' : undefined}>
               <span>{r.name}</span>
             </button>
           ))}
         </div></div>
         <div className="card">
-          <div className="card-head"><h3>{selected?.name} — {draft.length} permissions{dirty && <span className="muted" style={{ fontWeight: 400 }}> · unsaved</span>}</h3>
-            {canManage && <button className="btn btn-sm" onClick={save}>Save Changes</button>}</div>
+          <div className="card-head permissions-save"><h3>{selected?.name} — {draft.length} permissions{dirty && <span className="muted" style={{ fontWeight: 400 }}> · unsaved</span>}</h3>
+            {canManage && <button className="btn btn-sm" disabled={!dirty} onClick={save}>Save Changes</button>}</div>
           <div className="card-pad permissions-panel">
             {Object.entries(groups).map(([res, perms]) => (
               <div key={res} style={{ marginBottom: 16 }}>
                 <div className="muted" style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: 11, marginBottom: 8 }}>{res}</div>
                 {perms.map((p) => (
                   <label key={p.code} className="switch permission-toggle">
-                    <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> {p.description}
+                    <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> <span>{p.description}<code className="permission-code">{p.code}</code></span>
                   </label>
                 ))}
               </div>
@@ -2906,7 +2983,7 @@ function ProjectsPage({ user }) {
       <PageHead crumb="Administration / Projects" title="Projects" sub="Construction projects are the core hiring contexts."
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Project</button>} />
       <div className="card">
-        {!rows ? <Skeleton /> : rows.length === 0 ? <Empty icon="🏗" text="No projects yet." /> : (
+        {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No projects yet." /> : (
           <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Sites</th><th>PM</th>{canManage && <th></th>}</tr></thead>
             <tbody>{rows.map((p) => (
               <tr key={p.id}><td data-label="Code"><strong>{p.code}</strong></td><td data-label="Name">{p.name}</td><td data-label="Client">{p.clientName || '—'}</td><td data-label="Location">{p.location || '—'}</td>
@@ -2933,7 +3010,7 @@ function SitesPage({ user }) {
       <PageHead crumb="Administration / Sites" title="Sites" sub="Physical locations under projects (multi-site hiring)."
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Site</button>} />
       <div className="card">
-        {!rows ? <Skeleton /> : rows.length === 0 ? <Empty icon="📍" text="No sites yet." /> : (
+        {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No sites yet." /> : (
           <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Project</th><th>Location</th><th>Status</th><th>Site Manager</th>{canManage && <th></th>}</tr></thead>
             <tbody>{rows.map((s) => (
               <tr key={s.id}><td data-label="Code"><strong>{s.code}</strong></td><td data-label="Name">{s.name}</td><td data-label="Project">{s.project?.name || '—'}</td><td data-label="Location">{s.location || '—'}</td>
@@ -2960,7 +3037,7 @@ function DepartmentsPage({ user }) {
       <PageHead crumb="Administration / Departments" title="Departments" sub="Disciplines such as Mechanical, Civil, MEP, Planning, QA/QC."
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Department</button>} />
       <div className="card">
-        {!rows ? <Skeleton /> : rows.length === 0 ? <Empty icon="🏢" text="No departments yet." /> : (
+        {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No departments yet." /> : (
           <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Head</th><th>Status</th>{canManage && <th></th>}</tr></thead>
             <tbody>{rows.map((d) => (
               <tr key={d.id}><td data-label="Code"><strong>{d.code}</strong></td><td data-label="Name">{d.name}</td><td data-label="Head">{d.head?.name || '—'}</td>
@@ -3196,7 +3273,7 @@ function NotificationsPanel({ user }) {
       {!data.emailConfigured && (
         <div className="notice notice-warn card-pad" style={{ marginBottom: 14 }}>
           <strong>No mailbox is configured.</strong> In-app alerts still work; anything ticked
-          for email is recorded but will not send until SMTP is set up in System Settings.
+          for email is recorded but will not send until a mailbox is connected in <a href="#email">Email &amp; Mailbox</a>.
         </div>
       )}
       {!canEdit && (
@@ -3302,7 +3379,7 @@ function BrandingLogoPanel({ user, branding, refreshBranding }) {
     catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
   }
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+    <div className="detail-grid">
       <div className="card card-pad">
         <div className="section-title" style={{ marginTop: 0 }}>Logo</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
@@ -3437,7 +3514,7 @@ function CustomFieldsPanel({ user }) {
           </div>
         </div>
       )}
-      {!fields ? <Skeleton rows={4} /> : fields.length === 0 ? <Empty icon="➕" text="No custom fields yet. Add one above." /> : (
+      {!fields ? <Skeleton rows={4} /> : fields.length === 0 ? <Empty art="none-yet" text="No custom fields yet. Add one above." /> : (
         <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Visible</th><th></th></tr></thead>
           <tbody>{fields.map((cf) => (
             <tr key={cf.fieldKey}>
@@ -3856,7 +3933,7 @@ function AuditPage({ user }) {
         {data && <span className="muted">{data.total} entries</span>}
       </div>
       <div className="card">
-        {!data ? <Skeleton /> : data.logs.length === 0 ? <Empty icon="📜" text="No audit entries match." /> : (
+        {!data ? <Skeleton /> : data.logs.length === 0 ? <Empty art="none-yet" text="No audit entries match." /> : (
           <table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Comments</th><th></th></tr></thead>
             <tbody>{data.logs.map((l) => (
               <tr key={l.id}><td className="muted">{fmtDate(l.occurredAt)}</td><td>{l.actorName || '—'}<div className="muted">{l.actorRole || ''}</div></td>
@@ -3920,21 +3997,7 @@ function DateCell({ value, dateOnly }) {
   const t = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   return <span className="datecell"><span className="cell-strong">{d}</span>{!dateOnly && <span className="cell-sub">{t}</span>}</span>;
 }
-function ListSkeleton({ rows = 6 }) {
-  return (
-    <div className="card flush list-skel">
-      <div className="list-skel-head" />
-      {Array.from({ length: rows }).map((_, i) => (
-        <div className="list-skel-row" key={i}>
-          <div className="skeleton" style={{ width: 70 }} />
-          <div className="skeleton" style={{ flex: 1, maxWidth: 260 }} />
-          <div className="skeleton" style={{ width: 110 }} />
-          <div className="skeleton" style={{ width: 76 }} />
-        </div>
-      ))}
-    </div>
-  );
-}
+function ListSkeleton() { return <Skeleton shape="list" />; }
 
 // Resolve admin-controlled buttons for current user from the server.
 // Retries a transient failure so detail-page action bars don't silently and
@@ -3999,6 +4062,7 @@ function needsAction(r) { return (r.health || {}).level === 'red' || (r.health |
 
 function RequestsPage({ user, initialFilters }) {
   const toast = useToast();
+  const [loadError, setLoadError] = useState(null);
   const [data, setData] = useState(null);
   // Approved layout is the table: it is what a recruiter scans down. Cards stay
   // one click away for people who prefer them.
@@ -4054,7 +4118,8 @@ function RequestsPage({ user, initialFilters }) {
       if (k === 'attention' || k === 'openOnly' || !v) return;
       params.set(k === 'owner' ? 'ownerId' : k, k === 'q' ? expandReqCode(v) : v);
     });
-    setData(await api.get('/requests?' + params.toString()));
+    setLoadError(null);
+    try { setData(await api.get('/requests?' + params.toString())); } catch (e) { setLoadError(e.message); }
   }, [filters]);
   useEffect(() => { load(); }, [load]);
 
@@ -4094,8 +4159,7 @@ function RequestsPage({ user, initialFilters }) {
           {canCreate && <button className="btn" onClick={() => setCreating(true)}>{btns.create_request.label}</button>}
         </>} />
 
-      <div className="toolbar">
-        <input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 240 }} />
+      <FilterToolbar activeCount={activeChips.length} search={<input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />}>
         <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(REQ_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <select value={filters.priority} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
@@ -4115,47 +4179,45 @@ function RequestsPage({ user, initialFilters }) {
         </label>
         <select value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
           <option value="created">Sort: Created</option><option value="priority">Priority</option><option value="title">Title</option><option value="status">Status</option><option value="ticket">Ticket No</option></select>
-        <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}>{filters.dir === 'desc' ? '↓ Desc' : '↑ Asc'}</button>
-        <div className="spacer" />
-        <CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />
-      </div>
+        <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}><Icon name={filters.dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={16} />{filters.dir === 'desc' ? 'Desc' : 'Asc'}</button>
+        </FilterToolbar>
 
       {activeChips.length > 0 && (
         <div className="filter-chips">
           {activeChips.map(([k, label, clear]) => (
             <span key={k} className="chip-filter">
               {label}
-              <button aria-label={`Remove ${label} filter`} onClick={clear}>✕</button>
+              <button aria-label={`Remove ${label} filter`} onClick={clear}><Icon name="close" size={16} /></button>
             </span>
           ))}
           <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, status: '', priority: '', owner: '', attention: false, openOnly: false }))}>Clear all</button>
         </div>
       )}
 
-      {!data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
-        <div className="card"><Empty icon="🎫"
+      {loadError ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
+        <div className="card"><Empty art="none-yet"
           title={activeChips.length || filters.q ? 'No requests match these filters' : 'No hiring requests yet'}
           text={activeChips.length || filters.q
             ? 'Try clearing the search box or widening the filters above.'
             : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
         <div className="card flush"><div className="table-wrap"><table className="table responsive-table">
-          <thead><tr><th>Request</th><th>Position</th><th>Project / Site</th><th>Owner</th><th>Pipeline</th><th>Priority</th><th>Status</th><th>Idle</th><th>SLA</th></tr></thead>
+          <thead><tr><th>Request</th><th>Position</th><th data-priority="secondary">Project / Site</th><th>Owner</th><th data-priority="secondary">Pipeline</th><th>Priority</th><th>Status</th><th data-priority="secondary">Idle</th><th>SLA</th></tr></thead>
           <tbody>{shown.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
               <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
               <td data-label="Position"><span className="cell-strong">{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
-              <td data-label="Project / Site" className="cell-sub-only">{placeLabel(r)}</td>
+              <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">{placeLabel(r)}</td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
                 {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
                   : !canAssign ? <span className="muted">Unassigned</span>
                   : canAssignStatus(r.status) ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign</button>
                   : <button className="btn btn-ghost btn-sm" disabled title={ASSIGN_BLOCKED_TITLE}>Assign</button>}
               </td>
-              <td data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
+              <td data-priority="secondary" data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
               <td data-label="Priority"><PriorityBadge p={r.priority} /></td>
               <td data-label="Status"><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
-              <td data-label="Idle" className="cell-sub-only">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
+              <td data-priority="secondary" data-label="Idle" className="cell-sub-only">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
               <td data-label="SLA"><ReqHealth health={r.health} /></td>
             </tr>
           ))}</tbody>
@@ -4252,7 +4314,7 @@ function RequestForm({ user, request, onClose, onSaved }) {
         <div className="field"><label>Project / Site *</label>
           <select value={f.projectId} onChange={(e) => set('projectId', e.target.value)}><option value="">— Select —</option>{meta.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <button type="button" className="linklike" style={{ marginTop: 6 }} onClick={() => setMoreLoc((v) => !v)}>
-            {moreLoc ? '▲ Hide location details' : '▼ More location details'}
+            <Icon name={moreLoc ? 'chevronUp' : 'chevronDown'} size={16} />{moreLoc ? 'Hide location details' : 'More location details'}
           </button>
         </div>
         {moreLoc && <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
@@ -4323,7 +4385,7 @@ function AiShortlistTab({ request, user }) {
   if (state === 'idle') {
     return (
       <div className="card card-pad">
-        <Empty icon="✨" title="Find candidates for this request"
+        <Empty art="none-yet" title="Find candidates for this request"
           text="Claude reads this requisition and ranks your talent pool against it, with a reason for each suggestion. Nothing is changed until you link someone."
           action={<button className="btn" onClick={run}>Suggest candidates</button>} />
       </div>
@@ -4340,7 +4402,7 @@ function AiShortlistTab({ request, user }) {
   if (state === 'error') {
     return (
       <div className="card card-pad">
-        <Empty icon="⚠" tone="error" title="No shortlist" text={error}
+        <Empty art="none-yet" tone="error" title="No shortlist" text={error}
           action={<button className="btn btn-secondary" onClick={run}>Try again</button>} />
       </div>
     );
@@ -4360,7 +4422,7 @@ function AiShortlistTab({ request, user }) {
 
       {list.length === 0 ? (
         <div className="card card-pad">
-          <Empty icon="🔍" title="Nobody in the pool fits this request yet"
+          <Empty art="no-match" title="Nobody in the pool fits this request yet"
             text="An empty shortlist is a real answer — it means no current candidate evidences what this role asks for. Import CVs or widen the requirements." />
         </div>
       ) : (
@@ -4417,6 +4479,7 @@ function AiShortlistTab({ request, user }) {
 function RequestDetail({ id, user, btns, onBack }) {
   const toast = useToast();
   const [req, setReq] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [tab, setTab] = useState('thread');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [action, setAction] = useState(null);
@@ -4424,7 +4487,7 @@ function RequestDetail({ id, user, btns, onBack }) {
   const [assigning, setAssigning] = useState(false);
   const [recruiters, setRecruiters] = useState([]);
 
-  const load = useCallback(async () => { setReq((await api.get('/requests/' + id)).request); }, [id]);
+  const load = useCallback(async () => { setLoadError(null); try { setReq((await api.get('/requests/' + id)).request); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
   useEffect(() => { api.get('/requests/meta/form').then((m) => setRecruiters(m.assignableRecruiters || [])).catch(() => {}); }, []);
 
@@ -4451,6 +4514,7 @@ function RequestDetail({ id, user, btns, onBack }) {
     setAction({ title, danger, run: (reason) => { setAction(null); doAction(path, { reason }, okMsg); } });
   }
 
+  if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!req) return <Skeleton rows={8} />;
   const s = req.status;
 
@@ -4474,10 +4538,8 @@ function RequestDetail({ id, user, btns, onBack }) {
 
   return (
     <div>
-      <div className="detail-back"><button className="back-link" onClick={onBack}>← Hiring Requests</button></div>
-
-      <TicketHeader req={req}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 560 }}>
+      <TicketHeader req={req} onBack={onBack}>
+        <div className="page-head-actions">
           {btns.assign_recruiter?.visible && !TERMINAL_STATUSES.includes(s) && (
             canAssignNow
               ? <button className="btn btn-secondary" onClick={() => setAssigning(true)}>{assignLabel}</button>
@@ -4500,7 +4562,7 @@ function RequestDetail({ id, user, btns, onBack }) {
         <button className="disclosure-btn" onClick={() => setDetailsOpen((o) => !o)} aria-expanded={detailsOpen}>
           <span className="disclosure-label">Request details</span>
           <span className="disclosure-hint">{req.department?.name || '—'} · {placeLabel(req)}</span>
-          <span className="disclosure-caret">{detailsOpen ? 'Hide ▴' : 'Show ▾'}</span>
+          <span className="disclosure-caret">{detailsOpen ? 'Hide' : 'Show'}<Icon name={detailsOpen ? 'chevronUp' : 'chevronDown'} size={16} /></span>
         </button>
         {detailsOpen && <div className="disclosure-body"><OverviewTab req={req} onReload={load} btns={btns} embedded /></div>}
       </div>
@@ -4582,7 +4644,7 @@ function TicketThread({ req, user }) {
   return (
     <div style={{ maxWidth: 860 }}>
       {posts.length === 0
-        ? <div className="card"><Empty icon="💬" text="No messages yet. Start the conversation, attach files, or post a CV below." /></div>
+        ? <div className="card"><Empty art="none-yet" text="No messages yet. Start the conversation, attach files, or post a CV below." /></div>
         : <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {posts.map((p) => (
               <ThreadPost key={p.id} post={p} user={user} onView={viewPostFile}
@@ -4833,33 +4895,17 @@ function statusChipClass(status) {
   return '';
 }
 
-function TicketHeader({ req, children }) {
-  // The brand logo block was removed here: the sidebar already carries the mark,
-  // and the red-outlined box fought with the new Shell. Identity now comes from
-  // the ticket code pill. The left accent rail is navy, not red — red is reserved
-  // for destructive actions and critical states.
-  return (
-    <div className="ticket-header-card">
-      <div className="th-row">
-        <div className="th-main">
-          <div className="th-eyebrow">Hiring Request</div>
-          <h1 className="th-title">{req.title}</h1>
-          <div className="th-meta">
-            <span className="code-pill" title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span>
-            <ReqStatusBadge status={req.status} displayStatus={req.displayStatus} />
-            {req.priority && <PriorityBadge p={req.priority} />}
-            {req.health && <ReqHealth health={req.health} />}
-          </div>
-          <div className="th-sub">
-            <span><em>Department</em>{req.department?.name || '—'}</span>
-            <span><em>Project / Site</em>{placeLabel(req)}</span>
-            {req.headcount != null && <span><em>Headcount</em>{req.headcountFilled ?? 0} of {req.headcount}</span>}
-          </div>
-        </div>
-        <div className="th-actions">{children}</div>
-      </div>
-    </div>
-  );
+function TicketHeader({ req, children, onBack }) {
+  return <div className="ticket-header-card"><PageHead
+    back={onBack && <button className="back-link" onClick={onBack}><Icon name="back" size={16} />Hiring Requests</button>}
+    crumb="Hiring Request" title={req.title} actions={children}
+    sub={<><span className="th-meta"><span className="code-pill" title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span>
+      <ReqStatusBadge status={req.status} displayStatus={req.displayStatus} />
+      {req.priority && <PriorityBadge p={req.priority} />}{req.health && <ReqHealth health={req.health} />}</span>
+      <span className="th-sub"><span><em>Department</em>{req.department?.name || '—'}</span>
+      <span><em>Project / Site</em>{placeLabel(req)}</span>
+      {req.headcount != null && <span><em>Headcount</em>{req.headcountFilled ?? 0} of {req.headcount}</span>}</span></>} />
+  </div>;
 }
 
 function AttachmentRow({ req, onReload }) {
@@ -4960,7 +5006,7 @@ function JDTab({ req }) {
 }
 function TimelineTab({ req }) {
   const acts = (req.activity || []).filter((a) => a.type !== 'hold_meta');
-  if (!acts.length) return <div className="card"><Empty icon="📜" text="No activity yet." /></div>;
+  if (!acts.length) return <div className="card"><Empty art="none-yet" text="No activity yet." /></div>;
   return (
     <div className="card card-pad">
       {acts.map((a) => (
@@ -5042,8 +5088,8 @@ function moveErrorText(e) {
 // One write path for every pipeline (per-request board and the Talent Pool board).
 // Optimistic splice, then the server's record, then exact rollback.
 async function moveApplication({ appId, status, reason, list, setList, pending, setPending, toast }) {
-  if (pending.has(appId)) return;
-  const snapshot = list;
+  const current = (list || []).find(a => a.id === appId);
+  if (pending.has(appId) || !current || !canPipelineMove(current.status, status)) return;
   setPending((p) => new Set(p).add(appId));
   setList((xs) => (xs || []).map((a) => (a.id === appId ? { ...a, status: toApiStatus(status) } : a)));
   try {
@@ -5053,7 +5099,9 @@ async function moveApplication({ appId, status, reason, list, setList, pending, 
     }
     toast(`Moved to ${(APP_STATUS[status] || {}).label || status}`);
   } catch (e) {
-    setList(snapshot);
+    // Revert only this card: another candidate may have moved successfully
+    // while this request was in flight.
+    setList((xs) => (xs || []).map((a) => a.id === appId ? current : a));
     toast(moveErrorText(e), 'error');
   } finally {
     setPending((p) => { const nx = new Set(p); nx.delete(appId); return nx; });
@@ -5099,6 +5147,31 @@ function pipelineStage(status) {
   if (s.column === 6) return 'hired';
   return status;
 }
+function canPipelineMove(status, target) {
+  if (!APP_STATUS[status] || TERMINAL_APP.includes(status) || isDisqualified(status)) return false;
+  if (REASON_STATUSES.includes(target)) return true;
+  const from = APP_ORDER.indexOf(pipelineStage(status));
+  const to = APP_ORDER.indexOf(target);
+  return from >= 0 && to > from;
+}
+function pipelineResidualLabel(status) {
+  const column = pipelineStage(status);
+  if (status === column) return '';
+  const label = APP_STATUS[status]?.label;
+  return label && label !== APP_STATUS[column]?.label ? label : String(status).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+}
+function PipelineColumn({ stage, apps, pending, canMove, onMove, children }) {
+  const [over, setOver] = useState(false);
+  function dragged(e) {
+    try { const id = e.dataTransfer.getData('application/x-ats-application'); return apps.find(a => String(a.id) === id); } catch { return null; }
+  }
+  return <div className={'kan-col' + (over ? ' kan-drop-active' : '')} data-stage={stage}
+    onDragOver={(e) => { if (canMove && e.dataTransfer.types.includes('application/x-ats-application')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(true); } }}
+    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false); }}
+    onDrop={(e) => { e.preventDefault(); setOver(false); const app = dragged(e); if (canMove && app && !pending.has(app.id) && canPipelineMove(app.status, stage)) onMove(app.id, stage); }}>
+    {children}
+  </div>;
+}
 function AppStatusBadge({ status }) { const s = APP_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
 // Source attribution chip (Workable pattern: "via LinkedIn / careers / referral").
 // Maps free-text source values to a small set of branded chips.
@@ -5129,6 +5202,7 @@ function MatchScore({ score }) {
 function RequestPipeline({ request, user, btns }) {
   const toast = useToast();
   const [apps, setApps] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [view, setView] = useState('kanban'); // kanban | list | compact
   const [selected, setSelected] = useState(new Set());
   const [quickView, setQuickView] = useState(null);
@@ -5141,7 +5215,7 @@ function RequestPipeline({ request, user, btns }) {
   const [pending, setPending] = useState(new Set()); // application ids with an in-flight move
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  const load = useCallback(async () => { setApps((await api.get('/applications/request/' + request.id)).applications); }, [request.id]);
+  const load = useCallback(async () => { setLoadError(null); try { setApps((await api.get('/applications/request/' + request.id)).applications); } catch (e) { setLoadError(e.message); } }, [request.id]);
   useEffect(() => { load(); }, [load]);
 
   // Apply candidate search/filter/sort to the loaded applications.
@@ -5149,7 +5223,7 @@ function RequestPipeline({ request, user, btns }) {
     let list = apps || [];
     const q = pf.q.trim().toLowerCase();
     if (q) list = list.filter((a) => (a.candidate?.fullName || '').toLowerCase().includes(q) || (a.candidate?.employer || a.candidate?.currentCompany || '').toLowerCase().includes(q));
-    if (pf.stage) list = list.filter((a) => a.status === pf.stage);
+    if (pf.stage) list = list.filter((a) => pipelineStage(a.status) === pf.stage);
     if (pf.recruiter) list = list.filter((a) => String(a.recruiter?.id) === pf.recruiter);
     list = [...list].sort((x, y) => {
       if (pf.sort === 'name') return (x.candidate?.fullName || '').localeCompare(y.candidate?.fullName || '');
@@ -5184,13 +5258,15 @@ function RequestPipeline({ request, user, btns }) {
     });
   }
   function requestMove(appId, status) {
-    if (pending.has(appId)) return;
+    const app = (apps || []).find(a => a.id === appId);
+    if (!canMove || pending.has(appId) || !app || !canPipelineMove(app.status, status)) return;
     if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
     else move(appId, status);
   }
   async function bulkMove(status, reason) {
     if (bulkBusy) return;
-    const ids = [...selected];
+    const ids = [...selected].filter(id => { const app = (apps || []).find(a => a.id === id); return !pending.has(id) && app && canPipelineMove(app.status, status); });
+    if (!canMove || !ids.length) { toast('Select candidates that can move forward to this stage.', 'error'); return; }
     setBulkBusy(true);
     setPending((p) => { const nx = new Set(p); ids.forEach((i) => nx.add(i)); return nx; });
     try {
@@ -5208,6 +5284,7 @@ function RequestPipeline({ request, user, btns }) {
   function toggleSel(id) { setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
   const [importOpen, setImportOpen] = useState(false);
 
+  if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!apps) return <Skeleton rows={6} />;
 
   const cols = APP_ORDER;
@@ -5247,9 +5324,9 @@ function RequestPipeline({ request, user, btns }) {
         </div>
       )}
 
-      {apps.length === 0 ? <div className="card"><Empty icon="🧑‍💼" text="No candidates linked yet. Use 'Add Candidate' to add candidates." />
+      {apps.length === 0 ? <div className="card"><Empty art="none-yet" text="No candidates linked yet. Use 'Add Candidate' to add candidates." />
           {canImport && <div style={{ textAlign: 'center', paddingBottom: 18 }}><button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button></div>}</div>
-        : visibleApps.length === 0 ? <div className="card"><Empty icon="🔍" text="No candidates match the current filters." /></div>
+        : visibleApps.length === 0 ? <div className="card"><Empty art="no-match" text="No candidates match the current filters." /></div>
         : view === 'kanban' ? (
           <div className="kanban">
             {cols.map((st) => {
@@ -5258,7 +5335,7 @@ function RequestPipeline({ request, user, btns }) {
                 return canonical === st && !isDisqualified(a.status);
               });
               return (
-                <div key={st} className="kan-col">
+                <PipelineColumn key={st} stage={st} apps={apps} pending={pending} canMove={canMove} onMove={requestMove}>
                   <div className="kan-head">
                     <span className="kan-dot" style={{ background: APP_STAGE_COLORS[st] || 'var(--muted)' }} />
                     <span className="kan-title">{APP_STATUS[st].label}</span>
@@ -5269,7 +5346,7 @@ function RequestPipeline({ request, user, btns }) {
                       ? <div className="kan-empty">No candidates at this stage</div>
                       : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
                   </div>
-                </div>
+                </PipelineColumn>
               );
             })}
           </div>
@@ -5338,62 +5415,64 @@ function NextActionModal({ app, onClose, onSaved }) {
   );
 }
 
-function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns, showRequest }) {
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns = {}, showRequest }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
-  // While a stage move is in flight the card dims, shows a "Moving…" chip and
-  // every control that could fire a second request is disabled.
+  const menuRef = useRef(null), triggerRef = useRef(null);
+  const menuId = useId();
+  const targets = canMove ? APP_ORDER.filter(s => canPipelineMove(app.status, s)) : [];
+  const movable = canMove && canPipelineMove(app.status, 'rejected');
+  const residual = pipelineResidualLabel(app.status);
   useEffect(() => { if (pending) setMenu(false); }, [pending]);
-  return (
-    <div className={'pcard' + (wide ? ' pcard-wide' : '') + (selected ? ' selected' : '') + (pending ? ' pcard-pending' : '')} aria-busy={pending || undefined}>
-      {pending && <span className="pcard-busy"><i className="spin" />Moving…</span>}
-      <div className="pcard-top">
-        {canBulk && <input className="pcard-check" type="checkbox" checked={selected} disabled={pending} onChange={onSelect} onClick={(e) => e.stopPropagation()} />}
-        <span className="pcard-av">{initials(cand.fullName || '?')}</span>
-        <div className="pcard-id">
-          <span className="pcard-name" title={cand.fullName || cand.name}>{cand.fullName || cand.name || '—'}</span>
-          <span className="pcard-role" title={(cand.currentPosition || '') + (cand.currentCompany ? ' · ' + cand.currentCompany : '')}>
-            {cand.currentPosition || '—'}{cand.currentCompany ? ' · ' + cand.currentCompany : ''}
-          </span>
-        </div>
-        <MatchScore score={app.matchScore} />
+  useEffect(() => {
+    if (!menu) return;
+    menuRef.current?.querySelector('button')?.focus();
+    const close = e => { if (!menuRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target)) setMenu(false); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [menu]);
+  function action(run) { setMenu(false); triggerRef.current?.focus(); run(); }
+  function menuKeys(e) {
+    const items = [...menuRef.current.querySelectorAll('button')];
+    const at = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenu(false); triggerRef.current?.focus(); }
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault(); const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next]?.focus();
+    }
+  }
+  return <div className={'pcard' + (wide ? ' pcard-wide' : '') + (selected ? ' selected' : '') + (pending ? ' pcard-pending' : '')}
+    aria-busy={pending || undefined} draggable={!!(movable && !pending)}
+    onDragStart={e => { if (!movable || pending) { e.preventDefault(); return; } e.dataTransfer.setData('application/x-ats-application', String(app.id)); e.dataTransfer.effectAllowed = 'move'; }}
+    onClick={e => { if (!pending && !e.target.closest('button,input,.pipeline-menu')) onView(); }}>
+    {pending && <span className="pcard-busy" role="status"><i className="spin" />Moving…</span>}
+    <div className="pcard-top">
+      {canBulk && <input className="pcard-check" type="checkbox" aria-label={`Select ${cand.fullName || 'candidate'}`} checked={selected} disabled={pending} onChange={onSelect} />}
+      <div className="pcard-id">
+        <button className="pcard-name" disabled={pending} onClick={onView} title={cand.fullName || cand.name}>{cand.fullName || cand.name || '—'}</button>
+        <span className="pcard-role" title={[cand.currentPosition, cand.currentCompany].filter(Boolean).join(' · ')}>{[cand.currentPosition, cand.currentCompany].filter(Boolean).join(' · ') || '—'}</span>
       </div>
-
-      {/* Facts. Salary is deliberately not rendered on the board. */}
-      <div className="pcard-facts">
-        {showRequest && (app.request?.ticketNo || app.ticketNo) && (
-          <span className="code-pill" title={app.request?.ticketNo || app.ticketNo}>
-            {shortReqCode(app.request?.ticketNo || app.ticketNo)}
-          </span>
-        )}
-        {cand.yearsExperience != null && <span className="fact">{cand.yearsExperience}y exp</span>}
-        {cand.location && <span className="fact">{cand.location}</span>}
-        {cand.noticePeriod && <span className="fact">{cand.noticePeriod}</span>}
-      </div>
-
-      <div className="pcard-status"><AppStatusBadge status={app.status} /></div>
-
       <div className="pcard-actions">
-        <button className="btn btn-secondary btn-sm" disabled={pending} onClick={onView}>View</button>
-        {canMove && !isDisqualified(app.status) && app.status !== 'hired' && <button className="btn btn-secondary btn-sm" disabled={pending} aria-expanded={menu} onClick={() => setMenu((m) => !m)}>Move ▾</button>}
-        {/* Destructive action: use the danger variant (red text on a light plate).
-            Previously this was `btn btn-sm` (solid blue primary) with only the text
-            colour overridden inline, producing unreadable red-on-blue. */}
-        {canMove && !isDisqualified(app.status) && <button className="btn btn-danger btn-sm" disabled={pending} onClick={() => onMove('rejected')}>Disqualify</button>}
+        <button ref={triggerRef} className="icon-btn pcard-menu-trigger" disabled={pending} aria-label={`Actions for ${cand.fullName || 'candidate'}`} aria-expanded={menu} aria-controls={menuId} aria-haspopup="menu" onClick={() => setMenu(v => !v)}><Icon name="more" size={18} /></button>
+        {menu && <div ref={menuRef} id={menuId} className="menu pipeline-menu" role="menu" onKeyDown={menuKeys}
+          onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget) && e.relatedTarget !== triggerRef.current) setMenu(false); }}>
+          <button className="menu-item" role="menuitem" onClick={() => action(onView)}>View candidate</button>
+          {targets.map(stage => <button key={stage} className="menu-item" role="menuitem" onClick={() => action(() => onMove(stage))}>Move to {APP_STATUS[stage].label}</button>)}
+          {movable && onNote && <button className="menu-item" role="menuitem" onClick={() => action(onNote)}>Set Next Action</button>}
+          {movable && <button className="menu-item" role="menuitem" onClick={() => action(() => onMove('on_hold'))}>Put On Hold</button>}
+          {movable && onSchedule && btns.schedule_interview?.visible && <button className="menu-item" role="menuitem" onClick={() => action(onSchedule)}>Schedule Interview</button>}
+          {movable && onOffer && btns.generate_offer?.visible && <button className="menu-item" role="menuitem" onClick={() => action(onOffer)}>Generate Offer</button>}
+          {movable && <button className="menu-item menu-danger" role="menuitem" onClick={() => action(() => onMove('rejected'))}>Disqualify</button>}
+        </div>}
       </div>
-      {menu && (
-        <div className="menu" style={{ right: 12, top: 'auto' }} onMouseLeave={() => setMenu(false)}>
-          {APP_ORDER.filter(s => APP_STATUS[s].column > (APP_STATUS[pipelineStage(app.status)]?.column || 0)).map(stage => (
-            <div key={stage} className="menu-item" onClick={() => { setMenu(false); onMove(stage); }}>Move to {APP_STATUS[stage].label}</div>
-          ))}
-          {onNote && <div className="menu-item" onClick={() => { setMenu(false); onNote(); }}>Set Next Action</div>}
-          <div className="menu-item" style={{ color: 'var(--text-gray)' }} onClick={() => { setMenu(false); onMove('on_hold'); }}>Put On Hold</div>
-          {btns.schedule_interview?.visible && <div className="menu-item" onClick={() => { setMenu(false); onSchedule(); }}>Schedule Interview</div>}
-          {btns.generate_offer?.visible && <div className="menu-item" onClick={() => { setMenu(false); onOffer(); }}>Generate Offer</div>}
-        </div>
-      )}
     </div>
-  );
+    {showRequest && (app.request?.ticketNo || app.ticketNo) && <span className="pcard-request" title={app.request?.ticketNo || app.ticketNo}>{shortReqCode(app.request?.ticketNo || app.ticketNo)}</span>}
+    {wide && <span className="pcard-status"><AppStatusBadge status={app.status} /></span>}
+    {residual && <span className="pcard-residual" title={`Underlying status: ${app.status}`}>{residual}</span>}
+    <div className="pcard-footer"><span className="pcard-facts">{[cand.yearsExperience != null ? `${cand.yearsExperience}y exp` : null, cand.location, cand.noticePeriod].filter(Boolean).join(' · ') || 'Details not supplied'}</span>
+      {app.matchScore != null && <span className="pcard-match" title="Match score">{app.matchScore}%</span>}
+    </div>
+  </div>;
 }
 
 const PIPELINE_CAP = 500;
@@ -5457,7 +5536,8 @@ function TalentPipeline({
     });
   }
   function requestMove(appId, status) {
-    if (pending.has(appId)) return;
+    const app = (apps || []).find(a => a.id === appId);
+    if (!canMove || pending.has(appId) || !app || !canPipelineMove(app.status, status)) return;
     if (REASON_STATUSES.includes(status)) setMoveModal({ appId, toStatus: status });
     else move(appId, status);
   }
@@ -5476,7 +5556,7 @@ function TalentPipeline({
     return [...m.entries()];
   }, [apps, linkRequests]);
   if (loadError) {
-    return <div className="card"><Empty icon="⚠" tone="error" title="Could not load the pipeline" text={loadError}
+    return <div className="card"><Empty art="none-yet" tone="error" title="Could not load the pipeline" text={loadError}
       action={<button className="btn" onClick={load}>Retry</button>} /></div>;
   }
   if (!apps) return <ListSkeleton rows={6} />;
@@ -5546,7 +5626,7 @@ function TalentPipeline({
         {cols.map((st) => {
           const items = activeApps.filter((a) => pipelineStage(a.status) === st);
           return (
-            <div key={st} className="kan-col">
+            <PipelineColumn key={st} stage={st} apps={apps} pending={pending} canMove={canMove} onMove={requestMove}>
               <div className="kan-head">
                 <span className="kan-dot" style={{ background: APP_STAGE_COLORS[st] || 'var(--muted)' }} />
                 <span className="kan-title">{APP_STATUS[st].label}</span>
@@ -5561,13 +5641,10 @@ function TalentPipeline({
                       onSelect={() => {}}
                       onView={() => onOpenCandidate(a.candidate?.id || a.candidateId)}
                       onMove={(s) => requestMove(a.id, s)}
-                      onSchedule={() => {}}
-                      onOffer={() => {}}
-                      onNote={() => {}}
                       btns={btns} />
                   ))}
               </div>
-            </div>
+            </PipelineColumn>
           );
         })}
       </div>
@@ -5616,7 +5693,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
             <h3 id={titleId} style={{ margin: 0 }}>{c.fullName}</h3>
             <div className="muted" style={{ fontSize: 12 }}>{c.candidateNo} · {app.applicationNo} · <AppStatusBadge status={app.status} /></div>
           </div>
-          <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={onClose}>✕</button>
+          <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
         <div style={{ display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid var(--border)' }}>
           {[['profile', 'Candidate'], ['assessment', 'Interview Assessment']].map(([k, label]) => (
@@ -5676,7 +5753,7 @@ function AssessmentPanel({ app, canFeedback }) {
   useEffect(() => { api.get('/assessments/meta').then(setMeta).catch(() => {}); load(); }, [load]);
 
   if (!meta || !bundle) return <Skeleton rows={6} />;
-  if (!bundle.unlocked) return <Empty icon="🔒" text="Interview assessment unlocks once this candidate is moved to an interview stage in the pipeline." />;
+  if (!bundle.unlocked) return <Empty art="none-yet" text="Interview assessment unlocks once this candidate is moved to an interview stage in the pipeline." />;
 
   const existing = bundle[evalType];
   return (
@@ -6039,13 +6116,13 @@ async function downloadResume(candidate, toast) {
 
 // Sortable column header. Clicking toggles asc/desc; the active column shows the
 // direction so the current sort is never ambiguous.
-function SortTh({ label, col, sort, onSort, align }) {
+function SortTh({ label, col, sort, onSort, align, priority }) {
   const active = sort.by === col;
   return (
-    <th className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
-      onClick={() => onSort(col)} title={`Sort by ${label}`}
+    <th data-priority={priority} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
+      onClick={() => onSort(col)} tabIndex="0" onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }} title={`Sort by ${label}`}
       role="columnheader" aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <span>{label}</span><i className="sort-caret">{active ? (sort.dir === 'asc' ? '▲' : '▼') : ''}</i>
+      <span>{label}</span><span className="sort-caret">{active && <Icon name={sort.dir === 'asc' ? 'chevronUp' : 'chevronDown'} size={16} />}</span>
     </th>
   );
 }
@@ -6303,13 +6380,13 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked, o
           {canLink && (
             <button className="rq-link-btn" onClick={() => { setMode('move'); setOpen((v) => !v); setError(''); setBlocking(null); }}
               aria-haspopup="dialog" aria-expanded={open}>
-              Move to another request ▾
+              Move to another request <Icon name="chevronDown" size={16} />
             </button>
           )}
         </div>
       ) : canLink ? (
         <button className="rq-link-btn" onClick={() => { setMode('link'); setOpen((v) => !v); setError(''); setBlocking(null); }}
-          aria-haspopup="dialog" aria-expanded={open}>Link to Request ▾</button>
+          aria-haspopup="dialog" aria-expanded={open}>Link to Request <Icon name="chevronDown" size={16} /></button>
       ) : <span className="muted">—</span>}
       {pop}
       {confirmMove && (
@@ -6379,7 +6456,7 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
     <div className="cc-action-wrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
       <button type="button" className="btn btn-secondary btn-sm" aria-haspopup="menu" aria-expanded={open}
         onClick={() => { setOpen((v) => !v); setPanel('menu'); setError(''); setBlocking(null); }}>
-        Action ▾
+        Action <Icon name="chevronDown" size={16} />
       </button>
       {open && anchor && ReactDOM.createPortal(
         (
@@ -6823,16 +6900,13 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
         </div>
       )}
       {view !== 'pipeline' && (
-      <div className="toolbar">
-        <input placeholder="Search name / id / company / email…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 240 }} />
-        <input placeholder="Location" value={filters.location} onChange={(e) => setFilters((f) => ({ ...f, location: e.target.value }))} style={{ width: 120 }} />
-        <input placeholder="Company" value={filters.currentCompany} onChange={(e) => setFilters((f) => ({ ...f, currentCompany: e.target.value }))} style={{ width: 120 }} />
-        <input placeholder="Grad from" type="number" value={filters.graduationFrom} onChange={(e) => setFilters((f) => ({ ...f, graduationFrom: e.target.value }))} style={{ width: 96 }} title="Graduation year from" />
-        <input placeholder="Grad to" type="number" value={filters.graduationTo} onChange={(e) => setFilters((f) => ({ ...f, graduationTo: e.target.value }))} style={{ width: 88 }} title="Graduation year to" />
-        <input placeholder="Tag" value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))} style={{ width: 100 }} />
-        <div className="spacer" />
-        <CountPill n={candidates ? shown.length : null} total={candidates ? candidates.length : null} noun="candidate" />
-      </div>
+      <FilterToolbar activeCount={activeFilters.length} search={<input placeholder="Search name / id / company / email…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={candidates ? shown.length : null} total={candidates ? candidates.length : null} noun="candidate" />}>
+        <input placeholder="Location" value={filters.location} onChange={(e) => setFilters((f) => ({ ...f, location: e.target.value }))} />
+        <input placeholder="Company" value={filters.currentCompany} onChange={(e) => setFilters((f) => ({ ...f, currentCompany: e.target.value }))} />
+        <input placeholder="Grad from" type="number" value={filters.graduationFrom} onChange={(e) => setFilters((f) => ({ ...f, graduationFrom: e.target.value }))} title="Graduation year from" />
+        <input placeholder="Grad to" type="number" value={filters.graduationTo} onChange={(e) => setFilters((f) => ({ ...f, graduationTo: e.target.value }))} title="Graduation year to" />
+        <input placeholder="Tag" value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))} />
+        </FilterToolbar>
       )}
 
       {/* Database fitness-screen tabs (new → screening → fit | unfit) */}
@@ -6851,7 +6925,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
           {activeFilters.map(([k, label]) => (
             <span key={k} className="chip-filter">
               {label}
-              <button aria-label={`Remove ${label} filter`} onClick={() => clearFilter(k)}>✕</button>
+              <button aria-label={`Remove ${label} filter`} onClick={() => clearFilter(k)}><Icon name="close" size={16} /></button>
             </span>
           ))}
           <button className="btn btn-ghost btn-sm" onClick={clearAllFilters}>Clear all</button>
@@ -6895,10 +6969,10 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
       )}
 
       {loadError ? (
-        <div className="card"><Empty icon="⚠" tone="error" title="Could not load candidates" text={loadError}
+        <div className="card"><Empty art="none-yet" tone="error" title="Could not load candidates" text={loadError}
           action={<button className="btn" onClick={load}>Retry</button>} /></div>
       ) : !candidates ? <ListSkeleton rows={7} /> : shown.length === 0 ? (
-        <div className="card"><Empty icon="👤"
+        <div className="card"><Empty art="none-yet"
           title={screenTab !== 'all' || filters.q ? 'No candidates in this view' : 'The talent pool is empty'}
           text={screenTab !== 'all' || filters.q
             ? 'Try the All tab, or clear the search and filter fields above.'
@@ -6915,8 +6989,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               </th>
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              <SortTh label="University" col="university" sort={sort} onSort={toggleSort} />
-              <SortTh label="Graduation" col="graduation" sort={sort} onSort={toggleSort} />
+              <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />
+              <SortTh priority="secondary" label="Graduation" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
               <th className="th-request">Request</th>
               <th>Stage</th>
@@ -6943,11 +7017,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <span className="cell-strong">{c.currentPosition || '—'}</span>
                   {c.currentCompany ? <span className="cell-sub">{c.currentCompany}</span> : null}
                 </td>
-                <td data-label="University">
+                <td data-priority="secondary" data-label="University">
                   <span className="cell-strong">{c.university || '—'}</span>
                   {c.major ? <span className="cell-sub">{c.major}</span> : null}
                 </td>
-                <td data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>
+                <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>
                 <td data-label="Location" className="cell-sub-only">{c.location || '—'}</td>
                 <td data-label="Request">
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
@@ -7191,7 +7265,7 @@ function CvParseReviewOverlay({ rows, intake, fileUrl, fileName, mimeType, onSav
       <div className="parse-review-panel">
         <div className="parse-review-head">
           <h3>Parsed CV — review before saving</h3>
-          <button className="icon-btn" onClick={onCancel} aria-label="Close">✕</button>
+          <button className="icon-btn" onClick={onCancel} aria-label="Close"><Icon name="close" size={16} /></button>
         </div>
         <div className="parse-review-body">
           <div className="parse-review-results">
@@ -7671,17 +7745,17 @@ function ActivityLog({ c, user, onNavigate, focusPrior }) {
       </div>
       <div className="card-pad act-log" ref={logRef}>
         {cannotSeeFilter ? (
-          <Empty icon="🔒" title="You cannot see this"
+          <Empty art="none-yet" title="You cannot see this"
             text={cat === 'interviews'
               ? 'Interviews are hidden from your role — the list is empty because you cannot see it, not because nothing happened.'
               : 'Offers are hidden from your role — the list is empty because you cannot see it, not because nothing happened.'} />
         ) : emptyAll ? (
           hidden.length
-            ? <Empty icon="📜" title="Nothing you can see has been recorded yet"
+            ? <Empty art="none-yet" title="Nothing you can see has been recorded yet"
                 text={`No activity is visible on this profile.${hidden.includes('interviews') ? ' Interviews are hidden from your role.' : ''}${hidden.includes('offers') ? ' Offers are hidden from your role.' : ''}`} />
-            : <Empty icon="📜" title="Nothing has happened yet" text="When this candidate is linked, interviewed or noted, the events will land here in order." />
+            : <Empty art="none-yet" title="Nothing has happened yet" text="When this candidate is linked, interviewed or noted, the events will land here in order." />
         ) : emptyFilter ? (
-          <Empty icon="🔍" title="Nothing in this category" text="Try another chip, or All." />
+          <Empty art="no-match" title="Nothing in this category" text="Try another chip, or All." />
         ) : shown.map((e) => {
           const isPrior = !!(focusPrior && e.prior && e.category === 'applications');
           return (
@@ -7769,7 +7843,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
       {tab === 'cv' && <CandidateCvTab c={c} user={user} btns={btns} onChanged={load} />}
       {tab === 'applications' && (
         <div className="card">
-          {(c.applications || []).length === 0 ? <Empty icon="🎫" text="Not linked to any request yet." /> : (
+          {(c.applications || []).length === 0 ? <Empty art="none-yet" text="Not linked to any request yet." /> : (
             <table><thead><tr><th>Application</th><th>Ticket</th><th>Position</th><th>Project</th><th>Status</th><th>Recruiter</th><th>Last Activity</th></tr></thead>
               <tbody>{c.applications.map((a) => (
                 <tr key={a.id}><td><strong>{a.applicationNo}</strong></td><td title={a.ticketNo}>{shortReqCode(a.ticketNo)}</td><td>{a.position}</td><td>{a.project?.name || '—'}</td>
@@ -7781,7 +7855,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
       )}
       {tab === 'interviews' && (
         <div className="card">
-          {(c.interviews || []).length === 0 ? <Empty icon="📅" text="No interviews for this candidate (or none assigned to you)." /> : (
+          {(c.interviews || []).length === 0 ? <Empty art="none-yet" text="No interviews for this candidate (or none assigned to you)." /> : (
             <table><thead><tr><th>Interview</th><th>Request</th><th>Type / Mode</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Outcome</th></tr></thead>
               <tbody>{c.interviews.map((iv) => (
                 <tr key={iv.id}><td><strong>{iv.interviewNo}</strong></td><td title={iv.ticketNo}>{shortReqCode(iv.ticketNo)}</td><td>{iv.interviewType} / {iv.mode}</td><td>{iv.round}</td>
@@ -7794,7 +7868,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
       )}
       {tab === 'offers' && (
         <div className="card">
-          {(c.offers || []).length === 0 ? <Empty icon="📑" text="No offers for this candidate." /> : (
+          {(c.offers || []).length === 0 ? <Empty art="none-yet" text="No offers for this candidate." /> : (
             <table><thead><tr><th>Offer</th><th>Request</th><th>Position</th><th>Salary</th><th>Status</th><th>Joining</th></tr></thead>
               <tbody>{c.offers.map((o) => (
                 <tr key={o.id}><td><strong>{o.offerNo}</strong></td><td title={o.ticketNo}>{shortReqCode(o.ticketNo)}</td><td>{o.positionTitle}</td>
@@ -7937,6 +8011,7 @@ function ScheduleInterviewModal({ application, onClose, onScheduled }) {
 }
 
 function InterviewsPage({ user, initialFilters }) {
+  const [loadError, setLoadError] = useState(null);
   const [data, setData] = useState(null);
   // `thisWeek` is client-side only — there is no date-range param on
   // GET /interviews, so it filters the loaded rows below, the same way
@@ -7956,7 +8031,8 @@ function InterviewsPage({ user, initialFilters }) {
     setData(null);
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
-    setData(await api.get('/interviews?' + params.toString()));
+    setLoadError(null);
+    try { setData(await api.get('/interviews?' + params.toString())); } catch (e) { setLoadError(e.message); }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
@@ -7985,8 +8061,8 @@ function InterviewsPage({ user, initialFilters }) {
         <div className="spacer" />
         <CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />
       </div>
-      {!data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
-        <div className="card"><Empty icon="📅"
+      {loadError ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
+        <div className="card"><Empty art="none-yet"
           title={filter.q || filter.status || filter.thisWeek ? 'No interviews match these filters' : 'No interviews scheduled'}
           text={filter.q || filter.status || filter.thisWeek
             ? 'Try clearing the search box or the filters above.'
@@ -7994,7 +8070,7 @@ function InterviewsPage({ user, initialFilters }) {
       ) : (
         <div className="card flush"><div className="table-wrap">
           <table className="table responsive-table">
-            <thead><tr><th>Scheduled</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th>Interview</th><th>Status</th><th>Outcome</th><th>Application</th></tr></thead>
+            <thead><tr><th>Scheduled</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th data-priority="secondary">Interview</th><th>Status</th><th>Outcome</th><th data-priority="secondary">Application</th></tr></thead>
             <tbody>{shown.map((iv) => (
               <tr key={iv.id} className="row-link" onClick={() => setSelected(iv.id)}>
                 <td data-label="Scheduled"><DateCell value={iv.scheduledAt} /></td>
@@ -8009,10 +8085,10 @@ function InterviewsPage({ user, initialFilters }) {
                 </td>
                 <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub">{iv.request?.title || '—'}</div></td>
                 <td data-label="Type / Mode"><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
-                <td data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
+                <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
                 <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
                 <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
-                <td data-label="Application" title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
+                <td data-priority="secondary" data-label="Application" title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
               </tr>
             ))}</tbody>
           </table>
@@ -8025,11 +8101,13 @@ function InterviewsPage({ user, initialFilters }) {
 function InterviewDetail({ id, user, onBack }) {
   const toast = useToast();
   const [iv, setIv] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [fbOpen, setFbOpen] = useState(false);
   const [action, setAction] = useState(null);
   const btns = useResolvedButtons();
-  const load = useCallback(async () => { setIv((await api.get('/interviews/' + id)).interview); }, [id]);
+  const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
+  if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!iv) return <Skeleton rows={8} />;
 
   async function setStatus(status, reason) {
@@ -8042,25 +8120,24 @@ function InterviewDetail({ id, user, onBack }) {
 
   return (
     <div>
-      <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Interviews</a></div>
-      <div className="page-head">
-        <div><h1 className="page-title">{iv.interviewType} interview — {iv.candidate?.fullName}</h1>
-          <p className="page-sub"><strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</p></div>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Interviews</button>}
+        title={<> {iv.interviewType} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
+        actions={<>
           {canFeedback && iv.status !== 'cancelled' && <button className="btn" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
-        </div>
-      </div>
+        </>} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+
+      <div className="detail-grid">
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Links</div>
           <Info label="Candidate">{iv.candidate?.fullName} ({iv.candidate?.candidateNo})</Info>
           <Info label="Request"><span title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span> — {iv.request?.title}</Info>
           <Info label="Application">{iv.application?.applicationNo} · <strong>pipeline:</strong> {iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : '—'}</Info>
-          <p className="muted">↑ The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
+          <p className="muted">The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
           <div className="section-title">Details</div>
           <Info label="Type / Mode">{iv.interviewType} · {iv.mode}</Info>
           <Info label="Round">{iv.round}</Info>
@@ -8167,6 +8244,7 @@ function CreateOfferModal({ application, onClose, onCreated }) {
 }
 
 function OffersPage({ user, initialFilters }) {
+  const [loadError, setLoadError] = useState(null);
   const [offers, setOffers] = useState(null);
   // `toIssue` is client-side — the API's `status` filter is a single exact
   // value, and "to issue" (draft + approved, not yet sent) spans two of them.
@@ -8182,7 +8260,8 @@ function OffersPage({ user, initialFilters }) {
     setOffers(null);
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'toIssue' && v) params.set(k, v); });
-    setOffers((await api.get('/offers?' + params.toString())).offers);
+    setLoadError(null);
+    try { setOffers((await api.get('/offers?' + params.toString())).offers); } catch (e) { setLoadError(e.message); }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
@@ -8207,8 +8286,8 @@ function OffersPage({ user, initialFilters }) {
         <div className="spacer" />
         <CountPill n={offers ? shown.length : null} total={offers ? offers.length : null} noun="offer" />
       </div>
-      {!offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
-        <div className="card"><Empty icon="📑"
+      {loadError ? <LoadError text={loadError} onRetry={load} /> : !offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
+        <div className="card"><Empty art="none-yet"
           title={filter.q || filter.status || filter.joiningFrom || filter.toIssue ? 'No offers match these filters' : 'No offers raised yet'}
           text={filter.q || filter.status || filter.joiningFrom || filter.toIssue
             ? 'Try clearing the search box, status filter or joining-date range.'
@@ -8216,7 +8295,7 @@ function OffersPage({ user, initialFilters }) {
       ) : (
         <div className="card flush"><div className="table-wrap">
           <table className="table responsive-table">
-            <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th>Project</th><th>Status</th><th>Prepared by</th><th>Approved by</th><th>Joining</th></tr></thead>
+            <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th data-priority="secondary">Project</th><th>Status</th><th data-priority="secondary">Prepared by</th><th data-priority="secondary">Approved by</th><th>Joining</th></tr></thead>
             <tbody>{shown.map((o) => (
               <tr key={o.id} className="row-link" onClick={() => setSelected(o.id)}>
                 <td data-label="Offer"><span className="code-pill">{o.offerNo}</span></td>
@@ -8228,10 +8307,10 @@ function OffersPage({ user, initialFilters }) {
                 </td>
                 <td data-label="Request"><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
                 <td data-label="Position"><span className="cell-strong">{o.positionTitle || '—'}</span></td>
-                <td data-label="Project" className="cell-sub-only">{o.project?.name || '—'}</td>
+                <td data-priority="secondary" data-label="Project" className="cell-sub-only">{o.project?.name || '—'}</td>
                 <td data-label="Status"><OfferStatusBadge status={o.status} /></td>
-                <td data-label="Prepared by" className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
-                <td data-label="Approved by" className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
+                <td data-priority="secondary" data-label="Prepared by" className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
+                <td data-priority="secondary" data-label="Approved by" className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
                 <td data-label="Joining"><DateCell value={o.joiningDate} dateOnly /></td>
               </tr>
             ))}</tbody>
@@ -8245,10 +8324,12 @@ function OffersPage({ user, initialFilters }) {
 function OfferDetail({ id, user, onBack }) {
   const toast = useToast();
   const [o, setO] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [action, setAction] = useState(null);
   const btns = useResolvedButtons();
-  const load = useCallback(async () => { setO((await api.get('/offers/' + id)).offer); }, [id]);
+  const load = useCallback(async () => { setLoadError(null); try { setO((await api.get('/offers/' + id)).offer); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
+  if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!o) return <Skeleton rows={8} />;
 
   async function act(path, body, okMsg) {
@@ -8258,20 +8339,19 @@ function OfferDetail({ id, user, onBack }) {
   const s = o.status;
   return (
     <div>
-      <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Offers</a></div>
-      <div className="page-head">
-        <div><h1 className="page-title">Offer — {o.candidate?.fullName}</h1>
-          <p className="page-sub"><strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · <span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></p></div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 520 }}>
+      <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Offers</button>}
+        title={<> Offer — {o.candidate?.fullName}</>} sub={<> <strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · <span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></>}
+        actions={<>
           {btns.send_offer?.visible && ['draft','approved'].includes(s) && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
           {btns.accept_offer?.visible && s === 'sent' && <button className="btn" onClick={() => act('result', { result: 'accepted' }, 'Marked accepted')}>Mark Accepted</button>}
           {btns.reject_offer_candidate?.visible && ['sent', 'accepted'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Mark Rejected by Candidate', path: 'result', body: (r) => ({ result: 'rejected_by_candidate', reason: r }), msg: 'Marked rejected by candidate' })}>Rejected by Candidate</button>}
           {btns.withdraw_offer?.visible && !['joined', 'withdrawn', 'rejected_by_candidate'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Withdraw Offer', path: 'result', body: (r) => ({ result: 'withdrawn', reason: r }), msg: 'Offer withdrawn' })}>Withdraw</button>}
           {btns.mark_joined?.visible && s === 'accepted' && <button className="btn" onClick={() => act('result', { result: 'joined' }, 'Marked joined')}>Mark Joined</button>}
-        </div>
-      </div>
+        </>} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+
+      <div className="detail-grid">
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Offer</div>
           <Info label="Candidate">{o.candidate?.fullName} ({o.candidate?.candidateNo})</Info>
@@ -8321,20 +8401,8 @@ class ErrorBoundary extends React.Component {
   render() {
     if (!this.state.err) return this.props.children;
     const msg = String(this.state.err && this.state.err.message || this.state.err || 'Unexpected error');
-    if (this.props.page) {
-      return (
-        <div className="card card-pad" style={{ margin: '24px auto', maxWidth: 560 }} role="alert">
-          <h3 style={{ marginTop: 0 }}>This screen ran into a problem</h3>
-          <p className="muted">The rest of the app is still working — use the menu to go somewhere else, or reload.</p>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn btn-sm" onClick={() => this.setState({ err: null })}>Try again</button>
-            <button className="btn btn-sm btn-secondary" onClick={() => window.location.reload()}>Reload</button>
-          </div>
-          <details style={{ marginTop: 14 }}><summary className="muted" style={{ fontSize: 12, cursor: 'pointer' }}>Technical detail</summary>
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, marginTop: 8, color: 'var(--muted)' }}>{msg}</pre></details>
-        </div>
-      );
-    }
+    if (this.props.page) return <LoadError title="This screen ran into a problem" text={msg} onRetry={() => this.setState({ err: null })} />;
+
     return (
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, fontFamily: 'Arial, Helvetica, sans-serif', color: 'var(--ink, #1A1A1A)' }} role="alert">
         <div style={{ maxWidth: 460, textAlign: 'center' }}>
