@@ -8,6 +8,14 @@
 //
 // Configuration (env vars only — never hard-code):
 //   NODE_ENV=production        → enables HSTS + upgrade-insecure-requests
+//   DIRECT_HTTP=true           → this production deployment is served over plain
+//                                HTTP with no TLS in front of it (the on-prem LAN
+//                                install at http://10.20.0.9:4001). Drops
+//                                upgrade-insecure-requests, which browsers DO
+//                                honour over http and which would otherwise
+//                                rewrite every asset URL to https on a host that
+//                                answers nothing there — a blank app. HSTS is
+//                                unaffected: browsers ignore it over http.
 //   HSTS_MAX_AGE               → HSTS max-age seconds (default 15552000 = 180d)
 //   CSP_REPORT_ONLY=true       → send CSP as report-only (observe, don't block)
 //   SECURITY_HEADERS_DISABLED=true → escape hatch for debugging only (NOT for prod)
@@ -21,6 +29,9 @@
 //   'unsafe-inline'. Tracked in docs/PRODUCTION_BLOCKERS.md and SECURITY_HARDENING.md.
 
 const isProd = process.env.NODE_ENV === 'production';
+// Set on a production deployment that is reached over plain HTTP. Read at call
+// time in the CSP builder rather than baked in here so tests can exercise both.
+const isDirectHttp = () => process.env.DIRECT_HTTP === 'true';
 
 function buildCSP() {
   // NOTE: 'unsafe-eval' + 'unsafe-inline' on script-src are ONLY required by the
@@ -44,8 +55,10 @@ function buildCSP() {
     'form-action': ["'self'"],
   };
   // Only ask browsers to upgrade sub-resource requests to HTTPS in production
-  // (behind the TLS-terminating proxy). In local http dev this would break assets.
-  if (isProd) directives['upgrade-insecure-requests'] = [];
+  // (behind the TLS-terminating proxy). In local http dev this would break
+  // assets — and so would it on a production install that has no TLS at all,
+  // which is why DIRECT_HTTP opts out.
+  if (isProd && !isDirectHttp()) directives['upgrade-insecure-requests'] = [];
 
   return Object.entries(directives)
     .map(([k, v]) => (v.length ? `${k} ${v.join(' ')}` : k))
@@ -90,6 +103,7 @@ export function securityHeaders(req, res, next) {
 export function securityConfigSummary() {
   return {
     hsts: isProd,
+    directHttp: isDirectHttp(),
     hstsMaxAge: HSTS_MAX_AGE,
     cspReportOnly: process.env.CSP_REPORT_ONLY === 'true',
     cspAllowsUnsafeEval: true, // because of Babel-in-browser frontend

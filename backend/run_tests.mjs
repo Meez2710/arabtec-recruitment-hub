@@ -55,6 +55,7 @@ const SUITES = [
   'pg_tx_test.mjs',           // real-PostgreSQL transaction affinity (skips if embedded-postgres absent)
   'parse_jobs_security_test.mjs', // parse result ownership and retention
   'production_security_test.mjs', // failed startup, protected diagnostics and encoded paths
+  'csp_direct_http_test.mjs', // CSP on the plain-HTTP on-prem install
   'ingestion_regression_test.mjs', // bounded durable uploads and shared scanner imports
   'anyhelp_test.mjs',         // scoped read-only AI tools and bounded provider loop
   'anyhelp_route_test.mjs',   // session, input, rate limits, timeout and safe errors
