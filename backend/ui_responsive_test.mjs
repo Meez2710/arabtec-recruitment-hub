@@ -11,6 +11,7 @@ const publicDir = path.resolve(here, '../frontend/public');
 const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
 const responsive = fs.readFileSync(path.join(publicDir, 'arabtec-responsive.css'), 'utf8');
 const design = fs.readFileSync(path.join(publicDir, 'arabtec-design-system.css'), 'utf8');
+const claude = fs.readFileSync(path.join(publicDir, 'claude-system.css'), 'utf8');
 
 function between(source, start, end) {
   const a = source.indexOf(start);
@@ -87,6 +88,26 @@ check('stylesheet link order is styles \u2192 approved \u2192 design-system \u21
     '/claude-system.css',
     '/arabtec-responsive.css',
   ].join(' '));
+
+/* --------------------------------------------------------------------------
+   Talent Pool head. `.page-head-main` carries `flex: 1 1 320px` from
+   claude-system.css — a ROW basis, so the title block claims a full line once
+   the actions wrap. A later edit gave the Talent Pool head
+   `flex-direction: column`, which turns that same declaration into a 320px
+   basis ON HEIGHT: about 60px of title reserved 320px, and the page showed a
+   quarter-screen of blank between the heading and the toolbar. The actions get
+   their own row by wrapping the row, never by flipping the axis.
+   -------------------------------------------------------------------------- */
+const talentPool = between(responsive, 'TALENT POOL COMPOSITION', '@media');
+
+check('the row basis this depends on is still declared',
+  ruleHas(claude, '.page-head-main', 'flex: 1 1 320px'));
+check('the Talent Pool head stays a row',
+  talentPool.includes('flex-direction: row') && !talentPool.includes('flex-direction: column'));
+check('it wraps, so the actions still get their own line',
+  talentPool.includes('flex-wrap: wrap') && talentPool.includes('width: 100%'));
+check('the title block claims that line explicitly, not via a height basis',
+  talentPool.includes('.page-head-main') && talentPool.includes('flex: 1 1 100%'));
 
 console.log(`\n=== UI RESPONSIVE: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
