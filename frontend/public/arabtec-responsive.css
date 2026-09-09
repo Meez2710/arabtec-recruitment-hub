@@ -441,12 +441,25 @@ img, svg, video, canvas {
    matching markup is present. Two desktop heights: 36px actions, 32px compact.
    Mobile 44px floor is preserved below 640px.
    ========================================================================== */
+/* Give the actions their own full-width row WITHOUT changing the flex
+   direction. Turning this container into a column looks equivalent and is not:
+   claude-system.css sets `.page-head-main { flex: 1 1 320px }` as a deliberate
+   ROW basis, so that the title block claims a full line once the actions wrap.
+   In a column the same declaration becomes a 320px BASIS ON HEIGHT, and the
+   title block — about 60px of real content — reserved 320px of empty page
+   between the heading and the toolbar. Wrapping a row achieves the intended
+   stacking and leaves that basis meaning what it was written to mean. */
 .page-head:has(+ .ask-bar),
 .tp-page > .page-head {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
   margin-bottom: 8px;
+}
+.page-head:has(+ .ask-bar) > .page-head-main,
+.tp-page > .page-head > .page-head-main {
+  flex: 1 1 100%;
 }
 .page-head:has(+ .ask-bar) .page-head-actions,
 .tp-page .page-head-actions {
