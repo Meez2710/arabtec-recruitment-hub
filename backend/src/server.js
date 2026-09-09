@@ -289,25 +289,43 @@ app.listen(PORT, () => {
   console.log(`\n🏗️  Arabtec Recruitment Hub listening on ${PORT} (initialising…)`);
   console.log(JSON.stringify({ level: 'info', msg: 'security.headers', ...securityConfigSummary() }));
   (async () => {
-    try {
-      await initObservability(); // Sentry (no-op without SENTRY_DSN)
-      ensureSchema();            // create/upgrade tables + migrate workflow stages
-      ensureOrganizationChartSchema();
-      ensureFeatureFlags();      // seed feature toggles (idempotent)
-      await bootSeedIfEmpty();   // seed admin/reference data if empty
-      seedOrganizationChartIfEmpty();
-      APP_READY = true;
-      console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
-      // Start the CV inbox folder watcher if the feature flag is enabled
-      if (isEnabled('folder_watcher')) {
-        startWatcher();
-        console.log('   📁 CV inbox watcher started.\n');
+    // Initialisation is retried, not abandoned. Startup contends with whatever
+    // else is talking to the database — another backend bootstrapping, a lock
+    // wait, a database that is still accepting connections slowly — and those
+    // are transient. Failing closed forever on the first error left the process
+    // alive but permanently 503, which reads as a hung deploy rather than a
+    // failed one. Bounded so a genuine misconfiguration still stops here.
+    const ATTEMPTS = Number(process.env.INIT_MAX_ATTEMPTS || 5);
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+      try {
+        await initObservability(); // Sentry (no-op without SENTRY_DSN)
+        ensureSchema();            // create/upgrade tables + migrate workflow stages
+        ensureOrganizationChartSchema();
+        ensureFeatureFlags();      // seed feature toggles (idempotent)
+        await bootSeedIfEmpty();   // seed admin/reference data if empty
+        seedOrganizationChartIfEmpty();
+        APP_READY = true;
+        console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
+        // Start the CV inbox folder watcher if the feature flag is enabled
+        if (isEnabled('folder_watcher')) {
+          startWatcher();
+          console.log('   📁 CV inbox watcher started.\n');
+        }
+        return;
+      } catch (e) {
+        // Fail closed between attempts: liveness stays available, readiness and
+        // API traffic do not open until an initialisation actually succeeds.
+        APP_READY = false;
+        console.error(`  ! Initialisation attempt ${attempt}/${ATTEMPTS} failed:`, e.message);
+        if (attempt === ATTEMPTS) {
+          // Terminal wording kept verbatim: deploy verification and the
+          // production security suite both watch for this exact line.
+          console.error('  ! Initialisation failed:', e.message);
+          console.error('  ! Out of attempts. The process stays up and unready; fix the database and restart.');
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 500 * attempt));
       }
-    } catch (e) {
-      console.error('  ! Initialisation failed:', e.message);
-      // Fail closed: liveness remains available, but readiness and API traffic
-      // stay unavailable until a successful initialization on restart.
-      APP_READY = false;
     }
   })();
 });

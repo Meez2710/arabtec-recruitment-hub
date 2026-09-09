@@ -2,10 +2,40 @@
 // Source: Project Org Charts.zip (2026-09-08) plus ATS loadset project/department
 // catalogue. Head Office chart was not in the zip — HO is reconstructed as
 // departments and shared/area staff only. Do not wipe existing rows.
-import { get, exec } from './db.js';
+import { get, exec, tx, driverKind } from './db.js';
 import { OrganizationNodes } from './organization-nodes.js';
 
-export function ensureOrganizationChartSchema() {
+// Several backends can start against one PostgreSQL at the same moment (the
+// concurrency harness does exactly that, and so does any rolling restart).
+// Two startup steps here are not safe under that on their own:
+//
+//   1. `CREATE TABLE / INDEX IF NOT EXISTS` is NOT atomic in PostgreSQL. Two
+//      sessions both pass the existence check and the loser fails on the
+//      catalogue's own unique index — "duplicate key value violates unique
+//      constraint pg_class_relname_nsp_index". That exception aborted
+//      initialization, and since readiness fails closed the process then served
+//      503 for its whole life instead of joining the cluster.
+//   2. The seed's count-is-zero check is a classic check-then-act: three
+//      processes each see an empty table and each insert the whole chart.
+//
+// Both are closed by taking one advisory lock before the check. It is
+// TRANSACTION-scoped, so PostgreSQL releases it on COMMIT or ROLLBACK — on the
+// same pooled connection that took it — and a process that dies mid-bootstrap
+// cannot strand it. Arbitrary but fixed key; it names this critical section.
+const BOOTSTRAP_LOCK_KEY = 8402117001;
+
+function withBootstrapLock(fn) {
+  return tx(() => {
+    // Advisory locks exist only on real PostgreSQL. SQLite and PGlite are
+    // single-connection by construction, so the transaction alone serialises.
+    if (driverKind() === 'postgres') {
+      get(`SELECT pg_advisory_xact_lock(${BOOTSTRAP_LOCK_KEY}) AS locked`);
+    }
+    return fn();
+  });
+}
+
+function createOrganizationChartTables() {
   exec(`
     CREATE TABLE IF NOT EXISTS organization_node (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +58,10 @@ export function ensureOrganizationChartSchema() {
     CREATE INDEX IF NOT EXISTS idx_orgnode_type ON organization_node(node_type);
     CREATE INDEX IF NOT EXISTS idx_orgnode_project ON organization_node(project_or_location);
   `);
+}
+
+export function ensureOrganizationChartSchema() {
+  withBootstrapLock(createOrganizationChartTables);
 }
 
 function unit(title, extra = {}) {
@@ -77,9 +111,14 @@ function projectTeam(project, department, people) {
 export function seedOrganizationChartIfEmpty() {
   // Bundled reference records are development fixtures, never production updates.
   if (process.env.NODE_ENV === 'production') return { seeded: false, reason: 'production' };
-  ensureOrganizationChartSchema();
-  if ((get('SELECT COUNT(*) AS c FROM organization_node')?.c || 0) > 0) return { seeded: false };
+  return withBootstrapLock(() => {
+    createOrganizationChartTables();
+    if ((get('SELECT COUNT(*) AS c FROM organization_node')?.c || 0) > 0) return { seeded: false };
+    return seedTree();
+  });
+}
 
+function seedTree() {
   const tree = unit('Arabtec Egypt', {
     nodeType: 'organizational_unit',
     department: 'Head Office',
