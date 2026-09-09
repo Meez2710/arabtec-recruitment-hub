@@ -433,3 +433,130 @@ img, svg, video, canvas {
     padding-right: 58px;
   }
 }
+
+/* =============================================================================
+   TALENT POOL COMPOSITION
+   Scoped to .tp-page. Two control heights on desktop: 36px actions, 32px
+   compact. Does not change pipeline behaviour or the mobile 44px floor.
+   ========================================================================== */
+.tp-page > .page-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+.tp-page .page-head-actions {
+  padding-top: 16px;
+  gap: 8px 20px;
+  align-items: center;
+  width: 100%;
+}
+.tp-page .tp-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tp-page .tp-actions .btn,
+.tp-page .ask-bar .btn {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 14px;
+  width: auto;
+  flex: 0 0 auto;
+}
+.tp-page .view-toggle-btn {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 12px;
+}
+.tp-page .btn-sm {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+}
+.tp-upload-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.tp-page .ask-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 16px;
+}
+.tp-page .ask-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+}
+.tp-page .tp-filters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) minmax(110px, .7fr) minmax(110px, .7fr) minmax(160px, 1.2fr) minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.tp-page .tp-filters input,
+.tp-page .tp-filters select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+}
+.tp-page .tp-filters .spacer { display: none; }
+.tp-page .tp-filters .count-pill {
+  justify-self: end;
+}
+.tp-unlinked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+}
+.tp-unlinked .btn {
+  flex: 0 0 auto;
+}
+@media (max-width: 1024px) {
+  .tp-page .tp-filters {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, .8fr);
+  }
+  .tp-page .tp-filters .count-pill {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+@media (max-width: 640px) {
+  .tp-page .tp-actions {
+    width: 100%;
+  }
+  .tp-page .tp-actions .btn,
+  .tp-page .ask-bar .btn {
+    height: auto;
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+  .tp-page .view-toggle-btn,
+  .tp-page .btn-sm {
+    height: auto;
+    min-height: 44px;
+  }
+  .tp-page .ask-bar {
+    flex-wrap: wrap;
+  }
+  .tp-page .ask-input {
+    flex: 1 1 100%;
+    min-height: 44px;
+    height: 44px;
+  }
+  .tp-page .tp-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
