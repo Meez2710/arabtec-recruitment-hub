@@ -13,17 +13,37 @@ Move the Recruitment Hub off Render onto the company server and **retire Render*
 
 ## Status
 
-**Not executed.** This host is on the corporate LAN and is not reachable from the
-assistant's environment (no route to `10.20.0.9:22`), and the assistant has no
-SSH tool and cannot accept a server password in chat. Every command below must be
-run **from a machine on the Arabtec network** (an on-site laptop, or a bastion)
-by someone with a sudo-capable login on the box.
+**Live.** `http://10.20.0.9:4001` serves the app; `systemctl is-active arabtec-ats`
+is active and enabled; the database holds the real department/project catalogue
+and 42 staff accounts. Deployed from `origin/main` on 9 Sep 2026.
 
-The previous attempt (Aug 2026) stopped at the same wall: the deployment SSH key
-was never added to the host, so nothing ran. It also targeted a now-superseded
-feature branch. This package is rebuilt against current `main` and adds the two
-things that were out of scope before — **migrating the live data off Render** and
-**nightly backups** (Render free tier had none).
+Steps 1–5 below describe the FIRST install and are history now. Routine updates
+use **`08-redeploy.sh`** (backup → fetch + build → restart → wait for readiness),
+which is written against the host as it actually is. Two ways it differs from
+what this runbook would have produced, both load-bearing:
+
+- The unit runs as **`ats`**, not a separate `arabtec-ats` service account, and
+  `/opt/arabtec-ats` is owned by `ats`. The code update therefore needs no sudo.
+  `ats` has no passwordless sudo, and the unit has `Restart=always`, so ending
+  the process is the restart.
+- `/etc/arabtec-ats/ats.env` is root-only. The redeploy script reads
+  `DATABASE_URL` out of the service's own `/proc/<pid>/environ` for the backup.
+
+### Two traps found on 9 Sep 2026 — read before touching this host
+
+1. **The clone had a single-branch refspec** pointing at
+   `claude/on-prem-migration-final`, a branch since deleted upstream. Every
+   `git fetch` failed with `couldn't find remote ref` and the box sat on a
+   months-old commit while looking healthy. `08-redeploy.sh` now asserts the
+   standard refspec on every run.
+2. **The deployed tree had a hand-edit** to `backend/src/lib/security-headers.js`
+   gating `upgrade-insecure-requests` behind `DIRECT_HTTP`. It was correct and
+   load-bearing — this host is plain HTTP, and that directive rewrites every
+   asset URL to `https://10.20.0.9:4001`, which answers nothing, so the app
+   loads blank. It was never upstreamed, so the next checkout would have
+   reverted it. It is upstream now and covered by `csp_direct_http_test.mjs`.
+   `08-redeploy.sh` refuses to run against a dirty tree rather than discarding
+   the next such edit silently.
 
 ## Gate — settle these before step 1
 
