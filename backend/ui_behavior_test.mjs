@@ -17,7 +17,7 @@ const ctx = vm.createContext({window, document, Event, CustomEvent, URLSearchPar
 ctx.self=ctx;
 vm.runInContext(fs.readFileSync(publicDir+'vendor/react.production.min.js','utf8'),ctx);
 vm.runInContext(fs.readFileSync(publicDir+'vendor/babel.min.js','utf8'),ctx);
-for (const file of ['email-settings.jsx','app.jsx']) {
+for (const file of ['email-settings.jsx','org-structure.jsx','app.jsx']) {
   const source=fs.readFileSync(publicDir+file,'utf8');
   vm.runInContext(ctx.Babel.transform(source,{presets:['react']}).code,ctx,{filename:file});
 }
@@ -190,5 +190,37 @@ await check('email saves omit stored credentials and failed draft tests never sa
   password.props.onChange({target:{value:'synthetic-test-value'}});tree=page.render();
   await button(tree,'Test connection').props.onClick();tree=page.render();assert.equal(saves.length,1);assert.equal(tests[0].body.settings.password,'synthetic-test-value');
   assert.ok(text(tree).includes('SMTP 535 Authentication unsuccessful'));assert.equal(get('confirmPageExit')(),false);page.dispose();
+});
+await check('organization navigation renders its module and a missing-module preview',()=>{
+  get('useWorkCounts = () => [{dash:null,intakes:null}]');
+  const originalOrgPage=window.ArabtecOrgStructurePage;
+  window.ArabtecOrgStructurePage=()=>null;
+  const props={user:{id:1,fullName:'Test User',roles:['system_admin'],permissions:['system.manage']},branding:{}};
+  window.location.hash='#orgStructure';const shell=mount(get('Shell'),props);shell.render();
+  assert.ok(nodes(shell.render()).some(n=>n.type===window.ArabtecOrgStructurePage));
+  delete window.ArabtecOrgStructurePage;
+  assert.ok(nodes(shell.render()).some(n=>n.type===get('ModulePreview')));shell.dispose();window.ArabtecOrgStructurePage=originalOrgPage;
+});
+await check('offers empty, populated and invalid responses always produce visible states',async()=>{
+  for (const response of [{offers:[]},{offers:[{id:1,offerNo:'O-1',status:'draft'}]},{}]) {
+    window.offerResponse=response;get('api.get = async () => window.offerResponse');
+    const page=mount(get('OffersPage'),{user:{permissions:['offer.view']}});page.render();await flush();
+    const tree=page.render();
+    if(!response.offers) assert.ok(nodes(tree).some(n=>n.type===get('LoadError')));
+    else if(!response.offers.length) assert.ok(nodes(tree).some(n=>n.type===get('Empty')&&n.props.title==='No offers raised yet'));
+    else assert.ok(text(tree).includes('O-1'));
+    page.dispose();
+  }
+});
+await check('organization empty and failed loads show actionable content without endless loading',async()=>{
+  for (const response of [{nodes:[]},null]) {
+    window.orgResponse=response;
+    get("api.get = async () => { if (!window.orgResponse) throw new Error('Service unavailable'); return window.orgResponse; }");
+    const page=mount(window.ArabtecOrgStructurePage,{user:{permissions:[]}});page.render();await flush();
+    const tree=page.render();
+    if(response) assert.ok(text(tree).includes('Work in progress'));
+    else {assert.ok(button(tree,'Retry'));assert.ok(!text(tree).includes('Loading organization structure'));}
+    page.dispose();
+  }
 });
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);

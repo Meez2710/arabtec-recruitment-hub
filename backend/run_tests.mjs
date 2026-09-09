@@ -33,6 +33,7 @@ const SUITES = [
   'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
+  'production_seed_guard_test.mjs',
   'ui_behavior_test.mjs', // approved navigation, pipeline and mail UI behaviors
   'ui_compile_test.mjs',      // production JSX compiles in the vendored browser Babel
   'ui_readiness_test.mjs',    // production UI release-contract regression checks

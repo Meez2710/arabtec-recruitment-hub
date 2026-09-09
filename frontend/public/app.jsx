@@ -460,6 +460,12 @@ function Empty({ art, text, title, action, tone = 'neutral' }) {
     {action && <div className="empty-action">{action}</div>}
   </div>;
 }
+function ModulePreview({ title }) {
+  return <section><PageHead title={title} sub="Work in progress" />
+    <div className="card"><Empty title="This section is being prepared"
+      text="The page is not available in this version yet. Please try again after the next update."
+      action={<button className="btn" onClick={() => window.location.reload()}>Reload page</button>} /></div></section>;
+}
 function LoadError({ text, onRetry, title = 'Could not load this page' }) {
   return <div className="card"><Empty tone="error" title={title} text={text}
     action={<button className="btn" onClick={onRetry}>Retry</button>} /></div>;
@@ -546,6 +552,7 @@ const NAV = [
   { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view' },
   { key: 'interviews', label: 'Interviews', icon: 'calendar', anyPerm: ['interview.view_all', 'interview.view_assigned'] },
   { key: 'offers', label: 'Offers', icon: 'doc', perm: 'offer.view' },
+  { key: 'orgStructure', label: 'Organization Structure', icon: 'building', perm: null },
   { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
   { section: 'Administration' },
   { key: 'projects', label: 'Projects', icon: 'hardhat', perm: null },
@@ -1115,6 +1122,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
   const primaryMobile = mobileNavItems(navItems, persona);
 
+  const OrgStructurePage = window.ArabtecOrgStructurePage;
   const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
   const EmailSettingsPage = window.ArabtecEmailSettingsPage;
   const Page = {
@@ -1124,6 +1132,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     candidates: <CandidatesPage user={user} onNavigate={go} initialFilters={route === 'candidates' ? routeParams : null} />,
     candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <LoadError text="Candidate Review module failed to load." onRetry={() => window.location.reload()} />,
     interviews: <InterviewsPage user={user} initialFilters={route === 'interviews' ? routeParams : null} />,
+    orgStructure: OrgStructurePage ? <OrgStructurePage user={user} /> : <ModulePreview title="Organization Structure" />,
     offers: <OffersPage user={user} initialFilters={route === 'offers' ? routeParams : null} />,
     users: can(user, 'user.manage')
       ? <UsersPage user={user} />
@@ -8261,7 +8270,11 @@ function OffersPage({ user, initialFilters }) {
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'toIssue' && v) params.set(k, v); });
     setLoadError(null);
-    try { setOffers((await api.get('/offers?' + params.toString())).offers); } catch (e) { setLoadError(e.message); }
+    try {
+      const result = await api.get('/offers?' + params.toString());
+      if (!Array.isArray(result?.offers)) throw new Error('Offers are temporarily unavailable. Please retry.');
+      setOffers(result.offers);
+    } catch (e) { setLoadError(e.message || 'Could not load offers. Please retry.'); }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
