@@ -616,3 +616,49 @@ img, svg, video, canvas {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* =============================================================================
+   LAPTOP RANGE — 1024px to 1440px
+   The control metrics are sized for a large screen: buttons, inputs and selects
+   render 40px tall at every desktop width. On a 1366 or 1280 laptop at 100%
+   zoom the content column is only ~1000-950px wide, so a toolbar of 40px
+   controls runs out of room and wraps into ragged rows. Zooming out looked
+   "fixed" only because it bought back CSS pixels.
+   This block steps the same controls down to the two sizes the system allows —
+   36px standard, 32px compact — and lets toolbars wrap on their own terms. It
+   does not touch >1440px, and the <=1024px mobile floor blocks are untouched.
+   ========================================================================== */
+@media (min-width: 1024px) and (max-width: 1440px) {
+  .btn, button.btn, a.btn, .toolbar input, .toolbar select,
+  .toolbar-search input, .filter-toolbar input, .filter-toolbar select {
+    min-height: 36px;
+    height: 36px;
+    padding-block: 0;
+  }
+  .btn-sm, .btn.btn-sm, .btn-xs, .btn.btn-xs, .btn.small, .view-toggle-btn, .icon-btn {
+    min-height: 32px;
+    height: 32px;
+  }
+  .icon-btn { width: 32px; }
+
+  /* Wrapping is the intended behaviour at this width; give it real gaps and
+     let every child shrink, so a long label narrows its own control instead of
+     pushing a neighbour onto a line of its own. */
+  .toolbar, .filter-toolbar, .page-head-actions {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .toolbar > *, .filter-toolbar > *, .page-head-actions > * { min-width: 0; }
+  .toolbar-search, .filter-toolbar .toolbar-search { flex: 1 1 220px; min-width: 0; }
+
+  /* Six rigid tracks need 720px before gaps, which is more than the content
+     column has at the bottom of this range. Fluid tracks fill whatever is
+     there and reflow to fewer per row instead of overflowing. */
+  .ask-bar ~ div > .toolbar:not(.filter-toolbar),
+  .tp-page .tp-filters {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .ask-bar ~ div > .toolbar:not(.filter-toolbar) input,
+  .ask-bar ~ div > .toolbar:not(.filter-toolbar) select,
+  .tp-page .tp-filters input, .tp-page .tp-filters select { height: 36px; }
+}
