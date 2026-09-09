@@ -75,6 +75,8 @@ function projectTeam(project, department, people) {
 }
 
 export function seedOrganizationChartIfEmpty() {
+  // Bundled reference records are development fixtures, never production updates.
+  if (process.env.NODE_ENV === 'production') return { seeded: false, reason: 'production' };
   ensureOrganizationChartSchema();
   if ((get('SELECT COUNT(*) AS c FROM organization_node')?.c || 0) > 0) return { seeded: false };
 

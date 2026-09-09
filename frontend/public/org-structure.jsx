@@ -285,7 +285,8 @@
     const load = useCallback(async () => {
       try {
         const r = await api().get('/org/chart');
-        setNodes(r.nodes || []);
+        if (!Array.isArray(r?.nodes)) throw new Error('Organization Structure is temporarily unavailable. Please retry.');
+        setNodes(r.nodes);
         setErr(null);
       } catch (e) { setErr(e.message || 'Could not load organization structure'); }
     }, []);
@@ -444,9 +445,9 @@
           <span><i style={{ background: 'var(--at-action-tint, rgba(0,128,100,.08))' }} />Unit / project</span>
         </div>
 
-        {err && <div className="error-banner">{err}</div>}
-        {!nodes ? <div className="card card-pad">Loading organization structure…</div> : !visible.length ? (
-          <div className="card"><div className="empty"><p>No positions match this filter.</p></div></div>
+        {err && <div className="error-banner" role="alert">{err} <button className="btn btn-sm" type="button" onClick={load}>Retry</button></div>}
+        {!nodes && err ? null : !nodes ? <div className="card card-pad">Loading organization structure…</div> : !visible.length ? (
+          <div className="card"><div className="empty"><h3>{nodes.length ? "No matching positions" : "Work in progress"}</h3><p>{nodes.length ? "Try another project or Head Office filter." : "Your organization chart is being prepared. Positions will appear here when your administrator adds them."}</p></div></div>
         ) : (
           <div className="org-canvas-wrap" ref={wrapRef}
             onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
