@@ -3,11 +3,13 @@ import {
   Branding, Buttons, Workflows, SystemSettings, NotificationConfig } from '../lib/models.js';
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
-import { isConfigured as emailConfigured, activeProvider, verifyConnection, sendMail, DEFAULT_SMTP_HOST } from '../lib/mailer.js';
+import { isConfigured as emailConfigured, activeProvider, verifyConnection, sendMail, testMailSettings, DEFAULT_SMTP_HOST } from '../lib/mailer.js';
 import { connectionStatus as microsoftStatus } from '../lib/microsoft/connection-store.js';
 import { NOTIFICATION_EVENTS, RECIPIENTS, EXTERNAL_RECIPIENTS } from '../lib/notification-catalog.js';
 import { testEmail } from '../lib/email_templates.js';
 import { allFlags, setFlag, isEnabled } from '../lib/feature-flags.js';
+
+import { publicMailSettings, saveMailSettings, effectiveMailSettings, safeSystemSettings, validEmail, safeMailError, mailVerification, recordMailVerification, mailDeliveryStats } from '../lib/mail-settings.js';
 
 const router = Router();
 
@@ -160,15 +162,32 @@ router.put('/workflows/:key', requireAuth, requirePermission('workflow.manage'),
 });
 
 // ---------------- System ----------------
-router.get('/system', requireAuth, (req, res) => res.json({ settings: SystemSettings.all() }));
+router.get('/system', requireAuth, (req, res) => res.json({ settings: safeSystemSettings() }));
 
 router.put('/system', requireAuth, requirePermission('system.manage'), (req, res) => {
   const updates = req.body?.settings || {};
-  const before = SystemSettings.all();
+  if (Object.keys(updates).some(key => key.startsWith('email_'))) return res.status(400).json({error:'Use Email & Mailbox to change mail settings.'});
+  const before = safeSystemSettings();
   for (const [key, value] of Object.entries(updates)) SystemSettings.upsert(key, value);
-  const after = SystemSettings.all();
+  const after = safeSystemSettings();
   writeAudit(req, { action: 'system.setting_changed', entityType: 'system', entityId: 'global', oldValue: before, newValue: after });
   res.json({ settings: after });
+});
+
+// ---------------- Email configuration ----------------
+router.get('/email', requireAuth, requirePermission('system.manage'), (req, res) => {
+  try {
+    res.json({ settings: publicMailSettings(), provider: activeProvider(),
+      configured: emailConfigured(), microsoft: microsoftStatus(), lastVerified:mailVerification(), delivery:mailDeliveryStats() });
+  } catch (e) { res.status(500).json({error:safeMailError(e)}); }
+});
+router.put('/email', requireAuth, requirePermission('system.manage'), (req, res) => {
+  try {
+    const before = publicMailSettings();
+    const after = saveMailSettings(req.body);
+    writeAudit(req, {action:'email.settings_changed',entityType:'system',entityId:'email',oldValue:before,newValue:after});
+    res.json({settings:after,provider:activeProvider(),configured:emailConfigured(),microsoft:microsoftStatus(),lastVerified:mailVerification(),delivery:mailDeliveryStats()});
+  } catch (e) { res.status(400).json({error:safeMailError(e)}); }
 });
 
 // ---------------- Email (C2.2) ----------------
@@ -186,16 +205,17 @@ router.get('/email/status', requireAuth, requireAnyPermission('system.manage', '
   res.json({
     configured: emailConfigured(),
     provider,
-    host: process.env.SMTP_HOST || DEFAULT_SMTP_HOST,
+    host: publicMailSettings().host,
     from: provider === 'graph' && microsoft?.mailbox
       ? microsoft.mailbox
-      : (process.env.MAIL_FROM || process.env.SMTP_USER || '(not set)'),
+      : (publicMailSettings().from || '(not set)'),
   });
 });
 
 // Verify the SMTP credentials without sending.
 router.post('/email/verify', requireAuth, requireAnyPermission('system.manage', 'notification.manage'), async (req, res) => {
   const r = await verifyConnection();
+  if (r.ok && r.provider !== 'dry-run') recordMailVerification(r.provider);
   writeAudit(req, { action: 'email.verify', entityType: 'system', entityId: 'smtp', comments: r.ok ? 'ok' : r.error });
   res.status(r.ok ? 200 : 400).json(r);
 });
@@ -209,12 +229,15 @@ router.post('/email/verify', requireAuth, requireAnyPermission('system.manage', 
 // "are the credentials good?" is answered by verify, without a send — so
 // widening it would hand every recruiter an open relay to buy nothing.
 router.post('/email/test', requireAuth, requirePermission('system.manage'), async (req, res) => {
-  const to = (req.body || {}).to;
-  if (!to) return res.status(400).json({ error: 'Recipient address (to) is required.' });
-  if (!emailConfigured()) return res.status(400).json({ error: 'Email is not configured yet. Set SMTP_USER and SMTP_PASS first.' });
-  const { subject, html } = testEmail();
-  const r = await sendMail({ to, subject, html });
-  writeAudit(req, { action: 'email.test_sent', entityType: 'system', entityId: 'smtp', comments: `to ${to}: ${r.ok ? 'sent' : r.error}` });
+  const { to, settings } = req.body || {};
+  if (to !== undefined && !validEmail(to)) return res.status(400).json({error:'Enter a valid recipient email address.'});
+  if (!to && settings === undefined) return res.status(400).json({error:'Recipient address (to) is required.'});
+  let config;
+  try { config = effectiveMailSettings(settings || {}, {includePassword:false}); }
+  catch(e) { return res.status(400).json({error:safeMailError(e)}); }
+  const r = await testMailSettings(settings || {}, to, testEmail());
+  writeAudit(req, {action:to?'email.test_sent':'email.draft_verified',entityType:'system',entityId:'email',
+    comments: `${r.provider || config.provider}: ${r.ok ? (to?'test accepted':'verified'):'test failed'}`});
   res.status(r.ok ? 200 : 502).json(r);
 });
 

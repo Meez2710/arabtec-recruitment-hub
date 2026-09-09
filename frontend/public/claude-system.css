@@ -41,11 +41,10 @@
   --cl-11: 48px; --cl-12: 64px;
 
   /* Control sizing. */
-  --cl-ctl-lg: 40px; --cl-ctl-md: 36px; --cl-ctl-sm: 30px; --cl-ctl-xs: 26px;
+  --cl-ctl-lg: 40px; --cl-ctl-sm: 32px;
   --cl-nav-h: 34px;  --cl-row-h: 40px;
 
   /* Neutral elevation — black alpha only, never a hue. */
-  --cl-ring:    inset 0 0 0 1px rgba(0, 0, 0, .07);
   --cl-lift:    0 1px 2px rgba(0, 0, 0, .05);
   --cl-raise:   inset 0 0 0 1px rgba(0, 0, 0, .07), 0 1px 2px rgba(0, 0, 0, .05);
   --cl-overlay: 0 4px 24px rgba(0, 0, 0, .04), 0 4px 32px rgba(0, 0, 0, .04),
@@ -56,7 +55,7 @@
   /* Remap the app's own geometry tokens so token-driven rules follow along.
      applyBranding() clears any inline --radius / --card-radius, so these win. */
   --card-radius: var(--cl-r-xl);
-  --radius: var(--cl-r-lg);
+  --radius: var(--cl-r-md);
   --r-md: var(--cl-r-md);
 
   /* Shell proportions — Claude runs a wider, quieter rail and a shorter bar. */
@@ -83,9 +82,10 @@
   border-bottom-width: 1px;
 }
 
-/* Gutters follow Claude's 24 / 32 rhythm. The 104px floor is the anyhelp
-   launcher's corner and is deliberately preserved. */
-.content { padding: var(--cl-7) var(--cl-9) 104px; }
+/* Reserve the launcher corner only on shells that actually render the dock. */
+.content { padding: var(--cl-7) var(--cl-9); }
+.content.has-dock { padding-bottom: 104px; }
+.content::before { position: absolute; bottom: 0; }
 
 /* -------------------------------------------------------- 3. navigation */
 .nav-item {
@@ -169,18 +169,18 @@
 }
 .ats-card-grid, .dash-grid-2, .report-grid { gap: var(--cl-5); }
 .dash-kpi-row { gap: var(--cl-4); }
-.dash-kpi, .kpi { border-radius: var(--cl-r-xl); padding: var(--cl-5); }
+.dash-kpi, .kpi { border-radius: var(--cl-r-xl); padding: var(--cl-5); box-shadow: var(--cl-lift); }
 .dash-kpi-val, .kpi-value { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.015em; }
 .dash-kpi-label, .kpi-label { font-size: 13px; font-weight: 400; letter-spacing: normal; text-transform: none; }
 .dash-kpi-hint { font-size: 12px; line-height: 1.45; margin-top: var(--cl-1); }
 .dash-kv { gap: var(--cl-2); font-size: 14px; }
 
 /* --------------------------------------------------------- 6. buttons */
-/* The de-pilling. Claude buttons are 10px rounded rectangles at every size. */
+/* Default 40px and compact 32px controls, all on an 8px radius. */
 .btn, button.btn, a.btn {
   min-height: var(--cl-ctl-lg);   /* 40px — matches claude.ai's measured button and PR #6's --at-control-h */
   padding: 0 var(--cl-5);
-  border-radius: var(--cl-r-lg);
+  border-radius: var(--cl-r-md);
   border-width: 1px;
   font-size: 14px; font-weight: 500; line-height: 1.2;
   letter-spacing: normal;
@@ -189,19 +189,19 @@
 }
 .btn.btn-lg { min-height: var(--cl-ctl-lg); padding: 0 var(--cl-6); font-size: 15px; }
 .btn.btn-sm, .btn-sm { min-height: var(--cl-ctl-sm); padding: 0 var(--cl-4); font-size: 13px; border-radius: var(--cl-r-md); }
-.btn.btn-xs, .btn-xs { min-height: var(--cl-ctl-xs); padding: 0 var(--cl-3); font-size: 12px; border-radius: var(--cl-r-sm); }
+.btn.btn-xs, .btn-xs { min-height: var(--cl-ctl-sm); padding: 0 var(--cl-4); font-size: 13px; border-radius: var(--cl-r-md); }
 .btn-ghost, .btn-link { border-width: 1px; }
 .btn:focus-visible { outline-width: 2px; outline-offset: 2px; }
 
 .icon-btn {
-  width: var(--cl-ctl-md); height: var(--cl-ctl-md);
+  width: var(--cl-ctl-lg); height: var(--cl-ctl-lg);
   border-radius: var(--cl-r-md); border-width: 1px;
   display: inline-grid; place-items: center; padding: 0;
 }
 /* View switches contain labels (Cards / Table / Board), not just an icon.
    A 36px square makes their text escape the hit area at ordinary font sizes. */
 .view-toggle-btn {
-  width: auto; height: auto; min-height: var(--cl-ctl-md);
+  width: auto; height: auto; min-height: var(--cl-ctl-sm);
   padding: var(--cl-2) var(--cl-4); flex: 0 0 auto;
   border-radius: var(--cl-r-md); border-width: 1px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -215,14 +215,14 @@ input[type=text], input[type=email], input[type=password], input[type=number],
 input[type=search], input[type=date], input[type=datetime-local], input[type=time], select,
 /* a bare <input> carries no type attribute, so the list above never matches it */
 input:not([type]), .gsearch input, .cmdk input {
-  border-radius: var(--cl-r-lg);
+  border-radius: var(--cl-r-md);
   min-height: var(--cl-ctl-lg);
   padding: 0 var(--cl-4);
   font-size: 14px; line-height: 1.4;
   border-width: 1px;
 }
 .field textarea, textarea {
-  border-radius: var(--cl-r-lg);
+  border-radius: var(--cl-r-md);
   padding: var(--cl-4); min-height: 96px; line-height: 1.55; font-size: 14px;
 }
 .field { gap: var(--cl-2); }
@@ -276,7 +276,7 @@ table.table tbody td, .table tbody td, table tbody td {
 
 /* ------------------------------------------------ 11. modals + overlays */
 .modal {
-  border-radius: var(--cl-r-2xl);
+  border-radius: var(--cl-r-xl);
   box-shadow: var(--cl-pop);
   border-width: 1px;
 }
@@ -288,7 +288,7 @@ table.table tbody td, .table tbody td, table tbody td {
   border-width: 1px; padding: var(--cl-1);
 }
 .rq-pop-item, .menu-item, .dropdown-item {
-  min-height: var(--cl-ctl-md); padding: 0 var(--cl-4);
+  min-height: var(--cl-ctl-lg); padding: 0 var(--cl-4);
   border-radius: var(--cl-r-sm); font-size: 14px; gap: var(--cl-3);
   display: flex; align-items: center;
 }
@@ -300,8 +300,8 @@ table.table tbody td, .table tbody td, table tbody td {
 .empty p { font-size: 14px; line-height: 1.55; max-width: 46ch; margin-inline: auto; }
 .empty-action { margin-top: var(--cl-5); }
 
-.gsearch, .gsearch input { border-radius: var(--cl-r-lg); }
-.gsearch { min-height: var(--cl-ctl-md); padding: 0 var(--cl-4); gap: var(--cl-3); }
+.gsearch, .gsearch input { border-radius: var(--cl-r-md); }
+.gsearch { min-height: var(--cl-ctl-lg); padding: 0 var(--cl-4); gap: var(--cl-3); }
 
 /* The launcher stays a pill: it is a circle at rest that expands into a pill on
    hover, and Claude's own floating controls are pills too. Only the elevation
@@ -318,6 +318,97 @@ table.table tbody td, .table tbody td, table tbody td {
 .login-card { border-radius: var(--cl-r-2xl); padding: var(--cl-9); box-shadow: var(--cl-overlay); }
 .login-brand { margin-bottom: var(--cl-7); gap: var(--cl-3); }
 
+/* Approved shared layout completion. Color remains in the design system. */
+.page-head-actions { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
+.page-head-main .detail-back { margin-bottom: 8px; }
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.detail-grid > *, .roles-layout > * { min-width: 0; }
+.toolbar input, .toolbar select { height: auto; }
+.filter-toolbar { flex-wrap: nowrap; }
+.toolbar-search { flex: 1 1 240px; min-width: 140px; }
+.toolbar-search > input { width: 100%; min-width: 0; }
+.toolbar-secondary { display: flex; align-items: center; gap: 8px; flex: 2 1 540px; min-width: 0; flex-wrap: wrap; }
+.toolbar-secondary > input, .toolbar-secondary > select { flex: 1 1 88px; min-width: 0; width: auto; }
+.toolbar-secondary > .switch { flex: 0 0 auto; }
+.toolbar-count { flex: 0 0 auto; }
+.filter-toggle { display: none; }
+.density-compact table.table tbody td, .density-compact table.table thead th { padding: 7px 12px; }
+.density-spacious table.table tbody td, .density-spacious table.table thead th { padding: 18px 20px; }
+.dash-kpi-row.kpi-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.role-choice { width: 100%; display: flex; align-items: center; text-align: left; min-height: 40px; padding: 8px 12px; border-width: 1px; border-style: solid; border-radius: 8px; margin-bottom: 4px; font: inherit; }
+.permissions-save { position: sticky; top: var(--topbar-h); z-index: 3; flex-wrap: wrap; }
+.permission-code { display: block; font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+.permission-toggle { align-items: flex-start; }
+.mobile-nav > button { min-width: 0; }
+.mobile-nav > button > span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 24px; }
+.kan-col { width: auto; min-width: 0; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr); }
+.kan-body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px; overflow: visible; min-height: 92px; }
+.kan-head { min-width: 0; }
+.kan-title { min-width: 0; white-space: normal; }
+.pcard { min-width: 0; width: 100%; box-sizing: border-box; padding: 14px; gap: 7px; min-height: 103px; border-radius: 10px; cursor: pointer; }
+.pcard:has(.pipeline-menu) { z-index: 5; }
+.pcard-id, .pcard-top, .pcard-actions, .pcard-footer, .pcard-facts { min-width: 0; }
+.pcard-top { align-items: flex-start; gap: 8px; }
+button.pcard-name { font: inherit; font-size: 14px; font-weight: 600; padding: 0; border: 0; max-width: 100%; text-align: left; cursor: pointer; }
+.pcard-role { font-size: 11.5px; }
+.pcard-actions { position: relative; display: block; padding: 0; border: 0; flex: 0 0 auto; }
+.pcard-menu-trigger { width: 32px; height: 32px; min-height: 32px; border: 1px solid transparent; }
+.pcard-footer { display: flex; align-items: baseline; gap: 8px; border-top-width: 1px; border-top-style: solid; padding-top: 8px; margin-top: auto; }
+.pcard-facts { display: block; flex: 1 1 auto; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.pcard-match { flex: 0 0 auto; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pcard-request, .pcard-residual { font-size: 11px; overflow-wrap: anywhere; }
+.pipeline-menu { position: absolute; right: 0; top: 100%; margin-top: 6px; width: 174px; min-width: 0; max-width: calc(100vw - 48px); z-index: 10; }
+.pipeline-menu .menu-item { width: 100%; min-height: 40px; height: auto; padding: 8px; white-space: normal; text-align: left; border: 0; cursor: pointer; font: inherit; font-size: 12px; }
+.empty .ico { width: 72px; height: 72px; }
+.empty .ico svg { width: 72px; height: 72px; }
+.email-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 20px; align-items: start; }
+.email-settings-form, .email-settings-aside, .email-settings-grid .field { min-width: 0; }
+.email-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 16px; }
+.email-settings-aside { display: grid; gap: 16px; }
+.email-settings-actions { position: sticky; bottom: 16px; z-index: 2; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--cl-lift); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.email-settings-grid input, .email-settings-grid select { width: 100%; min-width: 0; }
+.email-password-field { grid-column: 1 / -1; }
+.email-password-row, .email-provider-note { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.email-password-row > span { flex: 1 1 150px; }
+.email-provider-note > span { flex: 1 1 200px; }
+.email-test-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.email-test-actions > .btn { flex: 1 1 auto; }
+.email-status-list { display: grid; gap: 6px; margin: 16px 0; overflow-wrap: anywhere; }
+.email-status-list dt { font-size: 12px; color: var(--muted); }
+.email-status-list dd { margin: 0 0 10px; }
+.email-settings-link { justify-self: start; }
+/* Sign-in is frozen: preserve its pre-handoff 10px control geometry. */
+.login-wrap .btn, .login-wrap input { border-radius: var(--cl-r-lg); }
+@media (max-width: 1200px) and (min-width: 641px) {
+  .responsive-table [data-priority="secondary"] { display: none; }
+  .table-wrap .responsive-table { min-width: 0; }
+}
+@media (max-width: 1100px) {
+  .filter-toolbar { flex-wrap: wrap; }
+  .filter-toggle { display: inline-flex; }
+  .toolbar-secondary { display: none; flex: 1 1 100%; order: 3; }
+  .toolbar-secondary.expanded { display: flex; }
+  .toolbar-secondary > input, .toolbar-secondary > select { flex-basis: 140px; }
+  .dash-kpi-row.kpi-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .email-settings-grid { grid-template-columns: minmax(0, 1fr); }
+  .email-settings-actions { bottom: 76px; }
+  .role-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .page-head-actions { width: 100%; }
+  .page-head-actions > .btn { flex: 1 1 auto; }
+  .toolbar-search { flex-basis: 180px; }
+  .toolbar-count { width: 100%; }
+  .filter-toolbar .toolbar-search > input { min-width: 0; }
+  .role-choice, button.pcard-name { min-height: 44px; }
+  .pipeline-menu .menu-item { min-height: 44px; }
+  .role-row { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ------------------------------------------------------ 13. responsive */
 @media (max-width: 1180px) {
   :root { --sidebar-w: 240px; }
@@ -328,11 +419,13 @@ table.table tbody td, .table tbody td, table tbody td {
 @media (max-width: 900px) {
   .topbar { height: 52px; padding: 0 var(--cl-4); gap: var(--cl-3); }
   .sidebar.collapsed { --sidebar-w: 264px; padding: var(--cl-4) var(--cl-4) var(--cl-6); }
-  .content { padding: var(--cl-6) var(--cl-5) 104px; }
+  .content { padding: var(--cl-6) var(--cl-5) 80px; }
   .page-title, .page-head .page-title, .dash-head .page-title { font-size: 24px; }
 }
 @media (max-width: 640px) {
-  .content { padding: var(--cl-5) var(--cl-4) 96px; }
+  :root { --cl-ctl-lg: 44px; }
+  .content { padding: var(--cl-5) var(--cl-4) 80px; }
+  .content.has-dock { padding-bottom: 96px; }
   .page-title, .page-head .page-title, .dash-head .page-title { font-size: 22px; }
   .page-head, .dash-head { margin-bottom: var(--cl-5); gap: var(--cl-4); }
   .card-pad, .card > .card-pad { padding: var(--cl-5); }
@@ -342,6 +435,8 @@ table.table tbody td, .table tbody td, table tbody td {
   .modal-foot { padding: var(--cl-3) var(--cl-5) var(--cl-5); }
   /* 44px, not 40: the UI-readiness release set this touch target deliberately
      and this layer loads after it, so it must not quietly shrink it. */
-  .btn, button.btn, a.btn, .btn-sm, .btn.small { min-height: 44px; }
+  .btn, button.btn, a.btn, .btn.btn-sm, .btn.btn-xs, .btn-sm, .btn-xs, .btn.small, .tabbar-btn, .profile-tab, .seg-tab, .tabs button, .menu-item { min-height: 44px; }
+  .icon-btn { width: 44px; height: 44px; min-height: 44px; }
+  .email-settings-actions > .btn { flex: 1 1 auto; }
   .view-toggle-btn { min-height: 44px; }
 }

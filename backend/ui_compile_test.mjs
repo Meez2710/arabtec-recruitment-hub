@@ -12,7 +12,7 @@ const context = {};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(publicDir, 'vendor/babel.min.js'), 'utf8'), context);
 
-const FILES = ['intake-review.jsx', 'org-structure.jsx', 'app.jsx'];
+const FILES = ['intake-review.jsx', 'email-settings.jsx', 'org-structure.jsx', 'app.jsx'];
 let failed = 0;
 for (const file of FILES) {
   try {

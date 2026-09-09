@@ -44,7 +44,8 @@ check('action color defaults green and migrates only the legacy red default', de
 check('readiness mobile rules keep all buttons at 44px', ruleHas(readinessCss, '.btn, .btn-sm, .btn.small', 'min-height: 44px'));
 check('four KPI layouts collapse to two columns before tablet width', ruleHas(readinessCss, '.dash-kpi-row:has(> :nth-child(4)):not(:has(> :nth-child(5)))', 'grid-template-columns: repeat(2, minmax(0, 1fr))'));
 check('legacy tables receive a horizontal overflow owner', ruleHas(readinessCss, '.card:has(table:not(.responsive-table)', 'overflow-x: auto'));
-check('empty states render the supplied icon', app.includes('{icon || <svg'));
+check('empty states use the four shared schematic marks', ['none-yet', 'no-match', 'failed', 'all-clear'].every(mark => app.includes(`'${mark}': <svg`)) && app.includes('<EmptyArt name={mark} />') && !/<Empty\s+icon=/.test(app));
+check('email module loads before the shell', html.indexOf('/email-settings.jsx?') > 0 && html.indexOf('/email-settings.jsx?') < html.indexOf('/app.jsx?'));
 check('intake review body copy meets the release size', ruleHas(readinessCss, '.review-table td, .review-table td > strong', 'font-size: 12.5px'));
 
 console.log(`\n=== UI READINESS: ${passed} passed, ${failed} failed ===\n`);
