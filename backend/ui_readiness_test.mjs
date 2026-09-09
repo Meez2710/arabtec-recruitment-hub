@@ -28,12 +28,13 @@ function ruleHas(source, selector, declaration) {
 let passed = 0;
 let failed = 0;
 function check(name, condition) {
-  if (condition) { passed++; console.log(`  ✓ ${name}`); }
-  else { failed++; console.error(`  ✗ ${name}`); }
+  if (condition) { passed++; console.log(`  \u2713 ${name}`); }
+  else { failed++; console.error(`  \u2717 ${name}`); }
 }
 
 const versions = [...html.matchAll(/\?v=([\w-]+)/g)].map((match) => match[1]);
 check('all deployed UI assets share one cache version', versions.length >= 7 && new Set(versions).size === 1);
+check('reflow stylesheet is the last product CSS linked', html.lastIndexOf('rel="stylesheet"') === html.indexOf('rel="stylesheet" href="/arabtec-responsive.css?'));
 check('authenticated shell has a render recovery boundary', app.includes('<AppErrorBoundary key={user.id}') && app.includes("console.error('ui.render_failed'"));
 check('shared modal binds dialog semantics and keyboard handler', sharedModal.includes('ref={dialogRef}') && sharedModal.includes('role="dialog" aria-modal="true" aria-labelledby={titleId}') && sharedModal.includes('onKeyDown={onDialogKeyDown}'));
 check('candidate drawer binds dialog semantics and keyboard handler', candidateDrawer.includes('ref={dialogRef}') && candidateDrawer.includes('role="dialog" aria-modal="true" aria-labelledby={titleId}') && candidateDrawer.includes('onKeyDown={onDialogKeyDown}'));
