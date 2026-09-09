@@ -1,0 +1,435 @@
+/* =============================================================================
+   ARABTEC RESPONSIVE REFLOW LAYER
+   ----------------------------------------------------------------------------
+   Loads LAST, after styles.css, arabtec-approved-ui.css,
+   arabtec-design-system.css and claude-system.css.
+
+   This sheet does not invent a new visual language. It stops the existing
+   desktop information layouts from being compressed into phone width.
+
+   ROOT CAUSE (Hiring Requests + Talent Pool at ~390px):
+   `.responsive-table` already turns rows into cards below 640px, but each
+   cell stays `display: flex` (row) with `td::before { flex: 0 0 40% }`.
+   A cell that carries two values — title + department, position + company,
+   university + major — therefore lays them out as:
+
+     LABEL | value-one | value-two
+
+   on a 390px screen. That is the overlap in the production screenshots.
+   The same squeeze appears on `.rq-meta` (nowrap + fixed dt) and
+   `.cand-card .cc-face` (two 1fr columns + nowrap).
+
+   HARD RULES FOR THIS FILE
+   - Reflow, do not shrink.
+   - No production-data, API, RBAC or schema changes live here.
+   - Colour / typeface / brand identity stay with the design system.
+   ========================================================================== */
+
+:root {
+  --ats-nav-h: 66px;
+  --ats-fab-size: 52px;
+  --ats-fab-gutter: 12px;
+}
+
+/* ------------------------------------------------------------------ primitives
+   Long construction-industry names are the norm, not the edge. Anything that
+   can sit in a flex/grid child must be allowed to shrink and wrap. */
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+img, svg, video, canvas {
+  max-width: 100%;
+}
+.page-head-main,
+.page-head-actions,
+.idcell,
+.idcell-txt,
+.cell-strong,
+.cell-sub,
+.cell-sub-only,
+.rq-title,
+.rq-meta,
+.rq-meta dd,
+.cc-id,
+.cc-name,
+.cc-headline,
+.cc-uni,
+.cc-uni-name,
+.cc-uni-major,
+.pcard,
+.pcard-name,
+.pcard-role,
+.pcard-facts,
+.toolbar-search,
+.gsearch,
+.profile-header,
+.ph-name,
+.ph-headline {
+  min-width: 0;
+}
+.cell-strong,
+.cell-sub,
+.cell-sub-only,
+.rq-title,
+.cc-name,
+.cc-headline,
+.cc-uni-name,
+.cc-uni-major,
+.pcard-name,
+.pcard-role,
+.pcard-facts,
+.pcard-request,
+.idcell-txt,
+.action-copy strong,
+.action-copy span,
+.role-row .cell-title,
+.role-row .cell-meta {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Value clusters inside a stacked cell must themselves stack. */
+.cell-strong { display: block; }
+.cell-sub { display: block; }
+
+/* Link-to-request is a control, not a desktop-only chip. */
+.rq-linkwrap,
+.rq-links,
+.rq-link-chip,
+.rq-link-btn {
+  max-width: 100%;
+  min-width: 0;
+}
+.rq-link-chip,
+.rq-link-btn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+/* ================================================================= tablet
+   Keep true tables for comparison, but never let a column crush its text.
+   Secondary columns already hide between 641–1200 in claude-system.css. */
+@media (max-width: 1024px) {
+  .dash-grid-2,
+  .report-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .role-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .page-head,
+  .dash-head {
+    align-items: flex-start;
+  }
+}
+
+/* ======================================================== phone + large phone */
+@media (max-width: 640px) {
+  /* ---- stacked operational tables: COLUMN, not squeezed row ---- */
+  .table-wrap,
+  .card > .table-wrap,
+  .card.flush > .table-wrap {
+    overflow-x: visible;
+  }
+  table.responsive-table,
+  .responsive-table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .responsive-table thead { display: none; }
+  .responsive-table tbody,
+  .responsive-table tr,
+  .responsive-table td {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .responsive-table tr {
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  /* Leave a clear column for the FAB so STAGE / actions stay tappable. */
+  .responsive-table tr,
+  .cand-card,
+  .rq-card,
+  .ticket-card {
+    padding-right: 56px;
+  }
+
+  /* THE FIX: label on its own line, then each value on its own line. */
+  .responsive-table td {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px 0;
+    border: 0;
+  }
+  .responsive-table td::before {
+    content: attr(data-label);
+    display: block;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 700;
+  }
+  .responsive-table td > * {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* Descendants only — applying display:block to the TD itself (e.g. class=
+     cell-sub-only) would cancel flex-direction:column and glue the label to
+     the value: PROJECT / SITEHills of One. */
+  .responsive-table td .cell-strong,
+  .responsive-table td .cell-sub,
+  .responsive-table td .cell-sub-only {
+    display: block;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+  }
+  .responsive-table td.cell-sub-only,
+  .responsive-table td.cell-strong {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* Ticket / checkbox lead cell stays a header, not a labelled row. */
+  .responsive-table td:first-child {
+    display: block;
+    padding-top: 0;
+  }
+  .responsive-table td:first-child::before { display: none; }
+  .responsive-table td.th-sel,
+  .responsive-table td.cell-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .responsive-table td.cell-actions {
+    justify-content: stretch;
+  }
+  .responsive-table td.cell-actions::before { display: none; }
+  .responsive-table td.cell-actions .btn {
+    flex: 1 1 auto;
+  }
+  .responsive-table [data-priority="secondary"] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Identity cell: avatar + name stay a row; the name wraps. */
+  .idcell {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+  }
+  .idcell-txt { flex: 1 1 auto; min-width: 0; }
+  .idcell-tags { margin-left: 0; }
+
+  /* ---- hiring-request cards ---- */
+  .rq-card,
+  .ticket-card {
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+  }
+  .rq-title {
+    white-space: normal;
+    overflow: visible;
+    display: block;
+  }
+  .rq-meta > div {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 0;
+  }
+  .rq-meta dt {
+    flex: 0 0 auto;
+    width: auto;
+  }
+  .rq-meta dd {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- talent-pool cards: two columns become one stack ---- */
+  .cand-card {
+    min-height: 0;
+    overflow: visible;
+  }
+  .cand-card .cc-face {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 8px 12px;
+    align-items: start;
+  }
+  .cand-card .cc-uni {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .cand-card .cc-headline,
+  .cand-card .cc-uni-name,
+  .cand-card .cc-uni-major {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+  }
+  .cand-card .cc-foot {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* ---- chrome: never hide content behind nav / FAB ---- */
+  .content,
+  .content.has-dock {
+    padding-bottom: calc(var(--ats-nav-h) + env(safe-area-inset-bottom, 0px) + var(--ats-fab-size) + 24px);
+  }
+  .mobile-nav {
+    height: calc(var(--ats-nav-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .mobile-nav button {
+    min-height: 44px;
+    min-width: 0;
+  }
+  .anyhelp-fab {
+    right: var(--ats-fab-gutter);
+    bottom: calc(var(--ats-nav-h) + env(safe-area-inset-bottom, 0px) + var(--ats-fab-gutter));
+    min-height: var(--ats-fab-size);
+    padding: 6px;
+  }
+  .anyhelp-fab:hover,
+  .anyhelp-fab:focus-visible {
+    padding: 6px;
+    gap: 0;
+  }
+  .anyhelp-dock {
+    bottom: calc(var(--ats-nav-h) + env(safe-area-inset-bottom, 0px) + 8px);
+  }
+  .more-sheet {
+    inset: auto 8px calc(var(--ats-nav-h) + env(safe-area-inset-bottom, 0px) + 8px) 8px;
+  }
+
+  /* ---- headers / toolbars: stack, do not cram ---- */
+  .page-head,
+  .dash-head {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page-head-actions,
+  .dash-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .page-head-actions > .btn,
+  .page-head-actions > .view-toggle {
+    flex: 1 1 auto;
+  }
+  .view-toggle {
+    display: inline-flex;
+    flex-wrap: wrap;
+  }
+  .view-toggle-btn {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+  .filter-toolbar {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .toolbar-search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .toolbar-count {
+    width: 100%;
+  }
+  .topbar {
+    height: auto;
+    min-height: 52px;
+    padding: 6px 10px;
+    padding-top: max(6px, env(safe-area-inset-top, 0px));
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .gsearch {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+  }
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 auto;
+  }
+
+  /* ---- other operational surfaces ---- */
+  .form-grid,
+  .detail-grid,
+  .roles-grid,
+  .roles-layout,
+  .email-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .action-item {
+    grid-template-columns: 8px minmax(0, 1fr);
+  }
+  .action-item .btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .role-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile-header {
+    flex-wrap: wrap;
+  }
+  .profile-header .ph-name,
+  .profile-header .ph-headline {
+    overflow-wrap: anywhere;
+  }
+  .tabbar,
+  .profile-tabs,
+  .seg-tabs,
+  .control-tabs {
+    max-width: 100%;
+  }
+}
+
+/* Slightly larger phones still need the stack — 430px iPhone Pro Max. */
+@media (max-width: 480px) {
+  .responsive-table tr,
+  .cand-card,
+  .rq-card,
+  .ticket-card {
+    padding-right: 58px;
+  }
+}
