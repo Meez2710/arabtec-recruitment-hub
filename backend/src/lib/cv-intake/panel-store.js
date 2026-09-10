@@ -56,7 +56,7 @@ export function saveLimits(draft) {
     maxConcurrency: clampInt(draft.maxConcurrency, 1, 16, current.maxConcurrency),
     stallMinutes: clampInt(draft.stallMinutes, 5, 1440, current.stallMinutes),
   };
-  SystemSettings.set(LIMITS_KEY, JSON.stringify(next));
+  SystemSettings.upsert(LIMITS_KEY, JSON.stringify(next));
   return next;
 }
 

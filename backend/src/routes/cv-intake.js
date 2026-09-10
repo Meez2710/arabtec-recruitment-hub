@@ -158,7 +158,15 @@ router.post('/batches', requirePermission('cv_intake.approve_batch'), (req, res)
 
 /* -------------------------------- control --------------------------------- */
 
-const CONTROL_ACTIONS = new Set(['pause', 'resume', 'cancel']);
+// The audit action for each control verb, spelled out rather than derived.
+// `${action}d` reads fine for pause/resume and silently produces
+// "cv_intake.batch_canceld" for cancel — a misspelt action name is invisible
+// until someone greps the audit log for the event that never fired.
+const CONTROL_ACTIONS = new Map([
+  ['pause', 'cv_intake.batch_paused'],
+  ['resume', 'cv_intake.batch_resumed'],
+  ['cancel', 'cv_intake.batch_cancelled'],
+]);
 
 router.post('/batches/:id/:action', requirePermission('cv_intake.control'), (req, res) => {
   const action = String(req.params.action);
@@ -171,7 +179,7 @@ router.post('/batches/:id/:action', requirePermission('cv_intake.control'), (req
       reason: req.body?.reason ? String(req.body.reason).slice(0, 500) : null,
     });
     writeAudit(req, {
-      action: `cv_intake.batch_${action}d`, entityType: 'cv_intake_batch',
+      action: CONTROL_ACTIONS.get(action), entityType: 'cv_intake_batch',
       entityId: String(batch.id),
       newValue: { status: batch.status, reason: batch.controlReason },
     });
