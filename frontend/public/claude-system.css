@@ -1,22 +1,41 @@
 /* =============================================================================
-   Claude system layer — geometry only.
+   Arabtec geometry + typography system layer — NO COLOUR.
 
-   Applies the shape / spacing / sizing / alignment system measured from
-   claude.ai, claude.com, platform.claude.com and anthropic.com on 4 Sep 2026,
-   on top of the Arabtec design system.
+   Two sources, merged:
+   1. The shape / spacing / sizing / alignment system measured from claude.ai,
+      claude.com, platform.claude.com and anthropic.com on 4 Sep 2026.
+   2. shadcn/ui preset `b7CSfhjSC` (style "mira", radius "medium"), adopted for
+      its DESIGN LANGUAGE ONLY on 11 Sep 2026.
 
-   HARD RULE FOR THIS FILE: it declares NO colour, NO background, NO
-   border-color, NO font-family. Only geometry — radius, spacing, size,
-   alignment, ratio, position, weight and neutral elevation. The Arabtec
-   palette, typeface, logo and page background are untouched by construction,
-   not by care: grep this file for `color:`, `background`, `font-family` and it
-   returns the token names in comments only.
+   ---- What was taken from preset b7CSfhjSC -------------------------------
+   ADOPTED   style mira · radius medium (10px base + x0.6/0.8/1/1.4/1.8/2.2/2.6
+             ramp) · menuAccent subtle · fontHeading inherit · lucide icon
+             GEOMETRY (24 viewBox, fill none, round caps/joins — already ours)
+   REJECTED  theme "teal"      would have replaced Arabtec green #008064
+             baseColor "mist"  would have replaced surfaces / ink / hairlines
+             chartColor "mist" would have replaced the chart + stage ramp
+             menuColor         colour-bearing
+             font roboto-slab  a web font; the approved Arabtec face is
+                               Arial/Helvetica, present on every target device,
+                               so the app makes no third-party request and has
+                               no flash of unstyled text. The preset's TYPE
+                               SCALE is adopted; its TYPEFACE is not.
+             .dark block       this product is light-only by design.
 
-   Loads LAST, so it wins on geometry. Delete the <link> to revert completely.
+   HARD RULE FOR THIS FILE: it declares NO colour literal, NO background
+   literal, NO border-colour literal, NO font-family. Only geometry — radius,
+   spacing, size, alignment, ratio, position, weight and neutral elevation.
+   Where a rule needs a surface it must reference an Arabtec token
+   (var(--surface), var(--muted), ...) and never a hex or a preset value.
+   The Arabtec palette, typeface, logo, watermark and page background are
+   untouched by construction, not by care.
+
+   Loads 4th of 5. Delete the <link> to revert completely.
 
    ---- What was measured -------------------------------------------------
    radius     claude.ai 6px x86, 10px x30, 8px, 24px · claude.com 4/8/12/24
-   spacing    strict 4px base; dominant gaps 6 / 8 / 12, blocks 16/20/24, sections 32/40/48
+              preset mira/medium: 10px base, ramp above
+   spacing    strict 4px base; canonical 4/8/12/16/24/32
    controls   button+input h40 r10 pad 0 16 fs15 fw500 · compact h36 r8 fs14
    nav item   h32 r8 pad 0 8-12 fs14 fw400
    table      td pad 8, fs14, row 36-40, header NOT uppercase
@@ -26,25 +45,60 @@
 
 /* ---------------------------------------------------------------- 1. tokens */
 :root {
-  /* Radius scale. Pills are retired from controls and kept for counts/tags. */
-  --cl-r-xs: 4px;    /* micro chips, checkbox, swatch */
-  --cl-r-sm: 6px;    /* menu rows, small icon buttons, badges */
-  --cl-r-md: 8px;    /* nav items, secondary buttons, tab track */
-  --cl-r-lg: 10px;   /* primary buttons, inputs, small cards */
-  --cl-r-xl: 12px;   /* cards, panels, popovers */
-  --cl-r-2xl: 16px;  /* modals, sheets */
-  --cl-r-3xl: 24px;  /* full-bleed feature surfaces */
+  /* --- RADIUS ------------------------------------------------------------
+     Preset b7CSfhjSC, radius "medium": --radius 0.625rem = 10px, with the
+     mira ramp x0.6 / x0.8 / x1 / x1.4 / x1.8 / x2.2 / x2.6. */
+  --cl-r-base: 10px;                 /* the preset's --radius */
+  --cl-r-xs:  4px;                   /* micro chips, checkbox, swatch (below ramp) */
+  --cl-r-sm:  6px;                   /* menu rows, small icon buttons, badges */
+  --cl-r-md:  8px;                   /* nav items, secondary buttons, tab track */
+  --cl-r-lg:  10px;                  /* primary buttons, inputs, small cards */
+  --cl-r-xl:  14px;                  /* cards, panels, popovers */
+  --cl-r-2xl: 18px;                  /* modals, sheets */
+  --cl-r-3xl: 22px;                  /* full-bleed feature surfaces */
+  --cl-r-4xl: 26px;                  /* hero surfaces */
+  --r-pill: 999px;                   /* counts and tags keep the pill */
 
-  /* 4px spacing base. */
+  /* --- SPACING -----------------------------------------------------------
+     Canonical scale. New work uses ONLY these six steps. */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  24px;
+  --sp-6:  32px;
+
+  /* Legacy 4px-base scale, still referenced by ~200 existing rules in this
+     file. --cl-2 (6px), --cl-6 (20px) and --cl-8 (28px) sit OFF the canonical
+     scale and are scheduled for migration to --sp-2 / --sp-5 / --sp-6 during
+     component standardisation. Do not add new references to them. */
   --cl-1: 4px;  --cl-2: 6px;  --cl-3: 8px;  --cl-4: 12px; --cl-5: 16px;
   --cl-6: 20px; --cl-7: 24px; --cl-8: 28px; --cl-9: 32px; --cl-10: 40px;
   --cl-11: 48px; --cl-12: 64px;
 
-  /* Control sizing. */
-  --cl-ctl-lg: 40px; --cl-ctl-sm: 32px;
-  --cl-nav-h: 34px;  --cl-row-h: 40px;
+  /* Page gutters by viewport — mobile 16 / tablet 20-24 / desktop 24-32.
+     Applied to .content in section 12. */
+  --sp-page-x: var(--sp-6);          /* desktop  32 */
+  --sp-page-y: var(--sp-5);          /* desktop  24 */
 
-  /* Neutral elevation — black alpha only, never a hue. */
+  /* --- TYPOGRAPHY --------------------------------------------------------
+     Scale only. The FACE is Arabtec's approved Arial/Helvetica and is set in
+     arabtec-design-system.css (--font); this file never declares font-family.
+     Preset fontHeading "inherit" is honoured: headings share the body face and
+     are distinguished by size, weight and tracking, never by a second family. */
+  --ts-display: 28px; --lh-display: 1.2;  --tr-display: -.015em;
+  --ts-title:   28px; --lh-title:   1.3;  --tr-title:   -.012em;  /* page title */
+  --ts-h2:      21px; --lh-h2:      1.3;  --tr-h2:      -.008em;
+  --ts-h3:      17px; --lh-h3:      1.35; --tr-h3:      -.006em;  /* card title */
+  --ts-h4:      15px; --lh-h4:      1.4;  --tr-h4:      normal;
+  --ts-body:    14px; --lh-body:    1.5;  --tr-body:    normal;
+  --ts-sm:      13px; --lh-sm:      1.45;
+  --ts-xs:      12px; --lh-xs:      1.45;
+  --ts-2xs:     11px; --lh-2xs:     1.4;                          /* eyebrows, counts */
+  --fw-normal: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700;
+
+  /* --- ELEVATION ---------------------------------------------------------
+     Neutral by construction — black alpha only, never a hue. */
   --cl-lift:    0 1px 2px rgba(0, 0, 0, .05);
   --cl-raise:   inset 0 0 0 1px rgba(0, 0, 0, .07), 0 1px 2px rgba(0, 0, 0, .05);
   --cl-overlay: 0 4px 24px rgba(0, 0, 0, .04), 0 4px 32px rgba(0, 0, 0, .04),
@@ -52,15 +106,44 @@
   --cl-pop:     0 1px 2px rgba(0, 0, 0, .04), 0 10px 28px rgba(0, 0, 0, .07),
                 0 28px 64px rgba(0, 0, 0, .07);
 
+  /* --- COMPONENT DIMENSIONS ---------------------------------------------- */
+  --cl-ctl-lg: 40px;                 /* primary button, input */
+  --cl-ctl-md: 36px;                 /* default button */
+  --cl-ctl-sm: 32px;                 /* compact button */
+  --cl-touch:  44px;                 /* mobile minimum target — asserted by tests */
+  --cl-nav-h:  34px;
+  --cl-row-h:  40px;
+  --cl-icon-size: 18px;              /* default <Icon size> */
+  --cl-icon-stroke: 1.5;             /* lucide geometry at Arabtec's lighter weight.
+                                        The preset's lucide default is 2; flipping
+                                        this one value adopts it app-wide. */
+  --cl-hairline: 1px;
+
+  /* --- BREAKPOINTS -------------------------------------------------------
+     Canonical set. CSS cannot read a custom property inside a media query, so
+     these are the single documented source of truth that every @media in the
+     product must be written against:
+
+       --bp-sm   640px   phone
+       --bp-md   900px   tablet portrait / stacked tables
+       --bp-lg   1180px  laptop / sidebar pressure
+       --bp-xl   1440px  desktop
+
+     The product currently also contains 480/560/700/720/820/860/1000/1024/1100
+     /1200 from earlier work. Those are legacy and are to be folded into the
+     four above during component standardisation; none are introduced here. */
+  --bp-sm: 640px; --bp-md: 900px; --bp-lg: 1180px; --bp-xl: 1440px;
+
+  /* Shell proportions — a wider, quieter rail and a shorter bar. */
+  --sidebar-w: 264px;
+  --topbar-h: 56px;
+
   /* Remap the app's own geometry tokens so token-driven rules follow along.
-     applyBranding() clears any inline --radius / --card-radius, so these win. */
+     applyBranding() clears any inline --radius / --card-radius, so these win.
+     COLOUR TOKENS ARE NOT REMAPPED HERE AND MUST NOT BE. */
   --card-radius: var(--cl-r-xl);
   --radius: var(--cl-r-md);
   --r-md: var(--cl-r-md);
-
-  /* Shell proportions — Claude runs a wider, quieter rail and a shorter bar. */
-  --sidebar-w: 264px;
-  --topbar-h: 56px;
 }
 
 /* ------------------------------------------------------- 2. shell + chrome */
@@ -83,7 +166,7 @@
 }
 
 /* Reserve the launcher corner only on shells that actually render the dock. */
-.content { padding: var(--cl-7) var(--cl-9); }
+.content { padding: var(--sp-page-y) var(--sp-page-x); }
 .content.has-dock { padding-bottom: 104px; }
 .content::before { position: absolute; bottom: 0; }
 
@@ -412,19 +495,19 @@ button.pcard-name { font: inherit; font-size: 14px; font-weight: 600; padding: 0
 /* ------------------------------------------------------ 13. responsive */
 @media (max-width: 1180px) {
   :root { --sidebar-w: 240px; }
-  .content { padding-left: var(--cl-7); padding-right: var(--cl-7); }
+  .content { --sp-page-x: var(--sp-5); }   /* laptop 24 */
   .nav-item { padding-left: var(--cl-3); padding-right: var(--cl-4); }
   .sidebar-head { padding-left: var(--cl-3); padding-right: var(--cl-3); }
 }
 @media (max-width: 900px) {
   .topbar { height: 52px; padding: 0 var(--cl-4); gap: var(--cl-3); }
   .sidebar.collapsed { --sidebar-w: 264px; padding: var(--cl-4) var(--cl-4) var(--cl-6); }
-  .content { padding: var(--cl-6) var(--cl-5) 80px; }
+  .content { --sp-page-x: var(--sp-4); padding: var(--cl-6) var(--sp-page-x) 80px; }   /* tablet 20/16 */
   .page-title, .page-head .page-title, .dash-head .page-title { font-size: 24px; }
 }
 @media (max-width: 640px) {
   :root { --cl-ctl-lg: 44px; }
-  .content { padding: var(--cl-5) var(--cl-4) 80px; }
+  .content { --sp-page-x: var(--sp-4); padding: var(--sp-4) var(--sp-page-x) 80px; }   /* phone 16/16 */
   .content.has-dock { padding-bottom: 96px; }
   .page-title, .page-head .page-title, .dash-head .page-title { font-size: 22px; }
   .page-head, .dash-head { margin-bottom: var(--cl-5); gap: var(--cl-4); }
@@ -440,3 +523,166 @@ button.pcard-name { font: inherit; font-size: 14px; font-weight: 600; padding: 0
   .email-settings-actions > .btn { flex: 1 1 auto; }
   .view-toggle-btn { min-height: 44px; }
 }
+
+/* ============================================================================
+   14. LAYOUT INTEGRITY CONTRACT
+   ----------------------------------------------------------------------------
+   Mandatory, product-wide. Enforced here so a page cannot opt out by accident.
+
+     1. Perfectly usable at 100% browser zoom. Nothing may require zoom-out.
+     2. No text escaping its container.
+     3. No accidental wrapping of a label that was meant to stay on one line.
+     4. No unnecessary whole-page horizontal scrolling.
+     5. Long text must INTENTIONALLY fit, wrap, or truncate with a tooltip.
+     6. Never shrink a font to hide a broken container size.
+
+   Reference case: the role label `Recruitment Manager` in Settings -> Users.
+   It must sit inside its chip at 100% zoom without breaking mid-word and
+   without pushing the row wider than the viewport.
+   ========================================================================= */
+
+/* (1) The min-width:0 floor. A grid/flex child defaults to min-width:auto,
+   which is its MIN-CONTENT width — that single default is what lets one long
+   unbroken string push an entire page wider than the screen. Declared here on
+   the shell axes so it cannot be lost to stylesheet load order. */
+.shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+.shell > .main, .shell > .content, .main, .content { min-width: 0; }
+.card, .card-pad, .toolbar, .filter-toolbar, .page-head, .form-grid, .field { min-width: 0; }
+
+/* (2)(3)(5) Label containment. A chip/badge states its intent explicitly:
+   it stays on one line and truncates, rather than breaking mid-word or
+   spilling past its own rounded edge. `.status-chip` previously combined
+   `white-space: nowrap` with a FIXED height, so a long label overflowed the
+   pill outline; height becomes a floor, not a ceiling. */
+.chip, .badge, .status-chip, .src-chip, .meta-chip, .code-pill, .count-pill {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: auto;
+  min-height: 24px;
+}
+/* A cell holding several chips wraps BETWEEN chips, never inside one. */
+.chip-cell, td > .chip + .chip, .filter-chips { flex-wrap: wrap; }
+td:has(> .chip) { white-space: normal; }
+
+/* Content-driven text that is allowed to wrap does so on word boundaries, and
+   falls back to breaking only for strings with no boundary (URLs, IDs). */
+.cell-strong, .cell-sub, .cell-sub-only, .page-sub, .muted, .kan-title, .pcard-name {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* (4) Page-level horizontal overflow is owned by the element that overflows —
+   never by clipping the document. `html, body { overflow-x: hidden }` in the
+   design-system layer masks real bugs; this makes the scroll container explicit
+   so the mask has nothing left to hide. */
+.table-wrap, .card > .table-wrap, .card.flush > .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* (6) Font size is a typographic decision, never a fitting mechanism.
+   The scale in section 1 is the only permitted set of sizes. */
+
+
+/* ============================================================================
+   15. TABLE STANDARD  (defined now; tables are rebuilt in the next phase)
+   ----------------------------------------------------------------------------
+   Sorting must never produce: a visible full-table refresh, flashing, a column
+   width change, header movement, accidental text wrapping, or a layout shift.
+
+   Two halves — this file owns the first, app.jsx owns the second.
+
+   CSS CONTRACT (enforced below)
+     - Column widths come from an explicit layout, not from content
+       measurement, so they cannot change when the rows change.
+     - Header cells never wrap and never move.
+     - The sort affordance occupies its space whether or not it is active,
+       so activating a sort cannot reflow the header.
+
+   JS CONTRACT (documented here, applied during component standardisation)
+     - A sort must NOT set the row state to null. `setCandidates(null)` unmounts
+       the table and renders <Skeleton/>, which is the visible flash; the
+       remount is what lets column widths re-measure. Sorting must keep the
+       previous rows mounted and mark the table busy instead.
+     - Sort state cycles Neutral -> Ascending -> Descending.
+     - Any label that can truncate must carry a `title` with its full text.
+       `.chip` truncates as a last resort below its natural width and does not
+       yet supply one; adding it is part of the Badge consolidation.
+   ========================================================================= */
+
+/* Stable geometry, OPT-IN. `table-layout: fixed` is the mechanism that stops
+   column widths re-measuring when rows change — but it distributes width
+   EQUALLY unless the table also declares its columns. Switching it on globally
+   today, before any table has a <colgroup>, would give a 7-column table seven
+   identical columns and make the problem worse. So it is exposed as a class
+   that component standardisation applies per table, together with that table's
+   <colgroup>:
+
+       <div class="table-wrap">
+         <table class="table table-fixed">
+           <colgroup><col style="width:22%"><col style="width:26%">...</colgroup>
+
+   Until a table opts in it keeps today's auto layout and today's behaviour. */
+table.table, .table-wrap > table { width: 100%; }
+table.table-fixed, .table-wrap > table.table-fixed { table-layout: fixed; }
+
+/* Header stability. */
+table.table thead th, .table thead th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+/* The caret's box is always present, so a neutral -> ascending transition
+   changes an icon, not a layout. */
+.sort-th { cursor: pointer; user-select: none; }
+.sort-th > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.sort-th .sort-caret {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; flex: 0 0 16px; margin-left: var(--sp-1);
+  vertical-align: middle;
+}
+/* Body cells wrap on purpose or truncate on purpose — never by accident. */
+table.table tbody td, .table tbody td { overflow-wrap: break-word; }
+/* While a sort is in flight the table stays mounted and simply goes quiet.
+   Opacity only: no size change, so nothing can shift. */
+.table-busy { opacity: .55; transition: opacity .12s ease; pointer-events: none; }
+
+
+/* ============================================================================
+   16. SHARED COMPONENT LAYER — the approved set
+   ----------------------------------------------------------------------------
+   These fifteen categories have ONE approved implementation each. New pages
+   compose them; they do not re-implement them. The canonical component is named
+   where it already exists in app.jsx, and the duplicates it replaces are listed
+   so component standardisation has an explicit worklist.
+
+     Button        .btn (+ -secondary -ghost -danger -sm)   canonical
+     Input         .field input                             canonical
+     Select        .field select                            canonical
+     Checkbox      .field input[type=checkbox]              canonical
+     Card          .card / .card-pad / .card-head           canonical
+                     replaces: .pcard, .rq-card, .ticket-card
+     Badge         <Badge> / .badge                         canonical
+                     replaces: .chip, .status-chip, .cvi-badge, .src-chip,
+                               .meta-chip, .score-badge
+     Tabs          <ViewToggle> / .view-toggle              canonical
+                     replaces: .tabs, .tabbar, .seg-tabs, .profile-tabs,
+                               .control-tabs, .anyhelp-tabs
+     Dialog        <Modal> / <Confirm>                      canonical
+     Dropdown      .menu / .menu-item                       canonical
+                     replaces: .rq-pop-*, .pipeline-menu
+     Table         table.table inside .table-wrap           canonical
+                     replaces: .responsive-table (merge), .review-table,
+                               .parse-review-table, .preview-table, .cvi-table
+     Pagination    <Pager> / .pager                         canonical
+     Filters       <FilterToolbar> / .filter-toolbar        canonical
+     Empty state   <Empty> + <EmptyArt>                     canonical
+                     replaces: .state-empty, .dash-state, .cvi-state,
+                               .kan-empty, .notif-empty, .rq-pop-empty
+     Loading       <Skeleton>                               canonical
+     Page header   <PageHead> / .page-head                  canonical
+
+   Every one of the above draws its colour from the Arabtec tokens in
+   arabtec-design-system.css. This file sets their geometry only.
+   ========================================================================= */
