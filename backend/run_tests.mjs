@@ -28,6 +28,7 @@ const SUITES = [
   'email_settings_test.mjs', // encrypted settings, draft test and RBAC
   'email_test.mjs',           // C2.2 email module (provider selection, dry-run)
   'microsoft_integration_test.mjs', // M365 delegated OAuth mailbox: connect, scan, intake, idempotency
+  'microsoft_device_code_test.mjs', // M365 device-code public client: intake-only scopes, byte fidelity
   'notifications_test.mjs',   // C2.3 in-app notifications + assignment/approval wiring
   'notification_e2e_test.mjs', // every catalogued event really fires, to the right people
   'gdpr_test.mjs',            // C1.6 GDPR/PDPL consent, export, erasure, retention

@@ -79,9 +79,18 @@ export function validateConfig() {
   // variables are missing, and every route refuses with that list rather than
   // half-working. The app serves; the mailbox feature stays off until it is
   // configured properly.
-  const msVars = ['MS_TENANT_ID', 'MS_CLIENT_ID', 'MS_CLIENT_SECRET'];
+  // WHICH VARIABLES ARE REQUIRED DEPENDS ON THE SIGN-IN MODE, and getting this
+  // wrong is not cosmetic: a correctly configured device-code host was reported
+  // as "half-configured, missing MS_CLIENT_SECRET" and the integration was
+  // switched off — for lacking a credential that a public client must not have.
+  const msDeviceCode = ((process.env.MS_AUTH_MODE || '').trim().toLowerCase() === 'device-code')
+    || (!present('MS_CLIENT_SECRET') && (process.env.MS_AUTH_MODE || '').trim() === '');
+  const msVars = msDeviceCode
+    ? ['MS_TENANT_ID', 'MS_CLIENT_ID']
+    : ['MS_TENANT_ID', 'MS_CLIENT_ID', 'MS_CLIENT_SECRET'];
   const msSet = msVars.filter(present);
-  const msRedirect = present('MS_REDIRECT_URI') || present('CORS_ORIGINS');
+  // A device code needs no callback at all — nothing listens for one.
+  const msRedirect = msDeviceCode || present('MS_REDIRECT_URI') || present('CORS_ORIGINS');
   const msEnabled = msSet.length > 0;
   const msKeyOk = present('MICROSOFT_TOKEN_ENCRYPTION_KEY')
     && validEncryptionKey(process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY);
@@ -89,7 +98,15 @@ export function validateConfig() {
     const msMissing = msVars.filter((v) => !present(v));
     if (msMissing.length) {
       warnings.push(`Microsoft 365 integration is OFF — half-configured, missing ${msMissing.join(', ')}. `
-        + 'Set all of MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET, or none.');
+        + `Set all of ${msVars.join(', ')}, or none.`);
+    }
+    // A secret left behind on a public client is not harmless. MSAL would
+    // attach it to the device-code token request and Entra rejects a
+    // client_secret from an app registered as public — with an error about the
+    // credential rather than the flow, which is a miserable thing to debug.
+    if (msDeviceCode && present('MS_CLIENT_SECRET')) {
+      warnings.push('MS_AUTH_MODE is device-code but MS_CLIENT_SECRET is set. A public client must not hold '
+        + 'a secret — remove it, or set MS_AUTH_MODE=auth-code to use the browser redirect flow.');
     }
     if (!present('MICROSOFT_TOKEN_ENCRYPTION_KEY')) {
       warnings.push('Microsoft 365 integration is OFF — MICROSOFT_TOKEN_ENCRYPTION_KEY is unset, and the '
@@ -101,18 +118,20 @@ export function validateConfig() {
     if (!msRedirect) {
       warnings.push('Microsoft 365 integration is OFF — MS_REDIRECT_URI is unset (or set CORS_ORIGINS to '
         + 'the ATS public URL, which it is derived from).');
-    } else if (isProd) {
+    } else if (isProd && !msDeviceCode) {
       const uri = process.env.MS_REDIRECT_URI
         || `${(process.env.CORS_ORIGINS || '').split(',')[0].trim().replace(/\/+$/, '')}/api/integrations/microsoft/callback`;
-      // Microsoft rejects a non-HTTPS web redirect URI for anything but
-      // localhost, so an http:// value here never completes a sign-in.
-      if (!/^https:\/\//i.test(uri)) {
-        warnings.push('The Microsoft redirect URI is not HTTPS. Entra only accepts https:// (or http://localhost), '
-          + 'so the connect flow will fail until the ATS is served over TLS.');
+      // Entra accepts only https:// for a Web redirect URI — with the single
+      // exception of http://localhost, which is documented and is what makes an
+      // internal-only host connectable over an SSH tunnel without a certificate.
+      if (!/^https:\/\//i.test(uri) && !/^http:\/\/localhost(:|\/|$)/i.test(uri)) {
+        warnings.push('The Microsoft redirect URI is neither https:// nor http://localhost. Entra accepts only '
+          + 'those two, so the connect flow will fail. Use MS_AUTH_MODE=device-code to avoid needing a '
+          + 'redirect URI at all.');
       }
     }
   } else if (isProd) {
-    warnings.push('Microsoft 365 mailbox integration is OFF (MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET unset) '
+    warnings.push(`Microsoft 365 mailbox integration is OFF (${msVars.join(' / ')} unset) `
       + '— the careers mailbox will not be scanned.');
   }
 

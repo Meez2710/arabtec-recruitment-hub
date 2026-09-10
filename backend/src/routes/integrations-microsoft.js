@@ -16,7 +16,8 @@ import { Router } from 'express';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import {
-  configuredMailbox, isConfigured, missingConfig, microsoftConfig, AUTH_SCOPES,
+  configuredMailbox, isConfigured, missingConfig, microsoftConfig, authScopes,
+  authMode, mailboxAccess, sendEnabled, assertMailbox, isDeviceCodeMode,
 } from '../lib/microsoft/config.js';
 import { hasEncryptionKey } from '../lib/microsoft/crypto.js';
 import {
@@ -46,8 +47,17 @@ function configState() {
     // NAMES ONLY. Never a value, never a partial value.
     missing,
     mailbox: configuredMailbox(),
-    redirectUri: microsoftConfig().redirectUri || null,
-    scopes: [...AUTH_SCOPES],
+    // In device-code mode there is no callback, and reporting a stale or derived
+    // URL there would send an operator off to register a redirect URI that
+    // nothing will ever use.
+    redirectUri: isDeviceCodeMode() ? null : (microsoftConfig().redirectUri || null),
+    scopes: [...authScopes()],
+    // What this deployment actually asks for, stated plainly. An operator
+    // comparing the ATS against the Entra consent screen needs to see the same
+    // three facts in both places.
+    authMode: authMode(),
+    mailboxAccess: mailboxAccess(),
+    sendEnabled: sendEnabled(),
   };
 }
 
@@ -170,7 +180,10 @@ router.get('/callback', async (req, res) => {
       auditRejection(req, actorId, 'wrong-tenant', signedInAs);
       return back({ microsoft: 'error', code: CODES.WRONG_TENANT });
     }
-    if (signedInAs !== expected) {
+    // In `own` mode the signer must BE the mailbox. In `shared` mode the signer
+    // is deliberately a delegate, so their address is not compared — what pins
+    // the mailbox there is mailboxRoot(), which names it in every Graph path.
+    if (!assertMailbox(signedInAs)) {
       // The staged cache is simply discarded — the wrong account's refresh
       // token was never written anywhere.
       auditRejection(req, actorId, 'wrong-account', signedInAs);
@@ -249,7 +262,11 @@ router.post('/test', ...adminOnly, async (req, res) => {
     const inbox = await inboxProbe({ accessToken });
     const signedInAs = String(account?.username || '').toLowerCase();
     const expected = configuredMailbox();
-    if (signedInAs && signedInAs !== expected) {
+    // Same rule as the callback: only `own` mode requires the signer to be the
+    // mailbox. A delegate signing in for a shared mailbox is the supported
+    // arrangement, and the inbox probe above has just proved the delegate can
+    // actually reach it — which is the real thing under test.
+    if (signedInAs && !assertMailbox(signedInAs)) {
       writeAudit(req, {
         action: 'microsoft.test', entityType: 'integration', entityId: 'microsoft',
         comments: `connected account is ${signedInAs}, expected ${expected}`,
@@ -262,8 +279,13 @@ router.post('/test', ...adminOnly, async (req, res) => {
     writeAudit(req, { action: 'microsoft.test', entityType: 'integration', entityId: 'microsoft', comments: 'ok' });
     res.json({
       ok: true,
-      message: `Connected to ${signedInAs || expected}. Inbox reachable.`,
-      mailbox: signedInAs || expected,
+      message: mailboxAccess() === 'shared'
+        ? `Reading ${expected} as ${signedInAs || 'a delegate'}. Inbox reachable.`
+        : `Connected to ${signedInAs || expected}. Inbox reachable.`,
+      // ALWAYS the mailbox being read, never the delegate's own address — this
+      // field is what the admin panel shows as "the mailbox the ATS ingests".
+      mailbox: expected,
+      signedInAs: signedInAs || null,
       inbox: { displayName: inbox?.displayName ?? null, totalItemCount: inbox?.totalItemCount ?? null },
     });
   } catch (e) {

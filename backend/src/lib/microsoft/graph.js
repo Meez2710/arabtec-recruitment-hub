@@ -1,14 +1,23 @@
 // Microsoft Graph client for the delegated mailbox connection.
 //
-// DELEGATED ROUTES ONLY. Every path here is under `/me` — the mailbox that
-// signed in. There is no `/users/{mailbox}` route in this file, because with
-// delegated permission there is no other mailbox to name: the token IS the
-// mailbox. That is the whole point of the migration off application permissions.
+// DELEGATED ROUTES ONLY, AGAINST EXACTLY ONE MAILBOX. Every path is built from
+// `mailboxRoot()`, which is `/me` when the signed-in account IS the careers
+// mailbox and `/users/career@arabtecegy.com` when a delegate signs in on its
+// behalf (MS_MAILBOX_ACCESS=shared, which is also what makes the wider
+// `Mail.Read.Shared` scope necessary).
+//
+// The distinction matters and must not be blurred: `/me` is confined by the
+// token itself, whereas a delegate's token may reach several mailboxes and it is
+// THIS FILE naming one that confines it. Neither path is ever assembled from a
+// mailbox address that arrived at runtime — `mailboxRoot()` reads configuration
+// only, so no message, attachment or caller can redirect a read at another
+// mailbox.
 //
 // READ-ONLY on mail, except for the one send route. No PATCH isRead, no move,
 // no folder creation. De-duplication lives in mailbox_ingestion instead.
 
 import { acquireGraphToken, classify, MicrosoftAuthError, CODES } from './msal-client.js';
+import { mailboxRoot, sendEnabled, mailboxAccess, configuredMailbox } from './config.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
@@ -134,7 +143,7 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
 export async function listInboxMessages({ sinceIso, top = 50, accessToken = null, tokenRef = null, maxPages = 20 }) {
   const filter = encodeURIComponent(`receivedDateTime ge ${sinceIso} and hasAttachments eq true`);
   const select = encodeURIComponent('id,internetMessageId,subject,receivedDateTime,from,hasAttachments');
-  let path = `/me/mailFolders/inbox/messages?$filter=${filter}&$select=${select}`
+  let path = `${mailboxRoot()}/mailFolders/inbox/messages?$filter=${filter}&$select=${select}`
     + `&$orderby=receivedDateTime asc&$top=${Math.max(1, Math.min(Number(top) || 50, 200))}`;
 
   // PAGINATION IS NOT OPTIONAL HERE. Graph returns one page plus
@@ -164,7 +173,7 @@ export async function listInboxMessages({ sinceIso, top = 50, accessToken = null
 /** Attachment metadata for one message. Never fetches contentBytes. */
 export async function listAttachments(messageId, { accessToken = null, tokenRef = null, maxPages = 10 } = {}) {
   const select = encodeURIComponent('id,name,contentType,size,isInline,@odata.type');
-  let next = `/me/messages/${encodeURIComponent(messageId)}/attachments?$select=${select}`;
+  let next = `${mailboxRoot()}/messages/${encodeURIComponent(messageId)}/attachments?$select=${select}`;
   // A message's attachment collection paginates as well. Reading only the first
   // page silently completed the message and let the watermark move past it, so
   // CVs on later pages were never imported — not even by a later scan. Same
@@ -186,7 +195,7 @@ export async function listAttachments(messageId, { accessToken = null, tokenRef 
 /** The attachment's bytes. */
 export function downloadAttachment(messageId, attachmentId, { accessToken = null, tokenRef = null } = {}) {
   return graphRequest(
-    `/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/$value`,
+    `${mailboxRoot()}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/$value`,
     { raw: true, accessToken, tokenRef },
   );
 }
@@ -199,7 +208,7 @@ export function downloadAttachment(messageId, attachmentId, { accessToken = null
 
 /** Cheapest possible proof that Mail.Read reaches THIS mailbox. */
 export function inboxProbe({ accessToken = null, tokenRef = null } = {}) {
-  return graphRequest('/me/mailFolders/inbox?$select=id,displayName,totalItemCount', { accessToken, tokenRef });
+  return graphRequest(`${mailboxRoot()}/mailFolders/inbox?$select=id,displayName,totalItemCount`, { accessToken, tokenRef });
 }
 
 /* -------------------------------- mail send ------------------------------- */
@@ -212,6 +221,28 @@ export function inboxProbe({ accessToken = null, tokenRef = null } = {}) {
  * a mailbox mutation the integration performs on incoming mail.
  */
 export async function sendMailAs({ to, subject, html, text, replyTo, accessToken = null }) {
+  // A read-only grant must fail HERE, loudly and before any recipient is
+  // resolved — not at Graph with a 403 after the ATS has already decided a
+  // notification was sent. `Mail.Send` is not requested unless MS_ENABLE_SEND is
+  // true, so without it there is no token that could do this.
+  if (!sendEnabled()) {
+    throw new MicrosoftAuthError(
+      'Microsoft 365 is connected for CV intake only. Outgoing mail through Graph requires '
+      + 'the Mail.Send scope, which this deployment does not request (MS_ENABLE_SEND is not true).',
+      CODES.NOT_CONFIGURED,
+    );
+  }
+  // Sending AS a shared mailbox is a different permission again (Mail.Send.Shared
+  // plus a Send As grant in Exchange). This integration never requests it, so it
+  // refuses rather than sending from the delegate's own address by accident —
+  // which is what `POST /me/sendMail` would actually do here.
+  if (mailboxAccess() === 'shared') {
+    throw new MicrosoftAuthError(
+      `Outgoing mail is disabled because ${configuredMailbox()} is configured as a shared mailbox. `
+      + 'Sending as it would require Mail.Send.Shared and a Send As grant, which this deployment does not request.',
+      CODES.NOT_CONFIGURED,
+    );
+  }
   const recipients = (Array.isArray(to) ? to : String(to).split(','))
     .map((address) => String(address).trim()).filter(Boolean)
     .map((address) => ({ emailAddress: { address } }));
