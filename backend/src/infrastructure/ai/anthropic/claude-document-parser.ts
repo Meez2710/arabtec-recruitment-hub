@@ -18,7 +18,12 @@ import type {
 import { AI_CAPABILITIES } from '../../../modules/shared/kernel/ai/index.js';
 import { blocksFromMarkdown, buildStructuredDocument } from '../document/structure-builder.js';
 import {
-  clientFor, PROMPT_VERSION, textOf, type ClaudeConfig,
+  outputConfigFor,
+  createWithEffortFallback,
+  clientFor,
+  PROMPT_VERSION,
+  textOf,
+  type ClaudeConfig,
 } from './client.js';
 
 export const PARSER_VERSION = 'claude-document-parser@1';
@@ -132,15 +137,18 @@ export class ClaudeDocumentParser implements DocumentParser {
 
     let message: Anthropic.Message;
     try {
-      message = await this.client.messages.create({
+      message = await createWithEffortFallback(this.client, {
         model: this.config.model,
         max_tokens: 16_000,
         system: SYSTEM,
         // Transcription is mechanical. Effort buys accuracy on judgement, and
-        // there is no judgement here — only faithful reading.
-        output_config: { effort: 'low' },
+        // there is no judgement here — only faithful reading. Omitted entirely
+        // on models that reject it (Haiku 4.5 and friends) — see client.ts.
+        ...(outputConfigFor(this.config.model, 'low')
+          ? { output_config: outputConfigFor(this.config.model, 'low') }
+          : {}),
         messages: [{ role: 'user', content }],
-      });
+      } as Anthropic.MessageCreateParamsNonStreaming);
     } catch (error) {
       // TEMPORARY: a network or rate-limit failure is about the moment, not
       // the document. The SDK has already retried.

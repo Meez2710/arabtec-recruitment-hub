@@ -15,7 +15,14 @@ import type {
   AIOutcome, ExtractedResume, ParsedDocument, ResumeExtractor,
 } from '../../../modules/shared/kernel/ai/index.js';
 import { AI_CAPABILITIES } from '../../../modules/shared/kernel/ai/index.js';
-import { clientFor, PROMPT_VERSION, textOf, type ClaudeConfig } from './client.js';
+import {
+  outputConfigFor,
+  createWithEffortFallback,
+  clientFor,
+  PROMPT_VERSION,
+  textOf,
+  type ClaudeConfig,
+} from './client.js';
 
 export const EXTRACTOR_VERSION = 'claude-resume-extractor@1';
 
@@ -172,18 +179,19 @@ export class ClaudeResumeExtractor implements ResumeExtractor {
 
     let message: Anthropic.Message;
     try {
-      message = await this.client.messages.create({
+      message = await createWithEffortFallback(this.client, {
         model: this.config.model,
         max_tokens: 8_000,
         system: SYSTEM,
         // Extraction is schema-constrained lookup over text the parser already
         // read, not judgement — the same reason the parser call uses 'low'.
-        output_config: {
-          effort: 'low',
+        // The json_schema format is NOT optional and always survives; only
+        // `effort` is dropped on a model that rejects it. See client.ts.
+        output_config: outputConfigFor(this.config.model, 'low', {
           format: { type: 'json_schema', schema: SCHEMA as unknown as Record<string, unknown> },
-        },
+        }),
         messages: [{ role: 'user', content: `<cv>\n${body}\n</cv>` }],
-      });
+      } as Anthropic.MessageCreateParamsNonStreaming);
     } catch (error) {
       return abstain(
         `Claude could not be reached: ${error instanceof Error ? error.message : String(error)}`,

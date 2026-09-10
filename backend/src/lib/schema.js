@@ -933,6 +933,67 @@ export function ensureSchema() {
   CREATE UNIQUE INDEX IF NOT EXISTS idx_mailbox_ingestion_key ON mailbox_ingestion(dedup_key);
   CREATE INDEX IF NOT EXISTS idx_mailbox_ingestion_status ON mailbox_ingestion(status, created_at);
 
+  -- ---- CV intake control panel ----
+  --
+  -- A BATCH IS AN AUTHORISATION, NOT A QUEUE. Nothing is parsed because a CV
+  -- arrived; a person with cv_intake.approve_batch names a set of attachments
+  -- and approves spending model budget on them. The row records who did that
+  -- and when, which is the question an auditor actually asks.
+  --
+  -- Revoking that person's permission afterwards must NOT stop the batch or
+  -- delete its history — the approval already happened and remains valid. Only
+  -- someone holding cv_intake.control may halt it.
+  CREATE TABLE IF NOT EXISTS cv_intake_batch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- PENDING|PROCESSING|PAUSED|AWAITING_REVIEW|COMPLETED|FAILED|CANCELLED
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    category TEXT,                                      -- job category drawn from; NULL = manual selection
+    requested_count INTEGER NOT NULL DEFAULT 0,         -- what the approver asked for
+    total_items INTEGER NOT NULL DEFAULT 0,
+    processed_items INTEGER NOT NULL DEFAULT 0,
+    failed_items INTEGER NOT NULL DEFAULT 0,
+    imported_items INTEGER NOT NULL DEFAULT 0,
+    -- Plain INTEGERs rather than REFERENCES users(id): this table is created
+    -- before users in this script and Postgres rejects a forward REFERENCES.
+    approved_by INTEGER,
+    approved_at TEXT,
+    -- Whoever last paused/resumed/cancelled, and why. Distinct from the
+    -- approver on purpose: halting is a different authority.
+    controlled_by INTEGER,
+    controlled_at TEXT,
+    control_reason TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cv_intake_batch_status ON cv_intake_batch(status, created_at);
+
+  -- One attachment inside a batch. ingestion_id points at mailbox_ingestion,
+  -- which already holds the UNIQUE dedup key — so a CV cannot enter two batches
+  -- and be parsed twice.
+  CREATE TABLE IF NOT EXISTS cv_intake_batch_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL REFERENCES cv_intake_batch(id) ON DELETE CASCADE,
+    ingestion_id INTEGER,
+    intake_id INTEGER,                                  -- set once parsed into candidate_intake
+    -- PENDING|PROCESSING|AWAITING_REVIEW|IMPORTED|FAILED|CANCELLED
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    attachment_name TEXT,
+    content_hash TEXT,
+    category TEXT,
+    reason TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    imported_by INTEGER,
+    imported_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cv_intake_item_batch ON cv_intake_batch_item(batch_id, status);
+  -- An attachment belongs to at most one batch, ever. This is the structural
+  -- guarantee against double-parsing, not a convention the routes must remember.
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_intake_item_ingestion
+    ON cv_intake_batch_item(ingestion_id);
+
   -- ---- OAuth state (CSRF) ----
   -- Stored HASHED and single-use, for the same reason password_reset_token is:
   -- a database leak must not yield a replayable value. Bound to the System
@@ -958,6 +1019,14 @@ export function ensureSchema() {
   // `generation`. Every connect and every scan would have failed on a column
   // that was never added. Ordering, not the DDL, was the bug.
   addColumnIfMissing('microsoft_connection', 'generation', 'INTEGER NOT NULL DEFAULT 0');
+  // The control panel groups waiting CVs by job category, and on this mailbox
+  // the category IS the subject line — real applications arrive titled
+  // "Senior Cost Control Engineer", "QC Engineer", "procurement officer".
+  // Without the subject the panel can only ever show one undifferentiated pile,
+  // so the ingestion ledger records it alongside the attachment.
+  addColumnIfMissing('mailbox_ingestion', 'subject', 'TEXT');
+  addColumnIfMissing('mailbox_ingestion', 'sender', 'TEXT');
+  addColumnIfMissing('mailbox_ingestion', 'category', 'TEXT');
   addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
   addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
 

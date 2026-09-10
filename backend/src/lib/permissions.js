@@ -49,6 +49,23 @@ export const PERMISSIONS = [
   ['offer.result_update', 'offer', 'result_update', 'Update offer result (accept/reject/withdraw/join)'],
   ['offer.salary_view', 'offer', 'salary_view', 'View offer salary fields'],
   ['offer.salary_edit', 'offer', 'salary_edit', 'Edit offer salary fields'],
+  // CV intake control panel.
+  //
+  // FIVE SEPARATELY GRANTABLE CAPABILITIES, not one "cv_intake.use". Reading a
+  // queue, opening a stranger's CV, spending model budget on a batch, halting
+  // work someone else started, and putting a person into the candidate database
+  // are five different authorities, and an organisation that is nervous about
+  // this feature needs to grant them one at a time.
+  //
+  // NONE of these appears in any role below except system_admin (which takes
+  // every permission by construction). A Recruitment Manager therefore gets no
+  // intake access by default; an administrator grants it per user, deliberately,
+  // through Roles & Permissions.
+  ['cv_intake.view', 'cv_intake', 'view', 'View CV intake summaries and the intake queue'],
+  ['cv_intake.preview', 'cv_intake', 'preview', 'Preview email details and CV attachments'],
+  ['cv_intake.approve_batch', 'cv_intake', 'approve_batch', 'Select CVs and approve a parsing batch'],
+  ['cv_intake.control', 'cv_intake', 'control', 'Pause, resume or cancel pending CV processing'],
+  ['cv_intake.import', 'cv_intake', 'import', 'Review parsed results and approve import into the ATS'],
   // Reports
   ['report.export', 'report', 'export', 'Export reports'],
   // Admin / platform governance
