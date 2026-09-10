@@ -29,6 +29,14 @@ what this runbook would have produced, both load-bearing:
 - `/etc/arabtec-ats/ats.env` is root-only. The redeploy script reads
   `DATABASE_URL` out of the service's own `/proc/<pid>/environ` for the backup.
 
+**The unit files under `systemd/` mostly still describe the first install**
+(`User=arabtec-ats`, `/usr/bin/node`, `/var/log/arabtec-ats`) — none of which
+exists on the live host, where the account is `ats`, Node 22 is at
+`/opt/node22/bin/node` (`/usr/bin/node` is v24, outside the range
+`backend/package.json` declares) and there is no log directory. Any of the three
+fails the unit outright. `arabtec-m365-sync.service` has been corrected to the
+live host; **check the others before enabling them.**
+
 ### Two traps found on 9 Sep 2026 — read before touching this host
 
 1. **The clone had a single-branch refspec** pointing at

@@ -34,7 +34,7 @@ curl -s http://127.0.0.1:4001/api/health/watcher        # expect "running":true
 
 Test the folder path end to end:
 ```bash
-sudo -u arabtec-ats cp /path/to/a-real-cv.pdf /var/lib/arabtec-ats/cv_inbox/
+sudo -u ats cp /path/to/a-real-cv.pdf /var/lib/arabtec-ats/cv_inbox/   # the service account is `ats` on 10.20.0.9
 # within CV_WATCH_INTERVAL_MIN:
 curl -s http://127.0.0.1:4001/api/health/watcher        # scanCount increments, lastScanResult shows imported/skipped
 journalctl -u arabtec-ats -n 40 --no-pager | grep watcher
@@ -59,17 +59,25 @@ its own single trigger (`arabtec-m365-sync.timer`) and no longer writes into
 This step no longer touches the folder at all. The mailbox is read directly by
 the ATS over **delegated** Microsoft Graph and files CVs straight into the
 review queue — see **`docs/MICROSOFT_365_INTEGRATION.md`** for the full
-procedure. In short:
+procedure, including how to tell whether `career@arabtecegy.com` is a user or a
+shared mailbox. In short:
 
-1. An Entra app registration with **delegated** `Mail.Read` + `Mail.Send` and a
-   Web redirect URI of `https://<ATS-PUBLIC-HOST>/api/integrations/microsoft/callback`.
-   No Application permissions, no admin consent across the directory, no
-   Exchange application access policy, no PowerShell.
-2. `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_MAILBOX`,
-   `MS_REDIRECT_URI` and `MICROSOFT_TOKEN_ENCRYPTION_KEY` in
-   `/etc/arabtec-ats/ats.env`, then `sudo systemctl restart arabtec-ats`.
-3. A System Admin signs in **once** at Configuration → Microsoft 365 →
-   **Connect Microsoft 365**, as `career@arabtecegy.com`.
+1. An Entra app registration, **single tenant**, **public client**
+   ("Allow public client flows" = Yes), with **delegated `Mail.Read` +
+   `offline_access`** and nothing else. No client secret, no redirect URI, no
+   Application permission, no Exchange application access policy, no PowerShell.
+   Whether a non-admin may consent depends on the tenant's user-consent policy —
+   run the sign-in and read what Microsoft says rather than assuming.
+2. `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_MAILBOX`, `MS_AUTH_MODE=device-code`,
+   `MS_MAILBOX_ACCESS=own`, `MS_ENABLE_SEND=false` and
+   `MICROSOFT_TOKEN_ENCRYPTION_KEY` in `/etc/arabtec-ats/ats.env`, then
+   `sudo systemctl restart arabtec-ats`.
+3. Run the sign-in once and finish it in a browser on your own machine:
+   ```bash
+   sudo -u ats bash -c 'set -a; . /etc/arabtec-ats/ats.env; set +a; \
+     ATS_APP_ROOT=/opt/arabtec-ats /opt/node22/bin/node \
+     /opt/arabtec-ats/deploy/on-prem/m365-connect.mjs'
+   ```
 4. `sudo systemctl enable --now arabtec-m365-sync.timer` — 08:00 Africa/Cairo,
    daily, the one authoritative mailbox trigger.
 
@@ -87,14 +95,24 @@ review.
 
 ## What I still need from you
 
-1. The **ATS public HTTPS hostname**. The Apache vhost still says
-   `ServerName ats.arabtec.local  # REPLACE` and `ats.env` still says
-   `CORS_ORIGINS=https://REPLACE_ME`. Microsoft will not accept a redirect URI
-   on plain `http://10.20.0.9:4001`, so the TLS vhost has to be finished first.
-2. Whether you can create the **Entra app registration** (or who can) — I need
-   `tenant ID`, `client ID` and a `client secret` placed in
-   `/etc/arabtec-ats/ats.env` on the server. **Do not send any of them to me.**
-3. Confirmation the server has **outbound HTTPS to `graph.microsoft.com` and
-   `login.microsoftonline.com`**.
-4. Whether the HR CV folder share (`arabtec-cv-scan.timer`) is still in use, or
+1. Either an **existing app registration** suitable for reuse (its tenant ID and
+   client ID — never its secret), or confirmation that a new single-tenant
+   public client may be registered. See §1–§2 of
+   `docs/MICROSOFT_365_INTEGRATION.md`. **Do not send any secret to me.**
+2. Whether `career@arabtecegy.com` is a **user mailbox or a shared mailbox**
+   (`Get-Mailbox career@arabtecegy.com | Select RecipientTypeDetails`). It
+   decides `MS_MAILBOX_ACCESS` and which scope is requested.
+3. `ANTHROPIC_API_KEY` in `/etc/arabtec-ats/ats.env`. Until it is set,
+   `/api/health/parsing` reports every stage as `none` and downloaded CVs park
+   as retryable instead of reaching Candidate Review.
+4. Confirmation the server has outbound HTTPS to `graph.microsoft.com` and
+   `login.microsoftonline.com`. *(Verified 10 Sep 2026: both return 200, and
+   `api.anthropic.com` returns 401 — reachable, no key.)*
+5. Whether the HR CV folder share (`arabtec-cv-scan.timer`) is still in use, or
    whether the mailbox is now the only intake source.
+6. Where the existing **Power Automate** flow puts attachments today, so the
+   cutover can be sequenced without double-processing.
+
+**No longer needed.** Earlier revisions asked for the ATS public HTTPS hostname
+and a finished Apache TLS vhost before the mailbox could be connected. The
+device-code flow needs neither — nothing listens for a callback.

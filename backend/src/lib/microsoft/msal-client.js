@@ -8,13 +8,25 @@
 // an interaction-required condition that must be distinguished from an outage.
 // MSAL owns all three. Nothing in this file implements refresh-token handling.
 //
-// THREE ENTRY POINTS, exactly as the flow needs:
-//   getAuthCodeUrl()   — where to send the administrator's browser
-//   acquireTokenByCode() — the one-time exchange, into a STAGING cache
-//   acquireTokenSilent() — every subsequent scan and send, from the stored cache
+// TWO WAYS TO SIGN IN ONCE, ONE WAY TO STAY SIGNED IN:
+//   buildAuthCodeUrl() + exchangeCodeForAccount()  — the browser redirect flow,
+//       a ConfidentialClientApplication. Needs a client secret and a registered
+//       HTTPS redirect URI.
+//   acquireByDeviceCode()  — a PublicClientApplication. The operator types a
+//       short code at microsoft.com/devicelogin on their own machine. NO secret
+//       and NO callback URL, so an internal-only host with no certificate and no
+//       DNS name can be connected. This is the preferred flow on-prem.
+//   acquireGraphToken()  — every subsequent scan, silently, from the stored
+//       cache. Identical for both, because both end in the same refresh token.
+//
+// Both sign-in paths exchange into a STAGING cache and persist nothing until the
+// caller has verified who signed in.
 
-import { ConfidentialClientApplication, InteractionRequiredAuthError } from '@azure/msal-node';
-import { AUTH_SCOPES, GRAPH_SCOPES, microsoftConfig, isConfigured, missingConfig } from './config.js';
+import { ConfidentialClientApplication, PublicClientApplication, InteractionRequiredAuthError } from '@azure/msal-node';
+import {
+  authScopes, graphScopes, microsoftConfig, isConfigured, missingConfig,
+  isDeviceCodeMode, authMode,
+} from './config.js';
 import { loadTokenCache, saveTokenCache, connectionRow, markReconnectRequired } from './connection-store.js';
 
 /** A failure an administrator can act on. `code` decides the UI message. */
@@ -123,15 +135,37 @@ function stagingCachePlugin(holder) {
 
 /* -------------------------------- clients --------------------------------- */
 
+/**
+ * Build the right MSAL client for the configured mode.
+ *
+ * THE SECRET IS DELETED, NOT MERELY OMITTED, for a public client. A host that
+ * still has MS_CLIENT_SECRET left in its env from an earlier auth-code attempt
+ * would otherwise have MSAL attach it to a device-code token request, and Entra
+ * rejects a client_secret presented by an app registered as a public client —
+ * with an error about the credential, not about the flow, which is a miserable
+ * thing to debug at 08:00.
+ */
+function newClient(cfg, cachePlugin) {
+  const config = baseConfig(cfg, cachePlugin);
+  if (isDeviceCodeMode()) {
+    delete config.auth.clientSecret;
+    return new PublicClientApplication(config);
+  }
+  return new ConfidentialClientApplication(config);
+}
+
 let persistentClient = null;
 let persistentKey = '';
 
 /** The long-lived client bound to the encrypted store. Rebuilt if config changes. */
 function getPersistentClient() {
   const cfg = requireConfigured();
-  const key = `${cfg.tenantId}|${cfg.clientId}|${cfg.authority}`;
+  // The mode belongs in the key. A public and a confidential client for the same
+  // tenant/clientId are different objects with different token requests, so a
+  // memoized client from before a mode change must not be reused.
+  const key = `${authMode()}|${cfg.tenantId}|${cfg.clientId}|${cfg.authority}`;
   if (persistentClient === null || persistentKey !== key) {
-    persistentClient = new ConfidentialClientApplication(baseConfig(cfg, persistentCachePlugin()));
+    persistentClient = newClient(cfg, persistentCachePlugin());
     persistentKey = key;
   }
   return persistentClient;
@@ -148,7 +182,7 @@ export async function buildAuthCodeUrl({ state }) {
   const client = getPersistentClient();
   try {
     return await client.getAuthCodeUrl({
-      scopes: [...AUTH_SCOPES],
+      scopes: [...authScopes()],
       redirectUri: cfg.redirectUri,
       state,
       // Ask for the mailbox by name so Microsoft pre-fills it and an
@@ -171,12 +205,12 @@ export async function buildAuthCodeUrl({ state }) {
 export async function exchangeCodeForAccount({ code, state }) {
   const cfg = requireConfigured();
   const holder = { serialized: null };
-  const staging = new ConfidentialClientApplication(baseConfig(cfg, stagingCachePlugin(holder)));
+  const staging = newClient(cfg, stagingCachePlugin(holder));
   let result;
   try {
     result = await staging.acquireTokenByCode({
       code,
-      scopes: [...AUTH_SCOPES],
+      scopes: [...authScopes()],
       redirectUri: cfg.redirectUri,
       state,
     });
@@ -190,13 +224,62 @@ export async function exchangeCodeForAccount({ code, state }) {
 }
 
 /**
+ * The device-code sign-in. The only interactive step, and it needs no callback.
+ *
+ * MSAL calls `onCode` once with { userCode, verificationUri, message, expiresIn }
+ * and then long-polls Entra until the operator finishes signing in on whatever
+ * machine they like. Nothing listens on a port here, so this works on a host
+ * that has no public hostname, no TLS certificate and no inbound access at all —
+ * which is the entire reason it is the preferred on-prem flow.
+ *
+ * Like the code exchange, it stages the cache in memory and persists NOTHING.
+ * The caller checks who signed in first; a person who reached the prompt by
+ * mistake never has a refresh token written to the ATS database.
+ *
+ * `cancel` is a mutable { cancel: boolean } MSAL polls, so a caller can abandon
+ * a sign-in nobody is going to complete instead of holding the process open for
+ * the full 15-minute code lifetime.
+ */
+export async function acquireByDeviceCode({ onCode, cancel } = {}) {
+  const cfg = requireConfigured();
+  if (!isDeviceCodeMode()) {
+    throw new MicrosoftAuthError(
+      'This host is configured for the authorization-code flow. Set MS_AUTH_MODE=device-code '
+      + '(and remove MS_CLIENT_SECRET) to sign in with a device code.',
+      CODES.NOT_CONFIGURED,
+    );
+  }
+  const holder = { serialized: null };
+  const client = newClient(cfg, stagingCachePlugin(holder));
+
+  let result;
+  try {
+    result = await client.acquireTokenByDeviceCode({
+      scopes: [...authScopes()],
+      // MSAL's own `message` is the one Microsoft wants shown verbatim; the
+      // fields are passed through as well so a caller can format its own.
+      deviceCodeCallback: (response) => { try { onCode?.(response); } catch { /* display only */ } },
+      ...(cancel ? { cancel } : {}),
+    });
+  } catch (e) {
+    throw classify(e);
+  }
+
+  if (!result || !result.account) {
+    throw new MicrosoftAuthError('Microsoft returned no account for this sign-in.', CODES.UNEXPECTED);
+  }
+  return { account: result.account, serializedCache: holder.serialized };
+}
+
+/**
  * A Graph access token for the connected mailbox, renewed silently.
  *
  * An interaction-required condition sets the connection to RECONNECT_REQUIRED
  * and throws — it never crashes a scheduled scan and never silently returns a
  * token that is not there.
  */
-export async function acquireGraphToken({ scopes = GRAPH_SCOPES, forceRefresh = false } = {}) {
+export async function acquireGraphToken({ scopes = null, forceRefresh = false } = {}) {
+  const wanted = scopes ?? graphScopes();
   requireConfigured();
   const row = connectionRow();
   if (!row || row.status === 'DISCONNECTED' || !row.home_account_id) {
@@ -224,7 +307,7 @@ export async function acquireGraphToken({ scopes = GRAPH_SCOPES, forceRefresh = 
     // forceRefresh bypasses the cached access token. Used after Graph answers
     // 401: the cache would hand back the very token Graph just rejected, so
     // asking for "a token" is not enough — we need a NEW one.
-    const result = await client.acquireTokenSilent({ account, scopes: [...scopes], forceRefresh });
+    const result = await client.acquireTokenSilent({ account, scopes: [...wanted], forceRefresh });
     if (!result || !result.accessToken) {
       markReconnectRequired(RECONNECT_MESSAGE, opGeneration);
       throw new MicrosoftAuthError(RECONNECT_MESSAGE, CODES.RECONNECT_REQUIRED);

@@ -27,6 +27,7 @@ import { effectiveMailSettings, publicMailSettings, safeMailError, recordMailDel
 export { DEFAULT_SMTP_HOST } from './mail-settings.js';
 
 import { sendMailAs } from './microsoft/graph.js';
+import { sendEnabled } from './microsoft/config.js';
 import { acquireGraphToken, classify as classifyMicrosoft, CODES as MS_CODES,
   RECONNECT_MESSAGE } from './microsoft/msal-client.js';
 import { connectionRow, markReconnectRequired } from './microsoft/connection-store.js';
@@ -60,6 +61,14 @@ function smtpConfigured() {
  */
 function graphReady() {
   try {
+    // A CONNECTION IS NOT A SEND PERMISSION. The intake-only deployment consents
+    // to Mail.Read and offline_access and nothing else, so a healthy connection
+    // here can read the careers mailbox and cannot send from it. Without this
+    // check `auto` would prefer Graph the moment the mailbox was connected and
+    // every notification would 403 — or, worse, fall through to SMTP and be sent
+    // twice once SMTP was also configured. Send is opt-in, exactly as the scope
+    // request is.
+    if (!sendEnabled()) return false;
     const row = connectionRow();
     // ERROR counts as READY. It means the last mailbox SCAN hit something
     // transient — throttling, a Graph blip — and says nothing about whether the

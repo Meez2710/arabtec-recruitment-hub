@@ -12,18 +12,40 @@ Type=oneshot
 # scan is idempotent and holds a database lease that expires, so a generous
 # bound is safe; 2h is far above any real pass while still not being infinite.
 TimeoutStartSec=2h
-User=arabtec-ats
-Group=arabtec-ats
-# The SAME environment file the app reads. The Microsoft client secret and
+
+# WRITTEN AGAINST THE HOST AS IT ACTUALLY IS (10.20.0.9, verified 10 Sep 2026),
+# which is NOT the layout 01-provision.sh would have produced. Three values here
+# were wrong for this host and each one alone would have failed the unit:
+#
+#   User/Group     there is no `arabtec-ats` account. The app runs as `ats`,
+#                  which also owns /opt/arabtec-ats and /var/lib/arabtec-ats.
+#                  systemd fails a unit outright for an unknown User=.
+#   ExecStart      /usr/bin/node is v24.20.0. backend/package.json declares
+#                  "node": ">=22.5.0 <23", and arabtec-ats.service itself runs
+#                  /opt/node22/bin/node (v22.23.2). A scheduled job must not run
+#                  the same modules on a major version the app does not support.
+#   Std{Output,Error}  /var/log/arabtec-ats does not exist, and `append:` does
+#                  not create a missing directory — the unit would fail to start.
+#                  journald is where arabtec-ats.service already logs, so the
+#                  scan is read the same way as the app:
+#                      journalctl -u arabtec-m365-sync -n 50 --no-pager
+User=ats
+Group=ats
+
+# The SAME environment file the app reads. MS_TENANT_ID, MS_CLIENT_ID and
 # MICROSOFT_TOKEN_ENCRYPTION_KEY are already there because the app needs them;
 # this unit adds no new secret and needs no ATS login.
 EnvironmentFile=/etc/arabtec-ats/ats.env
 Environment=ATS_APP_ROOT=/opt/arabtec-ats
-ExecStart=/usr/bin/node /opt/arabtec-ats/deploy/on-prem/m365-sync.mjs
-StandardOutput=append:/var/log/arabtec-ats/m365-sync.log
-StandardError=append:/var/log/arabtec-ats/m365-sync.log
+WorkingDirectory=/opt/arabtec-ats/backend
+ExecStart=/opt/node22/bin/node /opt/arabtec-ats/deploy/on-prem/m365-sync.mjs
+
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/arabtec-ats /var/log/arabtec-ats
+# Downloaded CVs are written into the upload store; nothing else is written.
+ReadWritePaths=/var/lib/arabtec-ats
+
+[Install]
+WantedBy=multi-user.target

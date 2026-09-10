@@ -45,6 +45,12 @@ process.env.MS_TENANT_ID = TENANT;
 process.env.MS_CLIENT_ID = CLIENT_ID;
 process.env.MS_CLIENT_SECRET = 'test-client-secret-never-real';
 process.env.MS_MAILBOX = MAILBOX;
+// This suite covers the AUTH-CODE, SEND-ENABLED configuration: a confidential
+// client with a redirect URI, consented for Mail.Send as well as Mail.Read.
+// The device-code, intake-only default is covered by
+// microsoft_device_code_test.mjs instead, so both shapes stay proven.
+process.env.MS_AUTH_MODE = 'auth-code';
+process.env.MS_ENABLE_SEND = 'true';
 process.env.MS_REDIRECT_URI = 'https://ats.example.test/api/integrations/microsoft/callback';
 // 32 bytes of hex — a TEST key. Production generates its own with openssl.
 process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';

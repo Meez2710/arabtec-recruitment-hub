@@ -550,6 +550,10 @@ const NAV = [
   { key: 'requests', label: 'Hiring Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
   { key: 'candidates', label: 'Talent Pool', icon: 'user', perm: 'candidate.view' },
   { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view' },
+  /* Hidden unless an administrator granted this user cv_intake.view. Hiding is
+     a courtesy — routes/cv-intake.js enforces the same permission server-side,
+     which is what a direct API call meets. */
+  { key: 'cvIntake', label: 'CV Intake', icon: 'mail', perm: 'cv_intake.view' },
   { key: 'interviews', label: 'Interviews', icon: 'calendar', anyPerm: ['interview.view_all', 'interview.view_assigned'] },
   { key: 'offers', label: 'Offers', icon: 'doc', perm: 'offer.view' },
   { key: 'orgStructure', label: 'Organization Structure', icon: 'building', perm: null },
@@ -1125,6 +1129,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const OrgStructurePage = window.ArabtecOrgStructurePage;
   const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
   const EmailSettingsPage = window.ArabtecEmailSettingsPage;
+  const CvIntakePage = window.ArabtecCvIntakePage;
   const Page = {
     dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} />,
     reports: <ReportsPage user={user} />,
@@ -1132,6 +1137,11 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     candidates: <CandidatesPage user={user} onNavigate={go} initialFilters={route === 'candidates' ? routeParams : null} />,
     candidateReview: CandidateReviewPage ? <CandidateReviewPage user={user} /> : <LoadError text="Candidate Review module failed to load." onRetry={() => window.location.reload()} />,
     interviews: <InterviewsPage user={user} initialFilters={route === 'interviews' ? routeParams : null} />,
+    cvIntake: can(user, 'cv_intake.view')
+      ? (CvIntakePage
+        ? <CvIntakePage user={user} PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} />
+        : <LoadError text="CV Intake module failed to load." onRetry={() => window.location.reload()} />)
+      : <Forbidden what="CV Intake" need="CV intake access, granted per user by a System Admin" />,
     orgStructure: OrgStructurePage ? <OrgStructurePage user={user} /> : <ModulePreview title="Organization Structure" />,
     offers: <OffersPage user={user} initialFilters={route === 'offers' ? routeParams : null} />,
     users: can(user, 'user.manage')
