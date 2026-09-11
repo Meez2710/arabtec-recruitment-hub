@@ -6631,6 +6631,15 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const [sort, setSort] = useState({ by: 'created', dir: 'desc' });
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1, hasMore: false });
   const [loadError, setLoadError] = useState(null);
+  // Refetching is not the same as having no data. `busy` marks a query in
+  // flight while the rows already on screen stay mounted; only `candidates`
+  // being null (nothing has ever loaded) shows the skeleton.
+  const [busy, setBusy] = useState(false);
+  // Sorting fires two queries: the sort change itself, and the reset to page 1
+  // that follows it. Whichever answers last used to win regardless of which
+  // was asked last. The skeleton hid that; keeping the rows mounted does not,
+  // so only the newest request may write to state.
+  const loadSeq = useRef(0);
   const btns = useResolvedButtons();
   // Requests available for linking. Fetched once, and only for a user who may
   // link — a recruiter without `candidate.link` is shown no control at all
@@ -6650,7 +6659,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   }, [canLink]);
 
   const load = useCallback(async () => {
-    setCandidates(null); setLoadError(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => { if (v && CAND_FILTER_KEYS.includes(k)) params.set(k, v); });
     if (screenTab !== 'all') params.set('screeningStatus', screenTab);
@@ -6660,11 +6670,15 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     params.set('dir', sort.dir);
     try {
       const r = await api.get('/candidates?' + params.toString());
+      if (seq !== loadSeq.current) return;          // a newer query is already in flight
       setCandidates(r.candidates);
       setPageInfo(r.pagination || { total: r.candidates.length, totalPages: 1, hasMore: false });
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setCandidates([]);
       setLoadError(e.message || 'Could not load candidates.');
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
     }
   }, [filters, screenTab, page, pageSize, sort]);
   useEffect(() => { load(); }, [load]);
@@ -6997,7 +7011,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
             ? 'Try the All tab, or clear the search and filter fields above.'
             : 'Add a candidate manually, or import CVs against a hiring request to populate the pool.'} /></div>
       ) : view === 'table' ? (
-        <div className="card flush"><div className="table-wrap">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
           <table className="table responsive-table">
             <thead><tr>
               <th className="th-sel">

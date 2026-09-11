@@ -644,9 +644,13 @@ table.table thead th, .table thead th {
 }
 /* Body cells wrap on purpose or truncate on purpose — never by accident. */
 table.table tbody td, .table tbody td { overflow-wrap: break-word; }
-/* While a sort is in flight the table stays mounted and simply goes quiet.
-   Opacity only: no size change, so nothing can shift. */
-.table-busy { opacity: .55; transition: opacity .12s ease; pointer-events: none; }
+/* While a query is in flight the table stays mounted and the current rows stay
+   readable — only the BODY settles slightly, so the header stays crisp and the
+   sort controls stay clickable through the fetch. Opacity only: no size change,
+   nothing can shift, and no input is blocked (a request-sequence guard in the
+   loader, not a pointer-events trap, is what keeps a stale response from
+   overwriting a newer one). */
+.table-busy tbody { opacity: .72; transition: opacity .12s ease; }
 
 
 /* ============================================================================
