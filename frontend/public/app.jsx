@@ -79,6 +79,10 @@ const ICON_MARKS = {
   close: <><path d="m6 6 12 12M18 6 6 18" /></>,
   chevronDown: <><path d="m6 9 6 6 6-6" /></>,
   chevronUp: <><path d="m6 15 6-6 6 6" /></>,
+  // Neutral sort affordance: the same two chevrons stacked, so an unsorted
+  // column shows the control exists without claiming a direction. Same 24
+  // viewBox, same stroke, same <Icon> — no new icon library.
+  sortNeutral: <><path d="m7 10 5-5 5 5" /><path d="m17 14-5 5-5-5" /></>,
   arrowUp: <><path d="M12 20V4m-6 6 6-6 6 6" /></>,
   arrowDown: <><path d="M12 4v16m-6-6 6 6 6-6" /></>,
   back: <><path d="M20 12H4m6-6-6 6 6 6" /></>,
@@ -6133,15 +6137,23 @@ async function downloadResume(candidate, toast) {
   } catch { toast('Could not download the CV.', 'error'); }
 }
 
-// Sortable column header. Clicking toggles asc/desc; the active column shows the
-// direction so the current sort is never ambiguous.
+// A sortable column header. Clicking toggles asc/desc. Three states — neutral, ascending, descending —
+// that differ only in WHICH glyph sits in the caret box and what colour it is.
+// The box itself is always occupied by a 16px icon, so the label never moves:
+// the caret used to render nothing at all while unsorted and relied on the
+// stylesheet alone to hold the gap open.
 function SortTh({ label, col, sort, onSort, align, priority }) {
   const active = sort.by === col;
+  const direction = active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+  const mark = direction === 'ascending' ? 'chevronUp'
+    : direction === 'descending' ? 'chevronDown'
+    : 'sortNeutral';
   return (
     <th data-priority={priority} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
       onClick={() => onSort(col)} tabIndex="0" onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }} title={`Sort by ${label}`}
-      role="columnheader" aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <span>{label}</span><span className="sort-caret">{active && <Icon name={sort.dir === 'asc' ? 'chevronUp' : 'chevronDown'} size={16} />}</span>
+      role="columnheader" aria-sort={direction}>
+      <span className="sort-label">{label}</span>
+      <span className="sort-caret" data-sort={direction} aria-hidden="true"><Icon name={mark} size={16} /></span>
     </th>
   );
 }

@@ -633,20 +633,36 @@ table.table thead th, .table thead th {
   text-overflow: ellipsis;
   vertical-align: middle;
 }
-/* The caret's box is always present, so a neutral -> ascending transition
-   changes an icon, not a layout. */
+/* Sortable column headers.
+   Three states — neutral, ascending, descending — that differ ONLY in which
+   glyph occupies the caret box and how strongly it is drawn. Nothing that can
+   move anything is allowed to vary with state: no font-size, no font-weight,
+   no padding, no margin, no border width, no transform. The box is 16px in all
+   three states and now always holds an icon, so the label cannot shift.
+   Reserved before any sorting happens: an unsorted header already renders its
+   neutral glyph at full size. */
 .sort-th { cursor: pointer; user-select: none; }
-.sort-th > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.sort-th > span:first-child, .sort-th .sort-label { overflow: hidden; text-overflow: ellipsis; }
 .sort-th .sort-caret {
   display: inline-flex; align-items: center; justify-content: center;
   width: 16px; height: 16px; flex: 0 0 16px; margin-left: var(--sp-1);
   vertical-align: middle;
 }
+/* Opacity is the only thing that separates the states, so switching between
+   them can never reflow. Colour comes from `.sort-th.active`, which the Arabtec
+   layer already owns; the icon inherits it through stroke: currentColor. */
+.sort-th .sort-caret[data-sort="none"] { opacity: .34; }
+.sort-th:hover .sort-caret[data-sort="none"],
+.sort-th:focus-visible .sort-caret[data-sort="none"] { opacity: .72; }
+.sort-th .sort-caret[data-sort="ascending"],
+.sort-th .sort-caret[data-sort="descending"] { opacity: 1; }
+.sort-th .sort-caret > svg { transition: opacity .12s ease; }
 /* Body cells wrap on purpose or truncate on purpose — never by accident. */
 table.table tbody td, .table tbody td { overflow-wrap: break-word; }
 /* While a query is in flight the table stays mounted and the current rows stay
-   readable — only the BODY settles slightly, so the header stays crisp and the
-   sort controls stay clickable through the fetch. Opacity only: no size change,
+   readable — only the BODY settles slightly, so the header keeps full contrast
+   and the sort controls stay clickable through the fetch (nothing here dims or
+   disables the header, which is what keeps sorting usable while busy). Opacity only: no size change,
    nothing can shift, and no input is blocked (a request-sequence guard in the
    loader, not a pointer-events trap, is what keeps a stale response from
    overwriting a newer one). */

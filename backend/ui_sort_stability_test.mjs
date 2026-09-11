@@ -426,5 +426,177 @@ await check('changing a filter still returns to page 1', async () => {
   page.dispose();
 });
 
+
+/* ---------------------------------------------------------------------------
+   Sort-header dimensional stability.
+
+   The caret used to render nothing while a column was unsorted and leaned on
+   the stylesheet alone to hold its gap open. Every state now renders a 16px
+   icon, and the states differ only by which glyph and how strongly it is drawn.
+   ------------------------------------------------------------------------ */
+
+// sortHeaders() yields unrendered <SortTh> elements. SortTh is a pure,
+// hook-free function component, so calling it gives the real <th> it produces —
+// which is what these checks are about.
+const SortTh = get('SortTh');
+const renderHeader = (element) => SortTh(element.props);
+const renderedHeaders = (tree) => sortHeaders(tree).map(renderHeader);
+const caretOf = (header) => nodes(header).find((n) => n.props?.className === 'sort-caret');
+const labelOf = (header) => nodes(header).find((n) => n.props?.className === 'sort-label');
+const iconOf = (header) => nodes(caretOf(header)).find((n) => typeof n.type === 'function' && n.type.name === 'Icon');
+// Every property that could move something if it varied between states.
+const geometry = (header) => {
+  const caret = caretOf(header);
+  return JSON.stringify({
+    thClass: header.props.className.replace(' active', ''),   // `active` is colour only
+    thStyle: header.props.style ?? null,
+    caretClass: caret.props.className,
+    caretStyle: caret.props.style ?? null,
+    iconSize: iconOf(header).props.size,
+    labelText: text(labelOf(header)),
+  });
+};
+async function tableAt(user) {
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  return { page, tree: page.render() };
+}
+
+await check('an unsorted header renders the neutral state with its icon present', async () => {
+  totalPages = 1;
+  const { page, tree } = await tableAt(user);
+  const neutral = sortHeaders(tree).filter((h) => h.props.sort.by !== h.props.col).map(renderHeader);
+  assert.ok(neutral.length > 0, 'there are unsorted columns to check');
+  for (const header of neutral) {
+    assert.equal(header.props['aria-sort'], 'none');
+    const caret = caretOf(header);
+    assert.ok(caret, 'the caret container exists while unsorted');
+    assert.equal(caret.props['data-sort'], 'none');
+    const icon = iconOf(header);
+    assert.ok(icon, 'the neutral state still renders an icon — the box is occupied, not empty');
+    assert.equal(icon.props.name, 'sortNeutral');
+    assert.equal(icon.props.size, 16);
+    assert.ok(text(labelOf(header)).length > 0, 'the label is present');
+  }
+  page.dispose();
+});
+
+await check('neutral, ascending and descending are dimensionally identical', async () => {
+  totalPages = 1;
+  const { page } = await tableAt(user);
+  let tree = page.render();
+
+  const col = sortHeaders(tree)[0].props.col;
+  const pick = (t) => renderHeader(sortHeaders(t).find((h) => h.props.col === col));
+
+  const atNeutral = geometry(pick(tree));
+  assert.equal(pick(tree).props['aria-sort'], 'none');
+  assert.equal(iconOf(pick(tree)).props.name, 'sortNeutral');
+
+  clickSort(tree);
+  tree = settle(page);
+  const atAscending = geometry(pick(tree));
+  assert.equal(pick(tree).props['aria-sort'], 'ascending');
+  assert.equal(iconOf(pick(tree)).props.name, 'chevronUp');
+  pending.resolve(['Alpha', 'Beta']); await flush(); tree = page.render();
+
+  clickSort(tree);
+  tree = settle(page);
+  const atDescending = geometry(pick(tree));
+  assert.equal(pick(tree).props['aria-sort'], 'descending');
+  assert.equal(iconOf(pick(tree)).props.name, 'chevronDown');
+  pending.resolve(['Beta', 'Alpha']); await flush();
+
+  // Nothing that occupies space differs between the three states.
+  assert.equal(atNeutral, atAscending, 'neutral and ascending occupy identical geometry');
+  assert.equal(atAscending, atDescending, 'ascending and descending occupy identical geometry');
+  page.dispose();
+});
+
+await check('sorting one column does not disturb its neighbours', async () => {
+  totalPages = 1;
+  const { page } = await tableAt(user);
+  let tree = page.render();
+  const target = sortHeaders(tree)[0].props.col;
+  const others = () => sortHeaders(page.render()).filter((h) => h.props.col !== target).map(renderHeader);
+  const before = others().map(geometry);
+
+  clickSort(tree);
+  tree = settle(page);
+  const after = others().map(geometry);
+  assert.deepEqual(after, before, 'neighbouring headers are untouched by another column becoming sorted');
+  assert.equal(others().every((h) => h.props['aria-sort'] === 'none'), true, 'only one column claims a direction');
+  pending.resolve(['Alpha', 'Beta']); await flush();
+  page.dispose();
+});
+
+await check('no state carries a font-size, font-weight or transform of its own', async () => {
+  totalPages = 1;
+  const { page } = await tableAt(user);
+  let tree = page.render();
+  const forbidden = ['fontSize', 'fontWeight', 'padding', 'margin', 'transform', 'border', 'borderWidth'];
+  const inspect = (t, state) => {
+    for (const header of renderedHeaders(t)) {
+      const style = header.props.style || {};
+      const caretStyle = caretOf(header).props.style || {};
+      for (const key of forbidden) {
+        assert.equal(key in style, false, `${state}: sort header must not set inline ${key}`);
+        assert.equal(key in caretStyle, false, `${state}: caret must not set inline ${key}`);
+      }
+    }
+  };
+  inspect(tree, 'neutral');
+  clickSort(tree); tree = settle(page);
+  inspect(tree, 'ascending');
+  pending.resolve(['Alpha', 'Beta']); await flush(); tree = page.render();
+  clickSort(tree); tree = settle(page);
+  inspect(tree, 'descending');
+  pending.resolve(['Beta', 'Alpha']); await flush();
+  page.dispose();
+});
+
+await check('the header stays clickable while the table body is busy', async () => {
+  totalPages = 1;
+  const { page } = await tableAt(user);
+  let tree = page.render();
+
+  clickSort(tree);
+  tree = settle(page);
+  assert.ok(busyCard(tree), 'the body is in its busy state');
+
+  // The control is still live: it has a handler, is still focusable, and the
+  // busy class lives on the card, never on the header.
+  const header = renderedHeaders(tree)[0];
+  assert.equal(typeof header.props.onClick, 'function', 'the click handler is still attached while busy');
+  assert.equal(header.props.tabIndex, '0', 'the header is still focusable while busy');
+  assert.equal(header.props.className.includes('table-busy'), false, 'the header itself is never dimmed');
+
+  // And clicking it again really does drive another sort.
+  startCounting();
+  clickSort(tree, 1);
+  tree = settle(page);
+  assert.equal(sent.length, 1, 'sorting while busy issues its request');
+  assert.equal(renderedHeaders(tree)[1].props['aria-sort'], 'ascending', 'the second column took the sort');
+  page.dispose();
+});
+
+await check('label and click target are shared by the whole header', async () => {
+  totalPages = 1;
+  const { page } = await tableAt(user);
+  const tree = page.render();
+  for (const header of renderedHeaders(tree)) {
+    assert.equal(typeof header.props.onClick, 'function', 'one handler covers label and icon');
+    assert.equal(typeof header.props.onKeyDown, 'function', 'keyboard activation is available');
+    assert.match(header.props.title, /^Sort by /);
+    assert.equal(caretOf(header).props['aria-hidden'], 'true', 'the glyph is decorative; aria-sort carries the state');
+    assert.ok(labelOf(header), 'the label keeps its own element');
+  }
+  page.dispose();
+});
+
 console.log(`\n=== UI SORT STABILITY: ${passed} passed, ${failed} failed ===`);
 if (failed) process.exit(1);
