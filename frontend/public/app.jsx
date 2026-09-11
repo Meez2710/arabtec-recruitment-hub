@@ -6684,7 +6684,16 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   useEffect(() => { load(); }, [load]);
   // Any change to the query must return to page 1, otherwise the user can land on
   // an out-of-range page and see an empty table.
-  useEffect(() => { setPage(1); }, [filters, screenTab, pageSize, sort]);
+  //
+  // `sort` is deliberately NOT a dependency here. Resetting the page from an
+  // effect means the reset lands in a SECOND render: the first render already
+  // had the new sort but the old page, so `load` ran once for
+  // (new sort, old page) and again for (new sort, page 1) — two requests, the
+  // first of them asking for a page that may not exist under the new ordering.
+  // toggleSort resets the page itself instead, in the same batched update, so
+  // one click produces one render and one request. The remaining dependencies
+  // keep the old behaviour untouched.
+  useEffect(() => { setPage(1); }, [filters, screenTab, pageSize]);
 
   // Hooks, not just callbacks: every one of these must run on EVERY render, so
   // they live before the early return below. Declaring them after it (as this
@@ -6739,7 +6748,14 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // read as noise. Source is still shown on every candidate row and card.
   const SCREEN_TABS = [['all', 'All'], ['new', 'New'], ['screening', 'Screening'], ['fit', 'Fit'], ['unfit', 'Unfit']];
   const scOf = (c) => c.screeningStatus || 'new';
-  const toggleSort = (col) => setSort((s) => ({ by: col, dir: s.by === col && s.dir === 'asc' ? 'desc' : 'asc' }));
+  // Both updates are dispatched from one event handler, so React batches them
+  // into a single render carrying the final intended query: the new sort AND
+  // page 1. Ordering within the handler does not matter — neither value is read
+  // here, and the render that follows sees both.
+  const toggleSort = (col) => {
+    setSort((s) => ({ by: col, dir: s.by === col && s.dir === 'asc' ? 'desc' : 'asc' }));
+    setPage(1);
+  };
   const FILTER_LABELS = {
     q: 'Search', location: 'Location', currentCompany: 'Company',
     minExp: 'Min exp', maxExp: 'Max exp', tag: 'Tag',

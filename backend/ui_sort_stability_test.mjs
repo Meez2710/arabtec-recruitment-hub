@@ -102,17 +102,27 @@ const busyCard = (tree) => nodes(tree).find((n) => n.props?.className?.includes?
 // A controllable stand-in for the candidates endpoint.
 const api = get('api');
 let pending = null;
-let served = 0;
+let sent = [];                 // every /candidates query string, in order
+let totalPages = 1;            // what the stubbed endpoint claims, so paging is reachable
 function serveCandidates(names, query) {
   return { candidates: names.map((fullName, i) => ({ id: `c${i}-${fullName}`, fullName, links: [], tags: [] })),
-           pagination: { total: names.length, totalPages: 1, hasMore: false }, query };
+           pagination: { total: names.length * totalPages, totalPages, hasMore: totalPages > 1 }, query };
 }
 api.get = (path) => {
   if (!path.startsWith('/candidates')) return Promise.resolve({ buttons: [], requests: [] });
-  served++;
   const query = path;
+  sent.push(query);
   return new Promise((resolve, reject) => { pending = { resolve: (names) => resolve(serveCandidates(names, query)), reject, query }; });
 };
+// Everything a query carries, for counting and for asserting WHICH page was asked for.
+const pageOf = (query) => new URLSearchParams(query.slice(query.indexOf('?') + 1)).get('page');
+const dirOf = (query) => new URLSearchParams(query.slice(query.indexOf('?') + 1)).get('dir');
+const sortOf = (query) => new URLSearchParams(query.slice(query.indexOf('?') + 1)).get('sort');
+const startCounting = () => { sent = []; };
+// Stands in for the render React schedules after a state change. Two of these
+// after a click is what exposed the duplicate: the old code issued a request on
+// each, for two different pages.
+const settle = (page, n = 2) => { let t; for (let i = 0; i < n; i++) t = page.render(); return t; };
 
 const user = { id: 'u1', fullName: 'Tester', permissions: ['candidate.view'] };
 
@@ -266,6 +276,153 @@ await check('a failed refetch still surfaces the error and a retry', async () =>
   assert.match(empty.props.title, /Could not load candidates/);
   assert.match(empty.props.text, /Candidate service unavailable/, 'the server message is shown');
   assert.ok(nodes(empty.props.action).some((n) => n.type === 'button'), 'retry is still offered');
+  page.dispose();
+});
+
+
+/* ---------------------------------------------------------------------------
+   One sort action must cost exactly one request.
+
+   `page` used to be reset by an effect watching `sort`, which put the reset in
+   a SECOND render: the first already had the new sort but the old page. From
+   page 3 that produced two requests — (new sort, page 3) then (new sort,
+   page 1) — and the first asked for a page that may not exist under the new
+   ordering. toggleSort now resets the page itself, in the same batched update.
+   ------------------------------------------------------------------------ */
+
+await check('sorting from page 1 issues exactly one request', async () => {
+  totalPages = 1;
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  tree = page.render();
+
+  startCounting();
+  clickSort(tree);
+  tree = settle(page);
+  assert.equal(sent.length, 1, `one sort click must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '1');
+  assert.equal(tables(tree).length, 1, 'the table stayed mounted');
+  page.dispose();
+});
+
+await check('sorting from page 3 issues one request, and it asks for page 1', async () => {
+  totalPages = 3;
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  tree = page.render();
+
+  // Walk to page 3 through the real pager control.
+  byName(tree, 'Pager')[0].props.onPage(3);
+  tree = settle(page);
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  tree = page.render();
+  assert.equal(pageOf(sent[sent.length - 1]), '3', 'the pager really moved to page 3');
+
+  startCounting();
+  clickSort(tree);
+  tree = settle(page);
+  assert.equal(sent.length, 1,
+    `sorting from page 3 must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '1', 'the single request asks for page 1, not the old page');
+  assert.equal(tables(tree).length, 1, 'the table stayed mounted');
+  assert.equal(skeletons(tree).length, 0, 'no skeleton replaced the table');
+  page.dispose();
+});
+
+await check('the old page is never requested under the new sort', async () => {
+  totalPages = 3;
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  tree = page.render();
+  byName(tree, 'Pager')[0].props.onPage(2);
+  tree = settle(page);
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  tree = page.render();
+
+  const before = sortOf(sent[sent.length - 1]);
+  startCounting();
+  const header = clickSort(tree);
+  tree = settle(page);
+  const newSort = header.props.col;
+  assert.notEqual(newSort, before, 'the test clicked a column that actually changes the sort');
+  for (const query of sent) {
+    assert.equal(pageOf(query), '1',
+      `no request may carry the stale page: ${query}`);
+  }
+  assert.equal(sent.length, 1);
+  page.dispose();
+});
+
+await check('ascending then descending still costs one request each and stays correct', async () => {
+  totalPages = 1;
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  tree = page.render();
+
+  startCounting();
+  clickSort(tree);
+  tree = settle(page);
+  assert.equal(sent.length, 1, 'first click: one request');
+  assert.equal(dirOf(sent[0]), 'asc');
+  pending.resolve(['Alpha', 'Beta']);
+  await flush();
+  tree = page.render();
+
+  startCounting();
+  clickSort(tree);
+  tree = settle(page);
+  assert.equal(sent.length, 1, 'second click: one request');
+  assert.equal(dirOf(sent[0]), 'desc', 'direction still cycles asc then desc');
+  const active = sortHeaders(tree).find((h) => h.props.sort.by === h.props.col);
+  assert.equal(active.props.sort.dir, 'desc');
+  pending.resolve(['Beta', 'Alpha']);
+  await flush();
+  tree = page.render();
+  assert.equal(bodyRows(tree).length, 2, 'the latest data is on screen');
+  assert.match(text(bodyRows(tree)[0]), /Beta/, 'the newest result won');
+  page.dispose();
+});
+
+await check('changing a filter still returns to page 1', async () => {
+  totalPages = 3;
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Alpha']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  tree = page.render();
+  byName(tree, 'Pager')[0].props.onPage(3);
+  tree = settle(page);
+  pending.resolve(['Alpha']);
+  await flush();
+  tree = page.render();
+  assert.equal(pageOf(sent[sent.length - 1]), '3');
+
+  // The reset effect still owns filters / screen tab / page size.
+  startCounting();
+  const search = byName(tree, 'FilterToolbar')[0].props.search;
+  search.props.onChange({ target: { value: 'zzz' } });
+  tree = settle(page, 3);
+  assert.equal(pageOf(sent[sent.length - 1]), '1', 'a filter change still goes back to page 1');
   page.dispose();
 });
 
