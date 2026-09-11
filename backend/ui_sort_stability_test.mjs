@@ -840,5 +840,95 @@ await check('only University and Graduation are ever hidden; the operational col
   page.dispose();
 });
 
+
+/* ---------------------------------------------------------------------------
+   CV and Stage hold a FIXED-SIZE control (Task 3.3C).
+
+   Everything above sizes columns for text, which can truncate. These two
+   cannot: the CV cell holds a "Download" text button and Stage holds a status
+   chip, and a button cannot be given an ellipsis. Both were sized on the wrong
+   assumption and were clipped at every table width.
+
+   The numbers below were MEASURED IN A REAL BROWSER against the production
+   stylesheets — these assertions do not prove pixel fit and are not pretending
+   to. What they prove is that the declared percentages still yield at least the
+   measured requirement at the narrowest width each regime permits, so a later
+   rebalance cannot quietly re-break it. Pixel fit itself was verified at 1440,
+   1366, 1280, 1200, 1024, 768 and 390.
+   ------------------------------------------------------------------------ */
+const MEASURED = {
+  downloadButton: 84,   // .btn.btn-ghost.btn-sm reading "Download"
+  widestStageChip: 82,  // "Screening" — the longest of New / Screening / Fit / Unfit
+  cellPadding: 24,      // td padding-left + padding-right
+};
+// Read a number out of the stylesheet, or report WHICH rule went missing.
+// A bare match()[1] would throw at module scope and take the rest of the suite
+// down with it, turning a removed rule into a crash instead of a verdict.
+const num = (re, what) => {
+  const m = candidatesCss.match(re);
+  if (!m) { missingRules.push(what); return NaN; }
+  return Number(m[1]);
+};
+const missingRules = [];
+const pct = (key) => num(
+  new RegExp(`th\\[data-col="${key}"\\]\\s*\\{ width: ([0-9.]+)%`), `${key} width`);
+const nineColFloor = num(
+  /table\.candidates-table \{[\s\S]*?min-width:\s*(\d+)px/, 'nine-column min-width');
+// Read the DECLARATION, not the media condition — `(min-width: 641px)` in the
+// query would otherwise be mistaken for the floor.
+const sevenColFloor = num(
+  /\.table-wrap > table\.candidates-table \{\s*min-width:\s*(\d+)px/,
+  'seven-column min-width floor (.table-wrap > table.candidates-table)');
+
+await check('every rule these guards depend on is present', () => {
+  assert.deepEqual(missingRules, [], `missing from claude-system.css: ${missingRules.join(', ')}`);
+});
+
+await check('CV and Stage are allocated enough for their controls in the nine-column regime', () => {
+  const needCv = MEASURED.downloadButton + MEASURED.cellPadding;      // 108
+  const needStage = MEASURED.widestStageChip + MEASURED.cellPadding;  // 106
+  const at = (key) => (pct(key) / 100) * nineColFloor;                // all nine visible
+  assert.ok(at('cv') >= needCv,
+    `CV gets ${Math.round(at('cv'))}px at the ${nineColFloor}px floor but the Download button needs ${needCv}px`);
+  assert.ok(at('stage') >= needStage,
+    `Stage gets ${Math.round(at('stage'))}px but the widest chip needs ${needStage}px`);
+});
+
+await check('CV and Stage are allocated enough once the secondary columns are hidden', () => {
+  // With University and Graduation gone their share is redistributed, so each
+  // remaining column's effective share is its percentage over the visible sum.
+  const visibleSum = 100 - pct('university') - pct('graduation');
+  const at = (key) => (pct(key) / visibleSum) * sevenColFloor;
+  assert.ok(at('cv') >= MEASURED.downloadButton + MEASURED.cellPadding,
+    `CV gets ${Math.round(at('cv'))}px at the ${sevenColFloor}px seven-column floor`);
+  assert.ok(at('stage') >= MEASURED.widestStageChip + MEASURED.cellPadding,
+    `Stage gets ${Math.round(at('stage'))}px at the ${sevenColFloor}px seven-column floor`);
+});
+
+await check('the seven-column floor outranks the product-wide min-width reset', () => {
+  // `.table-wrap .responsive-table { min-width: 0 }` is two classes. A floor
+  // written as `table.candidates-table` (one class + one element) loses to it,
+  // which is exactly how the table compressed to 734px and clipped the button.
+  assert.match(candidatesCss, /\.table-wrap > table\.candidates-table \{[^}]*min-width:\s*\d+px/,
+    'the floor is declared with enough specificity to survive the product-wide reset');
+  // And it must stay inside the min-width:641px block, or it would also win
+  // against the phone card mode that deliberately releases the floor.
+  assert.match(candidatesBreakpoint.body, /\.table-wrap > table\.candidates-table/,
+    'the floor lives inside the 641px-and-up breakpoint, so card mode still releases it');
+});
+
+await check('no operational column was starved to pay for CV and Stage', () => {
+  // Each of these was measured readable at the widths in the report; the guard
+  // is that none of them falls back below the share it had when measured.
+  const floors = { name: 20, position: 16, location: 11, request: 12, select: 4 };
+  for (const [key, min] of Object.entries(floors)) {
+    assert.ok(pct(key) >= min, `${key} must keep at least ${min}%, has ${pct(key)}%`);
+  }
+  // Secondary columns paid, but Graduation could not: 6% is only just enough
+  // for a four-digit year at the nine-column floor.
+  assert.ok(pct('graduation') >= 6, 'Graduation keeps the 6% a four-digit year needs');
+  assert.ok(pct('university') >= 9, 'University keeps enough to be a useful truncating column');
+});
+
 console.log(`\n=== UI SORT STABILITY: ${passed} passed, ${failed} failed ===`);
 if (failed) process.exit(1);

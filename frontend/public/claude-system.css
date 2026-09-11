@@ -739,18 +739,30 @@ table.candidates-table {
 }
 
 /* Percentages, so the columns keep their proportions at any table width. They
-   sum to 100 across the nine columns; when the two secondary columns are
-   hidden the remaining 81% is redistributed proportionally, which keeps the
-   same relative emphasis with more room each. */
+   sum to 100 across the nine columns; when the two secondary columns are hidden
+   their share is redistributed proportionally among the rest, which keeps the
+   same relative emphasis with more room each.
+
+   TWO COLUMNS HOLD A FIXED-SIZE CONTROL and were sized on a wrong assumption.
+   Measured in a browser: the CV cell holds a "Download" text button that needs
+   84px, and the widest real Stage label ("Screening", from New / Screening /
+   Fit / Unfit) needs 82px; with 24px of cell padding that is 108px and 106px.
+   At 4%, CV was clipped at EVERY table width — 40px at 1440, 37px at 1280,
+   48px at 1024 — and Stage lost 15px at 1024. CV goes to 11% and Stage to 11%,
+   which clears both at the narrowest width either regime allows. The space is
+   donated by University (-4), Request (-2), Candidate (-1) and Position (-1);
+   Graduation is left alone because 6% is already only just enough for a
+   four-digit year, and no operational column drops below the width it was
+   measured readable at. */
 .candidates-table > thead > tr > th[data-col="select"]     { width: 4%; }
-.candidates-table > thead > tr > th[data-col="name"]       { width: 21%; }
-.candidates-table > thead > tr > th[data-col="position"]   { width: 17%; }
-.candidates-table > thead > tr > th[data-col="university"] { width: 13%; }
+.candidates-table > thead > tr > th[data-col="name"]       { width: 20%; }
+.candidates-table > thead > tr > th[data-col="position"]   { width: 16%; }
+.candidates-table > thead > tr > th[data-col="university"] { width: 9%; }
 .candidates-table > thead > tr > th[data-col="graduation"] { width: 6%; }
 .candidates-table > thead > tr > th[data-col="location"]   { width: 11%; }
-.candidates-table > thead > tr > th[data-col="request"]    { width: 14%; }
-.candidates-table > thead > tr > th[data-col="stage"]      { width: 10%; }
-.candidates-table > thead > tr > th[data-col="cv"]         { width: 4%; }
+.candidates-table > thead > tr > th[data-col="request"]    { width: 12%; }
+.candidates-table > thead > tr > th[data-col="stage"]      { width: 11%; }
+.candidates-table > thead > tr > th[data-col="cv"]         { width: 11%; }
 
 /* WHEN THE SECONDARY COLUMNS STEP ASIDE — derived, not chosen.
    Nine columns need the 1020px above. Measured in a browser, this table's
@@ -773,7 +785,14 @@ table.candidates-table {
    the band that needed it. */
 @media (max-width: 1349px) and (min-width: 641px) {
   .candidates-table [data-priority="secondary"] { display: none; }
-  table.candidates-table { min-width: 860px; }
+  /* This floor has to OUTRANK the product-wide
+     `.table-wrap .responsive-table { min-width: 0 }` (two classes), which was
+     silently winning against a one-class selector and letting the table
+     compress to 734px at 1024 — which is what clipped the Download button.
+     Below 860px the wrapper scrolls instead, which is what a wrapper is for:
+     a clipped control is not a readable column. It stays inside this
+     min-width:641px block so the phone card mode still releases it. */
+  .table-wrap > table.candidates-table { min-width: 860px; }
 }
 
 /* LONG CONTENT, per column and on purpose.
