@@ -841,3 +841,66 @@ table.candidates-table {
   }
   .candidates-table > tbody > tr > td:not([data-label="Request"]) { overflow: visible; }
 }
+
+/* ============================================================================
+   18. FILTER TOOLBAR — predictable rows, search-first proportions
+   ----------------------------------------------------------------------------
+   Shared by <FilterToolbar>, which has exactly two consumers: the Talent Pool
+   (Candidates) and Hiring Requests. Geometry only — no colour, no font-size.
+
+   Three measured defects are corrected here.
+
+   1. THE FILTERS BUTTON WAS VISIBLE ON DESKTOP. `.filter-toggle { display:
+      none }` is one class (0,1,0) and `button.btn { display: inline-flex }`
+      further up this file is a class plus an element (0,1,1), so the base
+      rule never won and the disclosure button rendered at 1440 and 1366 beside
+      the five filters it was meant to reveal. Both states are re-declared with
+      enough specificity to land.
+
+   2. THE SEARCH FIELD WAS THE NARROWEST FLEXIBLE CONTROL. It grew at 1 while
+      the filter group grew at 2, so at 1440 the primary search got 258px and
+      the five secondary filters shared 616px. The search now grows fastest.
+
+   3. THE RESULT COUNT ORPHANED ITSELF ONTO ITS OWN ROW at 1280, 768 and 390,
+      and at 1200 the toolbar reached three rows. It is now pinned to the right
+      of the first row and kept out of the wrap flow, so the structure is always
+      either one row, or search+count over a full filter row.
+
+   The filter group's basis is its five inputs at their own 88px basis plus the
+   gaps between them, so it either fits on one line or wraps as a whole unit —
+   never leaving one stray filter behind.
+   ========================================================================= */
+
+/* (1) The disclosure button belongs to narrow widths only. */
+.filter-toolbar > button.filter-toggle,
+.filter-toolbar > .filter-toggle { display: none; }
+
+/* (2)(3) Search grows fastest; the count never joins the wrap flow. */
+.filter-toolbar > .toolbar-search { flex: 3 1 280px; min-width: 140px; }
+.filter-toolbar > .toolbar-secondary { flex: 2 1 472px; }
+.filter-toolbar > .toolbar-count { flex: 0 0 auto; margin-left: auto; }
+
+/* (4) THE SCREEN TABS JUMPED WHEN YOU PICKED ONE. `.seg-tab` renders at
+   font-weight 500 and `.seg-tab.active` at 600, so selecting a tab made its own
+   label wider — "Screening" went 122px to 126px — and shoved every tab after it
+   sideways by 2-4px. Emphasis stays, the reflow goes: the weight is now the
+   same in both states, and the active tab is still distinguished by its
+   background, its colour and its lift, exactly as the sort headers were handled
+   in the header-stability work. Scoped to .seg-tab, which only the Talent Pool
+   screen tabs use; .tabbar-btn, .profile-tab and .tabs button keep their
+   existing behaviour. Font SIZE is untouched. */
+.seg-tab, .seg-tab.active { font-weight: 600; }
+
+@media (max-width: 1100px) {
+  /* Filters collapse behind the disclosure, so it has to be reachable. */
+  .filter-toolbar > button.filter-toggle,
+  .filter-toolbar > .filter-toggle { display: inline-flex; }
+}
+
+/* Below 640px the toolbar is already a deliberate stack: `.toolbar-count`
+   carries `width: 100%` (declared in both arabtec-responsive.css and this
+   file's mobile section), so the result count takes its own full-width row by
+   design. That is left exactly as it is — an attempt here to make the
+   disclosure and the count share a row changed nothing measurable, because
+   that width rule decides the line break, and overriding a deliberate mobile
+   rule shared with every other toolbar is outside this task. */

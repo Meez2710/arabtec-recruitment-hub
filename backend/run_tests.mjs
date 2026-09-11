@@ -41,6 +41,7 @@ const SUITES = [
   'ui_readiness_test.mjs',    // production UI release-contract regression checks
   'ui_responsive_test.mjs',   // stacked tables, cards, nav and anyhelp reflow on phones
   'ui_sort_stability_test.mjs', // sorting never unmounts the candidates table
+  'ui_toolbar_layout_test.mjs', // shared filter toolbar structure and geometry
   'branding_migration_test.mjs', // legacy red actions migrate without overwriting custom values
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider
   'cv_proposal_test.mjs',     // CV -> proposal -> approved fields -> candidate
