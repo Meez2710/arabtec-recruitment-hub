@@ -775,5 +775,70 @@ await check('the phone card layout releases the fixed widths', () => {
     'and the min-width is dropped so a card can be as narrow as the screen');
 });
 
+
+/* ---------------------------------------------------------------------------
+   The secondary-column breakpoint (Task 3.4).
+
+   Nine columns need 1020px of wrapper, and the wrapper gets viewport - 330px,
+   so they stop fitting below 1350px. The product-wide rule only stepped the
+   secondary columns aside at 1200px, which left a 1280px laptop scrolling ~70px
+   with all nine still on screen. The candidates table now drops them at 1349px.
+
+   Pixel geometry was verified in a real browser against the production
+   stylesheets; what is asserted here is the structural contract that produces
+   it, since this harness lays out no document.
+   ------------------------------------------------------------------------ */
+
+// The breakpoint block that belongs to this table.
+const candidatesBreakpoint = (() => {
+  const at = candidatesCss.indexOf('17. CANDIDATES TABLE');
+  const section = candidatesCss.slice(at);
+  const m = section.match(/@media \(max-width: (\d+)px\) and \(min-width: 641px\) \{([\s\S]*?)\n\}/);
+  assert.ok(m, 'the candidates table declares a scoped secondary-column breakpoint');
+  return { max: Number(m[1]), body: m[2] };
+})();
+
+await check('the candidates secondary columns step aside above the 1280 laptop', () => {
+  assert.ok(candidatesBreakpoint.max > 1280,
+    `the breakpoint must be above 1280 to clear that laptop, got ${candidatesBreakpoint.max}`);
+  assert.ok(candidatesBreakpoint.max < 1440,
+    `1440 must keep all nine columns, got ${candidatesBreakpoint.max}`);
+  // Derived, not guessed: nine columns need the declared min-width, and the
+  // wrapper gets viewport - 330px, so the breakpoint sits just under that sum.
+  const nine = Number(candidatesCss.match(/table\.candidates-table \{[\s\S]*?min-width:\s*(\d+)px/)[1]);
+  assert.equal(candidatesBreakpoint.max, nine + 330 - 1,
+    `the breakpoint should be (${nine} + 330 - 1); change one and the other must follow`);
+  assert.match(candidatesBreakpoint.body, /\[data-priority="secondary"\][^;]*display:\s*none/,
+    'it reuses the existing data-priority mechanism rather than a new model');
+  assert.match(candidatesBreakpoint.body, /min-width:\s*860px/,
+    'and drops to the seven-column floor with them');
+});
+
+await check('the breakpoint is scoped — the product-wide 1200px rule is untouched', () => {
+  assert.match(candidatesBreakpoint.body, /\.candidates-table \[data-priority="secondary"\]/,
+    'the hide rule names this table');
+  // The shared rule that every other responsive table relies on still sits at 1200.
+  assert.match(candidatesCss,
+    /@media \(max-width: 1200px\) and \(min-width: 641px\) \{\s*\.responsive-table \[data-priority="secondary"\] \{ display: none; \}/,
+    'the product-wide secondary-column breakpoint is still 1200px');
+});
+
+await check('only University and Graduation are ever hidden; the operational columns stay', async () => {
+  totalPages = 1;
+  const { page, tree } = await tableAt(user);
+  const cells = headerCells(tree);
+  const secondary = cells.filter((n) => (n.type === 'th' ? n.props['data-priority'] : n.props.priority) === 'secondary');
+  assert.deepEqual(secondary.map(colKey), ['university', 'graduation'],
+    'exactly the two reference columns are marked secondary');
+  // The columns an operator works from are never marked hideable.
+  for (const key of ['select', 'name', 'position', 'location', 'request', 'stage', 'cv']) {
+    const cell = cells.find((n) => colKey(n) === key);
+    assert.ok(cell, `column "${key}" exists`);
+    assert.notEqual((cell.type === 'th' ? cell.props['data-priority'] : cell.props.priority), 'secondary',
+      `"${key}" must stay visible at every table width`);
+  }
+  page.dispose();
+});
+
 console.log(`\n=== UI SORT STABILITY: ${passed} passed, ${failed} failed ===`);
 if (failed) process.exit(1);

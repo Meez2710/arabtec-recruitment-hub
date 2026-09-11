@@ -752,10 +752,27 @@ table.candidates-table {
 .candidates-table > thead > tr > th[data-col="stage"]      { width: 10%; }
 .candidates-table > thead > tr > th[data-col="cv"]         { width: 4%; }
 
-/* Seven columns between 641 and 1200: University and Graduation are hidden, so
-   the table needs less room before it has to scroll. Matches the breakpoint
-   that hides them — it is not moved here. */
-@media (max-width: 1200px) and (min-width: 641px) {
+/* WHEN THE SECONDARY COLUMNS STEP ASIDE — derived, not chosen.
+   Nine columns need the 1020px above. Measured in a browser, this table's
+   wrapper gets `viewport - 330px` (264 sidebar + 2x32 gutters + card padding),
+   so nine columns stop fitting below 1350px. Hiding them any later leaves a
+   laptop scrolling; hiding them any earlier throws away columns that fit.
+   Hence 1349px: 1366 and 1440 keep all nine, 1280 and 1300 drop to seven.
+
+   This reuses the existing `data-priority="secondary"` mechanism — the same
+   attribute and the same `display: none` — but SCOPED to this table, so the
+   product-wide 1200px breakpoint that other responsive tables rely on is left
+   exactly where it is.
+
+   The min-width drops to the seven-column floor with them. Below 1200px the
+   product-wide rule `.table-wrap .responsive-table { min-width: 0 }` outranks
+   this one (two classes beats one class plus an element) and the columns
+   compress to fit instead — that is the long-standing compact behaviour, and
+   it is deliberately left alone: forcing 860px there would make 1024px scroll
+   where today it does not. So this floor governs the 1201-1349 band, which is
+   the band that needed it. */
+@media (max-width: 1349px) and (min-width: 641px) {
+  .candidates-table [data-priority="secondary"] { display: none; }
   table.candidates-table { min-width: 860px; }
 }
 
