@@ -598,5 +598,182 @@ await check('label and click target are shared by the whole header', async () =>
   page.dispose();
 });
 
+
+/* ---------------------------------------------------------------------------
+   Candidates table column-width stability (Task 3.3).
+
+   This harness does not lay out a document, so it cannot measure a rendered
+   column. What it CAN prove is the structural contract that makes the widths
+   stable, and that nothing about it varies with sort or busy state:
+
+     - the table opts into the scoped fixed layout (`candidates-table`)
+     - every column is NAMED with data-col, so a width cannot be reassigned by
+       position when the secondary columns are hidden
+     - that naming, and the table's class list, are identical in all sort
+       states and while busy
+     - long-text cells carry the `title` that makes truncation readable
+
+   Real pixel geometry needs a browser; the widths themselves live in
+   claude-system.css and are asserted there as a stylesheet contract below.
+   ------------------------------------------------------------------------ */
+import fsCols from 'node:fs';
+const candidatesCss = fsCols.readFileSync(publicDir + 'claude-system.css', 'utf8');
+
+const tableNode = (tree) => nodes(tree).find((n) => n.type === 'table');
+const headerCells = (tree) => {
+  const thead = nodes(tree).find((n) => n.type === 'thead');
+  return nodes(thead).filter((n) => n.type === 'th' || (typeof n.type === 'function' && n.type.name === 'SortTh'));
+};
+// data-col for a plain <th>, or the `col` prop a <SortTh> will render as one.
+const colKey = (n) => (n.type === 'th' ? n.props['data-col'] : n.props.col);
+const colOrder = (tree) => headerCells(tree).map(colKey);
+
+await check('the candidates table opts into the scoped fixed-width layout', async () => {
+  totalPages = 1;
+  const { page, tree } = await tableAt(user);
+  const table = tableNode(tree);
+  assert.ok(table, 'the table is rendered');
+  assert.match(table.props.className, /\bcandidates-table\b/, 'the table carries its scoped class');
+  // The strategy is scoped: fixed layout is applied to this table, not globally.
+  assert.match(candidatesCss, /table\.candidates-table\s*\{[^}]*table-layout:\s*fixed/,
+    'fixed layout is scoped to .candidates-table');
+  assert.equal(/^table\.table\s*,[^{]*\{[^}]*table-layout:\s*fixed/m.test(candidatesCss), false,
+    'fixed layout is NOT applied to every table');
+  page.dispose();
+});
+
+await check('every column is named, so widths cannot be reassigned by position', async () => {
+  totalPages = 1;
+  const { page, tree } = await tableAt(user);
+  const keys = colOrder(tree);
+  assert.equal(keys.length, 9, 'all nine columns are present');
+  assert.deepEqual(keys, ['select', 'name', 'position', 'university', 'graduation',
+                          'location', 'request', 'stage', 'cv']);
+  for (const key of keys) {
+    assert.ok(key, 'no column is left unnamed');
+    assert.match(candidatesCss, new RegExp(`th\\[data-col="${key}"\\][^}]*width:`),
+      `column "${key}" has an intentional width`);
+  }
+  // Named, not positional: no nth-child sizing for this table.
+  assert.equal(/\.candidates-table[^{]*nth-child\([0-9]+\)[^{]*\{[^}]*width:/.test(candidatesCss), false,
+    'widths are keyed by name, not by column position');
+  page.dispose();
+});
+
+await check('the widths are not equal thirds — they reflect each column purpose', () => {
+  const width = (key) => {
+    const m = candidatesCss.match(new RegExp(`th\\[data-col="${key}"\\]\\s*\\{\\s*width:\\s*([0-9.]+)%`));
+    assert.ok(m, `column "${key}" declares a percentage width`);
+    return Number(m[1]);
+  };
+  const w = Object.fromEntries(['select', 'name', 'position', 'university', 'graduation',
+    'location', 'request', 'stage', 'cv'].map((k) => [k, width(k)]));
+  assert.equal(Object.values(w).reduce((a, b) => a + b, 0), 100, 'the nine widths sum to 100%');
+  assert.ok(new Set(Object.values(w)).size > 3, 'the columns are not simply divided equally');
+  // Content-driven columns get the room; single-glyph columns stay compact.
+  assert.ok(w.name > w.location, 'the identity column is wider than a plain text column');
+  assert.ok(w.name > w.stage && w.position > w.stage, 'long text beats a single chip');
+  assert.ok(w.select < w.graduation, 'the checkbox is the narrowest column');
+  assert.ok(w.graduation < w.university, 'a four-digit year is narrower than a university name');
+});
+
+await check('sorting does not change the column strategy', async () => {
+  totalPages = 1;
+  const { page } = await tableAt(user);
+  let tree = page.render();
+  const snapshot = (t) => JSON.stringify({
+    tableClass: tableNode(t).props.className,
+    columns: colOrder(t),
+  });
+
+  const atNeutral = snapshot(tree);
+  clickSort(tree);
+  tree = settle(page);
+  const whileBusy = snapshot(tree);
+  assert.ok(busyCard(tree), 'the body really is busy at this point');
+  pending.resolve(['Zebediah Ferdinand Alexandrovich', 'Al']); await flush(); tree = page.render();
+  const atAscending = snapshot(tree);
+
+  clickSort(tree);
+  tree = settle(page);
+  pending.resolve(['Al', 'Zebediah Ferdinand Alexandrovich']); await flush(); tree = page.render();
+  const atDescending = snapshot(tree);
+
+  assert.equal(atNeutral, whileBusy, 'the busy state does not alter the column configuration');
+  assert.equal(atNeutral, atAscending, 'sorting ascending does not alter it');
+  assert.equal(atAscending, atDescending, 'sorting descending does not alter it');
+  page.dispose();
+});
+
+await check('wildly different name lengths do not change the column configuration', async () => {
+  totalPages = 1;
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Al']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  tree = page.render();
+  const before = JSON.stringify({ cls: tableNode(tree).props.className, cols: colOrder(tree) });
+
+  // A refetch whose content is far longer than before.
+  clickSort(tree); tree = settle(page);
+  pending.resolve(['Bartholomew Maximilian Fitzgerald-Wellington III', 'X']);
+  await flush(); tree = page.render();
+  const after = JSON.stringify({ cls: tableNode(tree).props.className, cols: colOrder(tree) });
+  assert.equal(before, after, 'content length cannot influence the column strategy');
+  page.dispose();
+});
+
+await check('long values truncate with a title rather than escaping the cell', async () => {
+  totalPages = 1;
+  const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
+  page.render();
+  pending.resolve(['Bartholomew Maximilian Fitzgerald-Wellington III']);
+  await flush();
+  let tree = page.render();
+  showTable(tree);
+  tree = page.render();
+
+  const named = nodes(tree).find((n) => n.props?.className === 'idcell-name');
+  assert.ok(named, 'the name has its own truncating element');
+  assert.equal(named.props.title, 'Bartholomew Maximilian Fitzgerald-Wellington III',
+    'the full name is available as a tooltip');
+  // The stylesheet is what actually truncates it.
+  assert.match(candidatesCss, /\.candidates-table \.idcell-name[\s\S]{0,400}?text-overflow:\s*ellipsis/,
+    'the name truncates with an ellipsis');
+  assert.match(candidatesCss, /\.candidates-table[\s\S]{0,600}?white-space:\s*nowrap/,
+    'truncating runs stay on one line');
+  // Font size is never used as a fitting mechanism.
+  assert.equal(/\.candidates-table[^{]*\{[^}]*font-size:/.test(candidatesCss), false,
+    'no candidates-table rule changes font-size to make content fit');
+  page.dispose();
+});
+
+await check('overflow is owned by the table wrapper, not the page', async () => {
+  totalPages = 1;
+  const { page, tree } = await tableAt(user);
+  const wrap = nodes(tree).find((n) => n.props?.className === 'table-wrap');
+  assert.ok(wrap, 'the table sits inside a local overflow wrapper');
+  assert.ok(nodes(wrap).some((n) => n.type === 'table'), 'the table is inside that wrapper');
+  assert.match(candidatesCss, /\.table-wrap[^{]*\{[^}]*overflow-x:\s*auto/,
+    'the wrapper owns horizontal overflow');
+  // A min-width belongs to the table, so the WRAPPER scrolls — never the page.
+  assert.match(candidatesCss, /table\.candidates-table\s*\{[^}]*min-width:\s*\d+px/,
+    'the table declares the width below which its wrapper scrolls');
+  assert.equal(/\.candidates-table[^{]*\{[^}]*(100vw|position:\s*fixed)/.test(candidatesCss), false,
+    'nothing in the strategy can create page-level overflow');
+  page.dispose();
+});
+
+await check('the phone card layout releases the fixed widths', () => {
+  const phone = candidatesCss.slice(candidatesCss.indexOf('@media (max-width: 640px)',
+    candidatesCss.indexOf('17. CANDIDATES TABLE')));
+  assert.match(phone, /table\.candidates-table\s*\{[^}]*table-layout:\s*auto/,
+    'below 640px the rows stack as cards, so fixed columns are released');
+  assert.match(phone, /table\.candidates-table\s*\{[^}]*min-width:\s*0/,
+    'and the min-width is dropped so a card can be as narrow as the screen');
+});
+
 console.log(`\n=== UI SORT STABILITY: ${passed} passed, ${failed} failed ===`);
 if (failed) process.exit(1);

@@ -6149,7 +6149,7 @@ function SortTh({ label, col, sort, onSort, align, priority }) {
     : direction === 'descending' ? 'chevronDown'
     : 'sortNeutral';
   return (
-    <th data-priority={priority} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
+    <th data-priority={priority} data-col={col} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
       onClick={() => onSort(col)} tabIndex="0" onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }} title={`Sort by ${label}`}
       role="columnheader" aria-sort={direction}>
       <span className="sort-label">{label}</span>
@@ -7040,9 +7040,9 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
             : 'Add a candidate manually, or import CVs against a hiring request to populate the pool.'} /></div>
       ) : view === 'table' ? (
         <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
-          <table className="table responsive-table">
+          <table className="table responsive-table candidates-table">
             <thead><tr>
-              <th className="th-sel">
+              <th className="th-sel" data-col="select">
                 <input type="checkbox" aria-label="Select all on this page"
                   checked={shown.length > 0 && shown.every((c) => selected.has(c.id))}
                   ref={(el) => { if (el) el.indeterminate = selected.size > 0 && !shown.every((c) => selected.has(c.id)); }}
@@ -7053,9 +7053,9 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />
               <SortTh priority="secondary" label="Graduation" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
-              <th className="th-request">Request</th>
-              <th>Stage</th>
-              <th>CV</th>
+              <th className="th-request" data-col="request">Request</th>
+              <th data-col="stage">Stage</th>
+              <th data-col="cv">CV</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
               <tr key={c.id} className={'row-link' + (selected.has(c.id) ? ' row-selected' : '')}
@@ -7068,22 +7068,22 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <div className="idcell">
                     <span className="idcell-av">{initials(c.fullName)}</span>
                     <span className="idcell-txt">
-                      <span className="cell-strong">{c.fullName} <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} /></span>
+                      <span className="cell-strong"><span className="idcell-name" title={c.fullName}>{c.fullName}</span> <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} /></span>
                       <span className="cell-sub">{c.candidateNo}</span>
                     </span>
                   </div>
                   {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
                 </td>
                 <td data-label="Position">
-                  <span className="cell-strong">{c.currentPosition || '—'}</span>
-                  {c.currentCompany ? <span className="cell-sub">{c.currentCompany}</span> : null}
+                  <span className="cell-strong" title={c.currentPosition || undefined}>{c.currentPosition || '—'}</span>
+                  {c.currentCompany ? <span className="cell-sub" title={c.currentCompany}>{c.currentCompany}</span> : null}
                 </td>
                 <td data-priority="secondary" data-label="University">
-                  <span className="cell-strong">{c.university || '—'}</span>
-                  {c.major ? <span className="cell-sub">{c.major}</span> : null}
+                  <span className="cell-strong" title={c.university || undefined}>{c.university || '—'}</span>
+                  {c.major ? <span className="cell-sub" title={c.major}>{c.major}</span> : null}
                 </td>
                 <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>
-                <td data-label="Location" className="cell-sub-only">{c.location || '—'}</td>
+                <td data-label="Location" className="cell-sub-only" title={c.location || undefined}>{c.location || '—'}</td>
                 <td data-label="Request">
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
                     onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
