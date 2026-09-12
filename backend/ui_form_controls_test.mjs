@@ -499,17 +499,62 @@ check('the 44px mobile touch floor is intact, and now reaches the composer picke
     '.anyhelp-empty select takes its height from the token');
 });
 
-check('the 1440/1441 control-height boundary is left exactly where it was', () => {
-  // A KNOWN BACKLOG item for the next step. This suite exists partly to prove
-  // that this step did not quietly "fix" it.
+check('control height is monotonic — no step at either edge of the laptop band', () => {
+  // Step 8 closed this. The band used to set .btn / .toolbar input to 36px and
+  // .icon-btn to 32x32 across 1024-1440 ONLY, which put a step at BOTH edges:
+  //   1441 -> 40px, 1440 -> 36px   and   1024 -> 36px, 1023 -> 40px
+  // Controls were smallest in the MIDDLE of the range and grew towards both
+  // ends, so a tablet at 1023px got larger controls than a laptop at 1280px.
+  // A control must never shrink as the viewport does — it is walking towards
+  // the 44px touch target, not away from it.
+  const widths = [1600, 1441, 1440, 1366, 1280, 1200, 1024, 1023, 768];
+  const heights = widths.map((width) => ({
+    width, h: resolve(btn(), 'min-height', { width }).value,
+  }));
+  const distinct = [...new Set(heights.map((x) => x.h))];
+  assert.equal(distinct.length, 1,
+    `every width from 641 up must resolve to ONE control height, got ${JSON.stringify(heights)}`);
+
+  // It resolves to the token, not a literal — which is the point: one source of
+  // truth. The step that used to exist was a literal 36px overriding it.
+  assert.match(distinct[0], /var\(--cl-ctl-lg\)/,
+    `and it must be the control token, got ${distinct[0]}`);
+
+  // The phone floor works by REDEFINING that token, so source-level resolution
+  // sees the same declaration at 390 — the change is in the custom property.
+  // Both values are pinned here; the rendered pixels (40 above 640, 44 below)
+  // were measured in a browser at 1600/1441/1440/1280/1024/1023/768/390/360.
+  const cl = read('claude-system.css');
+  assert.match(cl, /--cl-ctl-lg:\s*40px/, 'the control token is 40px by default');
+  // claude-system.css has THREE `@media (max-width: 640px)` blocks, so search
+  // all of them rather than assuming the first — the redefinition lives in the
+  // second. (Two earlier attempts here failed on exactly that assumption: a
+  // fixed character window, then the first block only.)
+  const phoneBlocks = [];
+  for (let at = cl.indexOf('@media (max-width: 640px)'); at !== -1;
+       at = cl.indexOf('@media (max-width: 640px)', at + 1)) {
+    let depth = 0, end = at;
+    for (let i = cl.indexOf('{', at); i < cl.length; i++) {
+      if (cl[i] === '{') depth++;
+      else if (cl[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    phoneBlocks.push(cl.slice(at, end));
+  }
+  assert.ok(phoneBlocks.length >= 1, 'at least one phone block exists');
+  assert.ok(phoneBlocks.some((b) => /--cl-ctl-lg:\s*44px/.test(b)),
+    `one of the ${phoneBlocks.length} phone blocks must raise the control token to 44px`);
+
+  // the band itself survives — only the heights left it
   const resp = read('arabtec-responsive.css');
   assert.match(resp, /@media \(min-width: 1024px\) and \(max-width: 1440px\)/,
-    'the laptop band is untouched');
+    'the laptop band still exists for its wrap/gap/fluid-grid rules');
   const band = resp.slice(resp.indexOf('@media (min-width: 1024px) and (max-width: 1440px)'));
-  assert.match(band, /min-height:\s*36px;\s*\n\s*height:\s*36px/, 'and still steps to 36px');
-  assert.notEqual(resolve(btn(), 'min-height', { width: 1200 }).value,
-    resolve(btn(), 'min-height', { width: 1441 }).value,
-    'the step is still there — closing it is the next step\'s job, not this one\'s');
+  const bandEnd = band.indexOf('\n}');
+  const body = band.slice(0, bandEnd);
+  assert.equal(/min-height:\s*36px/.test(body), false,
+    'and no longer overrides control height');
+  assert.match(body, /flex-wrap:\s*wrap/,
+    'while keeping the wrapping it exists for');
 });
 
 check('.ask-input keeps the min-width release that makes it usable on a phone', () => {

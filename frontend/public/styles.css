@@ -248,7 +248,11 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .btn-outline-blue:hover { background: var(--action-primary-tint); }
 .btn-ghost { background: transparent; color: var(--ink-soft); border: 1px solid transparent; box-shadow: none; }
 .btn-ghost:hover { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
-.btn-sm { min-height: 30px; padding: 0 11px; font-size: 12.5px; }
+/* 32px is the compact control height every later sheet resolves to
+   (--cl-ctl-sm). This said 30px, so the answer depended on which sheet you
+   read. Aligned, not deleted — same treatment as the disabled-opacity and
+   card-padding stragglers. Font size deliberately untouched. */
+.btn-sm { min-height: 32px; padding: 0 11px; font-size: 12.5px; }
 .error-banner { background: #fdecec; color: var(--critical); border: 1px solid #f3c9c4; padding: 10px 12px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px; }
 .success-banner { background: #e9f5ee; color: var(--success); border: 1px solid #c2e2cd; padding: 10px 12px; border-radius: var(--radius); font-size: 13px; margin-bottom: 16px; }
 
@@ -351,7 +355,12 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 
 /* ---------------- Cards / tables ---------------- */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--card-radius); box-shadow: var(--shadow-card); }
-.card-pad { padding: 20px 22px; }
+/* One card padding across the product. arabtec-design-system.css declares the
+   canonical 20px and claude-system.css restates it as --cl-6, so both win the
+   cascade from here; this used to say `20px 22px`, the only asymmetric card
+   padding in the system, which meant the resolved value depended on which
+   sheet you happened to read. Aligned, not deleted. */
+.card-pad { padding: 20px; }
 .card-head { padding: 15px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
 .card-head h3 { margin: 0; font-size: 15px; }
 .ticket-card { transition: box-shadow .14s, transform .14s, border-color .14s; }

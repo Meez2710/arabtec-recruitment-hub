@@ -37,7 +37,7 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 .page-head{margin-bottom:18px}.page-head .page-title,.dash-head .page-title{font-size:23px;line-height:30px;font-weight:700}.page-sub{font-size:12px}.breadcrumb,.page-head .breadcrumb{font-size:10.5px}
 .card,.toolbar,.ticket-header-card{background:#fff;border:1px solid var(--border);box-shadow:var(--shadow-card)}
 .card.red-top,.ticket-header-card{border-top:3px solid #d8232a}.ticket-header-card:before{display:none}
-.card-head{min-height:54px;padding:13px 17px}.card-head h3{font-size:14px}.card-pad{padding:17px 18px}
+.card-head{min-height:54px;padding:13px 17px}.card-head h3{font-size:14px}.card-pad{padding:20px}
 .btn{min-height:35px;padding:0 13px;font-size:12px;border-radius:8px;background:#238356;border-color:#238356}.btn:hover{background:#0f5c34;border-color:#0f5c34}
 .btn-secondary{background:#fff;color:#2e373c;border-color:#b9c0c4}
 /* Variant rules that this overlay must restate.

@@ -629,17 +629,28 @@ img, svg, video, canvas {
    does not touch >1440px, and the <=1024px mobile floor blocks are untouched.
    ========================================================================== */
 @media (min-width: 1024px) and (max-width: 1440px) {
-  .btn, button.btn, a.btn, .toolbar input, .toolbar select,
-  .toolbar-search input, .filter-toolbar input, .filter-toolbar select {
-    min-height: 36px;
-    height: 36px;
-    padding-block: 0;
-  }
-  .btn-sm, .btn.btn-sm, .btn-xs, .btn.btn-xs, .btn.small, .view-toggle-btn, .icon-btn {
-    min-height: 32px;
-    height: 32px;
-  }
-  .icon-btn { width: 32px; }
+  /* The control-height overrides that used to live here are gone, and the
+     reason is worth keeping. They set .btn / .toolbar input to 36px and
+     .icon-btn to 32x32 across 1024-1440 only, which put a step at BOTH edges
+     of the band, not one:
+
+         1441 -> 40px      1440 -> 36px
+         1024 -> 36px      1023 -> 40px
+
+     Controls were therefore SMALLEST in the middle of the range and grew
+     towards both ends: a tablet at 1023px got larger controls than a laptop at
+     1280px. That is not a density gradient, it is a bump, and it inverts the
+     one rule the rest of the system follows — a control never shrinks as the
+     viewport does, because the floor it is walking towards is the 44px touch
+     target at 640px.
+
+     Heights are now monotonic and come from one token: 40px (--cl-ctl-lg) from
+     641px up, 44px below. No seam at 1023/1024, none at 1440/1441.
+
+     What stays is everything below, which is genuinely about this width and
+     causes no size jump: the toolbar wraps, gets real gaps, lets every child
+     shrink, and swaps rigid tracks for fluid ones. Wrapping is content-driven
+     and graceful — it changes where things sit, never how big they are. */
 
   /* Wrapping is the intended behaviour at this width; give it real gaps and
      let every child shrink, so a long label narrows its own control instead of
