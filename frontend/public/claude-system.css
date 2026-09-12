@@ -928,3 +928,174 @@ table.candidates-table {
    disclosure and the count share a row changed nothing measurable, because
    that width rule decides the line break, and overriding a deliberate mobile
    rule shared with every other toolbar is outside this task. */
+
+
+/* ============================================================================
+   19. COMPACT STATE COMPONENTS — badges, chips and tabs are ONE family
+   ----------------------------------------------------------------------------
+   Section 14 wrote the containment contract for a compact label: it stays on
+   one line, it never breaks mid-word, it never spills past its own rounded
+   edge, and it never shrinks its font to fit. That contract named seven
+   classes. The product ships more than seven, and the ones it missed are the
+   ones that carry the longest strings — project names, request titles, tag
+   text, free-text filter values. This section finishes the set and gives the
+   tab families the same freedom from state-driven movement that `.seg-tab`
+   received in section 18.
+
+   Every number below was measured in a browser against these five stylesheets
+   at 1440, 1366, 1280, 1200, 1024, 768, 430, 390 and 360, using the real
+   markup from app.jsx and real Arabtec data (the nine role names from
+   backend/src/lib/permissions.js, the three project names from
+   backend/prisma/seed.js).
+
+   ---- THE REFERENCE CASE: the role chip in Settings -> Users ---------------
+   `Recruitment Manager` is the longest of the nine role names. In the Users
+   table it renders at 133.38px. The Role(s) column is 193.26px at 1440 and
+   160.38px at 360 — the table carries a 680px min-width floor and owns its own
+   horizontal scroll inside `.card`, so the column never drops below 160px on
+   any device. The chip therefore FITS at every width, with 27px of slack at
+   the narrowest, and `scrollWidth === clientWidth` throughout.
+
+   The decision is FIT, not truncate-with-tooltip. Truncating a label that
+   always fits would hide a word the recruiter needs in order to read the row,
+   and a `title` on an element that never ellipsises is a tooltip that says
+   what the screen already says. Section 14's containment stays as the safety
+   floor underneath it: if a future role name is longer, the chip clips inside
+   its own edge instead of breaking the row. The same nine names are rendered
+   a second time by `.tag-toggle` in the user editor, and that one DID break —
+   see (2).
+   ========================================================================= */
+
+/* (1) CONTAINMENT, EXTENDED. These four families had no width ceiling at all:
+   `max-width: none`, so a long value sets their intrinsic width and pushes
+   whatever row they sit in. A ceiling of 100% makes the parent — a table cell,
+   a wrapped chip row, a flex line — the authority on how wide a label may be,
+   which is the same rule section 14 gave `.chip`. `min-width: 0` is the flex
+   floor from section 14 (1): without it a flex child refuses to shrink below
+   its min-content width, which is exactly how one long string widens a page. */
+.chip-filter, .cvi-badge, .preview-status-badge, .tag-toggle {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* (2) `.tag-toggle` WAS `display: inline`, AND IT BROKE THE PILL IN HALF.
+   The user editor renders every role, project and site name through this
+   class. As a bare inline box it wrapped BETWEEN WORDS like running text, so
+   at 360px the real project name `I-City New Cairo — Lagoon Beach Park`
+   rendered as two fragments — 104.99px on one line, 139.78px on the next —
+   each drawing its own 1px border and its own background. The rounded edge was
+   cut open in the middle of the name. Worse, an inline box contributes only
+   its font's content area to the line, not its padding, so the two 28px
+   fragments sat 19px apart and overlapped each other.
+
+   `inline-block` is the fix, not `inline-flex`: with a single text child it is
+   the only one of the two where `text-overflow: ellipsis` actually renders an
+   ellipsis (on a flex container the text becomes an anonymous flex item, which
+   does not inherit `text-overflow`, so the label is guillotined mid-glyph
+   instead). Measured at 360px after the change: one line box, 248.23px, whole.
+
+   `line-height: normal` is what the `<button>` form of this same class already
+   resolved to from the UA sheet, while the `<span>` form inherited the body's
+   1.45. Under `display: inline` that difference was invisible, because an
+   inline box takes its height from the font. Under `inline-block` it is not:
+   the two forms would have rendered 28.5px and 32.13px side by side. Pinning
+   it to the button's own value puts both at 28.5px with the glyphs 7px/7.5px
+   from the edges — one component, one height, and the button form does not
+   move by a single pixel. */
+.tag-toggle {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* (3) `.chip-filter` CARRIES FREE TEXT. Its label is built from user data —
+   `Request: R-0041 · <request title>`, `Owner: <name>`, a raw search term — so
+   it is the one chip whose content has no upper bound at all. It wrapped
+   inside its own pill (`white-space: normal`) and had no ceiling.
+
+   The label is given its own element in app.jsx precisely so the ellipsis has
+   a block box to render in; the remove button is pinned so the truncation eats
+   the label and never the control. app.jsx also puts the full label in a
+   `title`, because here truncation really does hide something. */
+.chip-filter { white-space: nowrap; overflow: hidden; }
+.chip-filter > .chip-filter-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip-filter > button { flex: 0 0 auto; }
+
+/* (4) The two intake badges truncate rather than clip, for the same reason:
+   a single text child in a block box ellipsises, in a flex box it does not.
+   `.preview-status-badge` is already `inline-block`; `.cvi-badge` moves from
+   `inline-flex`, measured identical at 133.88 x 21.95 before and after,
+   because its content was a single line box the full height of the content
+   area — the flex centring had nothing to centre. Their labels come from fixed
+   enum tables and fit today at every measured width; this is the floor under
+   them, not a change to what they show. */
+.cvi-badge { display: inline-block; }
+.cvi-badge, .preview-status-badge { overflow: hidden; text-overflow: ellipsis; }
+
+/* (5) SELECTING A TAB MOVED THE TABS AFTER IT — on two more families.
+   Section 18 (4) fixed `.seg-tab`. The same defect was still live one rule
+   higher up this file, at section 8: `.tabbar-btn, .profile-tab` render at
+   font-weight 500 and `.tabbar-btn.active, .profile-tab.active` at 600, so
+   selecting a tab widened its own label and shoved everything after it
+   sideways. Measured at 1440: `Conversation` went 106.49px to 113.47px and
+   pushed the four tabs behind it 6.98px to the right; `Overview` went 82.35px
+   to 86.27px and pushed four tabs 3.92px. Both are pure metric movement — the
+   label says the same word in the same size, just wider.
+
+   Emphasis stays and the reflow goes, exactly as it did for `.seg-tab`: the
+   weight is now equal in both states and the selected tab is still the white
+   pill on the grey track, which is how `.control-tab`, `.view-toggle-btn` and
+   `.seg-tab` already say "selected".
+
+   BORDER WIDTH WAS CHECKED AND NEEDS NO RESERVATION. `.tabbar-btn.active` and
+   `.profile-tab.active` do set `border-bottom-color` (styles.css,
+   arabtec-approved-ui.css), but arabtec-design-system.css replaced the whole
+   underline treatment with the pill and set `border: 0` on BOTH the base and
+   the active rule. Computed border width is 0px on all four sides in both
+   states — verified in the browser — so those colour declarations paint
+   nothing and there is no width for the active state to add. Reserving 2px
+   here would not prevent a shift; it would introduce a visible line the
+   approved design deliberately removed. */
+.tabbar-btn, .tabbar-btn.active,
+.profile-tab, .profile-tab.active { font-weight: 600; }
+
+/* (6) THE ANYHELP TABS GREW BY 3px WHEN SELECTED. `.anyhelp-tabs button` has
+   `border: 0` and `.anyhelp-tabs button.on` adds `border: 1.5px solid` on all
+   four sides, so selecting a tab made it 3px wider and 3px taller and moved
+   its neighbour 3px — measured at 1440, `Team` 58.46px to 61.46px with
+   `anyhelp` sliding from 376.46 to 379.46.
+
+   A border has two halves and this file owns only one of them. The WIDTH is
+   geometry and it is removed here; the COLOUR stays declared where colour
+   belongs, in arabtec-design-system.css, and simply paints nothing. The
+   selected tab keeps the white background and the green ink it already had
+   against the grey inactive pills — the same white-pill-on-grey-track
+   affordance as every other tab family in the product. */
+.anyhelp-tabs button, .anyhelp-tabs button.on { border-width: 0; }
+
+/* (7) NOT CHANGED, AND WHY.
+   `.score-badge`  renders 0-100 in tabular numerals behind a 34px min-width
+                   and already carries `title="Match score N of 100"`. It has
+                   no long-text case to have.
+   `.rq-link-chip` already truncates: its subtitle line is capped at 150px with
+                   `text-overflow: ellipsis` (measured clipping 250px of title
+                   into 150px at every width) and the chip carries the full
+                   ticket number, title and status in a `title`. Correct as
+                   found.
+   `.chip-warn`    is `class="chip chip-warn"` — it inherits section 14's
+                   containment in full. Correct as found.
+   `.hist-badge-btn` is a bare button wrapping a `<Badge>`; the badge is
+                   contained by section 14 and the button already carries the
+                   full application history in a `title`. Correct as found.
+   `.control-tab`, `.view-toggle-btn`, `.seg-tab` were toggled in the browser
+                   at all nine widths: every button's rect, and every
+                   neighbour's rect, byte-identical. Correct as found.
+   Hover and focus  no `:hover`, `:focus` or `:focus-visible` rule anywhere in
+                   the five stylesheets declares a layout property for any of
+                   these families; the focus ring is an `outline`, which is
+                   painted outside the box and reserves nothing. Verified by
+                   walking the whole CSSOM, and by focusing each control and
+                   re-measuring it and its siblings. */

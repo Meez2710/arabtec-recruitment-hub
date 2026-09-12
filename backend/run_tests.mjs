@@ -36,6 +36,7 @@ const SUITES = [
   'screening_test.mjs',       // Database fitness-screen gate
   'static_test.mjs',          // static + SPA fallback serving
   'production_seed_guard_test.mjs',
+  'ui_badge_tab_test.mjs',    // badges, chips and tabs: containment + no state-driven movement
   'ui_behavior_test.mjs', // approved navigation, pipeline and mail UI behaviors
   'ui_compile_test.mjs',      // production JSX compiles in the vendored browser Babel
   'ui_readiness_test.mjs',    // production UI release-contract regression checks

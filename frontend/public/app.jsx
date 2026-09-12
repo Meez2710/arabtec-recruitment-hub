@@ -2873,14 +2873,14 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
             <option value="">— None —</option>{depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
       </div>
       <div className="section-title">Roles</div>
-      <div>{roles.map((r) => <span key={r.code} className={'tag-toggle' + (f.roleCodes.includes(r.code) ? ' on' : '')} onClick={() => toggleArr('roleCodes', r.code)}>{r.name}</span>)}</div>
+      <div>{roles.map((r) => <span key={r.code} className={'tag-toggle' + (f.roleCodes.includes(r.code) ? ' on' : '')} title={r.name} onClick={() => toggleArr('roleCodes', r.code)}>{r.name}</span>)}</div>
       <div className="section-title">Access Scope</div>
       <label className="switch" style={{ marginBottom: 10 }}><input type="checkbox" checked={f.globalScope} onChange={(e) => set('globalScope', e.target.checked)} /> Global access (all projects &amp; sites)</label>
       {!f.globalScope && <>
         <div className="muted" style={{ marginBottom: 6 }}>Projects</div>
-        <div style={{ marginBottom: 12 }}>{projects.map((p) => <span key={p.id} className={'tag-toggle' + (f.projectIds.includes(p.id) ? ' on' : '')} onClick={() => toggleArr('projectIds', p.id)}>{p.name}</span>)}</div>
+        <div style={{ marginBottom: 12 }}>{projects.map((p) => <span key={p.id} className={'tag-toggle' + (f.projectIds.includes(p.id) ? ' on' : '')} title={p.name} onClick={() => toggleArr('projectIds', p.id)}>{p.name}</span>)}</div>
         <div className="muted" style={{ marginBottom: 6 }}>Sites</div>
-        <div>{sites.map((s) => <span key={s.id} className={'tag-toggle' + (f.siteIds.includes(s.id) ? ' on' : '')} onClick={() => toggleArr('siteIds', s.id)}>{s.name}</span>)}</div>
+        <div>{sites.map((s) => <span key={s.id} className={'tag-toggle' + (f.siteIds.includes(s.id) ? ' on' : '')} title={s.name} onClick={() => toggleArr('siteIds', s.id)}>{s.name}</span>)}</div>
       </>}
       {isNew && <>
         <div className="section-title">Initial password</div>
@@ -3651,7 +3651,7 @@ function WorkflowPage({ user }) {
             {Object.entries(w.value).map(([group, items]) => (
               <div key={group} style={{ marginBottom: 10 }}>
                 <div className="muted" style={{ textTransform: 'capitalize', marginBottom: 6 }}>{group}</div>
-                <div>{(items || []).map((s, i) => <span key={i} className="chip">{s}</span>)}</div>
+                <div>{(items || []).map((s, i) => <span key={i} className="chip" title={s}>{s}</span>)}</div>
               </div>
             ))}
           </div>
@@ -4208,8 +4208,8 @@ function RequestsPage({ user, initialFilters }) {
       {activeChips.length > 0 && (
         <div className="filter-chips">
           {activeChips.map(([k, label, clear]) => (
-            <span key={k} className="chip-filter">
-              {label}
+            <span key={k} className="chip-filter" title={label}>
+              <span className="chip-filter-label">{label}</span>
               <button aria-label={`Remove ${label} filter`} onClick={clear}><Icon name="close" size={16} /></button>
             </span>
           ))}
@@ -4945,7 +4945,7 @@ function AttachmentRow({ req, onReload }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
       {req.hasAttachment ? (
         <>
-          <span className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileGlyph /> {req.attachmentName || 'Attachment'}</span>
+          <span className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title={req.attachmentName || 'Attachment'}><FileGlyph /> {req.attachmentName || 'Attachment'}</span>
           <button className="btn btn-sm btn-secondary" onClick={view}>View / Download</button>
         </>
       ) : <span className="muted" style={{ fontSize: 13 }}>No attachment uploaded.</span>}
@@ -5020,7 +5020,7 @@ function JDTab({ req }) {
         {(req.requiredSkills || []).length > 0 && (
           <>
             <div className="section-title">Skills</div>
-            <div>{req.requiredSkills.map((s, i) => <span key={i} className="chip">{s}</span>)}</div>
+            <div>{req.requiredSkills.map((s, i) => <span key={i} className="chip" title={s}>{s}</span>)}</div>
           </>
         )}
       </div>
@@ -7005,8 +7005,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
       {activeFilters.length > 0 && (
         <div className="filter-chips">
           {activeFilters.map(([k, label]) => (
-            <span key={k} className="chip-filter">
-              {label}
+            <span key={k} className="chip-filter" title={label}>
+              <span className="chip-filter-label">{label}</span>
               <button aria-label={`Remove ${label} filter`} onClick={() => clearFilter(k)}><Icon name="close" size={16} /></button>
             </span>
           ))}
@@ -7093,7 +7093,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                       <span className="cell-sub">{c.candidateNo}</span>
                     </span>
                   </div>
-                  {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
+                  {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
                 </td>
                 <td data-label="Position">
                   <span className="cell-strong" title={c.currentPosition || undefined}>{c.currentPosition || '—'}</span>
@@ -7919,7 +7919,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
           <Info label="Notice Period">{c.noticePeriod}</Info><Info label="Source">{c.source}</Info>
           {c.salaryVisible ? <Info label="Expected Salary">{c.expectedSalary ?? '—'}</Info> : <Info label="Expected Salary"><span className="muted">Restricted</span></Info>}
           <Info label="Owner Recruiter">{c.ownerRecruiter?.name}</Info>
-          <div className="full"><Info label="Tags">{(c.tags || []).length ? c.tags.map((t) => <span key={t} className="chip">{t}</span>) : '—'}</Info></div>
+          <div className="full"><Info label="Tags">{(c.tags || []).length ? c.tags.map((t) => <span key={t} className="chip" title={t}>{t}</span>) : '—'}</Info></div>
         </div></div>
       )}
       {tab === 'cv' && <CandidateCvTab c={c} user={user} btns={btns} onChanged={load} />}
@@ -8086,7 +8086,7 @@ function ScheduleInterviewModal({ application, onClose, onScheduled }) {
         </div>
       </div>
       <div className="section-title">Panel (interviewers) *</div>
-      <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
+      <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} title={u.name} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
       <p className="muted" style={{ marginTop: 8 }}>First selected is the lead. Only selected interviewers will see this interview and may submit feedback.</p>
     </Modal>
   );
@@ -8228,7 +8228,7 @@ function InterviewDetail({ id, user, onBack }) {
           <Info label="Organizer">{iv.organizer?.name}</Info>
           {iv.cancelReason && <Info label="Cancel Reason">{iv.cancelReason}</Info>}
           <div className="section-title">Panel</div>
-          <div>{iv.panel.map((m) => <span key={m.id} className="chip">{m.name}{m.isLead ? ' (lead)' : ''}</span>)}</div>
+          <div>{iv.panel.map((m) => <span key={m.id} className="chip" title={m.name + (m.isLead ? ' (lead)' : '')}>{m.name}{m.isLead ? ' (lead)' : ''}</span>)}</div>
         </div>
 
         <div className="card card-pad">
