@@ -607,8 +607,10 @@ body:has(.modal-overlay) .more-sheet { display: none; }
 .anyhelp-context span { display: block; font-size: 12.5px; font-weight: 700; color: var(--ink); }
 .anyhelp-context small { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); }
 .anyhelp-tabs { display: flex; gap: 6px; padding: 0 16px 10px; }
+/* The base reserves the selected state's 1.5px border so selecting a tab adds
+   colour, never width. `.on` below repaints it; it must never re-declare it. */
 .anyhelp-tabs button {
-  min-height: 32px; border: 0; border-radius: 999px; padding: 0 14px;
+  min-height: 32px; border: 1.5px solid transparent; border-radius: 999px; padding: 0 14px;
   background: #ECEEF0; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 .anyhelp-tabs button.on { background: #fff; color: var(--green-700); border: 1.5px solid var(--green); }

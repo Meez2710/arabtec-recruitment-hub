@@ -550,10 +550,26 @@ button.pcard-name { font: inherit; font-size: 14px; font-weight: 600; padding: 0
 .card, .card-pad, .toolbar, .filter-toolbar, .page-head, .form-grid, .field { min-width: 0; }
 
 /* (2)(3)(5) Label containment. A chip/badge states its intent explicitly:
-   it stays on one line and truncates, rather than breaking mid-word or
-   spilling past its own rounded edge. `.status-chip` previously combined
-   `white-space: nowrap` with a FIXED height, so a long label overflowed the
-   pill outline; height becomes a floor, not a ceiling. */
+   it stays on one line and is cut off at its own edge, rather than breaking
+   mid-word or spilling past its rounded outline. `.status-chip` previously
+   combined `white-space: nowrap` with a FIXED height, so a long label
+   overflowed the pill outline; height becomes a floor, not a ceiling.
+
+   HOW THE CUT LOOKS, AND WHY IT IS NOT ALWAYS AN ELLIPSIS. `text-overflow`
+   applies to the inline content of a BLOCK container. Section 9 above makes
+   `.chip`, `.badge` and `.status-chip` `display: inline-flex`, so a bare text
+   child becomes an anonymous flex item: it does not inherit `text-overflow`,
+   and an over-long label is GUILLOTINED mid-glyph rather than ellipsised.
+   `text-overflow` is still declared here because it is what renders for the
+   members of this list that are block boxes (`.code-pill`, `.count-pill`) and
+   because it becomes correct the instant a member stops being a flex
+   container — but it must NOT be read as a promise of a visible "…" on the
+   flex ones. Either way the label is CONTAINED, which is all this contract
+   asks for. What was cut is recovered through section 15's tooltip policy,
+   which is why every `.chip` in app.jsx holding unbounded text carries a
+   `title`. Changing `.chip` to a block box is not a cosmetic swap — 13 sites
+   compose it and several pass icon children that rely on the flex box — so it
+   is deliberately left alone; see section 19 (7). */
 .chip, .badge, .status-chip, .src-chip, .meta-chip, .code-pill, .count-pill {
   min-width: 0;
   max-width: 100%;
@@ -605,9 +621,17 @@ td:has(> .chip) { white-space: normal; }
        remount is what lets column widths re-measure. Sorting must keep the
        previous rows mounted and mark the table busy instead.
      - Sort state cycles Neutral -> Ascending -> Descending.
-     - Any label that can truncate must carry a `title` with its full text.
-       `.chip` truncates as a last resort below its natural width and does not
-       yet supply one; adding it is part of the Badge consolidation.
+     - TOOLTIP POLICY — one rule, product-wide, and the only one. A label
+       carries a `title` with its full text when its content is UNBOUNDED:
+       free text a user typed, or a name that arrives from company data. Such
+       a label can outgrow its box at some supported width, and what is cut is
+       then unrecoverable from the screen. A label drawn from a FIXED enum that
+       has been measured to fit at every supported width carries no `title` — a
+       tooltip that repeats what is already legible is noise, not help.
+       The test of "can it be cut", note, is the content, not the rendering:
+       `.chip` is `display: inline-flex` and therefore guillotines mid-glyph
+       instead of showing "…" (section 14), which makes the `title` on an
+       unbounded chip more necessary, not less.
    ========================================================================= */
 
 /* Stable geometry, OPT-IN. `table-layout: fixed` is the mechanism that stops
@@ -951,19 +975,41 @@ table.candidates-table {
    ---- THE REFERENCE CASE: the role chip in Settings -> Users ---------------
    `Recruitment Manager` is the longest of the nine role names. In the Users
    table it renders at 133.38px. The Role(s) column is 193.26px at 1440 and
-   160.38px at 360 — the table carries a 680px min-width floor and owns its own
-   horizontal scroll inside `.card`, so the column never drops below 160px on
-   any device. The chip therefore FITS at every width, with 27px of slack at
-   the narrowest, and `scrollWidth === clientWidth` throughout.
+   160.38px at 360, and it cannot go below that, for two INDEPENDENT reasons —
+   worth separating, because only one of them is durable:
 
-   The decision is FIT, not truncate-with-tooltip. Truncating a label that
-   always fits would hide a word the recruiter needs in order to read the row,
-   and a `title` on an element that never ellipsises is a tooltip that says
-   what the screen already says. Section 14's containment stays as the safety
-   floor underneath it: if a future role name is longer, the chip clips inside
-   its own edge instead of breaking the row. The same nine names are rendered
-   a second time by `.tag-toggle` in the user editor, and that one DID break —
-   see (2).
+     1. UsersPage renders a bare `<table>` inside a plain `.card` (app.jsx),
+        which matches the first half of the selector list at
+        arabtec-design-system.css:988-989 (`.card table:not(.responsive-table)
+        :not(.review-table):not(.parse-review-table), .modal-body table… {
+        min-width: 680px }`), so the table does carry a 680px floor, and
+        `.card:has(table…) { overflow-x: auto }` in the same file gives it its
+        own horizontal scroll. Note this floor belongs to the selector LIST,
+        not to `.modal-body` alone — a bare table in a card is covered.
+     2. Independently of any floor: this table uses AUTOMATIC table layout, so
+        every column's used width is at least its min-content width, and
+        section 14 gives `.chip` `white-space: nowrap`. The min-content width
+        of a nowrap chip is the whole chip, so the Role(s) column can never be
+        narrower than the widest chip standing in it, at any viewport.
+
+   The chip therefore FITS at every width, with 27px of slack at the narrowest,
+   and `scrollWidth === clientWidth` throughout.
+
+   WHAT WOULD KILL THE GUARANTEE. Reason 2 is the one that holds the shape, and
+   it dies silently if this table is ever given `table-layout: fixed` or a
+   `<colgroup>`: fixed layout stops consulting content, the min-content floor
+   disappears, and the chip starts being cut — with no ellipsis to show for it,
+   because `.chip` is a flex box and guillotines (section 14). If that day
+   comes, the role chip needs a `title` under section 15's tooltip policy.
+
+   The decision TODAY is FIT, not truncate-with-tooltip, and the nine role
+   names are a fixed, measured enum — so section 15's policy gives them no
+   `title`, and they have none. Section 14's containment stays as the safety
+   floor underneath: if a future role name is longer, the chip cuts inside its
+   own edge instead of breaking the row. The same nine names are rendered a
+   second time by `.tag-toggle` in the user editor — alongside project and site
+   names, which ARE unbounded, so that component does carry titles — and that
+   one DID break; see (2).
    ========================================================================= */
 
 /* (1) CONTAINMENT, EXTENDED. These four families had no width ceiling at all:
@@ -1062,21 +1108,28 @@ table.candidates-table {
 .tabbar-btn, .tabbar-btn.active,
 .profile-tab, .profile-tab.active { font-weight: 600; }
 
-/* (6) THE ANYHELP TABS GREW BY 3px WHEN SELECTED. `.anyhelp-tabs button` has
-   `border: 0` and `.anyhelp-tabs button.on` adds `border: 1.5px solid` on all
-   four sides, so selecting a tab made it 3px wider and 3px taller and moved
-   its neighbour 3px — measured at 1440, `Team` 58.46px to 61.46px with
-   `anyhelp` sliding from 376.46 to 379.46.
-
-   A border has two halves and this file owns only one of them. The WIDTH is
-   geometry and it is removed here; the COLOUR stays declared where colour
-   belongs, in arabtec-design-system.css, and simply paints nothing. The
-   selected tab keeps the white background and the green ink it already had
-   against the grey inactive pills — the same white-pill-on-grey-track
-   affordance as every other tab family in the product. */
-.anyhelp-tabs button, .anyhelp-tabs button.on { border-width: 0; }
+/* (6) THE ANYHELP TABS. Fixed at the source instead of here. The bug was an
+   asymmetry — `.anyhelp-tabs button` declared no border while
+   `.anyhelp-tabs button.on` declared 1.5px — and the base rule that owns the
+   component's colour is the only place that asymmetry can be closed without
+   also removing the selected tab's only outline. The base now reserves
+   `1.5px solid transparent`; `.on` repaints the same 1.5px in green. Nothing
+   for this layer to add. */
 
 /* (7) NOT CHANGED, AND WHY.
+   `.chip`'s DISPLAY stays `inline-flex`, which means `.chip` GUILLOTINES —
+                   it cuts mid-glyph and shows no "…", because a bare text
+                   child of a flex container is an anonymous flex item and does
+                   not inherit `text-overflow` (the same mechanism explained at
+                   (2) for `.tag-toggle`, where the fix WAS applied). It is not
+                   applied here: 13 sites compose `.chip`, several of them with
+                   an icon or a dot child that the flex box is aligning, so
+                   making it a block box is a component change and not a
+                   containment fix. The consequence is that nothing on a `.chip`
+                   signals that text was cut — which is exactly why every
+                   unbounded `.chip` in app.jsx carries a `title` (section 15's
+                   tooltip policy). The `title` is not decoration on these; it
+                   is the only place the cut characters still exist.
    `.score-badge`  renders 0-100 in tabular numerals behind a 34px min-width
                    and already carries `title="Match score N of 100"`. It has
                    no long-text case to have.
@@ -1093,9 +1146,12 @@ table.candidates-table {
    `.control-tab`, `.view-toggle-btn`, `.seg-tab` were toggled in the browser
                    at all nine widths: every button's rect, and every
                    neighbour's rect, byte-identical. Correct as found.
-   Hover and focus  no `:hover`, `:focus` or `:focus-visible` rule anywhere in
-                   the five stylesheets declares a layout property for any of
-                   these families; the focus ring is an `outline`, which is
-                   painted outside the box and reserves nothing. Verified by
-                   walking the whole CSSOM, and by focusing each control and
-                   re-measuring it and its siblings. */
+   State rules    no `:hover`, `:focus`, `:focus-visible`, `:active`, `.active`
+                   or `.on` rule anywhere in the five stylesheets declares a
+                   layout property whose value DIFFERS from the base rule's —
+                   descendant-combinator forms such as
+                   `.filter-chips .chip-filter.on` included. The focus ring is
+                   an `outline`, which is painted outside the box and reserves
+                   nothing. Verified by walking the whole CSSOM, and by
+                   focusing and selecting each control and re-measuring it and
+                   its siblings. */

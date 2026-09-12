@@ -12,6 +12,9 @@
 //   .tabbar-btn         active label 106.49px -> 113.47px, four tabs shoved 6.98px
 //   .profile-tab        active label  82.35px ->  86.27px, four tabs shoved 3.92px
 //   .anyhelp-tabs .on   58.46px -> 61.46px in both axes, neighbour shoved 3px
+//                       (closed at the source: the base rule now reserves
+//                        `1.5px solid transparent`, so the selected tab keeps
+//                        the outline that is its only boundary on the dock)
 // and, at 360, the one that broke a component in half:
 //   .tag-toggle         `display: inline`, so the real project name
 //                       "I-City New Cairo — Lagoon Beach Park" rendered as two
@@ -155,7 +158,11 @@ check('every compact label family now has a width ceiling and a flex floor', () 
   }
 });
 
-check('a compact label truncates on one line; it never wraps or breaks mid-word', () => {
+check('a compact label stays on one line and is cut at its own edge', () => {
+  // Containment, which is what section 14 actually promises: one line, no
+  // mid-word break, nothing outside the rounded edge. HOW the cut looks is the
+  // next check — it is not the same for all of them, and this suite used to
+  // imply that it was.
   for (const sel of ['.chip', '.badge', '.status-chip',
                      '.chip-filter', '.cvi-badge', '.preview-status-badge', '.tag-toggle']) {
     const ws = finalValue(sel, 'white-space');
@@ -163,6 +170,39 @@ check('a compact label truncates on one line; it never wraps or breaks mid-word'
     const ov = finalValue(sel, 'overflow');
     assert.ok(ov && ov.value === 'hidden', `${sel} clips inside its own edge (got ${ov && ov.value})`);
   }
+});
+
+check('an ellipsis is only claimed where a block box can render one', () => {
+  // `text-overflow` applies to the inline content of a BLOCK container. On a
+  // flex container a bare text child is an anonymous flex item and does not
+  // inherit it, so the label is GUILLOTINED mid-glyph — no "…" at all. This
+  // check pins which family does which, so no comment and no future change can
+  // quietly claim an ellipsis that the box cannot produce.
+  //
+  // GUILLOTINE, by design: `.chip` and its two siblings are `inline-flex` in
+  // section 9 because several of the 13 `.chip` sites pass an icon or dot child
+  // that the flex box aligns. They are deliberately NOT converted (section 19
+  // (7)); the recovery for a cut `.chip` is its `title`, which the tooltip
+  // check below requires.
+  for (const sel of ['.chip', '.badge', '.status-chip']) {
+    const d = finalValue(sel, 'display');
+    assert.ok(d && d.value === 'inline-flex',
+      `${sel} is still the flex pill that guillotines (got ${d && d.value}) — ` +
+      'if this became a block box, section 14 and section 19 (7) must stop saying it guillotines');
+  }
+  // ELLIPSIS, and it really renders: a single text child in a block box.
+  for (const sel of ['.cvi-badge', '.preview-status-badge', '.tag-toggle']) {
+    const d = finalValue(sel, 'display');
+    assert.ok(d && d.value === 'inline-block', `${sel} is a block box (got ${d && d.value})`);
+    const to = finalValue(sel, 'text-overflow');
+    assert.ok(to && to.value === 'ellipsis', `${sel} ellipsises`);
+  }
+  // `.chip-filter` is the third shape: a flex ROW whose label is given its own
+  // block box precisely so the ellipsis has somewhere to render.
+  const cf = finalValue('.chip-filter', 'display');
+  assert.ok(cf && cf.value === 'inline-flex', `.chip-filter is a flex row (got ${cf && cf.value})`);
+  assert.match(section, /\.chip-filter > \.chip-filter-label \{[^}]*text-overflow:\s*ellipsis/,
+    'so its ellipsis lives on the label child, not on the chip');
 });
 
 check('.tag-toggle is a block box, which is the only way its ellipsis renders', () => {
@@ -250,25 +290,79 @@ check('selecting a tab cannot change its own box — no border-width shift, any 
   }
 });
 
-check('no hover, focus or selected rule anywhere declares a layout property', () => {
-  const LAYOUT = /^(padding|margin|border|border-width|font|font-size|font-weight|letter-spacing|line-height|text-transform|width|height|min-width|min-height|max-width|max-height)(-(top|right|bottom|left))?(-width)?$/;
+check('no hover, focus or SELECTED rule resolves to a different box than its base', () => {
+  // Three things this has to get right, all of which an earlier form got wrong.
+  //
+  // 1. THE SELECTED STATE IS A CLASS. `:active` is the mouse-down pseudo-class,
+  //    not the `.active` class; every tab family in this product marks its
+  //    selection with `.active` (and `.anyhelp-tabs` with `.on`). A guard built
+  //    only from pseudo-classes therefore never looked at a selected state at
+  //    all — which is how `.anyhelp-tabs button.on` kept a border the base did
+  //    not reserve.
+  // 2. A STATE SELECTOR IS NOT ALWAYS A SUFFIX. `.filter-chips .chip-filter.on`
+  //    (styles.css) carries the base in a descendant position, so an
+  //    "immediate suffix" test skipped it.
+  // 3. DECLARING A LAYOUT PROPERTY IN A STATE RULE IS NOT THE DEFECT. Several
+  //    rules must declare one, because equalising base and state is exactly how
+  //    the asymmetry gets closed (`.seg-tab, .seg-tab.active { font-weight:
+  //    600 }`; `.anyhelp-tabs button { border: 1.5px solid transparent }`
+  //    against `.on`'s 1.5px in green). The defect is a state that RESOLVES to
+  //    a different value than its base — that difference is the movement. So
+  //    every declaration is compared against what the base resolves to across
+  //    all five sheets in load order, and a border is compared by WIDTH, since
+  //    the colour half of a border moves nothing.
+  const LAYOUT = /^(padding|margin|border|font|font-size|font-weight|letter-spacing|line-height|text-transform|width|height|min-width|min-height|max-width|max-height)(-(top|right|bottom|left))?(-width)?$/;
   const BASES = ['.chip', '.badge', '.status-chip', '.chip-filter', '.cvi-badge', '.score-badge',
     '.rq-link-chip', '.preview-status-badge', '.hist-badge-btn', '.chip-warn', '.tag-toggle',
-    '.tabbar-btn', '.profile-tab', '.seg-tab', '.control-tab', '.view-toggle-btn'];
+    '.tabbar-btn', '.profile-tab', '.seg-tab', '.control-tab', '.view-toggle-btn',
+    '.anyhelp-tabs button'];
+  // A state token, anywhere in the selector, not only at its end.
+  const STATE = /(:hover|:focus(-visible)?|:active|\.active|\.on)(?![-\w])/;
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // `.chip` must not match `.chip-filter`; `.chip.on` must.
+  const carries = (sel, b) => new RegExp(esc(b) + '(?![-\\w])').test(sel);
+  const SIDES = ['top', 'right', 'bottom', 'left'];
   const offenders = [];
+  const examined = [];
   for (const r of ALL) {
     for (const part of r.sel.split(',')) {
-      const s = part.trim();
-      const base = BASES.find((b) => s.startsWith(b) && /^(:hover|:focus|:focus-visible|:active)$/.test(s.slice(b.length)));
+      const sel = part.trim();
+      if (!STATE.test(sel)) continue;
+      const base = BASES.find((b) => carries(sel, b));
       if (!base) continue;
+      examined.push({ sel, nested: sel.indexOf(base) > 0 });
       for (const [p] of decls(r.body)) {
-        // An outline is painted outside the box and reserves nothing, so it is
-        // the only safe way to draw a focus ring.
-        if (LAYOUT.test(p)) offenders.push(`${s} { ${p} } in ${r.sheet}`);
+        if (!LAYOUT.test(p)) continue;
+        if (/^border/.test(p)) {
+          const a = borderWidths(sel), b = borderWidths(base);
+          for (const side of SIDES) {
+            if (a[side] === null) continue;
+            if (a[side] !== (b[side] ?? 0)) {
+              offenders.push(`${sel} resolves border-${side} ${a[side]}px against ${b[side] ?? 0}px on ${base} (${r.sheet})`);
+            }
+          }
+        } else {
+          // An outline is painted outside the box and reserves nothing, which
+          // is why it is the only safe way to draw a focus ring — and why it is
+          // not in LAYOUT.
+          const av = finalValue(sel, p), bv = finalValue(base, p);
+          if (av && (!bv || av.value !== bv.value)) {
+            offenders.push(`${sel} resolves ${p}: ${av.value} against ${bv ? bv.value : '(undeclared)'} on ${base} (${r.sheet})`);
+          }
+        }
       }
     }
   }
-  assert.deepEqual(offenders, [], 'hover/focus must not resize a compact component');
+  assert.deepEqual(offenders, [], 'a hovered, focused or selected compact component must keep its base box');
+  // The guard is only worth having if it actually reaches the two shapes the
+  // previous form could not see.
+  const selected = examined.filter((e) => /\.(active|on)(?![-\w])/.test(e.sel));
+  assert.ok(selected.length >= 8,
+    `the sweep must reach the .active/.on rules, not just the pseudo-classes (reached ${selected.length}: ${selected.map((e) => e.sel).join(', ')})`);
+  const nested = examined.filter((e) => e.nested);
+  assert.ok(nested.length >= 1,
+    'the sweep must reach selectors where the component is not the first compound — ' +
+    '`.filter-chips .chip-filter.on` is the live one');
 });
 
 /* ===========================================================================
@@ -294,9 +388,12 @@ check('.tag-toggle carries a tooltip wherever it renders company data', () => {
   }
 });
 
-check('unbounded .chip content is recoverable when it truncates', () => {
+check('unbounded .chip content is recoverable when it is cut', () => {
   // Candidate tags, required skills, attachment file names and panel members
-  // are all free text inside a chip that section 14 clips at its own edge.
+  // are all free text inside a chip that section 14 clips at its own edge —
+  // and `.chip` is a flex box, so it clips with NO ellipsis to warn that
+  // anything was lost. The `title` is therefore the only copy of the cut
+  // characters, which is the unbounded half of section 15's tooltip policy.
   const titled = (app.match(/className="chip" title=\{/g) || []).length;
   assert.ok(titled >= 5, `at least five .chip sites carry a title (found ${titled})`);
   assert.ok(app.includes('c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>'),
@@ -306,10 +403,19 @@ check('unbounded .chip content is recoverable when it truncates', () => {
 check('the Users role chip is still the shared .chip, not a bespoke label', () => {
   // The reference case. `Recruitment Manager` is the longest of the nine role
   // names in backend/src/lib/permissions.js and measures 133.38px; the Role(s)
-  // column never drops below 160.38px, because the Users table carries a 680px
-  // min-width floor and owns its own horizontal scroll inside .card. It FITS at
-  // every measured width, so the decision is fit, not truncate-with-tooltip —
-  // and section 14's containment stays underneath it as the safety floor.
+  // column never drops below 160.38px. Two independent reasons, and the second
+  // is the durable one: the bare <table> in a plain .card matches the `.card
+  // table:not(...)` half of the 680px min-width rule in
+  // arabtec-design-system.css (and .card owns the scroll under it); and,
+  // regardless of any floor, automatic table layout never gives a column less
+  // than its min-content width, which for a `white-space: nowrap` chip is the
+  // whole chip. It FITS at every measured width, so the decision is fit, not
+  // truncate-with-tooltip, and the nine names are a fixed measured enum, so
+  // section 15's tooltip policy gives them no `title`. Section 14's
+  // containment stays underneath as the safety floor. If this table is ever
+  // given `table-layout: fixed` or a <colgroup>, the min-content floor is gone
+  // and the chip starts being cut with no ellipsis — it would then need a
+  // `title`.
   const page = app.slice(app.indexOf('function UsersPage'));
   assert.match(page, /u\.roles\.map\(\(r\) => <span className="chip" key=\{r\.code\}>\{r\.name\}<\/span>\)/,
     'the role cell composes .chip so it inherits the containment contract');

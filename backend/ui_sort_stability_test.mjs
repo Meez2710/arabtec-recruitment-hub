@@ -997,6 +997,19 @@ async function candidatesAtPage(target, { initialFilters, view = 'table', pickTa
 const searchBox = (tree) => byName(tree, 'FilterToolbar')[0].props.search;
 const screenTabs = (tree) => nodes(tree).filter((n) => n.type === 'button' && n.props?.className?.includes?.('seg-tab'));
 
+// Every form control a toolbar can render. An enum filter in this product is a
+// `<select>` (RequestsPage's toolbar uses four) and a sweep that only knew
+// about `<input>` would not see one.
+const FORM_CONTROLS = new Set(['input', 'select', 'textarea']);
+const toolbarControls = (tree) => {
+  const toolbar = byName(tree, 'FilterToolbar')[0];
+  return toolbar ? nodes(toolbar).filter((n) => FORM_CONTROLS.has(n.type) && n.props?.onChange) : [];
+};
+// What the toolbar renders today: the search box plus five secondary filters.
+const TOOLBAR_FLOOR = 6;
+// What each view exposes in total today, counted by the sweep itself.
+const CONTROL_FLOOR = { table: 14, pipeline: 3 };
+
 await check('a filter change from page 3 sends one request, and it asks for page 1', async () => {
   const { p, tree } = await candidatesAtPage(3);
   startCounting();
@@ -1011,15 +1024,15 @@ await check('a filter change from page 3 sends one request, and it asks for page
   p.dispose();
 });
 
-await check('every secondary filter input behaves the same from page 3', async () => {
+await check('every secondary filter control behaves the same from page 3', async () => {
   const probe = await candidatesAtPage(1);
-  const count = nodes(byName(probe.tree, 'FilterToolbar')[0]).filter((n) => n.type === 'input').length;
+  const count = toolbarControls(probe.tree).length;
   probe.p.dispose();
-  assert.ok(count >= 6, `the toolbar still offers its inputs (found ${count})`);
+  assert.ok(count >= TOOLBAR_FLOOR, `the toolbar still offers its filter controls (found ${count})`);
   for (let i = 0; i < count; i++) {
     const { p, tree } = await candidatesAtPage(3);
-    const input = nodes(byName(tree, 'FilterToolbar')[0]).filter((n) => n.type === 'input')[i];
-    const what = input.props.placeholder || `input #${i + 1}`;
+    const input = toolbarControls(tree)[i];
+    const what = input.props.placeholder || input.props['aria-label'] || `${input.type} #${i + 1}`;
     startCounting();
     input.props.onChange({ target: { value: '7' } });
     settle(p, 3);
@@ -1126,14 +1139,22 @@ await check('paging itself is NOT reset — the one query change that keeps its 
 // Everything on the page that changes the SERVER query. `onPage` is excluded
 // on purpose: paging is the one query change that must keep its page, and it
 // has its own check above.
+//
+// A FORM CONTROL IS NOT ALWAYS AN `<input>`. The house style for an enum filter
+// in this product is a `<select>` — RequestsPage's toolbar uses four — and
+// `filters` here still carries unwired keys (source, noticePeriod,
+// currentPosition, university, minExp, maxExp) that would arrive as selects the
+// day they are wired up. A sweep that only discovered `input` would go green
+// while a brand-new filter quietly skipped the page reset, which is the exact
+// bug this file exists to catch. So every form control the toolbar renders is
+// discovered, and TOOLBAR_FLOOR below turns a shrinking sweep into a failure
+// rather than a silently smaller run.
 function queryControls(tree) {
   const found = [];
-  const toolbar = byName(tree, 'FilterToolbar')[0];
-  if (toolbar) {
-    for (const el of nodes(toolbar).filter((n) => n.type === 'input' && n.props?.onChange)) {
-      found.push({ what: `filter input “${el.props.placeholder || '(unnamed)'}”`,
-        fire: () => el.props.onChange({ target: { value: '7' } }) });
-    }
+  for (const el of toolbarControls(tree)) {
+    const name = el.props.placeholder || el.props['aria-label'] || el.props.title || '(unnamed)';
+    found.push({ what: `filter ${el.type} “${name}”`,
+      fire: () => el.props.onChange({ target: { value: '7' } }) });
   }
   for (const el of screenTabs(tree)) {
     found.push({ what: `screen tab “${text(el)}”`, fire: () => el.props.onClick() });
@@ -1141,8 +1162,17 @@ function queryControls(tree) {
   for (const el of nodes(tree).filter((n) => /^Remove .* filter$/.test(n.props?.['aria-label'] || ''))) {
     found.push({ what: `chip “${el.props['aria-label']}”`, fire: () => el.props.onClick() });
   }
-  for (const el of nodes(tree).filter((n) => n.type === 'button' && (text(n) === 'Clear all' || text(n) === 'Clear'))) {
-    found.push({ what: `“${text(el)}” button`, fire: () => el.props.onClick() });
+  // Clear / Clear all reset the FILTERS. The bulk bar ships a third button
+  // whose label is also “Clear” — it is `clearSelection`, it empties the
+  // checkbox set and changes no query at all — so matching on the word alone
+  // would put a control in this sweep that can never send a request. The search
+  // is scoped to the two rows that own filter state.
+  const filterRows = nodes(tree).filter((n) => ['ask-note', 'filter-chips']
+    .some((c) => n.props?.className?.includes?.(c)));
+  for (const row of filterRows) {
+    for (const el of nodes(row).filter((n) => n.type === 'button' && /^Clear( all)?$/.test(text(n)))) {
+      found.push({ what: `“${text(el)}” button`, fire: () => el.props.onClick() });
+    }
   }
   const pager = byName(tree, 'Pager')[0];
   if (pager) found.push({ what: 'page size', fire: () => pager.props.onPageSize(25) });
@@ -1157,8 +1187,20 @@ await check('EVERY query-changing control on the page returns to page 1 in exact
     const opts = { view, initialFilters: { q: 'nadia' } };   // a live filter, so the chips exist
     const probe = await candidatesAtPage(3, opts);
     const menu = queryControls(probe.tree);
+    const inToolbar = toolbarControls(probe.tree);
     probe.p.dispose();
-    assert.ok(menu.length > 0, `${view} view exposes no query-changing control — the sweep found nothing to check`);
+    // An explicit floor, not just "> 0". A sweep that discovers less than it
+    // used to has stopped covering something, and that must fail here rather
+    // than pass with a shorter list.
+    assert.ok(menu.length >= CONTROL_FLOOR[view],
+      `${view} view exposes ${menu.length} query-changing controls, below the floor of ` +
+      `${CONTROL_FLOOR[view]} — either a control was removed, or the sweep stopped seeing one: ` +
+      `${menu.map((m) => m.what).join(', ')}`);
+    if (view === 'table') {
+      assert.ok(inToolbar.length >= TOOLBAR_FLOOR,
+        `the toolbar renders ${inToolbar.length} form controls, below the floor of ${TOOLBAR_FLOOR} ` +
+        `— a filter that is not an <input>, <select> or <textarea> is invisible to this sweep`);
+    }
 
     for (let i = 0; i < menu.length; i++) {
       const { p, tree } = await candidatesAtPage(3, opts);
