@@ -438,7 +438,8 @@ img, svg, video, canvas {
    TALENT POOL COMPOSITION
    The Ask bar is unique to Talent Pool, so `.page-head:has(+ .ask-bar)` scopes
    these rules without a page rewrite. `.tp-page` / `.tp-actions` apply when the
-   matching markup is present. Two desktop heights: 36px actions, 32px compact.
+   matching markup is present. Control height comes from --cl-ctl-lg; only the
+   compact 32px variants are scoped here.
    Mobile 44px floor is preserved below 640px.
    ========================================================================== */
 /* Give the actions their own full-width row WITHOUT changing the flex
@@ -497,8 +498,13 @@ img, svg, video, canvas {
 .tp-page .tp-actions .btn,
 .page-head:has(+ .ask-bar) + .ask-bar .btn,
 .tp-page .ask-bar .btn {
-  min-height: 36px;
-  height: 36px;
+  /* Was a hard 36px at EVERY width from 641 up, which is why "one control
+     height above the phone floor" was not actually true product-wide: the
+     Talent Pool ask bar sat at 36px against a 40px filter row directly beneath
+     it. Takes the token now, like every other button. The scoped horizontal
+     padding below is a real density choice for this page and stays. */
+  min-height: var(--cl-ctl-lg);
+  height: auto;
   padding: 0 14px;
   width: auto;
   flex: 0 0 auto;
@@ -530,8 +536,12 @@ img, svg, video, canvas {
 .tp-page .ask-input {
   flex: 1 1 auto;
   min-width: 0;
-  height: 36px;
-  min-height: 36px;
+  /* Takes the control token like every other field. It was pinned to 36px at
+     every width from 641 up, which left it a different height from the filter
+     row directly beneath it. The min-width release above is the part that
+     matters here and is unchanged. */
+  min-height: var(--cl-ctl-lg);
+  height: auto;
 }
 .ask-bar ~ div > .toolbar:not(.filter-toolbar):not(.ask-bar),
 .tp-page .tp-filters {
@@ -547,7 +557,9 @@ img, svg, video, canvas {
 .tp-page .tp-filters select {
   width: 100%;
   min-width: 0;
-  height: 36px;
+  /* No height here. It used to say 36px; it was already inert (clamped by
+     min-height on the control) but it is exactly the kind of viewport-adjacent
+     height pin that becomes a seam the moment a clamp is relaxed. */
 }
 .ask-bar ~ div > .toolbar:not(.filter-toolbar) .spacer,
 .tp-page .tp-filters .spacer { display: none; }
@@ -625,7 +637,7 @@ img, svg, video, canvas {
    controls runs out of room and wraps into ragged rows. Zooming out looked
    "fixed" only because it bought back CSS pixels.
    This block steps the same controls down to the two sizes the system allows —
-   36px standard, 32px compact — and lets toolbars wrap on their own terms. It
+   control height at all any more — and lets toolbars wrap on their own terms. It
    does not touch >1440px, and the <=1024px mobile floor blocks are untouched.
    ========================================================================== */
 @media (min-width: 1024px) and (max-width: 1440px) {
@@ -669,7 +681,4 @@ img, svg, video, canvas {
   .tp-page .tp-filters {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
-  .ask-bar ~ div > .toolbar:not(.filter-toolbar) input,
-  .ask-bar ~ div > .toolbar:not(.filter-toolbar) select,
-  .tp-page .tp-filters input, .tp-page .tp-filters select { height: 36px; }
 }

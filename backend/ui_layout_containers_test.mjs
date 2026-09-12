@@ -30,6 +30,24 @@ function mediaBlocks(css, needle) {
   return out;
 }
 
+// Is this offset inside any @media block? Counting `@media` against `\n}` is
+// not good enough — nested rules close with their own brace and the count goes
+// wrong, which is how an earlier version of this file mistook the phone card
+// padding for the desktop one.
+function insideMedia(css, index) {
+  for (let at = css.indexOf('@media'); at !== -1; at = css.indexOf('@media', at + 1)) {
+    const open = css.indexOf('{', at);
+    if (open > index) break;
+    let depth = 0, end = at;
+    for (let i = open; i < css.length; i++) {
+      if (css[i] === '{') depth++;
+      else if (css[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (index > open && index < end) return true;
+  }
+  return false;
+}
+
 let passed = 0, failed = 0;
 function check(name, run) {
   try { run(); passed++; console.log(`  ✓ ${name}`); }
@@ -39,18 +57,28 @@ function check(name, run) {
 /* ---------------------------------------------------------------------------
    The laptop band no longer steps control height.
    ------------------------------------------------------------------------ */
-check('the laptop band sets no control height at either of its edges', () => {
+check('the laptop band declares no control size at all', () => {
   const resp = read('arabtec-responsive.css');
   const bands = mediaBlocks(resp, '@media (min-width: 1024px) and (max-width: 1440px)');
   assert.equal(bands.length, 1, 'exactly one laptop band');
   const band = bands[0];
-  // It used to pin 36px/32px here, which put a step at BOTH edges — 1441 -> 40,
-  // 1440 -> 36, and 1024 -> 36, 1023 -> 40. Controls were smallest in the
-  // MIDDLE of the range, so a 1023px tablet got larger controls than a 1280px
-  // laptop. A control may never shrink as the viewport does.
-  assert.equal(/min-height:\s*36px/.test(band), false, 'no 36px control height');
-  assert.equal(/height:\s*32px/.test(band), false, 'no 32px compact height');
-  assert.equal(/\.icon-btn\s*\{\s*width:\s*32px/.test(band), false, 'no 32px icon button');
+
+  // The first version of this guard tested for the two literal strings the
+  // author had just deleted — `36px` and `32px`. An adversarial review then
+  // reinstated the identical seam using 35px and a 28px icon button and the
+  // suite stayed green. So do not look for values: assert that the band
+  // declares NO size on anything that is a control, whatever the number.
+  const CONTROL = /\.btn|\binput\b|\bselect\b|\btextarea\b|icon-btn|view-toggle|\.field/;
+  const SIZING = /(?:^|;|\{)\s*(?:min-|max-)?(?:height|width)\s*:/;
+  const offenders = [];
+  for (const m of band.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const sel = m[1].trim(), body = m[2];
+    if (!CONTROL.test(sel)) continue;
+    if (SIZING.test(body)) offenders.push(`${sel.replace(/\s+/g, ' ').slice(0, 70)} -> ${body.trim().slice(0, 40)}`);
+  }
+  assert.deepEqual(offenders, [],
+    `the laptop band may not size a control — that is what put a step at BOTH its edges:\n      ${offenders.join('\n      ')}`);
+
   // but the band survives for what it is actually for
   assert.match(band, /flex-wrap:\s*wrap/, 'it still wraps the toolbar');
   assert.match(band, /gap:\s*8px 12px/, 'and still gives the wrap real gaps');
@@ -91,20 +119,33 @@ check('control height comes from one token, and only the phone raises it', () =>
 /* ---------------------------------------------------------------------------
    Cards keep one rhythm without losing their separate identities.
    ------------------------------------------------------------------------ */
-check('card padding resolves to one value, not three', () => {
-  // `.card-pad` is declared in three sheets. The resolved value was already
-  // 20px, but styles.css said `20px 22px` — the only asymmetric card padding in
-  // the system — so the answer depended on which sheet you read.
-  const decls = sheets.flatMap(({ name, css }) =>
-    [...css.matchAll(/\.card-pad[^{}]*\{([^}]*)\}/g)]
-      .map((m) => ({ name, body: m[1] })))
-    .filter((d) => /padding:/.test(d.body));
-  assert.ok(decls.length >= 2, `.card-pad is declared in several sheets, found ${decls.length}`);
-  for (const d of decls) {
-    const pad = d.body.match(/padding:\s*([^;]+)/)[1].trim();
-    const parts = pad.split(/\s+/);
-    assert.ok(parts.length === 1,
-      `${d.name} declares an asymmetric card padding "${pad}" — card padding is one value`);
+check('card padding resolves to the value the product actually uses', () => {
+  // The first version asserted only the SHAPE (one value, not two), so
+  // `padding: 3px` passed and every card in the product would have been
+  // crushed. Resolve the winner and pin the VALUE.
+  const decls = [];
+  sheets.forEach(({ name, css }, sheetIndex) => {
+    for (const m of css.matchAll(/([^{}]*\.card-pad[^{}]*)\{([^}]*)\}/g)) {
+      const sel = m[1].trim(), body = m[2];
+      const pad = body.match(/(?:^|;)\s*padding:\s*([^;]+)/);
+      if (!pad) continue;
+      decls.push({ name, sheetIndex, sel, value: pad[1].trim(),
+        scoped: insideMedia(css, m.index) });
+    }
+  });
+  const desktop = decls.filter((d) => !d.scoped);
+  assert.ok(desktop.length >= 2, `.card-pad is declared in several sheets, found ${desktop.length}`);
+  const winner = desktop[desktop.length - 1];
+  assert.equal(winner.value, 'var(--cl-6)',
+    `the winning card padding should be the spacing token, got "${winner.value}" from ${winner.name}`);
+  const cl = read('claude-system.css');
+  assert.match(cl, /--cl-6:\s*20px/, 'and --cl-6 is 20px');
+
+  // every losing declaration must agree, so the answer never depends on which
+  // sheet a reader happens to open
+  for (const d of desktop) {
+    assert.ok(/^(20px|var\(--cl-6\))$/.test(d.value),
+      `${d.name} declares card padding "${d.value}" — every declaration must resolve to 20px`);
   }
 });
 

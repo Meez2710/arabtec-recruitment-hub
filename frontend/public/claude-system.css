@@ -1258,10 +1258,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 /* (5) NOT CHANGED, AND WHY.
-   36px vs 40px    the default control height still steps at the 1440/1441
-                   boundary (`arabtec-responsive.css` laptop band). Measured
-                   and confirmed; it is a KNOWN BACKLOG item and deliberately
-                   left for the step that owns it.
+   36px vs 40px    CLOSED by the cards-and-containers step. The laptop band
+                   stepped control height at BOTH its edges, so controls were
+                   smallest mid-range; the overrides are gone and height now
+                   comes from --cl-ctl-lg alone — 40px above the phone floor,
+                   44px below.
    `.ask-input`    `arabtec-approved-ui.css` sets `min-width: 260px` and
                    `arabtec-responsive.css` releases it through
                    `.page-head:has(+ .ask-bar) + .ask-bar .ask-input
