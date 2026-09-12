@@ -6548,7 +6548,10 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
 function CandidatesPage({ user, onNavigate, initialFilters }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
-  const [filters, setFilters] = useState(() => ({
+  // `setFiltersRaw` is referenced exactly once — by the `setFilters` wrapper
+  // defined with the rest of the query state below, which also returns to
+  // page 1. Nothing else in this component may call it.
+  const [filters, setFiltersRaw] = useState(() => ({
     q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '',
     currentCompany: '', tag: '', currentPosition: '', university: '',
     graduationFrom: '', graduationTo: '',
@@ -6558,14 +6561,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     stage: '', recruiterId: '', requestId: '', projectId: '',
     ...(initialFilters || {}),
   }));
-  // Arriving with a filter from elsewhere (nothing sends one yet, but the
-  // mechanism matches every other list page) — apply it whenever its
-  // identity changes, not just on first mount.
-  useEffect(() => {
-    if (!initialFilters) return;
-    setFilters((f) => ({ ...f, ...initialFilters }));
-    setPipeFilters((f) => ({ ...f, ...initialFilters }));
-  }, [initialFilters]);
+  // (The effect that applies `initialFilters` lives with the rest of the query
+  // state below — it changes the query, so it must use the query setters.)
   // Plain-English search. It does not hold its own result list: it fills the
   // filters above and lets the existing load() run, so paging, tabs, sorting
   // and the table stay exactly as they were and the recruiter can hand-edit
@@ -6635,22 +6632,58 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     window.addEventListener('ats:open-candidate', onOpen);
     return () => window.removeEventListener('ats:open-candidate', onOpen);
   }, []);
-  const [screenTab, setScreenTab] = useState('all'); // Database fitness-screen filter
+  const [screenTab, setScreenTabRaw] = useState('all'); // Database fitness-screen filter
   // Server-side paging/sorting. The API returns a `pagination` envelope; the UI no
   // longer fetches the whole table and slices it in the browser.
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSizeRaw] = useState(50);
   const [sort, setSort] = useState({ by: 'created', dir: 'desc' });
+
+  /* --------------------------- the query setters ---------------------------
+     `filters`, `screenTab`, `pageSize` and `sort` are all part of the server
+     query, so changing any of them must return to page 1 — otherwise the user
+     lands on a page that need not exist under the new query and sees an empty
+     table.
+
+     That reset used to live in an effect watching those values, which put it in
+     a SECOND render: the first render already carried the new filter but the
+     OLD page, so `load` ran once for (new filter, old page) and again for
+     (new filter, page 1). Two requests, the first of them wrong.
+
+     The reset therefore happens in the SAME event handler as the change, so
+     React batches both into one render carrying the final intended query. To
+     make that impossible to forget at a call site, the raw useState setters are
+     named `*Raw` and are each referenced exactly ONCE — here. Every call site in
+     this component, and every one added later, goes through these wrappers and
+     gets the page reset for free. (`sort` does the same through `toggleSort`.)
+     Paging itself is the one query change that must NOT reset the page, so
+     `setPage` stays raw and is what <Pager onPage> receives.
+     ---------------------------------------------------------------------- */
+  const setFilters = useCallback((updater) => { setFiltersRaw(updater); setPage(1); }, []);
+  const setScreenTab = useCallback((tab) => { setScreenTabRaw(tab); setPage(1); }, []);
+  const setPageSize = useCallback((n) => { setPageSizeRaw(n); setPage(1); }, []);
+
+  // Arriving with a filter from elsewhere (nothing sends one yet, but the
+  // mechanism matches every other list page) — apply it whenever its identity
+  // changes, not just on first mount. It changes the query, so it goes through
+  // the wrapper above and returns to page 1 like any other filter change.
+  useEffect(() => {
+    if (!initialFilters) return;
+    setFilters((f) => ({ ...f, ...initialFilters }));
+    setPipeFilters((f) => ({ ...f, ...initialFilters }));
+  }, [initialFilters, setFilters]);
+
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1, hasMore: false });
   const [loadError, setLoadError] = useState(null);
   // Refetching is not the same as having no data. `busy` marks a query in
   // flight while the rows already on screen stay mounted; only `candidates`
   // being null (nothing has ever loaded) shows the skeleton.
   const [busy, setBusy] = useState(false);
-  // Sorting fires two queries: the sort change itself, and the reset to page 1
-  // that follows it. Whichever answers last used to win regardless of which
-  // was asked last. The skeleton hid that; keeping the rows mounted does not,
-  // so only the newest request may write to state.
+  // A query change now costs exactly one request, but requests can still
+  // overtake each other: type into the search box twice in quick succession and
+  // the first answer may arrive after the second. Whichever answered last used
+  // to win regardless of which was asked last. The skeleton hid that; keeping
+  // the rows mounted does not, so only the newest request may write to state.
   const loadSeq = useRef(0);
   const btns = useResolvedButtons();
   // Requests available for linking. Fetched once, and only for a user who may
@@ -6694,18 +6727,6 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     }
   }, [filters, screenTab, page, pageSize, sort]);
   useEffect(() => { load(); }, [load]);
-  // Any change to the query must return to page 1, otherwise the user can land on
-  // an out-of-range page and see an empty table.
-  //
-  // `sort` is deliberately NOT a dependency here. Resetting the page from an
-  // effect means the reset lands in a SECOND render: the first render already
-  // had the new sort but the old page, so `load` ran once for
-  // (new sort, old page) and again for (new sort, page 1) — two requests, the
-  // first of them asking for a page that may not exist under the new ordering.
-  // toggleSort resets the page itself instead, in the same batched update, so
-  // one click produces one render and one request. The remaining dependencies
-  // keep the old behaviour untouched.
-  useEffect(() => { setPage(1); }, [filters, screenTab, pageSize]);
 
   // Hooks, not just callbacks: every one of these must run on EVERY render, so
   // they live before the early return below. Declaring them after it (as this

@@ -417,7 +417,8 @@ await check('changing a filter still returns to page 1', async () => {
   tree = page.render();
   assert.equal(pageOf(sent[sent.length - 1]), '3');
 
-  // The reset effect still owns filters / screen tab / page size.
+  // Filters return to page 1 too — through the setFilters wrapper now, not the
+  // reset effect. The block at the end of this file holds that to one request.
   startCounting();
   const search = byName(tree, 'FilterToolbar')[0].props.search;
   search.props.onChange({ target: { value: 'zzz' } });
@@ -928,6 +929,279 @@ await check('no operational column was starved to pay for CV and Stage', () => {
   // for a four-digit year at the nine-column floor.
   assert.ok(pct('graduation') >= 6, 'Graduation keeps the 6% a four-digit year needs');
   assert.ok(pct('university') >= 9, 'University keeps enough to be a useful truncating column');
+});
+
+/* ---------------------------------------------------------------------------
+   One query change must cost exactly one request — for EVERY control.
+
+   The sort header was fixed first (above). `filters`, `screenTab` and
+   `pageSize` had the same defect for the same reason: `page` was reset by an
+   effect watching them, so the reset landed in a SECOND render. The first
+   render already carried the new query but the OLD page, so from page 3 a
+   filter change sent
+
+     /candidates?q=nadia&page=3&pageSize=50&sort=created&dir=desc
+     /candidates?q=nadia&page=1&pageSize=50&sort=created&dir=desc
+
+   — two requests, the first of them asking for a page that need not exist
+   under the new filter.
+
+   The reset now happens in the same event handler as the change, through the
+   setFilters / setScreenTab / setPageSize wrappers, so React batches both into
+   one render carrying the final intended query.
+   ------------------------------------------------------------------------ */
+
+const paramOf = (query, key) => new URLSearchParams(query.slice(query.indexOf('?') + 1)).get(key);
+
+// Render, answer whatever the page asked for, and repeat until it stops asking.
+// Mounting with `initialFilters` legitimately costs two round trips (the state
+// initialiser, then the prop-sync effect), so the setup must not assume one.
+async function quiesce(p) {
+  let tree = p.render();
+  for (let i = 0; i < 8 && pending; i++) {
+    const inFlight = pending; pending = null;
+    inFlight.resolve(['Alpha', 'Beta']);
+    await flush();
+    tree = p.render();
+  }
+  return tree;
+}
+
+// A mounted CandidatesPage sitting on `target`, reached through the real pager.
+async function candidatesAtPage(target, { initialFilters, view = 'table', pickTab } = {}) {
+  totalPages = 5;
+  const p = mount(get('CandidatesPage'), { user, onNavigate() {}, initialFilters });
+  let tree = await quiesce(p);
+  showTable(tree);                       // the pager exists in every view but pipeline
+  tree = await quiesce(p);
+  // Any tab has to be chosen BEFORE walking to the page: choosing one is itself
+  // a query change, so it returns to page 1 and would undo the walk.
+  if (pickTab) {
+    screenTabs(tree).find((b) => text(b).startsWith(pickTab)).props.onClick();
+    tree = await quiesce(p);
+    assert.equal(paramOf(sent[sent.length - 1], 'screeningStatus'), pickTab.toLowerCase(),
+      `the ${pickTab} tab really was selected`);
+  }
+  if (target > 1) {
+    byName(tree, 'Pager')[0].props.onPage(target);
+    tree = await quiesce(p);
+    assert.equal(pageOf(sent[sent.length - 1]), String(target), `the pager really moved to page ${target}`);
+  }
+  if (view !== 'table') {
+    byName(tree, 'ViewToggle')[0].props.onChange(view);
+    tree = await quiesce(p);
+  }
+  return { p, tree };
+}
+
+const searchBox = (tree) => byName(tree, 'FilterToolbar')[0].props.search;
+const screenTabs = (tree) => nodes(tree).filter((n) => n.type === 'button' && n.props?.className?.includes?.('seg-tab'));
+
+await check('a filter change from page 3 sends one request, and it asks for page 1', async () => {
+  const { p, tree } = await candidatesAtPage(3);
+  startCounting();
+  searchBox(tree).props.onChange({ target: { value: 'nadia' } });
+  const after = settle(p, 3);
+  assert.equal(sent.length, 1,
+    `one filter change must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '1', `the single request asks for page 1, not the stale page 3: ${sent[0]}`);
+  assert.equal(paramOf(sent[0], 'q'), 'nadia', 'and it carries the new filter');
+  assert.equal(tables(after).length, 1, 'the table stayed mounted');
+  assert.equal(skeletons(after).length, 0, 'no skeleton replaced the table');
+  p.dispose();
+});
+
+await check('every secondary filter input behaves the same from page 3', async () => {
+  const probe = await candidatesAtPage(1);
+  const count = nodes(byName(probe.tree, 'FilterToolbar')[0]).filter((n) => n.type === 'input').length;
+  probe.p.dispose();
+  assert.ok(count >= 6, `the toolbar still offers its inputs (found ${count})`);
+  for (let i = 0; i < count; i++) {
+    const { p, tree } = await candidatesAtPage(3);
+    const input = nodes(byName(tree, 'FilterToolbar')[0]).filter((n) => n.type === 'input')[i];
+    const what = input.props.placeholder || `input #${i + 1}`;
+    startCounting();
+    input.props.onChange({ target: { value: '7' } });
+    settle(p, 3);
+    assert.equal(sent.length, 1, `“${what}” must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+    assert.equal(pageOf(sent[0]), '1', `“${what}” must return to page 1: ${sent[0]}`);
+    p.dispose();
+  }
+});
+
+await check('a screen-tab change from page 4 sends one request, and it asks for page 1', async () => {
+  const { p, tree } = await candidatesAtPage(4);
+  const tabs = screenTabs(tree);
+  assert.equal(tabs.length, 5, 'all five screen tabs are on the page');
+  const screening = tabs.find((b) => text(b).startsWith('Screening'));
+  startCounting();
+  screening.props.onClick();
+  const after = settle(p, 3);
+  assert.equal(sent.length, 1,
+    `one tab click must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '1', `the single request asks for page 1, not the stale page 4: ${sent[0]}`);
+  assert.equal(paramOf(sent[0], 'screeningStatus'), 'screening', 'and it carries the new tab');
+  assert.equal(tables(after).length, 1, 'the table stayed mounted');
+  p.dispose();
+});
+
+await check('changing the page size sends one request, with the new size and page 1', async () => {
+  const { p, tree } = await candidatesAtPage(3);
+  startCounting();
+  byName(tree, 'Pager')[0].props.onPageSize(25);
+  settle(p, 3);
+  assert.equal(sent.length, 1,
+    `one page-size change must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(paramOf(sent[0], 'pageSize'), '25', 'the request carries the new page size');
+  assert.equal(pageOf(sent[0]), '1', `page 3 of fifty-row pages is not page 3 of twenty-five-row pages: ${sent[0]}`);
+  p.dispose();
+});
+
+await check('clearing one filter chip sends one request, for page 1 without that filter', async () => {
+  const { p, tree } = await candidatesAtPage(3, { initialFilters: { q: 'nadia' } });
+  assert.equal(paramOf(sent[sent.length - 1], 'q'), 'nadia', 'the filter really was applied');
+  const chip = nodes(tree).find((n) => /^Remove .* filter$/.test(n.props?.['aria-label'] || ''));
+  assert.ok(chip, 'an active filter shows a chip with a remove button');
+  startCounting();
+  chip.props.onClick();
+  settle(p, 3);
+  assert.equal(sent.length, 1,
+    `clearing one filter must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '1', `the single request asks for page 1: ${sent[0]}`);
+  assert.equal(paramOf(sent[0], 'q'), null, 'and the filter is gone');
+  p.dispose();
+});
+
+await check('clear-all sends one request, for page 1 with nothing set', async () => {
+  // A filter AND a tab to undo, and back out on page 3 when it is undone.
+  const { p, tree } = await candidatesAtPage(3, { initialFilters: { q: 'nadia' }, pickTab: 'New' });
+  let t = tree;
+  assert.equal(paramOf(sent[sent.length - 1], 'screeningStatus'), 'new', 'the tab survived the walk to page 3');
+  const clearAll = nodes(t).find((n) => n.type === 'button' && text(n) === 'Clear all');
+  assert.ok(clearAll, 'the chips row offers Clear all');
+  startCounting();
+  clearAll.props.onClick();
+  t = settle(p, 3);
+  assert.equal(sent.length, 1,
+    `clear-all must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '1', `the single request asks for page 1: ${sent[0]}`);
+  assert.equal(paramOf(sent[0], 'q'), null, 'the filter is gone');
+  assert.equal(paramOf(sent[0], 'screeningStatus'), null, 'the tab is back to All');
+  p.dispose();
+});
+
+await check('the pipeline view search box resets the page like any other filter', async () => {
+  const { p, tree } = await candidatesAtPage(3, { view: 'pipeline' });
+  const pipeline = byName(tree, 'TalentPipeline')[0];
+  assert.ok(pipeline && pipeline.props.setQ, 'the pipeline owns a search box that writes filters.q');
+  startCounting();
+  pipeline.props.setQ('nadia');
+  settle(p, 3);
+  assert.equal(sent.length, 1,
+    `the pipeline search must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '1', `the single request asks for page 1: ${sent[0]}`);
+  assert.equal(paramOf(sent[0], 'q'), 'nadia');
+  p.dispose();
+});
+
+await check('paging itself is NOT reset — the one query change that keeps its page', async () => {
+  const { p, tree } = await candidatesAtPage(1);
+  startCounting();
+  byName(tree, 'Pager')[0].props.onPage(4);
+  settle(p, 3);
+  assert.equal(sent.length, 1, `one pager click must send one request, sent ${sent.length}: ${sent.join(' | ')}`);
+  assert.equal(pageOf(sent[0]), '4', 'the pager still reaches the page it was asked for');
+  p.dispose();
+});
+
+/* ---------------------------------------------------------------------------
+   Coverage. The controls are discovered from the rendered tree rather than
+   listed by hand, so a filter added tomorrow is swept without anyone having to
+   remember this file: it appears in the enumeration and must reset the page
+   like the rest. Both views are swept, because the toolbar, the tabs, the
+   chips and the pager live outside pipeline view and the pipeline's own search
+   box lives inside it.
+   ------------------------------------------------------------------------ */
+
+// Everything on the page that changes the SERVER query. `onPage` is excluded
+// on purpose: paging is the one query change that must keep its page, and it
+// has its own check above.
+function queryControls(tree) {
+  const found = [];
+  const toolbar = byName(tree, 'FilterToolbar')[0];
+  if (toolbar) {
+    for (const el of nodes(toolbar).filter((n) => n.type === 'input' && n.props?.onChange)) {
+      found.push({ what: `filter input “${el.props.placeholder || '(unnamed)'}”`,
+        fire: () => el.props.onChange({ target: { value: '7' } }) });
+    }
+  }
+  for (const el of screenTabs(tree)) {
+    found.push({ what: `screen tab “${text(el)}”`, fire: () => el.props.onClick() });
+  }
+  for (const el of nodes(tree).filter((n) => /^Remove .* filter$/.test(n.props?.['aria-label'] || ''))) {
+    found.push({ what: `chip “${el.props['aria-label']}”`, fire: () => el.props.onClick() });
+  }
+  for (const el of nodes(tree).filter((n) => n.type === 'button' && (text(n) === 'Clear all' || text(n) === 'Clear'))) {
+    found.push({ what: `“${text(el)}” button`, fire: () => el.props.onClick() });
+  }
+  const pager = byName(tree, 'Pager')[0];
+  if (pager) found.push({ what: 'page size', fire: () => pager.props.onPageSize(25) });
+  const pipeline = byName(tree, 'TalentPipeline')[0];
+  if (pipeline && pipeline.props.setQ) found.push({ what: 'pipeline search', fire: () => pipeline.props.setQ('nadia') });
+  return found;
+}
+
+await check('EVERY query-changing control on the page returns to page 1 in exactly one request', async () => {
+  const swept = [];
+  for (const view of ['table', 'pipeline']) {
+    const opts = { view, initialFilters: { q: 'nadia' } };   // a live filter, so the chips exist
+    const probe = await candidatesAtPage(3, opts);
+    const menu = queryControls(probe.tree);
+    probe.p.dispose();
+    assert.ok(menu.length > 0, `${view} view exposes no query-changing control — the sweep found nothing to check`);
+
+    for (let i = 0; i < menu.length; i++) {
+      const { p, tree } = await candidatesAtPage(3, opts);
+      const controls = queryControls(tree);
+      assert.equal(controls.length, menu.length, 'the control list is stable across mounts');
+      assert.equal(controls[i].what, menu[i].what, 'the control list is in a stable order');
+      startCounting();
+      controls[i].fire();
+      settle(p, 3);
+      const trace = sent.join(' | ') || '(no request at all)';
+      assert.equal(sent.length, 1,
+        `${view} view — ${controls[i].what} must send exactly one request, sent ${sent.length}: ${trace}`);
+      assert.equal(pageOf(sent[0]), '1',
+        `${view} view — ${controls[i].what} did not return to page 1: ${trace}`);
+      p.dispose();
+      swept.push(`${view}/${controls[i].what}`);
+    }
+  }
+  assert.ok(swept.length >= 14, `the sweep should reach every control; it reached ${swept.length}`);
+  console.log(`      swept ${swept.length}: ${swept.join(', ')}`);
+});
+
+await check('the page reset cannot be bypassed — each raw setter has exactly one caller', async () => {
+  const source = fs.readFileSync(publicDir + 'app.jsx', 'utf8');
+  const start = source.indexOf('function CandidatesPage(');
+  const end = source.indexOf('\nfunction ', start + 1);
+  assert.ok(start > 0 && end > start, 'CandidatesPage was located in the source');
+  const code = source.slice(start, end)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((line) => line.replace(/\/\/.*$/, '')).join('\n');
+
+  for (const raw of ['setFiltersRaw', 'setScreenTabRaw', 'setPageSizeRaw']) {
+    const hits = code.match(new RegExp(`\\b${raw}\\b`, 'g')) || [];
+    assert.equal(hits.length, 2,
+      `${raw} must appear exactly twice — its useState declaration and its one wrapper — found ${hits.length}. ` +
+      'Calling a raw setter anywhere else skips the page reset.');
+    const caller = code.split('\n').find((line) => line.includes(raw) && !line.includes('useState'));
+    assert.match(caller, /setPage\(1\)/,
+      `the only caller of ${raw} must return to page 1 in the same handler: ${caller.trim()}`);
+  }
+  assert.ok(!/useEffect\(\(\)\s*=>\s*\{\s*setPage\(1\)/.test(code),
+    'the page reset must not go back into an effect — that is the two-request bug');
+  assert.match(code, /onPage=\{setPage\}/, 'the pager still gets the raw setPage: paging must not reset itself');
 });
 
 console.log(`\n=== UI SORT STABILITY: ${passed} passed, ${failed} failed ===`);
