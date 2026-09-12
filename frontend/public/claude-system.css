@@ -1302,3 +1302,146 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
                    neighbour moves at all; only the right-anchored
                    `.modal-foot` shifts its Cancel button, by 16.09px, after
                    the user has already clicked. Recorded as backlog. */
+
+/* ============================================================================
+   21. OVERLAYS — DIALOGS AND THE CV REVIEW SIDE PANEL
+
+   Measured in a browser against all five sheets in load order, with markup
+   copied verbatim out of app.jsx, at 1440, 1280, 1024, 768, 430, 390 and 360.
+   Geometry only: every colour, background, border colour and type size for
+   `.cvrev-*` lives in the design system, beside the rest of the palette.
+
+   WHAT THE AUDIT FOUND ALREADY CORRECT, and is not touched here:
+
+   - `.modal` fits at every measured width. It is `width: 100%` on a
+     `max-width: 560px` (760px when `wide`) inside a `.modal-overlay` whose
+     padding is 20px above 640px and 8px below it. Measured widths: 560 at
+     1440/1280/1024/768 for the default dialog, 760 at 1440/1280 and 728 at 768
+     for the wide one, and 414 / 374 / 344 at 430 / 390 / 360 — every one
+     inside the usable viewport, with the document's horizontal overflow
+     measured at exactly 0 at all seven widths.
+   - `.modal > .modal-body` already carries `flex: 1 1 auto; min-height: 0;
+     overflow-y: auto`, and `.modal` itself is `max-height: min(92vh, 100%)`
+     (94vh under 640px), so a long dialog scrolls its BODY while the head and
+     foot stay put. Measured on the wide dialog at 1440: panel 828px tall with
+     its body the only scroller. Correct as found.
+   - Dialog semantics — role, aria-modal, the labelled close control, the Tab
+     trap, Escape and focus restore — are behaviour, asserted by
+     ui_readiness_test, and nothing in this section changes them. The new panel
+     joins that contract rather than opting out of it.
+
+   WHAT THIS SECTION CLOSES:
+
+   (1) THE STACKED PARSE REVIEW SPLIT ONE SHORT SCREEN INTO TWO SHORTER ONES.
+       `.parse-review-body` is a grid with `overflow: hidden`; at 900px and
+       below it collapses to one column, so the two panes became two ROWS
+       sharing one fixed height that cannot scroll. Measured at 390x844 before
+       this change: the body box was 627px tall, and inside it the parsed
+       results were a 334px window onto 771px of content (438px reachable only
+       by scrolling that pane) while the CV sat in a 293px box whose own
+       viewport showed 252px of a 524px document. Nothing was unreachable —
+       but a recruiter checking a value against the source was scrolling two
+       separate 300px-tall panes against each other on a phone.
+       Now, BELOW 900px ONLY, the body is the single scroller and each pane
+       sizes to its own content: results 772px (no inner scrollbar at all) and
+       the CV on a 60vh floor — 506px, twice what it had. Above 900px nothing
+       changes: the two columns still each own their scroller, which is correct
+       when they sit side by side.
+       `min-height: auto` on the results pane is the load-bearing half. A grid
+       item whose `overflow` is not `visible` has an automatic minimum size of
+       ZERO, so simply letting the body scroll left the results row collapsed
+       to 81px — measured, and worse than what it replaced. The pane has to
+       give up its own scroller for the row to size to its content.
+
+   (2) THE CV REVIEW SIDE PANEL'S BOX. New component; the rules below are its
+       geometry. Two points are load-bearing:
+       - it is a SIDE panel, so the overlay's centring padding is released and
+         the panel hugs the inline-end edge at `min(1040px, 100%)`. At 1024 and
+         below that resolves to the full viewport width, which is why nothing
+         overflows on a phone: there is no fixed pixel width to overflow with.
+       - the note composer is the LAST flex child at `flex: 0 0 auto`, so it is
+         pinned to the bottom of the panel and stays reachable while the
+         details and the CV scroll. That is the requirement — one note at the
+         bottom — expressed as layout rather than as a scroll position.
+   ======================================================================== */
+
+/* (1) The stacked parse-review layout scrolls as ONE surface; the two-column
+   one still does not (there each column owns its own scroller). */
+@media (max-width: 900px) {
+  .parse-review-body { overflow-y: auto; }
+  .parse-review-results { overflow: visible; min-height: auto; }
+  .parse-review-cv { min-height: 60vh; }
+}
+
+/* (2) THE CV REVIEW SIDE PANEL. */
+/* The scrim keeps everything `.modal-overlay` already provides — the fixed
+   inset, the z-index, and the rules that hide the mobile nav and the Anyhelp
+   FAB behind an open dialog. Only its box changes: a panel that hugs an edge
+   cannot also be centred inside 20px of padding. */
+.modal-overlay.cvrev-overlay { padding: 0; place-items: stretch; }
+
+.cvrev-panel {
+  margin-inline-start: auto;
+  width: min(1040px, 100%);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cvrev-head { flex: 0 0 auto; }
+.cvrev-head-id { min-width: 0; display: grid; gap: var(--cl-1); }
+.cvrev-head-id h3 { margin: 0; }
+.cvrev-head-sub { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Details and CV side by side. `minmax(0, 1fr)` twice, not `1fr 1fr`: a grid
+   track's default `min-width: auto` is the content's minimum, so a long
+   unbroken value (an email, a LinkedIn URL) would push the track — and the
+   panel — wider than the viewport. */
+.cvrev-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  overflow: hidden;
+}
+.cvrev-details { min-width: 0; min-height: 0; overflow-y: auto; padding: var(--cl-5) var(--cl-6); }
+.cvrev-col-title { margin: 0 0 var(--cl-3); }
+.cvrev-cv { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* CvFilePreview is reused verbatim; it only needs to be told to fill the cell. */
+.cvrev-cv > .parse-review-cv { flex: 1 1 auto; min-height: 0; }
+.cvrev-cv-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--cl-5); display: grid; align-content: center; }
+
+.cvrev-table { width: 100%; border-collapse: collapse; }
+.cvrev-table td { padding: var(--cl-2) var(--cl-3) var(--cl-2) 0; vertical-align: top; }
+.cvrev-table td:first-child { width: 1%; white-space: nowrap; }
+.cvrev-table td:last-child { word-break: break-word; }
+.cvrev-section-row td { padding: var(--cl-4) 0 var(--cl-1); }
+
+.cvrev-note { flex: 0 0 auto; display: grid; gap: var(--cl-2); padding: var(--cl-4) var(--cl-6); }
+.cvrev-note-row { display: flex; gap: var(--cl-3); align-items: flex-start; }
+.cvrev-note-row textarea { flex: 1 1 auto; min-width: 0; resize: vertical; }
+.cvrev-note-row .btn { flex: 0 0 auto; }
+.cvrev-foot { flex: 0 0 auto; }
+
+/* Below 900px the two columns stack, so the BODY becomes the scroller and each
+   pane releases its own. The CV keeps a floor height — a preview with no
+   height at all is a blank surface, which is exactly what this panel exists to
+   avoid. The composer stays pinned outside the scroller. */
+@media (max-width: 900px) {
+  .cvrev-body { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  /* `min-height: auto` is not decoration: a grid item whose overflow is not
+     `visible` has an automatic minimum size of zero, so leaving the pane's own
+     scroller on collapsed this row to 25px with its table painting straight
+     over the CV below it. Measured at 390 before this line. */
+  .cvrev-details { overflow: visible; min-height: auto; }
+  .cvrev-cv { overflow: visible; min-height: 60vh; }
+}
+@media (max-width: 640px) {
+  .cvrev-details { padding: var(--cl-4) var(--cl-5); }
+  .cvrev-note { padding: var(--cl-3) var(--cl-5); }
+  /* A 44px-floor button beside a textarea leaves the field too narrow to read
+     on a phone, so the composer stacks and the button spans the row. */
+  .cvrev-note-row { flex-wrap: wrap; }
+  .cvrev-note-row .btn { flex: 1 1 100%; }
+}

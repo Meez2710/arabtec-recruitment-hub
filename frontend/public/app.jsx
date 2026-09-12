@@ -1325,6 +1325,10 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
         </div>
       )}
 
+      {/* One CV review panel for the whole app; every entry point reaches it
+          through the `ats:open-cv-review` event rather than owning its state. */}
+      <CvReviewHost user={user} />
+
       <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
     </div>
   );
@@ -5367,7 +5371,7 @@ function RequestPipeline({ request, user, btns }) {
                   <div className="kan-body">
                     {items.length === 0
                       ? <div className="kan-empty">No candidates at this stage</div>
-                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
                   </div>
                 </PipelineColumn>
               );
@@ -5375,7 +5379,7 @@ function RequestPipeline({ request, user, btns }) {
           </div>
         ) : view === 'list' ? (
           <div className="pipe-list">
-            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
           </div>
         ) : (
           <div className="card" style={{ overflowX: 'auto' }}><table>
@@ -5438,7 +5442,18 @@ function NextActionModal({ app, onClose, onSaved }) {
   );
 }
 
-function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns = {}, showRequest }) {
+/**
+ * The pipeline card's "Review CV" handler, or null when the viewer cannot read
+ * candidates at all. The applications serializer does not send `hasResume`, so
+ * whether a file exists is decided by the panel — which already has a clear
+ * "no CV stored" state — rather than guessed here.
+ */
+function cvReviewOpener(user, app) {
+  const id = app.candidate?.id || app.candidateId;
+  if (!id || !can(user, 'candidate.view')) return null;
+  return () => openCvReview(id, app.candidate || null);
+}
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, onReviewCv, btns = {}, showRequest }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null), triggerRef = useRef(null);
@@ -5480,6 +5495,7 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
         {menu && <div ref={menuRef} id={menuId} className="menu pipeline-menu" role="menu" onKeyDown={menuKeys}
           onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget) && e.relatedTarget !== triggerRef.current) setMenu(false); }}>
           <button className="menu-item" role="menuitem" onClick={() => action(onView)}>View candidate</button>
+          {onReviewCv && <button className="menu-item" role="menuitem" onClick={() => action(onReviewCv)}>Review CV</button>}
           {targets.map(stage => <button key={stage} className="menu-item" role="menuitem" onClick={() => action(() => onMove(stage))}>Move to {APP_STATUS[stage].label}</button>)}
           {movable && onNote && <button className="menu-item" role="menuitem" onClick={() => action(onNote)}>Set Next Action</button>}
           {movable && <button className="menu-item" role="menuitem" onClick={() => action(() => onMove('on_hold'))}>Put On Hold</button>}
@@ -5664,6 +5680,7 @@ function TalentPipeline({
                       onSelect={() => {}}
                       onView={() => onOpenCandidate(a.candidate?.id || a.candidateId)}
                       onMove={(s) => requestMove(a.id, s)}
+                      onReviewCv={cvReviewOpener(user, a)}
                       btns={btns} />
                   ))}
               </div>
@@ -5688,7 +5705,9 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   const [resumeBusy, setResumeBusy] = useState(false);
   const canEditCand = user?.permissions?.includes('candidate.edit');
   const canFeedback = user?.permissions?.includes('interview.feedback');
-  async function viewResume() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
+  // Opens the CV BESIDE this candidate's details instead of pushing the file
+  // at the browser; Download is still offered inside that panel.
+  function viewResume() { openCvReview(c.id, cand); }
   // D-02: re-run the parser against the résumé already on file.
   async function reparseResume() {
     setResumeBusy(true);
@@ -5741,7 +5760,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
                   <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? (cand.resumeName || 'Attached résumé') : <span className="muted">No résumé attached</span>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>View / Download</button>}
+                  {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>Review CV</button>}
                   {cand.hasResume && canEditCand && <button className="btn btn-sm btn-ghost" onClick={reparseResume} disabled={resumeBusy} title="Re-run the CV parser on the file already attached">{resumeBusy ? 'Working…' : 'Re-parse'}</button>}
                   {canEditCand && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{resumeBusy ? 'Uploading…' : (cand.hasResume ? 'Replace' : '+ Upload')}<input type="file" style={{ display: 'none' }} onChange={uploadResume} disabled={resumeBusy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
                 </div>
@@ -6511,6 +6530,7 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
                   {canScreen && sc !== 'unfit' && <Item onClick={() => { setOpen(false); onUnfit(); }}>Mark unfit</Item>}
                   {canLink && !active && <Item onClick={() => { setPanel('link'); setPicked(null); setQ(''); }}>Link to request</Item>}
                   {canLink && active && <Item onClick={() => { setPanel('move'); setPicked(null); setQ(''); }}>Move to another request</Item>}
+                  {candidate.hasResume && <Item onClick={() => { setOpen(false); openCvReview(candidate.id, candidate); }}>Review CV</Item>}
                   {candidate.hasResume && <Item onClick={() => { setOpen(false); downloadResume(candidate, toast); }}>Download CV</Item>}
                   <Item onClick={() => { setOpen(false); onOpen(); }}>Open profile</Item>
                 </div>
@@ -7121,8 +7141,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                 <td data-label="Stage"><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
-                    ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Download CV'}
-                        onClick={() => downloadResume(c, toast)}>Download</button>
+                    ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Review this CV beside the record'}
+                        onClick={() => openCvReview(c.id, c)}>Review</button>
                     : <span className="muted">—</span>}
                 </td>
               </tr>
@@ -7306,6 +7326,258 @@ function CvFilePreview({ fileUrl, fileName, mimeType }) {
       </div>
     </div>
   );
+}
+
+/* ===========================================================================
+   CV REVIEW SIDE PANEL — one CV viewer for the whole product
+   ---------------------------------------------------------------------------
+   Before this, EVERY "open the CV" path in the app called `api.download(...)`,
+   which pushes the file at the browser and leaves the recruiter to compare it
+   against the record in another window. The Product Owner asked for the
+   opposite: the CV opens ALONGSIDE the candidate's details, so the two can be
+   checked against each other without switching context, and instead of
+   approving each parsed value one by one the recruiter leaves ONE note at the
+   bottom flagging anything irrelevant or needing checking.
+
+   Reached by dispatching `ats:open-cv-review` (see `openCvReview`), which
+   `CvReviewHost` — mounted once in the Shell — listens for. That is the same
+   pattern `openRequest` already uses, and it is why a table cell, a row menu,
+   a drawer, a profile tab and a pipeline card can all open this panel without
+   any of them owning its state or threading props through the tree.
+
+   Nothing here is new backend surface: the details come from GET
+   /candidates/:id, the file from GET /candidates/:id/resume and the note from
+   POST /candidates/:id/notes — the endpoint `NoteModal` has always used.
+   ======================================================================== */
+
+/**
+ * The stored CV as an object URL.
+ *
+ * The resume endpoint requires an Authorization header, so a bare URL in an
+ * <iframe> or <img> gets a 401 and renders nothing — the file has to be
+ * fetched with the token and wrapped in a blob. The caller OWNS the returned
+ * url and MUST revoke it; see the effect in CvReviewPanel.
+ */
+async function fetchResumeBlobUrl(candidateId) {
+  const res = await fetch(`/api/candidates/${candidateId}/resume`, {
+    headers: api.token ? { Authorization: 'Bearer ' + api.token } : {},
+  });
+  if (!res.ok) {
+    throw new Error(res.status === 404
+      ? 'No CV is stored for this candidate yet.'
+      : res.status === 403 ? 'You do not have access to this CV.'
+      : 'Could not load the CV file.');
+  }
+  const blob = await res.blob();
+  // Content-Type can carry a charset; CvFilePreview compares the bare type.
+  const mimeType = String(res.headers.get('content-type') || blob.type || '').split(';')[0].trim();
+  return { url: URL.createObjectURL(blob), mimeType };
+}
+
+/** Open the CV review panel for a candidate from anywhere in the app. */
+function openCvReview(candidateId, seed) {
+  if (!candidateId) return;
+  window.dispatchEvent(new CustomEvent('ats:open-cv-review', { detail: { id: Number(candidateId), seed: seed || null } }));
+}
+
+/** The rows shown beside the CV — only fields the CV itself can be checked against. */
+function cvReviewDetailSections(c) {
+  const list = (v) => (Array.isArray(v) && v.length ? v.join(', ') : null);
+  return [
+    ['Identity', [
+      ['Name', c.fullName], ['Candidate No.', c.candidateNo], ['Email', c.email],
+      ['Phone', c.phone], ['Nationality', c.nationality], ['Location', c.location],
+      ['LinkedIn', c.linkedinUrl],
+    ]],
+    ['Experience', [
+      ['Current position', c.currentPosition], ['Current company', c.currentCompany],
+      ['Employer', c.employer], ['Current project', c.currentProject],
+      ['Years of experience', c.yearsExperience != null ? `${c.yearsExperience}` : null],
+      ['Notice period', c.noticePeriod],
+    ]],
+    ['Education', [
+      ['University', c.university], ['Major', c.major],
+      ['Graduation year', c.graduationYear != null ? `${c.graduationYear}` : null],
+    ]],
+    ['Skills & languages', [
+      ['Skills', list(c.skills)], ['Languages', list(c.languages)],
+      ['Certifications', list(c.certifications)],
+    ]],
+    ['Record', [
+      ['Source', c.source], ['Tags', list(c.tags)],
+      ['Expected salary', c.salaryVisible && c.expectedSalary != null ? `${c.expectedSalary}` : null],
+      ['Parsed', c.parsedAt ? fmtDate(c.parsedAt) : null],
+    ]],
+  ];
+}
+
+/**
+ * The CV beside the details, with one note at the bottom.
+ *
+ * THE OBJECT URL IS THE THING TO GET RIGHT. It is created in an effect keyed
+ * on the candidate and revoked in that effect's cleanup — on close, and on a
+ * switch to another candidate. A blob URL that is never revoked pins the whole
+ * file in memory for the lifetime of the document, so a recruiter opening
+ * twenty CVs in a session would be holding twenty files. The `alive` flag also
+ * revokes a URL that arrives AFTER the panel closed, which is the case a plain
+ * cleanup misses entirely.
+ */
+function CvReviewPanel({ candidateId, seed, user, onClose }) {
+  const toast = useToast();
+  const titleId = useId();
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const [cand, setCand] = useState(seed || null);
+  const [loadError, setLoadError] = useState('');
+  const [cv, setCv] = useState(null);          // { url, mimeType }
+  const [cvError, setCvError] = useState('');
+  const [cvBusy, setCvBusy] = useState(true);
+  const [note, setNote] = useState('');
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  // No composer at all when the user cannot write notes — a control that is
+  // guaranteed to 403 is worse than no control.
+  const canNote = can(user, 'candidate.note');
+
+  useEffect(() => {
+    let alive = true;
+    setLoadError('');
+    api.get(`/candidates/${candidateId}`)
+      .then((r) => { if (alive) setCand(r.candidate || null); })
+      .catch((e) => { if (alive) setLoadError(e.message || 'Could not load this candidate.'); });
+    return () => { alive = false; };
+  }, [candidateId]);
+
+  useEffect(() => {
+    let alive = true, created = null;
+    setCvBusy(true); setCvError(''); setCv(null);
+    fetchResumeBlobUrl(candidateId)
+      .then((r) => {
+        if (!alive) { URL.revokeObjectURL(r.url); return; }   // arrived after close
+        created = r.url; setCv(r);
+      })
+      .catch((e) => { if (alive) setCvError(e.message || 'Could not load the CV file.'); })
+      .finally(() => { if (alive) setCvBusy(false); });
+    return () => { alive = false; if (created) URL.revokeObjectURL(created); };
+  }, [candidateId]);
+
+  async function saveNote() {
+    const body = note.trim();
+    if (!body || noteBusy) return;
+    setNoteBusy(true);
+    try {
+      await api.post(`/candidates/${candidateId}/notes`, { body, noteType: 'note' });
+      toast('Note saved to this candidate');
+      setNote(''); setNoteSaved(true);
+    } catch (e) {
+      toast(e.message || 'Could not save the note.', 'error');
+    } finally { setNoteBusy(false); }
+  }
+
+  const c = cand || {};
+  const name = c.fullName || 'Candidate';
+  const sections = cvReviewDetailSections(c).map(([s, rows]) => [s, rows.filter(([, v]) => v != null && v !== '')]);
+  const filled = sections.filter(([, rows]) => rows.length > 0);
+
+  return (
+    <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head cvrev-head">
+          <div className="cvrev-head-id">
+            <h3 id={titleId}>{name} — CV review</h3>
+            <span className="cvrev-head-sub">{[c.candidateNo, c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
+          </div>
+          <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
+
+        <div className="cvrev-body">
+          <div className="cvrev-details">
+            <h4 className="cvrev-col-title">Details on record</h4>
+            {loadError
+              ? <Empty art="failed" tone="error" text={loadError} />
+              : !cand
+                ? <Skeleton rows={6} />
+                : filled.length === 0
+                  ? <Empty art="none-yet" text="Nothing is recorded for this candidate yet." />
+                  : (
+                    <table className="cvrev-table">
+                      <tbody>
+                        {filled.map(([section, rows]) => (
+                          <React.Fragment key={section}>
+                            <tr className="cvrev-section-row"><td colSpan={2}>{section}</td></tr>
+                            {rows.map(([label, value]) => (
+                              <tr key={section + label}><td>{label}</td><td>{value}</td></tr>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+          </div>
+
+          <div className="cvrev-cv">
+            {cvBusy
+              ? <div className="cvrev-cv-state"><Skeleton rows={5} /></div>
+              : cvError
+                ? (
+                  <div className="cvrev-cv-state">
+                    <Empty art="failed" tone="error" text={cvError} />
+                  </div>
+                )
+                : <CvFilePreview fileUrl={cv?.url} fileName={c.resumeName} mimeType={cv?.mimeType} />}
+          </div>
+        </div>
+
+        {canNote ? (
+          <div className="cvrev-note">
+            <label className="cvrev-note-label" htmlFor={titleId + '-note'}>
+              Anything irrelevant or needing checking?
+            </label>
+            <div className="cvrev-note-row">
+              <textarea id={titleId + '-note'} rows="2" value={note} disabled={noteBusy}
+                onChange={(e) => { setNote(e.target.value); setNoteSaved(false); }}
+                placeholder="e.g. the title on the CV does not match the position on record — confirm with the candidate." />
+              <button type="button" className="btn" onClick={saveNote} disabled={noteBusy || !note.trim()}>
+                {noteBusy ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+            <span className="cvrev-note-hint">
+              {noteSaved
+                ? 'Saved to this candidate’s notes.'
+                : 'One note instead of approving every parsed value. It is saved to this candidate’s notes.'}
+            </span>
+          </div>
+        ) : (
+          <div className="cvrev-note">
+            <span className="cvrev-note-hint">You do not have permission to add notes to candidates.</span>
+          </div>
+        )}
+
+        <div className="modal-foot cvrev-foot">
+          <button type="button" className="btn btn-secondary" disabled={!c.hasResume && !cv}
+            onClick={() => downloadResume({ id: candidateId, resumeName: c.resumeName, candidateNo: c.candidateNo }, toast)}>
+            Download CV
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Mounted ONCE in the Shell. Every entry point calls `openCvReview(id)`; this
+ * is what actually renders the panel, so no page owns the viewer's state.
+ */
+function CvReviewHost({ user }) {
+  const [open, setOpen] = useState(null);      // { id, seed }
+  useEffect(() => {
+    const onOpen = (e) => { const id = e.detail?.id; if (id) setOpen({ id, seed: e.detail?.seed || null }); };
+    window.addEventListener('ats:open-cv-review', onOpen);
+    return () => window.removeEventListener('ats:open-cv-review', onOpen);
+  }, []);
+  if (!open) return null;
+  return <CvReviewPanel key={open.id} candidateId={open.id} seed={open.seed} user={user} onClose={() => setOpen(null)} />;
 }
 
 /**
@@ -7629,7 +7901,8 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const canEdit = btns?.edit_candidate?.visible || user.permissions.includes('candidate.edit');
-  async function view() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
+  // Side-by-side review rather than a download; the panel keeps Download.
+  function view() { openCvReview(c.id, c); }
   async function reparse() {
     setBusy(true);
     try {
@@ -7652,7 +7925,8 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
         <div style={{ flex: 1, minWidth: 160 }}>
           <div style={{ fontWeight: 600 }}>{c.hasResume ? (c.resumeName || 'Attached résumé') : <span className="muted">No résumé on file</span>}</div>
         </div>
-        {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>View / Download</button>}
+        {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>Review CV</button>}
+        {c.hasResume && <button className="btn btn-sm btn-ghost" onClick={() => downloadResume(c, toast)}>Download</button>}
         {c.hasResume && canEdit && <button className="btn btn-sm btn-ghost" onClick={reparse} disabled={busy} title="Re-run the CV parser on the file already attached">{busy ? 'Working…' : 'Re-parse'}</button>}
         {canEdit && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (c.hasResume ? 'Replace' : '+ Upload CV')}<input type="file" style={{ display: 'none' }} onChange={upload} disabled={busy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
       </div>
