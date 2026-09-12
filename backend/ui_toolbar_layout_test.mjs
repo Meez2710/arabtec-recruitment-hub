@@ -152,5 +152,56 @@ await check('the Candidates toolbar still composes the shared component', () => 
   assert.ok(ft.includes('filters.q'), 'and the primary search is the search prop');
 });
 
+
+/* ---------------------------------------------------------------------------
+   Regression guard for the shared toolbar on Hiring Requests (Task 3.5A-V).
+
+   Requests carries a much heavier filter group than the Talent Pool — three
+   selects, two checkbox switches, a sort select and a direction button. Once
+   3.5A gave the group a 472px basis it wrapped at 1200, and because every
+   filter grows at 1 from an 88px basis, the single growable control on the
+   sparse second line absorbed everything: a 436px sort select beside a 56px
+   button (490px at 1280). Browser-measured; the cap below is what corrects it.
+   ------------------------------------------------------------------------ */
+
+await check('no filter can absorb a whole wrapped line', () => {
+  const m = section.match(/max-width:\s*(\d+)px/);
+  assert.ok(m, 'the filter group caps how wide a growable control may become');
+  const cap = Number(m[1]);
+  // Measured with width:max-content: the widest filter either page owns is the
+  // owner select at 270px. The cap must clear that, or it would clip content it
+  // is supposed to protect.
+  assert.ok(cap >= 270, `the cap must clear the widest real filter (270px), got ${cap}px`);
+  assert.ok(cap <= 320, `and must still be narrower than the stretch it prevents, got ${cap}px`);
+  assert.match(section, /\.toolbar-secondary > input,\s*\n?\s*\.toolbar-secondary > select \{[^}]*max-width/,
+    'it applies to both the text filters and the selects');
+});
+
+await check('the cap is a wide-toolbar rule only; the phone stack still fills its row', () => {
+  // On a phone a filter alone on a line is supposed to fill it. Measured at
+  // 390px with the panel open, an unscoped cap left the fifth filter at 280px
+  // in a 324px row — the same ragged edge the cap exists to prevent elsewhere.
+  const capAt = section.indexOf('max-width:');
+  const guard = section.lastIndexOf('@media', capAt);
+  assert.ok(guard !== -1, 'the cap sits inside a media query');
+  const condition = section.slice(guard, section.indexOf('{', guard));
+  assert.match(condition, /min-width:\s*641px/,
+    `the cap must be scoped to 641px and up, found: ${condition.trim()}`);
+});
+
+await check('Hiring Requests composes the same shared toolbar, unmodified', () => {
+  const page = app.slice(app.indexOf('function RequestsPage'), app.indexOf('function RequestForm'));
+  assert.match(page, /<FilterToolbar\b/, 'Requests still uses the shared component');
+  // Its heavier group is what exposed the stretch; keep that shape on record.
+  for (const key of ['filters.status', 'filters.priority', 'filters.owner', 'filters.sort']) {
+    assert.ok(page.includes(key), `the ${key} filter is still a toolbar child`);
+  }
+  assert.ok((page.match(/className="switch"/g) || []).length >= 2,
+    'both checkbox switches are still in the group');
+  // No page-specific toolbar override was introduced to paper over the shared rules.
+  assert.equal(/className="toolbar filter-toolbar [a-z]/.test(page), false,
+    'Requests adds no bespoke class to the shared toolbar');
+});
+
 console.log(`\n=== UI TOOLBAR LAYOUT: ${passed} passed, ${failed} failed ===`);
 if (failed) process.exit(1);

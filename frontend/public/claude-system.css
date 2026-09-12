@@ -880,6 +880,30 @@ table.candidates-table {
 .filter-toolbar > .toolbar-secondary { flex: 2 1 472px; }
 .filter-toolbar > .toolbar-count { flex: 0 0 auto; margin-left: auto; }
 
+/* (5) A FILTER MAY NOT ABSORB A WHOLE WRAPPED LINE. Every control in the group
+   grows at 1 from an 88px basis, so whenever the group wraps and a line ends up
+   sparse, the one growable control on it takes all the leftover width. On
+   Hiring Requests — three selects, two switches, a sort select and a direction
+   button — that put a 436px sort select next to a 56px button at 1200, and
+   490px at 1280. Measured with `width: max-content`, the widest filter these
+   two pages own needs 270px (the owner select, showing a full name), so no
+   filter has any use for more than that. Capping growth leaves the surplus
+   unused on the line instead, which is what a part-filled row should look like.
+
+   This clamps growth only; the 88px basis is untouched, so it changes no wrap
+   decision and no row structure. On desktop the Talent Pool's five text filters
+   reach 91-123px against a 172px need, so they never meet the cap.
+
+   Above 640px only. On a phone the toolbar is a deliberate stack and a filter
+   alone on a line is SUPPOSED to fill it — measured at 390px with the panel
+   open, the cap left the fifth filter at 280px in a 324px row, which is exactly
+   the ragged edge it exists to prevent elsewhere. A sparse wrapped line is a
+   wide-toolbar problem, so the cap stays on wide toolbars. */
+@media (min-width: 641px) {
+  .toolbar-secondary > input,
+  .toolbar-secondary > select { max-width: 280px; }
+}
+
 /* (4) THE SCREEN TABS JUMPED WHEN YOU PICKED ONE. `.seg-tab` renders at
    font-weight 500 and `.seg-tab.active` at 600, so selecting a tab made its own
    label wider — "Screening" went 122px to 126px — and shoved every tab after it
