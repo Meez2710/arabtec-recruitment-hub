@@ -1,22 +1,41 @@
 /* =============================================================================
-   Claude system layer — geometry only.
+   Arabtec geometry + typography system layer — NO COLOUR.
 
-   Applies the shape / spacing / sizing / alignment system measured from
-   claude.ai, claude.com, platform.claude.com and anthropic.com on 4 Sep 2026,
-   on top of the Arabtec design system.
+   Two sources, merged:
+   1. The shape / spacing / sizing / alignment system measured from claude.ai,
+      claude.com, platform.claude.com and anthropic.com on 4 Sep 2026.
+   2. shadcn/ui preset `b7CSfhjSC` (style "mira", radius "medium"), adopted for
+      its DESIGN LANGUAGE ONLY on 11 Sep 2026.
 
-   HARD RULE FOR THIS FILE: it declares NO colour, NO background, NO
-   border-color, NO font-family. Only geometry — radius, spacing, size,
-   alignment, ratio, position, weight and neutral elevation. The Arabtec
-   palette, typeface, logo and page background are untouched by construction,
-   not by care: grep this file for `color:`, `background`, `font-family` and it
-   returns the token names in comments only.
+   ---- What was taken from preset b7CSfhjSC -------------------------------
+   ADOPTED   style mira · radius medium (10px base + x0.6/0.8/1/1.4/1.8/2.2/2.6
+             ramp) · menuAccent subtle · fontHeading inherit · lucide icon
+             GEOMETRY (24 viewBox, fill none, round caps/joins — already ours)
+   REJECTED  theme "teal"      would have replaced Arabtec green #008064
+             baseColor "mist"  would have replaced surfaces / ink / hairlines
+             chartColor "mist" would have replaced the chart + stage ramp
+             menuColor         colour-bearing
+             font roboto-slab  a web font; the approved Arabtec face is
+                               Arial/Helvetica, present on every target device,
+                               so the app makes no third-party request and has
+                               no flash of unstyled text. The preset's TYPE
+                               SCALE is adopted; its TYPEFACE is not.
+             .dark block       this product is light-only by design.
 
-   Loads LAST, so it wins on geometry. Delete the <link> to revert completely.
+   HARD RULE FOR THIS FILE: it declares NO colour literal, NO background
+   literal, NO border-colour literal, NO font-family. Only geometry — radius,
+   spacing, size, alignment, ratio, position, weight and neutral elevation.
+   Where a rule needs a surface it must reference an Arabtec token
+   (var(--surface), var(--muted), ...) and never a hex or a preset value.
+   The Arabtec palette, typeface, logo, watermark and page background are
+   untouched by construction, not by care.
+
+   Loads 4th of 5. Delete the <link> to revert completely.
 
    ---- What was measured -------------------------------------------------
    radius     claude.ai 6px x86, 10px x30, 8px, 24px · claude.com 4/8/12/24
-   spacing    strict 4px base; dominant gaps 6 / 8 / 12, blocks 16/20/24, sections 32/40/48
+              preset mira/medium: 10px base, ramp above
+   spacing    strict 4px base; canonical 4/8/12/16/24/32
    controls   button+input h40 r10 pad 0 16 fs15 fw500 · compact h36 r8 fs14
    nav item   h32 r8 pad 0 8-12 fs14 fw400
    table      td pad 8, fs14, row 36-40, header NOT uppercase
@@ -26,25 +45,60 @@
 
 /* ---------------------------------------------------------------- 1. tokens */
 :root {
-  /* Radius scale. Pills are retired from controls and kept for counts/tags. */
-  --cl-r-xs: 4px;    /* micro chips, checkbox, swatch */
-  --cl-r-sm: 6px;    /* menu rows, small icon buttons, badges */
-  --cl-r-md: 8px;    /* nav items, secondary buttons, tab track */
-  --cl-r-lg: 10px;   /* primary buttons, inputs, small cards */
-  --cl-r-xl: 12px;   /* cards, panels, popovers */
-  --cl-r-2xl: 16px;  /* modals, sheets */
-  --cl-r-3xl: 24px;  /* full-bleed feature surfaces */
+  /* --- RADIUS ------------------------------------------------------------
+     Preset b7CSfhjSC, radius "medium": --radius 0.625rem = 10px, with the
+     mira ramp x0.6 / x0.8 / x1 / x1.4 / x1.8 / x2.2 / x2.6. */
+  --cl-r-base: 10px;                 /* the preset's --radius */
+  --cl-r-xs:  4px;                   /* micro chips, checkbox, swatch (below ramp) */
+  --cl-r-sm:  6px;                   /* menu rows, small icon buttons, badges */
+  --cl-r-md:  8px;                   /* nav items, secondary buttons, tab track */
+  --cl-r-lg:  10px;                  /* primary buttons, inputs, small cards */
+  --cl-r-xl:  14px;                  /* cards, panels, popovers */
+  --cl-r-2xl: 18px;                  /* modals, sheets */
+  --cl-r-3xl: 22px;                  /* full-bleed feature surfaces */
+  --cl-r-4xl: 26px;                  /* hero surfaces */
+  --r-pill: 999px;                   /* counts and tags keep the pill */
 
-  /* 4px spacing base. */
+  /* --- SPACING -----------------------------------------------------------
+     Canonical scale. New work uses ONLY these six steps. */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  24px;
+  --sp-6:  32px;
+
+  /* Legacy 4px-base scale, still referenced by ~200 existing rules in this
+     file. --cl-2 (6px), --cl-6 (20px) and --cl-8 (28px) sit OFF the canonical
+     scale and are scheduled for migration to --sp-2 / --sp-5 / --sp-6 during
+     component standardisation. Do not add new references to them. */
   --cl-1: 4px;  --cl-2: 6px;  --cl-3: 8px;  --cl-4: 12px; --cl-5: 16px;
   --cl-6: 20px; --cl-7: 24px; --cl-8: 28px; --cl-9: 32px; --cl-10: 40px;
   --cl-11: 48px; --cl-12: 64px;
 
-  /* Control sizing. */
-  --cl-ctl-lg: 40px; --cl-ctl-sm: 32px;
-  --cl-nav-h: 34px;  --cl-row-h: 40px;
+  /* Page gutters by viewport — mobile 16 / tablet 20-24 / desktop 24-32.
+     Applied to .content in section 12. */
+  --sp-page-x: var(--sp-6);          /* desktop  32 */
+  --sp-page-y: var(--sp-5);          /* desktop  24 */
 
-  /* Neutral elevation — black alpha only, never a hue. */
+  /* --- TYPOGRAPHY --------------------------------------------------------
+     Scale only. The FACE is Arabtec's approved Arial/Helvetica and is set in
+     arabtec-design-system.css (--font); this file never declares font-family.
+     Preset fontHeading "inherit" is honoured: headings share the body face and
+     are distinguished by size, weight and tracking, never by a second family. */
+  --ts-display: 28px; --lh-display: 1.2;  --tr-display: -.015em;
+  --ts-title:   28px; --lh-title:   1.3;  --tr-title:   -.012em;  /* page title */
+  --ts-h2:      21px; --lh-h2:      1.3;  --tr-h2:      -.008em;
+  --ts-h3:      17px; --lh-h3:      1.35; --tr-h3:      -.006em;  /* card title */
+  --ts-h4:      15px; --lh-h4:      1.4;  --tr-h4:      normal;
+  --ts-body:    14px; --lh-body:    1.5;  --tr-body:    normal;
+  --ts-sm:      13px; --lh-sm:      1.45;
+  --ts-xs:      12px; --lh-xs:      1.45;
+  --ts-2xs:     11px; --lh-2xs:     1.4;                          /* eyebrows, counts */
+  --fw-normal: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700;
+
+  /* --- ELEVATION ---------------------------------------------------------
+     Neutral by construction — black alpha only, never a hue. */
   --cl-lift:    0 1px 2px rgba(0, 0, 0, .05);
   --cl-raise:   inset 0 0 0 1px rgba(0, 0, 0, .07), 0 1px 2px rgba(0, 0, 0, .05);
   --cl-overlay: 0 4px 24px rgba(0, 0, 0, .04), 0 4px 32px rgba(0, 0, 0, .04),
@@ -52,15 +106,44 @@
   --cl-pop:     0 1px 2px rgba(0, 0, 0, .04), 0 10px 28px rgba(0, 0, 0, .07),
                 0 28px 64px rgba(0, 0, 0, .07);
 
+  /* --- COMPONENT DIMENSIONS ---------------------------------------------- */
+  --cl-ctl-lg: 40px;                 /* primary button, input */
+  --cl-ctl-md: 36px;                 /* default button */
+  --cl-ctl-sm: 32px;                 /* compact button */
+  --cl-touch:  44px;                 /* mobile minimum target — asserted by tests */
+  --cl-nav-h:  34px;
+  --cl-row-h:  40px;
+  --cl-icon-size: 18px;              /* default <Icon size> */
+  --cl-icon-stroke: 1.5;             /* lucide geometry at Arabtec's lighter weight.
+                                        The preset's lucide default is 2; flipping
+                                        this one value adopts it app-wide. */
+  --cl-hairline: 1px;
+
+  /* --- BREAKPOINTS -------------------------------------------------------
+     Canonical set. CSS cannot read a custom property inside a media query, so
+     these are the single documented source of truth that every @media in the
+     product must be written against:
+
+       --bp-sm   640px   phone
+       --bp-md   900px   tablet portrait / stacked tables
+       --bp-lg   1180px  laptop / sidebar pressure
+       --bp-xl   1440px  desktop
+
+     The product currently also contains 480/560/700/720/820/860/1000/1024/1100
+     /1200 from earlier work. Those are legacy and are to be folded into the
+     four above during component standardisation; none are introduced here. */
+  --bp-sm: 640px; --bp-md: 900px; --bp-lg: 1180px; --bp-xl: 1440px;
+
+  /* Shell proportions — a wider, quieter rail and a shorter bar. */
+  --sidebar-w: 264px;
+  --topbar-h: 56px;
+
   /* Remap the app's own geometry tokens so token-driven rules follow along.
-     applyBranding() clears any inline --radius / --card-radius, so these win. */
+     applyBranding() clears any inline --radius / --card-radius, so these win.
+     COLOUR TOKENS ARE NOT REMAPPED HERE AND MUST NOT BE. */
   --card-radius: var(--cl-r-xl);
   --radius: var(--cl-r-md);
   --r-md: var(--cl-r-md);
-
-  /* Shell proportions — Claude runs a wider, quieter rail and a shorter bar. */
-  --sidebar-w: 264px;
-  --topbar-h: 56px;
 }
 
 /* ------------------------------------------------------- 2. shell + chrome */
@@ -83,7 +166,7 @@
 }
 
 /* Reserve the launcher corner only on shells that actually render the dock. */
-.content { padding: var(--cl-7) var(--cl-9); }
+.content { padding: var(--sp-page-y) var(--sp-page-x); }
 .content.has-dock { padding-bottom: 104px; }
 .content::before { position: absolute; bottom: 0; }
 
@@ -412,19 +495,19 @@ button.pcard-name { font: inherit; font-size: 14px; font-weight: 600; padding: 0
 /* ------------------------------------------------------ 13. responsive */
 @media (max-width: 1180px) {
   :root { --sidebar-w: 240px; }
-  .content { padding-left: var(--cl-7); padding-right: var(--cl-7); }
+  .content { --sp-page-x: var(--sp-5); }   /* laptop 24 */
   .nav-item { padding-left: var(--cl-3); padding-right: var(--cl-4); }
   .sidebar-head { padding-left: var(--cl-3); padding-right: var(--cl-3); }
 }
 @media (max-width: 900px) {
   .topbar { height: 52px; padding: 0 var(--cl-4); gap: var(--cl-3); }
   .sidebar.collapsed { --sidebar-w: 264px; padding: var(--cl-4) var(--cl-4) var(--cl-6); }
-  .content { padding: var(--cl-6) var(--cl-5) 80px; }
+  .content { --sp-page-x: var(--sp-4); padding: var(--cl-6) var(--sp-page-x) 80px; }   /* tablet 20/16 */
   .page-title, .page-head .page-title, .dash-head .page-title { font-size: 24px; }
 }
 @media (max-width: 640px) {
   :root { --cl-ctl-lg: 44px; }
-  .content { padding: var(--cl-5) var(--cl-4) 80px; }
+  .content { --sp-page-x: var(--sp-4); padding: var(--sp-4) var(--sp-page-x) 80px; }   /* phone 16/16 */
   .content.has-dock { padding-bottom: 96px; }
   .page-title, .page-head .page-title, .dash-head .page-title { font-size: 22px; }
   .page-head, .dash-head { margin-bottom: var(--cl-5); gap: var(--cl-4); }
@@ -440,3 +523,635 @@ button.pcard-name { font: inherit; font-size: 14px; font-weight: 600; padding: 0
   .email-settings-actions > .btn { flex: 1 1 auto; }
   .view-toggle-btn { min-height: 44px; }
 }
+
+/* ============================================================================
+   14. LAYOUT INTEGRITY CONTRACT
+   ----------------------------------------------------------------------------
+   Mandatory, product-wide. Enforced here so a page cannot opt out by accident.
+
+     1. Perfectly usable at 100% browser zoom. Nothing may require zoom-out.
+     2. No text escaping its container.
+     3. No accidental wrapping of a label that was meant to stay on one line.
+     4. No unnecessary whole-page horizontal scrolling.
+     5. Long text must INTENTIONALLY fit, wrap, or truncate with a tooltip.
+     6. Never shrink a font to hide a broken container size.
+
+   Reference case: the role label `Recruitment Manager` in Settings -> Users.
+   It must sit inside its chip at 100% zoom without breaking mid-word and
+   without pushing the row wider than the viewport.
+   ========================================================================= */
+
+/* (1) The min-width:0 floor. A grid/flex child defaults to min-width:auto,
+   which is its MIN-CONTENT width — that single default is what lets one long
+   unbroken string push an entire page wider than the screen. Declared here on
+   the shell axes so it cannot be lost to stylesheet load order. */
+.shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+.shell > .main, .shell > .content, .main, .content { min-width: 0; }
+.card, .card-pad, .toolbar, .filter-toolbar, .page-head, .form-grid, .field { min-width: 0; }
+
+/* (2)(3)(5) Label containment. A chip/badge states its intent explicitly:
+   it stays on one line and is cut off at its own edge, rather than breaking
+   mid-word or spilling past its rounded outline. `.status-chip` previously
+   combined `white-space: nowrap` with a FIXED height, so a long label
+   overflowed the pill outline; height becomes a floor, not a ceiling.
+
+   HOW THE CUT LOOKS, AND WHY IT IS NOT ALWAYS AN ELLIPSIS. `text-overflow`
+   applies to the inline content of a BLOCK container. Section 9 above makes
+   `.chip`, `.badge` and `.status-chip` `display: inline-flex`, so a bare text
+   child becomes an anonymous flex item: it does not inherit `text-overflow`,
+   and an over-long label is GUILLOTINED mid-glyph rather than ellipsised.
+   `text-overflow` is still declared here because it is what renders for the
+   members of this list that are block boxes (`.code-pill`, `.count-pill`) and
+   because it becomes correct the instant a member stops being a flex
+   container — but it must NOT be read as a promise of a visible "…" on the
+   flex ones. Either way the label is CONTAINED, which is all this contract
+   asks for. What was cut is recovered through section 15's tooltip policy,
+   which is why every `.chip` in app.jsx holding unbounded text carries a
+   `title`. Changing `.chip` to a block box is not a cosmetic swap — 13 sites
+   compose it and several pass icon children that rely on the flex box — so it
+   is deliberately left alone; see section 19 (7). */
+.chip, .badge, .status-chip, .src-chip, .meta-chip, .code-pill, .count-pill {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: auto;
+  min-height: 24px;
+}
+/* A cell holding several chips wraps BETWEEN chips, never inside one. */
+.chip-cell, td > .chip + .chip, .filter-chips { flex-wrap: wrap; }
+td:has(> .chip) { white-space: normal; }
+
+/* Content-driven text that is allowed to wrap does so on word boundaries, and
+   falls back to breaking only for strings with no boundary (URLs, IDs). */
+.cell-strong, .cell-sub, .cell-sub-only, .page-sub, .muted, .kan-title, .pcard-name {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* (4) Page-level horizontal overflow is owned by the element that overflows —
+   never by clipping the document. `html, body { overflow-x: hidden }` in the
+   design-system layer masks real bugs; this makes the scroll container explicit
+   so the mask has nothing left to hide. */
+.table-wrap, .card > .table-wrap, .card.flush > .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* (6) Font size is a typographic decision, never a fitting mechanism.
+   The scale in section 1 is the only permitted set of sizes. */
+
+
+/* ============================================================================
+   15. TABLE STANDARD  (defined now; tables are rebuilt in the next phase)
+   ----------------------------------------------------------------------------
+   Sorting must never produce: a visible full-table refresh, flashing, a column
+   width change, header movement, accidental text wrapping, or a layout shift.
+
+   Two halves — this file owns the first, app.jsx owns the second.
+
+   CSS CONTRACT (enforced below)
+     - Column widths come from an explicit layout, not from content
+       measurement, so they cannot change when the rows change.
+     - Header cells never wrap and never move.
+     - The sort affordance occupies its space whether or not it is active,
+       so activating a sort cannot reflow the header.
+
+   JS CONTRACT (documented here, applied during component standardisation)
+     - A sort must NOT set the row state to null. `setCandidates(null)` unmounts
+       the table and renders <Skeleton/>, which is the visible flash; the
+       remount is what lets column widths re-measure. Sorting must keep the
+       previous rows mounted and mark the table busy instead.
+     - Sort state cycles Neutral -> Ascending -> Descending.
+     - TOOLTIP POLICY — one rule, product-wide, and the only one. A label
+       carries a `title` with its full text when its content is UNBOUNDED:
+       free text a user typed, or a name that arrives from company data. Such
+       a label can outgrow its box at some supported width, and what is cut is
+       then unrecoverable from the screen. A label drawn from a FIXED enum that
+       has been measured to fit at every supported width carries no `title` — a
+       tooltip that repeats what is already legible is noise, not help.
+       The test of "can it be cut", note, is the content, not the rendering:
+       `.chip` is `display: inline-flex` and therefore guillotines mid-glyph
+       instead of showing "…" (section 14), which makes the `title` on an
+       unbounded chip more necessary, not less.
+   ========================================================================= */
+
+/* Stable geometry, OPT-IN. `table-layout: fixed` is the mechanism that stops
+   column widths re-measuring when rows change — but it distributes width
+   EQUALLY unless the table also declares its columns. Switching it on globally
+   today, before any table has a <colgroup>, would give a 7-column table seven
+   identical columns and make the problem worse. So it is exposed as a class
+   that component standardisation applies per table, together with that table's
+   <colgroup>:
+
+       <div class="table-wrap">
+         <table class="table table-fixed">
+           <colgroup><col style="width:22%"><col style="width:26%">...</colgroup>
+
+   Until a table opts in it keeps today's auto layout and today's behaviour. */
+table.table, .table-wrap > table { width: 100%; }
+table.table-fixed, .table-wrap > table.table-fixed { table-layout: fixed; }
+
+/* Header stability. */
+table.table thead th, .table thead th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+/* Sortable column headers.
+   Three states — neutral, ascending, descending — that differ ONLY in which
+   glyph occupies the caret box and how strongly it is drawn. Nothing that can
+   move anything is allowed to vary with state: no font-size, no font-weight,
+   no padding, no margin, no border width, no transform. The box is 16px in all
+   three states and now always holds an icon, so the label cannot shift.
+   Reserved before any sorting happens: an unsorted header already renders its
+   neutral glyph at full size. */
+.sort-th { cursor: pointer; user-select: none; }
+.sort-th > span:first-child, .sort-th .sort-label { overflow: hidden; text-overflow: ellipsis; }
+.sort-th .sort-caret {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; flex: 0 0 16px; margin-left: var(--sp-1);
+  vertical-align: middle;
+}
+/* Opacity is the only thing that separates the states, so switching between
+   them can never reflow. Colour comes from `.sort-th.active`, which the Arabtec
+   layer already owns; the icon inherits it through stroke: currentColor. */
+.sort-th .sort-caret[data-sort="none"] { opacity: .34; }
+.sort-th:hover .sort-caret[data-sort="none"],
+.sort-th:focus-visible .sort-caret[data-sort="none"] { opacity: .72; }
+.sort-th .sort-caret[data-sort="ascending"],
+.sort-th .sort-caret[data-sort="descending"] { opacity: 1; }
+.sort-th .sort-caret > svg { transition: opacity .12s ease; }
+/* Body cells wrap on purpose or truncate on purpose — never by accident. */
+table.table tbody td, .table tbody td { overflow-wrap: break-word; }
+/* While a query is in flight the table stays mounted and the current rows stay
+   readable — only the BODY settles slightly, so the header keeps full contrast
+   and the sort controls stay clickable through the fetch (nothing here dims or
+   disables the header, which is what keeps sorting usable while busy). Opacity only: no size change,
+   nothing can shift, and no input is blocked (a request-sequence guard in the
+   loader, not a pointer-events trap, is what keeps a stale response from
+   overwriting a newer one). */
+.table-busy tbody { opacity: .72; transition: opacity .12s ease; }
+
+
+/* ============================================================================
+   16. SHARED COMPONENT LAYER — the approved set
+   ----------------------------------------------------------------------------
+   These fifteen categories have ONE approved implementation each. New pages
+   compose them; they do not re-implement them. The canonical component is named
+   where it already exists in app.jsx, and the duplicates it replaces are listed
+   so component standardisation has an explicit worklist.
+
+     Button        .btn (+ -secondary -ghost -danger -sm)   canonical
+     Input         .field input                             canonical
+     Select        .field select                            canonical
+     Checkbox      .field input[type=checkbox]              canonical
+     Card          .card / .card-pad / .card-head           canonical
+                     replaces: .pcard, .rq-card, .ticket-card
+     Badge         <Badge> / .badge                         canonical
+                     replaces: .chip, .status-chip, .cvi-badge, .src-chip,
+                               .meta-chip, .score-badge
+     Tabs          <ViewToggle> / .view-toggle              canonical
+                     replaces: .tabs, .tabbar, .seg-tabs, .profile-tabs,
+                               .control-tabs, .anyhelp-tabs
+     Dialog        <Modal> / <Confirm>                      canonical
+     Dropdown      .menu / .menu-item                       canonical
+                     replaces: .rq-pop-*, .pipeline-menu
+     Table         table.table inside .table-wrap           canonical
+                     replaces: .responsive-table (merge), .review-table,
+                               .parse-review-table, .preview-table, .cvi-table
+     Pagination    <Pager> / .pager                         canonical
+     Filters       <FilterToolbar> / .filter-toolbar        canonical
+     Empty state   <Empty> + <EmptyArt>                     canonical
+                     replaces: .state-empty, .dash-state, .cvi-state,
+                               .kan-empty, .notif-empty, .rq-pop-empty
+     Loading       <Skeleton>                               canonical
+     Page header   <PageHead> / .page-head                  canonical
+
+   Every one of the above draws its colour from the Arabtec tokens in
+   arabtec-design-system.css. This file sets their geometry only.
+   ========================================================================= */
+
+/* ============================================================================
+   17. CANDIDATES TABLE — scoped, intentional column widths
+   ----------------------------------------------------------------------------
+   THE PROBLEM. This table ran on the browser's AUTO layout, which solves column
+   widths from the content currently rendered. Reorder the rows and the widest
+   value in a column changes, so the solve returns different widths and every
+   column visibly resizes. Task 3.1 did not cause this — it exposed it: the
+   table used to unmount behind a skeleton, which hid the re-measure inside a
+   remount. Now that the rows stay mounted, the reflow happens in place.
+
+   WHY NOT <colgroup>. A <col> is POSITIONAL, and between 641px and 1200px this
+   table hides its two `data-priority="secondary"` columns with `display: none`,
+   which removes those cells from the row entirely. The remaining cells then
+   shift into earlier column slots, so a 9-<col> group would hand Location the
+   width meant for Graduation. Widths are therefore declared ON THE HEADER CELLS
+   and keyed by `data-col`, so each width travels with its own cell and a hidden
+   column takes its width away with it. Naming also means reordering a column
+   cannot silently reassign widths, which nth-child would.
+
+   Scoped to `.candidates-table`. No other table is affected, and the global
+   `table-layout` stays auto.
+   ========================================================================= */
+table.candidates-table {
+  table-layout: fixed;
+  width: 100%;
+  /* Nine columns need about this much before text stops being readable. Below
+     it the WRAPPER scrolls (.table-wrap already owns overflow-x) rather than
+     the columns compressing. */
+  min-width: 1020px;
+}
+
+/* Percentages, so the columns keep their proportions at any table width. They
+   sum to 100 across the nine columns; when the two secondary columns are hidden
+   their share is redistributed proportionally among the rest, which keeps the
+   same relative emphasis with more room each.
+
+   TWO COLUMNS HOLD A FIXED-SIZE CONTROL and were sized on a wrong assumption.
+   Measured in a browser: the CV cell holds a "Download" text button that needs
+   84px, and the widest real Stage label ("Screening", from New / Screening /
+   Fit / Unfit) needs 82px; with 24px of cell padding that is 108px and 106px.
+   At 4%, CV was clipped at EVERY table width — 40px at 1440, 37px at 1280,
+   48px at 1024 — and Stage lost 15px at 1024. CV goes to 11% and Stage to 11%,
+   which clears both at the narrowest width either regime allows. The space is
+   donated by University (-4), Request (-2), Candidate (-1) and Position (-1);
+   Graduation is left alone because 6% is already only just enough for a
+   four-digit year, and no operational column drops below the width it was
+   measured readable at. */
+.candidates-table > thead > tr > th[data-col="select"]     { width: 4%; }
+.candidates-table > thead > tr > th[data-col="name"]       { width: 20%; }
+.candidates-table > thead > tr > th[data-col="position"]   { width: 16%; }
+.candidates-table > thead > tr > th[data-col="university"] { width: 9%; }
+.candidates-table > thead > tr > th[data-col="graduation"] { width: 6%; }
+.candidates-table > thead > tr > th[data-col="location"]   { width: 11%; }
+.candidates-table > thead > tr > th[data-col="request"]    { width: 12%; }
+.candidates-table > thead > tr > th[data-col="stage"]      { width: 11%; }
+.candidates-table > thead > tr > th[data-col="cv"]         { width: 11%; }
+
+/* WHEN THE SECONDARY COLUMNS STEP ASIDE — derived, not chosen.
+   Nine columns need the 1020px above. Measured in a browser, this table's
+   wrapper gets `viewport - 330px` (264 sidebar + 2x32 gutters + card padding),
+   so nine columns stop fitting below 1350px. Hiding them any later leaves a
+   laptop scrolling; hiding them any earlier throws away columns that fit.
+   Hence 1349px: 1366 and 1440 keep all nine, 1280 and 1300 drop to seven.
+
+   This reuses the existing `data-priority="secondary"` mechanism — the same
+   attribute and the same `display: none` — but SCOPED to this table, so the
+   product-wide 1200px breakpoint that other responsive tables rely on is left
+   exactly where it is.
+
+   The min-width drops to the seven-column floor with them. Below 1200px the
+   product-wide rule `.table-wrap .responsive-table { min-width: 0 }` outranks
+   this one (two classes beats one class plus an element) and the columns
+   compress to fit instead — that is the long-standing compact behaviour, and
+   it is deliberately left alone: forcing 860px there would make 1024px scroll
+   where today it does not. So this floor governs the 1201-1349 band, which is
+   the band that needed it. */
+@media (max-width: 1349px) and (min-width: 641px) {
+  .candidates-table [data-priority="secondary"] { display: none; }
+  /* This floor has to OUTRANK the product-wide
+     `.table-wrap .responsive-table { min-width: 0 }` (two classes), which was
+     silently winning against a one-class selector and letting the table
+     compress to 734px at 1024 — which is what clipped the Download button.
+     Below 860px the wrapper scrolls instead, which is what a wrapper is for:
+     a clipped control is not a readable column. It stays inside this
+     min-width:641px block so the phone card mode still releases it. */
+  .table-wrap > table.candidates-table { min-width: 860px; }
+}
+
+/* LONG CONTENT, per column and on purpose.
+   Fixed layout means a cell can no longer widen its column, so every run of
+   content states what it does instead. These truncate on one line and carry a
+   `title` with the full value (set in app.jsx), which is the "truncate with
+   tooltip" option rather than letting text escape or shrinking the type. */
+.candidates-table .idcell-name,
+.candidates-table td[data-label="Position"] .cell-strong,
+.candidates-table td[data-label="Position"] .cell-sub,
+.candidates-table td[data-priority="secondary"] .cell-strong,
+.candidates-table td[data-priority="secondary"] .cell-sub,
+.candidates-table td[data-label="Location"] {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The name truncates; the history badge beside it must not be the first thing
+   clipped, so the row holds the badge at its natural size. */
+.candidates-table .cell-strong:has(> .idcell-name) {
+  display: flex; align-items: center; gap: var(--sp-1); min-width: 0;
+}
+.candidates-table .idcell-name { flex: 0 1 auto; }
+.candidates-table .cell-strong > .hist-badge-btn { flex: 0 0 auto; }
+/* Every cell keeps its content inside its own box. The Request cell is exempt:
+   it owns a picker whose panel (.rq-pop) is position:fixed and so escapes any
+   clipping ancestor today — the exemption means it stays correct even if that
+   panel is ever changed to absolute. */
+.candidates-table > tbody > tr > td:not([data-label="Request"]) { overflow: hidden; }
+/* The tag chips under a name wrap between chips; none of them widens a column. */
+.candidates-table .idcell-tags { display: flex; flex-wrap: wrap; min-width: 0; }
+
+/* The phone layout stacks each row into a card and hides the header entirely,
+   so none of the column sizing above applies. Release the fixed layout and the
+   min-width so a card can be as narrow as the screen, and let the values wrap
+   instead of truncating — there is a full row width to use. */
+@media (max-width: 640px) {
+  table.candidates-table { table-layout: auto; min-width: 0; }
+  .candidates-table .idcell-name,
+  .candidates-table td[data-label="Position"] .cell-strong,
+  .candidates-table td[data-label="Position"] .cell-sub,
+  .candidates-table td[data-label="Location"] {
+    white-space: normal; overflow: visible; text-overflow: clip;
+  }
+  .candidates-table > tbody > tr > td:not([data-label="Request"]) { overflow: visible; }
+}
+
+/* ============================================================================
+   18. FILTER TOOLBAR — predictable rows, search-first proportions
+   ----------------------------------------------------------------------------
+   Shared by <FilterToolbar>, which has exactly two consumers: the Talent Pool
+   (Candidates) and Hiring Requests. Geometry only — no colour, no font-size.
+
+   Three measured defects are corrected here.
+
+   1. THE FILTERS BUTTON WAS VISIBLE ON DESKTOP. `.filter-toggle { display:
+      none }` is one class (0,1,0) and `button.btn { display: inline-flex }`
+      further up this file is a class plus an element (0,1,1), so the base
+      rule never won and the disclosure button rendered at 1440 and 1366 beside
+      the five filters it was meant to reveal. Both states are re-declared with
+      enough specificity to land.
+
+   2. THE SEARCH FIELD WAS THE NARROWEST FLEXIBLE CONTROL. It grew at 1 while
+      the filter group grew at 2, so at 1440 the primary search got 258px and
+      the five secondary filters shared 616px. The search now grows fastest.
+
+   3. THE RESULT COUNT ORPHANED ITSELF ONTO ITS OWN ROW at 1280, 768 and 390,
+      and at 1200 the toolbar reached three rows. It is now pinned to the right
+      of the first row and kept out of the wrap flow, so the structure is always
+      either one row, or search+count over a full filter row.
+
+   The filter group's basis is its five inputs at their own 88px basis plus the
+   gaps between them, so it either fits on one line or wraps as a whole unit —
+   never leaving one stray filter behind.
+   ========================================================================= */
+
+/* (1) The disclosure button belongs to narrow widths only. */
+.filter-toolbar > button.filter-toggle,
+.filter-toolbar > .filter-toggle { display: none; }
+
+/* (2)(3) Search grows fastest; the count never joins the wrap flow. */
+.filter-toolbar > .toolbar-search { flex: 3 1 280px; min-width: 140px; }
+.filter-toolbar > .toolbar-secondary { flex: 2 1 472px; }
+.filter-toolbar > .toolbar-count { flex: 0 0 auto; margin-left: auto; }
+
+/* (5) A FILTER MAY NOT ABSORB A WHOLE WRAPPED LINE. Every control in the group
+   grows at 1 from an 88px basis, so whenever the group wraps and a line ends up
+   sparse, the one growable control on it takes all the leftover width. On
+   Hiring Requests — three selects, two switches, a sort select and a direction
+   button — that put a 436px sort select next to a 56px button at 1200, and
+   490px at 1280. Measured with `width: max-content`, the widest filter these
+   two pages own needs 270px (the owner select, showing a full name), so no
+   filter has any use for more than that. Capping growth leaves the surplus
+   unused on the line instead, which is what a part-filled row should look like.
+
+   This clamps growth only; the 88px basis is untouched, so it changes no wrap
+   decision and no row structure. On desktop the Talent Pool's five text filters
+   reach 91-123px against a 172px need, so they never meet the cap.
+
+   Above 640px only. On a phone the toolbar is a deliberate stack and a filter
+   alone on a line is SUPPOSED to fill it — measured at 390px with the panel
+   open, the cap left the fifth filter at 280px in a 324px row, which is exactly
+   the ragged edge it exists to prevent elsewhere. A sparse wrapped line is a
+   wide-toolbar problem, so the cap stays on wide toolbars. */
+@media (min-width: 641px) {
+  .toolbar-secondary > input,
+  .toolbar-secondary > select { max-width: 280px; }
+}
+
+/* (4) THE SCREEN TABS JUMPED WHEN YOU PICKED ONE. `.seg-tab` renders at
+   font-weight 500 and `.seg-tab.active` at 600, so selecting a tab made its own
+   label wider — "Screening" went 122px to 126px — and shoved every tab after it
+   sideways by 2-4px. Emphasis stays, the reflow goes: the weight is now the
+   same in both states, and the active tab is still distinguished by its
+   background, its colour and its lift, exactly as the sort headers were handled
+   in the header-stability work. Scoped to .seg-tab, which only the Talent Pool
+   screen tabs use; .tabbar-btn, .profile-tab and .tabs button keep their
+   existing behaviour. Font SIZE is untouched. */
+.seg-tab, .seg-tab.active { font-weight: 600; }
+
+@media (max-width: 1100px) {
+  /* Filters collapse behind the disclosure, so it has to be reachable. */
+  .filter-toolbar > button.filter-toggle,
+  .filter-toolbar > .filter-toggle { display: inline-flex; }
+}
+
+/* Below 640px the toolbar is already a deliberate stack: `.toolbar-count`
+   carries `width: 100%` (declared in both arabtec-responsive.css and this
+   file's mobile section), so the result count takes its own full-width row by
+   design. That is left exactly as it is — an attempt here to make the
+   disclosure and the count share a row changed nothing measurable, because
+   that width rule decides the line break, and overriding a deliberate mobile
+   rule shared with every other toolbar is outside this task. */
+
+
+/* ============================================================================
+   19. COMPACT STATE COMPONENTS — badges, chips and tabs are ONE family
+   ----------------------------------------------------------------------------
+   Section 14 wrote the containment contract for a compact label: it stays on
+   one line, it never breaks mid-word, it never spills past its own rounded
+   edge, and it never shrinks its font to fit. That contract named seven
+   classes. The product ships more than seven, and the ones it missed are the
+   ones that carry the longest strings — project names, request titles, tag
+   text, free-text filter values. This section finishes the set and gives the
+   tab families the same freedom from state-driven movement that `.seg-tab`
+   received in section 18.
+
+   Every number below was measured in a browser against these five stylesheets
+   at 1440, 1366, 1280, 1200, 1024, 768, 430, 390 and 360, using the real
+   markup from app.jsx and real Arabtec data (the nine role names from
+   backend/src/lib/permissions.js, the three project names from
+   backend/prisma/seed.js).
+
+   ---- THE REFERENCE CASE: the role chip in Settings -> Users ---------------
+   `Recruitment Manager` is the longest of the nine role names. In the Users
+   table it renders at 133.38px. The Role(s) column is 193.26px at 1440 and
+   160.38px at 360, and it cannot go below that, for two INDEPENDENT reasons —
+   worth separating, because only one of them is durable:
+
+     1. UsersPage renders a bare `<table>` inside a plain `.card` (app.jsx),
+        which matches the first half of the selector list at
+        arabtec-design-system.css:988-989 (`.card table:not(.responsive-table)
+        :not(.review-table):not(.parse-review-table), .modal-body table… {
+        min-width: 680px }`), so the table does carry a 680px floor, and
+        `.card:has(table…) { overflow-x: auto }` in the same file gives it its
+        own horizontal scroll. Note this floor belongs to the selector LIST,
+        not to `.modal-body` alone — a bare table in a card is covered.
+     2. Independently of any floor: this table uses AUTOMATIC table layout, so
+        every column's used width is at least its min-content width, and
+        section 14 gives `.chip` `white-space: nowrap`. The min-content width
+        of a nowrap chip is the whole chip, so the Role(s) column can never be
+        narrower than the widest chip standing in it, at any viewport.
+
+   The chip therefore FITS at every width, with 27px of slack at the narrowest,
+   and `scrollWidth === clientWidth` throughout.
+
+   WHAT WOULD KILL THE GUARANTEE. Reason 2 is the one that holds the shape, and
+   it dies silently if this table is ever given `table-layout: fixed` or a
+   `<colgroup>`: fixed layout stops consulting content, the min-content floor
+   disappears, and the chip starts being cut — with no ellipsis to show for it,
+   because `.chip` is a flex box and guillotines (section 14). If that day
+   comes, the role chip needs a `title` under section 15's tooltip policy.
+
+   The decision TODAY is FIT, not truncate-with-tooltip, and the nine role
+   names are a fixed, measured enum — so section 15's policy gives them no
+   `title`, and they have none. Section 14's containment stays as the safety
+   floor underneath: if a future role name is longer, the chip cuts inside its
+   own edge instead of breaking the row. The same nine names are rendered a
+   second time by `.tag-toggle` in the user editor — alongside project and site
+   names, which ARE unbounded, so that component does carry titles — and that
+   one DID break; see (2).
+   ========================================================================= */
+
+/* (1) CONTAINMENT, EXTENDED. These four families had no width ceiling at all:
+   `max-width: none`, so a long value sets their intrinsic width and pushes
+   whatever row they sit in. A ceiling of 100% makes the parent — a table cell,
+   a wrapped chip row, a flex line — the authority on how wide a label may be,
+   which is the same rule section 14 gave `.chip`. `min-width: 0` is the flex
+   floor from section 14 (1): without it a flex child refuses to shrink below
+   its min-content width, which is exactly how one long string widens a page. */
+.chip-filter, .cvi-badge, .preview-status-badge, .tag-toggle {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* (2) `.tag-toggle` WAS `display: inline`, AND IT BROKE THE PILL IN HALF.
+   The user editor renders every role, project and site name through this
+   class. As a bare inline box it wrapped BETWEEN WORDS like running text, so
+   at 360px the real project name `I-City New Cairo — Lagoon Beach Park`
+   rendered as two fragments — 104.99px on one line, 139.78px on the next —
+   each drawing its own 1px border and its own background. The rounded edge was
+   cut open in the middle of the name. Worse, an inline box contributes only
+   its font's content area to the line, not its padding, so the two 28px
+   fragments sat 19px apart and overlapped each other.
+
+   `inline-block` is the fix, not `inline-flex`: with a single text child it is
+   the only one of the two where `text-overflow: ellipsis` actually renders an
+   ellipsis (on a flex container the text becomes an anonymous flex item, which
+   does not inherit `text-overflow`, so the label is guillotined mid-glyph
+   instead). Measured at 360px after the change: one line box, 248.23px, whole.
+
+   `line-height: normal` is what the `<button>` form of this same class already
+   resolved to from the UA sheet, while the `<span>` form inherited the body's
+   1.45. Under `display: inline` that difference was invisible, because an
+   inline box takes its height from the font. Under `inline-block` it is not:
+   the two forms would have rendered 28.5px and 32.13px side by side. Pinning
+   it to the button's own value puts both at 28.5px with the glyphs 7px/7.5px
+   from the edges — one component, one height, and the button form does not
+   move by a single pixel. */
+.tag-toggle {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* (3) `.chip-filter` CARRIES FREE TEXT. Its label is built from user data —
+   `Request: R-0041 · <request title>`, `Owner: <name>`, a raw search term — so
+   it is the one chip whose content has no upper bound at all. It wrapped
+   inside its own pill (`white-space: normal`) and had no ceiling.
+
+   The label is given its own element in app.jsx precisely so the ellipsis has
+   a block box to render in; the remove button is pinned so the truncation eats
+   the label and never the control. app.jsx also puts the full label in a
+   `title`, because here truncation really does hide something. */
+.chip-filter { white-space: nowrap; overflow: hidden; }
+.chip-filter > .chip-filter-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip-filter > button { flex: 0 0 auto; }
+
+/* (4) The two intake badges truncate rather than clip, for the same reason:
+   a single text child in a block box ellipsises, in a flex box it does not.
+   `.preview-status-badge` is already `inline-block`; `.cvi-badge` moves from
+   `inline-flex`, measured identical at 133.88 x 21.95 before and after,
+   because its content was a single line box the full height of the content
+   area — the flex centring had nothing to centre. Their labels come from fixed
+   enum tables and fit today at every measured width; this is the floor under
+   them, not a change to what they show. */
+.cvi-badge { display: inline-block; }
+.cvi-badge, .preview-status-badge { overflow: hidden; text-overflow: ellipsis; }
+
+/* (5) SELECTING A TAB MOVED THE TABS AFTER IT — on two more families.
+   Section 18 (4) fixed `.seg-tab`. The same defect was still live one rule
+   higher up this file, at section 8: `.tabbar-btn, .profile-tab` render at
+   font-weight 500 and `.tabbar-btn.active, .profile-tab.active` at 600, so
+   selecting a tab widened its own label and shoved everything after it
+   sideways. Measured at 1440: `Conversation` went 106.49px to 113.47px and
+   pushed the four tabs behind it 6.98px to the right; `Overview` went 82.35px
+   to 86.27px and pushed four tabs 3.92px. Both are pure metric movement — the
+   label says the same word in the same size, just wider.
+
+   Emphasis stays and the reflow goes, exactly as it did for `.seg-tab`: the
+   weight is now equal in both states and the selected tab is still the white
+   pill on the grey track, which is how `.control-tab`, `.view-toggle-btn` and
+   `.seg-tab` already say "selected".
+
+   BORDER WIDTH WAS CHECKED AND NEEDS NO RESERVATION. `.tabbar-btn.active` and
+   `.profile-tab.active` do set `border-bottom-color` (styles.css,
+   arabtec-approved-ui.css), but arabtec-design-system.css replaced the whole
+   underline treatment with the pill and set `border: 0` on BOTH the base and
+   the active rule. Computed border width is 0px on all four sides in both
+   states — verified in the browser — so those colour declarations paint
+   nothing and there is no width for the active state to add. Reserving 2px
+   here would not prevent a shift; it would introduce a visible line the
+   approved design deliberately removed. */
+.tabbar-btn, .tabbar-btn.active,
+.profile-tab, .profile-tab.active { font-weight: 600; }
+
+/* (6) THE ANYHELP TABS. Fixed at the source instead of here. The bug was an
+   asymmetry — `.anyhelp-tabs button` declared no border while
+   `.anyhelp-tabs button.on` declared 1.5px — and the base rule that owns the
+   component's colour is the only place that asymmetry can be closed without
+   also removing the selected tab's only outline. The base now reserves
+   `1.5px solid transparent`; `.on` repaints the same 1.5px in green. Nothing
+   for this layer to add. */
+
+/* (7) NOT CHANGED, AND WHY.
+   `.chip`'s DISPLAY stays `inline-flex`, which means `.chip` GUILLOTINES —
+                   it cuts mid-glyph and shows no "…", because a bare text
+                   child of a flex container is an anonymous flex item and does
+                   not inherit `text-overflow` (the same mechanism explained at
+                   (2) for `.tag-toggle`, where the fix WAS applied). It is not
+                   applied here: 13 sites compose `.chip`, several of them with
+                   an icon or a dot child that the flex box is aligning, so
+                   making it a block box is a component change and not a
+                   containment fix. The consequence is that nothing on a `.chip`
+                   signals that text was cut — which is exactly why every
+                   unbounded `.chip` in app.jsx carries a `title` (section 15's
+                   tooltip policy). The `title` is not decoration on these; it
+                   is the only place the cut characters still exist.
+   `.score-badge`  renders 0-100 in tabular numerals behind a 34px min-width
+                   and already carries `title="Match score N of 100"`. It has
+                   no long-text case to have.
+   `.rq-link-chip` already truncates: its subtitle line is capped at 150px with
+                   `text-overflow: ellipsis` (measured clipping 250px of title
+                   into 150px at every width) and the chip carries the full
+                   ticket number, title and status in a `title`. Correct as
+                   found.
+   `.chip-warn`    is `class="chip chip-warn"` — it inherits section 14's
+                   containment in full. Correct as found.
+   `.hist-badge-btn` is a bare button wrapping a `<Badge>`; the badge is
+                   contained by section 14 and the button already carries the
+                   full application history in a `title`. Correct as found.
+   `.control-tab`, `.view-toggle-btn`, `.seg-tab` were toggled in the browser
+                   at all nine widths: every button's rect, and every
+                   neighbour's rect, byte-identical. Correct as found.
+   State rules    no `:hover`, `:focus`, `:focus-visible`, `:active`, `.active`
+                   or `.on` rule anywhere in the five stylesheets declares a
+                   layout property whose value DIFFERS from the base rule's —
+                   descendant-combinator forms such as
+                   `.filter-chips .chip-filter.on` included. The focus ring is
+                   an `outline`, which is painted outside the box and reserves
+                   nothing. Verified by walking the whole CSSOM, and by
+                   focusing and selecting each control and re-measuring it and
+                   its siblings. */

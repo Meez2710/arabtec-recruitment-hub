@@ -79,6 +79,10 @@ const ICON_MARKS = {
   close: <><path d="m6 6 12 12M18 6 6 18" /></>,
   chevronDown: <><path d="m6 9 6 6 6-6" /></>,
   chevronUp: <><path d="m6 15 6-6 6 6" /></>,
+  // Neutral sort affordance: the same two chevrons stacked, so an unsorted
+  // column shows the control exists without claiming a direction. Same 24
+  // viewBox, same stroke, same <Icon> — no new icon library.
+  sortNeutral: <><path d="m7 10 5-5 5 5" /><path d="m17 14-5 5-5-5" /></>,
   arrowUp: <><path d="M12 20V4m-6 6 6-6 6 6" /></>,
   arrowDown: <><path d="M12 4v16m-6-6 6 6 6-6" /></>,
   back: <><path d="M20 12H4m6-6-6 6 6 6" /></>,
@@ -2869,14 +2873,14 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
             <option value="">— None —</option>{depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
       </div>
       <div className="section-title">Roles</div>
-      <div>{roles.map((r) => <span key={r.code} className={'tag-toggle' + (f.roleCodes.includes(r.code) ? ' on' : '')} onClick={() => toggleArr('roleCodes', r.code)}>{r.name}</span>)}</div>
+      <div>{roles.map((r) => <span key={r.code} className={'tag-toggle' + (f.roleCodes.includes(r.code) ? ' on' : '')} title={r.name} onClick={() => toggleArr('roleCodes', r.code)}>{r.name}</span>)}</div>
       <div className="section-title">Access Scope</div>
       <label className="switch" style={{ marginBottom: 10 }}><input type="checkbox" checked={f.globalScope} onChange={(e) => set('globalScope', e.target.checked)} /> Global access (all projects &amp; sites)</label>
       {!f.globalScope && <>
         <div className="muted" style={{ marginBottom: 6 }}>Projects</div>
-        <div style={{ marginBottom: 12 }}>{projects.map((p) => <span key={p.id} className={'tag-toggle' + (f.projectIds.includes(p.id) ? ' on' : '')} onClick={() => toggleArr('projectIds', p.id)}>{p.name}</span>)}</div>
+        <div style={{ marginBottom: 12 }}>{projects.map((p) => <span key={p.id} className={'tag-toggle' + (f.projectIds.includes(p.id) ? ' on' : '')} title={p.name} onClick={() => toggleArr('projectIds', p.id)}>{p.name}</span>)}</div>
         <div className="muted" style={{ marginBottom: 6 }}>Sites</div>
-        <div>{sites.map((s) => <span key={s.id} className={'tag-toggle' + (f.siteIds.includes(s.id) ? ' on' : '')} onClick={() => toggleArr('siteIds', s.id)}>{s.name}</span>)}</div>
+        <div>{sites.map((s) => <span key={s.id} className={'tag-toggle' + (f.siteIds.includes(s.id) ? ' on' : '')} title={s.name} onClick={() => toggleArr('siteIds', s.id)}>{s.name}</span>)}</div>
       </>}
       {isNew && <>
         <div className="section-title">Initial password</div>
@@ -3647,7 +3651,7 @@ function WorkflowPage({ user }) {
             {Object.entries(w.value).map(([group, items]) => (
               <div key={group} style={{ marginBottom: 10 }}>
                 <div className="muted" style={{ textTransform: 'capitalize', marginBottom: 6 }}>{group}</div>
-                <div>{(items || []).map((s, i) => <span key={i} className="chip">{s}</span>)}</div>
+                <div>{(items || []).map((s, i) => <span key={i} className="chip" title={s}>{s}</span>)}</div>
               </div>
             ))}
           </div>
@@ -4204,8 +4208,8 @@ function RequestsPage({ user, initialFilters }) {
       {activeChips.length > 0 && (
         <div className="filter-chips">
           {activeChips.map(([k, label, clear]) => (
-            <span key={k} className="chip-filter">
-              {label}
+            <span key={k} className="chip-filter" title={label}>
+              <span className="chip-filter-label">{label}</span>
               <button aria-label={`Remove ${label} filter`} onClick={clear}><Icon name="close" size={16} /></button>
             </span>
           ))}
@@ -4941,7 +4945,7 @@ function AttachmentRow({ req, onReload }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
       {req.hasAttachment ? (
         <>
-          <span className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileGlyph /> {req.attachmentName || 'Attachment'}</span>
+          <span className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title={req.attachmentName || 'Attachment'}><FileGlyph /> {req.attachmentName || 'Attachment'}</span>
           <button className="btn btn-sm btn-secondary" onClick={view}>View / Download</button>
         </>
       ) : <span className="muted" style={{ fontSize: 13 }}>No attachment uploaded.</span>}
@@ -5016,7 +5020,7 @@ function JDTab({ req }) {
         {(req.requiredSkills || []).length > 0 && (
           <>
             <div className="section-title">Skills</div>
-            <div>{req.requiredSkills.map((s, i) => <span key={i} className="chip">{s}</span>)}</div>
+            <div>{req.requiredSkills.map((s, i) => <span key={i} className="chip" title={s}>{s}</span>)}</div>
           </>
         )}
       </div>
@@ -6133,15 +6137,23 @@ async function downloadResume(candidate, toast) {
   } catch { toast('Could not download the CV.', 'error'); }
 }
 
-// Sortable column header. Clicking toggles asc/desc; the active column shows the
-// direction so the current sort is never ambiguous.
+// A sortable column header. Clicking toggles asc/desc. Three states — neutral, ascending, descending —
+// that differ only in WHICH glyph sits in the caret box and what colour it is.
+// The box itself is always occupied by a 16px icon, so the label never moves:
+// the caret used to render nothing at all while unsorted and relied on the
+// stylesheet alone to hold the gap open.
 function SortTh({ label, col, sort, onSort, align, priority }) {
   const active = sort.by === col;
+  const direction = active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+  const mark = direction === 'ascending' ? 'chevronUp'
+    : direction === 'descending' ? 'chevronDown'
+    : 'sortNeutral';
   return (
-    <th data-priority={priority} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
+    <th data-priority={priority} data-col={col} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
       onClick={() => onSort(col)} tabIndex="0" onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }} title={`Sort by ${label}`}
-      role="columnheader" aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <span>{label}</span><span className="sort-caret">{active && <Icon name={sort.dir === 'asc' ? 'chevronUp' : 'chevronDown'} size={16} />}</span>
+      role="columnheader" aria-sort={direction}>
+      <span className="sort-label">{label}</span>
+      <span className="sort-caret" data-sort={direction} aria-hidden="true"><Icon name={mark} size={16} /></span>
     </th>
   );
 }
@@ -6536,7 +6548,10 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
 function CandidatesPage({ user, onNavigate, initialFilters }) {
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
-  const [filters, setFilters] = useState(() => ({
+  // `setFiltersRaw` is referenced exactly once — by the `setFilters` wrapper
+  // defined with the rest of the query state below, which also returns to
+  // page 1. Nothing else in this component may call it.
+  const [filters, setFiltersRaw] = useState(() => ({
     q: '', source: '', location: '', minExp: '', maxExp: '', noticePeriod: '',
     currentCompany: '', tag: '', currentPosition: '', university: '',
     graduationFrom: '', graduationTo: '',
@@ -6546,14 +6561,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     stage: '', recruiterId: '', requestId: '', projectId: '',
     ...(initialFilters || {}),
   }));
-  // Arriving with a filter from elsewhere (nothing sends one yet, but the
-  // mechanism matches every other list page) — apply it whenever its
-  // identity changes, not just on first mount.
-  useEffect(() => {
-    if (!initialFilters) return;
-    setFilters((f) => ({ ...f, ...initialFilters }));
-    setPipeFilters((f) => ({ ...f, ...initialFilters }));
-  }, [initialFilters]);
+  // (The effect that applies `initialFilters` lives with the rest of the query
+  // state below — it changes the query, so it must use the query setters.)
   // Plain-English search. It does not hold its own result list: it fills the
   // filters above and lets the existing load() run, so paging, tabs, sorting
   // and the table stay exactly as they were and the recruiter can hand-edit
@@ -6623,14 +6632,59 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     window.addEventListener('ats:open-candidate', onOpen);
     return () => window.removeEventListener('ats:open-candidate', onOpen);
   }, []);
-  const [screenTab, setScreenTab] = useState('all'); // Database fitness-screen filter
+  const [screenTab, setScreenTabRaw] = useState('all'); // Database fitness-screen filter
   // Server-side paging/sorting. The API returns a `pagination` envelope; the UI no
   // longer fetches the whole table and slices it in the browser.
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSizeRaw] = useState(50);
   const [sort, setSort] = useState({ by: 'created', dir: 'desc' });
+
+  /* --------------------------- the query setters ---------------------------
+     `filters`, `screenTab`, `pageSize` and `sort` are all part of the server
+     query, so changing any of them must return to page 1 — otherwise the user
+     lands on a page that need not exist under the new query and sees an empty
+     table.
+
+     That reset used to live in an effect watching those values, which put it in
+     a SECOND render: the first render already carried the new filter but the
+     OLD page, so `load` ran once for (new filter, old page) and again for
+     (new filter, page 1). Two requests, the first of them wrong.
+
+     The reset therefore happens in the SAME event handler as the change, so
+     React batches both into one render carrying the final intended query. To
+     make that impossible to forget at a call site, the raw useState setters are
+     named `*Raw` and are each referenced exactly ONCE — here. Every call site in
+     this component, and every one added later, goes through these wrappers and
+     gets the page reset for free. (`sort` does the same through `toggleSort`.)
+     Paging itself is the one query change that must NOT reset the page, so
+     `setPage` stays raw and is what <Pager onPage> receives.
+     ---------------------------------------------------------------------- */
+  const setFilters = useCallback((updater) => { setFiltersRaw(updater); setPage(1); }, []);
+  const setScreenTab = useCallback((tab) => { setScreenTabRaw(tab); setPage(1); }, []);
+  const setPageSize = useCallback((n) => { setPageSizeRaw(n); setPage(1); }, []);
+
+  // Arriving with a filter from elsewhere (nothing sends one yet, but the
+  // mechanism matches every other list page) — apply it whenever its identity
+  // changes, not just on first mount. It changes the query, so it goes through
+  // the wrapper above and returns to page 1 like any other filter change.
+  useEffect(() => {
+    if (!initialFilters) return;
+    setFilters((f) => ({ ...f, ...initialFilters }));
+    setPipeFilters((f) => ({ ...f, ...initialFilters }));
+  }, [initialFilters, setFilters]);
+
   const [pageInfo, setPageInfo] = useState({ total: 0, totalPages: 1, hasMore: false });
   const [loadError, setLoadError] = useState(null);
+  // Refetching is not the same as having no data. `busy` marks a query in
+  // flight while the rows already on screen stay mounted; only `candidates`
+  // being null (nothing has ever loaded) shows the skeleton.
+  const [busy, setBusy] = useState(false);
+  // A query change now costs exactly one request, but requests can still
+  // overtake each other: type into the search box twice in quick succession and
+  // the first answer may arrive after the second. Whichever answered last used
+  // to win regardless of which was asked last. The skeleton hid that; keeping
+  // the rows mounted does not, so only the newest request may write to state.
+  const loadSeq = useRef(0);
   const btns = useResolvedButtons();
   // Requests available for linking. Fetched once, and only for a user who may
   // link — a recruiter without `candidate.link` is shown no control at all
@@ -6650,7 +6704,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   }, [canLink]);
 
   const load = useCallback(async () => {
-    setCandidates(null); setLoadError(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => { if (v && CAND_FILTER_KEYS.includes(k)) params.set(k, v); });
     if (screenTab !== 'all') params.set('screeningStatus', screenTab);
@@ -6660,17 +6715,18 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     params.set('dir', sort.dir);
     try {
       const r = await api.get('/candidates?' + params.toString());
+      if (seq !== loadSeq.current) return;          // a newer query is already in flight
       setCandidates(r.candidates);
       setPageInfo(r.pagination || { total: r.candidates.length, totalPages: 1, hasMore: false });
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setCandidates([]);
       setLoadError(e.message || 'Could not load candidates.');
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
     }
   }, [filters, screenTab, page, pageSize, sort]);
   useEffect(() => { load(); }, [load]);
-  // Any change to the query must return to page 1, otherwise the user can land on
-  // an out-of-range page and see an empty table.
-  useEffect(() => { setPage(1); }, [filters, screenTab, pageSize, sort]);
 
   // Hooks, not just callbacks: every one of these must run on EVERY render, so
   // they live before the early return below. Declaring them after it (as this
@@ -6725,7 +6781,14 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // read as noise. Source is still shown on every candidate row and card.
   const SCREEN_TABS = [['all', 'All'], ['new', 'New'], ['screening', 'Screening'], ['fit', 'Fit'], ['unfit', 'Unfit']];
   const scOf = (c) => c.screeningStatus || 'new';
-  const toggleSort = (col) => setSort((s) => ({ by: col, dir: s.by === col && s.dir === 'asc' ? 'desc' : 'asc' }));
+  // Both updates are dispatched from one event handler, so React batches them
+  // into a single render carrying the final intended query: the new sort AND
+  // page 1. Ordering within the handler does not matter — neither value is read
+  // here, and the render that follows sees both.
+  const toggleSort = (col) => {
+    setSort((s) => ({ by: col, dir: s.by === col && s.dir === 'asc' ? 'desc' : 'asc' }));
+    setPage(1);
+  };
   const FILTER_LABELS = {
     q: 'Search', location: 'Location', currentCompany: 'Company',
     minExp: 'Min exp', maxExp: 'Max exp', tag: 'Tag',
@@ -6942,8 +7005,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
       {activeFilters.length > 0 && (
         <div className="filter-chips">
           {activeFilters.map(([k, label]) => (
-            <span key={k} className="chip-filter">
-              {label}
+            <span key={k} className="chip-filter" title={label}>
+              <span className="chip-filter-label">{label}</span>
               <button aria-label={`Remove ${label} filter`} onClick={() => clearFilter(k)}><Icon name="close" size={16} /></button>
             </span>
           ))}
@@ -6997,10 +7060,10 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
             ? 'Try the All tab, or clear the search and filter fields above.'
             : 'Add a candidate manually, or import CVs against a hiring request to populate the pool.'} /></div>
       ) : view === 'table' ? (
-        <div className="card flush"><div className="table-wrap">
-          <table className="table responsive-table">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
+          <table className="table responsive-table candidates-table">
             <thead><tr>
-              <th className="th-sel">
+              <th className="th-sel" data-col="select">
                 <input type="checkbox" aria-label="Select all on this page"
                   checked={shown.length > 0 && shown.every((c) => selected.has(c.id))}
                   ref={(el) => { if (el) el.indeterminate = selected.size > 0 && !shown.every((c) => selected.has(c.id)); }}
@@ -7011,9 +7074,9 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />
               <SortTh priority="secondary" label="Graduation" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
-              <th className="th-request">Request</th>
-              <th>Stage</th>
-              <th>CV</th>
+              <th className="th-request" data-col="request">Request</th>
+              <th data-col="stage">Stage</th>
+              <th data-col="cv">CV</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
               <tr key={c.id} className={'row-link' + (selected.has(c.id) ? ' row-selected' : '')}
@@ -7026,22 +7089,22 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <div className="idcell">
                     <span className="idcell-av">{initials(c.fullName)}</span>
                     <span className="idcell-txt">
-                      <span className="cell-strong">{c.fullName} <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} /></span>
+                      <span className="cell-strong"><span className="idcell-name" title={c.fullName}>{c.fullName}</span> <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} /></span>
                       <span className="cell-sub">{c.candidateNo}</span>
                     </span>
                   </div>
-                  {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip">{t}</span>)}</div> : null}
+                  {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
                 </td>
                 <td data-label="Position">
-                  <span className="cell-strong">{c.currentPosition || '—'}</span>
-                  {c.currentCompany ? <span className="cell-sub">{c.currentCompany}</span> : null}
+                  <span className="cell-strong" title={c.currentPosition || undefined}>{c.currentPosition || '—'}</span>
+                  {c.currentCompany ? <span className="cell-sub" title={c.currentCompany}>{c.currentCompany}</span> : null}
                 </td>
                 <td data-priority="secondary" data-label="University">
-                  <span className="cell-strong">{c.university || '—'}</span>
-                  {c.major ? <span className="cell-sub">{c.major}</span> : null}
+                  <span className="cell-strong" title={c.university || undefined}>{c.university || '—'}</span>
+                  {c.major ? <span className="cell-sub" title={c.major}>{c.major}</span> : null}
                 </td>
                 <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>
-                <td data-label="Location" className="cell-sub-only">{c.location || '—'}</td>
+                <td data-label="Location" className="cell-sub-only" title={c.location || undefined}>{c.location || '—'}</td>
                 <td data-label="Request">
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
                     onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
@@ -7856,7 +7919,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
           <Info label="Notice Period">{c.noticePeriod}</Info><Info label="Source">{c.source}</Info>
           {c.salaryVisible ? <Info label="Expected Salary">{c.expectedSalary ?? '—'}</Info> : <Info label="Expected Salary"><span className="muted">Restricted</span></Info>}
           <Info label="Owner Recruiter">{c.ownerRecruiter?.name}</Info>
-          <div className="full"><Info label="Tags">{(c.tags || []).length ? c.tags.map((t) => <span key={t} className="chip">{t}</span>) : '—'}</Info></div>
+          <div className="full"><Info label="Tags">{(c.tags || []).length ? c.tags.map((t) => <span key={t} className="chip" title={t}>{t}</span>) : '—'}</Info></div>
         </div></div>
       )}
       {tab === 'cv' && <CandidateCvTab c={c} user={user} btns={btns} onChanged={load} />}
@@ -8023,7 +8086,7 @@ function ScheduleInterviewModal({ application, onClose, onScheduled }) {
         </div>
       </div>
       <div className="section-title">Panel (interviewers) *</div>
-      <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
+      <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} title={u.name} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
       <p className="muted" style={{ marginTop: 8 }}>First selected is the lead. Only selected interviewers will see this interview and may submit feedback.</p>
     </Modal>
   );
@@ -8165,7 +8228,7 @@ function InterviewDetail({ id, user, onBack }) {
           <Info label="Organizer">{iv.organizer?.name}</Info>
           {iv.cancelReason && <Info label="Cancel Reason">{iv.cancelReason}</Info>}
           <div className="section-title">Panel</div>
-          <div>{iv.panel.map((m) => <span key={m.id} className="chip">{m.name}{m.isLead ? ' (lead)' : ''}</span>)}</div>
+          <div>{iv.panel.map((m) => <span key={m.id} className="chip" title={m.name + (m.isLead ? ' (lead)' : '')}>{m.name}{m.isLead ? ' (lead)' : ''}</span>)}</div>
         </div>
 
         <div className="card card-pad">
