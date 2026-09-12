@@ -943,8 +943,26 @@ html, body { max-width: 100%; overflow-x: hidden; }
   line-height: 1.2; text-align: center; white-space: nowrap; overflow: visible;
 }
 .btn:hover { background: var(--at-action-hover); color: #fff; border-color: var(--at-action-hover); }
-.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--at-action); outline-offset: 2px; box-shadow: var(--at-focus-ring);
+/* ONE focus treatment, for every button and every field: a 2px green outline
+   at 2px offset, and nothing else.
+   Two things were wrong before. A `.btn` drew the outline AND a 3px
+   `--at-focus-ring` halo — two rings, overlapping between 2px and 3px out,
+   which is not one indicator. And the scoped fields drew NO outline at all:
+   `.field input:focus { outline: none }` is (0,2,1) and the rule that was
+   meant to restore it, `input:focus-visible`, is only (0,1,1), so every
+   `.field` and `.toolbar` control fell back to the pale #E6F4F0 halo — about
+   1.1:1 on white, the very contrast this sheet already rejected for buttons a
+   few hundred lines above. The scoped forms are therefore spelled out here so
+   they match the `outline: none` they have to beat, and `box-shadow: none`
+   leaves exactly one ring on all of them. `.login-card .btn` is listed for the
+   same reason: styles.css pins a `--ring` shadow on it at (0,2,1).
+   Ring WIDTH, OFFSET and STYLE are geometry and are restated in section 20 of
+   claude-system.css; this rule owns the colour. */
+.btn:focus-visible, .login-card .btn:focus-visible,
+.field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible,
+.toolbar input:focus-visible, .toolbar select:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--at-action); outline-offset: 2px; box-shadow: none;
 }
 .btn-secondary, .btn-ghost {
   background: #fff; color: var(--ink-soft); border-color: var(--line-strong);

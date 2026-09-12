@@ -273,6 +273,11 @@
 .btn.btn-lg { min-height: var(--cl-ctl-lg); padding: 0 var(--cl-6); font-size: 15px; }
 .btn.btn-sm, .btn-sm { min-height: var(--cl-ctl-sm); padding: 0 var(--cl-4); font-size: 13px; border-radius: var(--cl-r-md); }
 .btn.btn-xs, .btn-xs { min-height: var(--cl-ctl-sm); padding: 0 var(--cl-4); font-size: 13px; border-radius: var(--cl-r-md); }
+/* `.btn.small` is the third spelling of the compact button and the compact rule
+   above never listed it, so it kept a 34px box on `7px 13px` from an earlier
+   sheet. Height and padding only: its font size is left where it is. Section 20
+   (1) has the measurements. */
+.btn.small { min-height: var(--cl-ctl-sm); padding: 0 var(--cl-4); }
 .btn-ghost, .btn-link { border-width: 1px; }
 .btn:focus-visible { outline-width: 2px; outline-offset: 2px; }
 
@@ -1155,3 +1160,144 @@ table.candidates-table {
                    nothing. Verified by walking the whole CSSOM, and by
                    focusing and selecting each control and re-measuring it and
                    its siblings. */
+
+/* ============================================================================
+   20. FORM CONTROLS — ONE BOX PER PURPOSE, AND NO STATE MAY CHANGE IT
+
+   Measured in a browser against all five sheets in load order, with the real
+   markup from app.jsx, at 1440, 1366, 1280, 1200, 1024, 768, 430, 390 and 360.
+   Every button variant and every input context was toggled through hover,
+   focus, focus-visible, active and disabled and re-measured, along with its
+   next sibling.
+
+   WHAT WAS ALREADY RIGHT, and is only guarded from here on:
+
+   - NO STATE CHANGES A BOX. At all nine widths, the rect of every `.btn`
+     variant, every `.icon-btn`, every input, select and textarea is identical
+     in hover, focus, focus-visible, active and disabled to its resting rect —
+     width, height, padding, border width, type size, type weight and gap — and
+     no neighbour moves. Emphasis is carried by colour, background and outline
+     only. `:active`'s `transform: translateY(.5px)` is the one exception worth
+     naming and it is CORRECT: a transform paints outside layout, so the button
+     dips half a pixel and nothing around it moves. Verified, kept.
+   - ONE DEFAULT AND ONE COMPACT BUTTON BOX. `.btn`, `-secondary`, `-ghost`,
+     `-danger`, `-danger-solid`, `-success`, `-navy`, `-outline-blue`,
+     `-primary-solid` and `-block` all resolve to the same default box; the
+     `-sm` and `-xs` forms all resolve to the same compact box. Correct as
+     found — nothing in this section touches them.
+
+   WHAT THIS SECTION CLOSES — four controls that sat off the system:
+   ======================================================================== */
+
+/* (1) `.btn.small` WAS A THIRD COMPACT BUTTON. Every other compact button is
+   32px tall on `0 12px`; `.btn.small` measured 34px tall on `7px 13px` at
+   1600 — the only button in the product carrying VERTICAL padding, a third
+   horizontal value, and a third height. It reached that box because the
+   compact rule in section 6 lists `.btn.btn-sm` and `.btn.btn-xs` but not
+   `.btn.small`, so `.btn.small` fell through to `.btn-sm, .btn.small
+   { min-height: 34px; padding: 7px 13px }` in arabtec-design-system.css —
+   which is (0,2,0) for the `.btn.small` half of its selector list and so
+   outranks everything section 6 has to say.
+   The 32px height was only ever visible between 1024 and 1440, where the
+   responsive laptop band happens to name `.btn.small` alongside the others;
+   above 1440 and below 1024 it was 34px. No JSX composes the class today,
+   which is precisely why it is worth pinning now: it is already declared in
+   three sheets, so the next use of it would have inherited the odd box
+   silently. Its FONT SIZE is left where it is — that is a typographic
+   decision, not a fitting mechanism. */
+/* The rule itself lives in section 6, beside the other compact buttons and,
+   crucially, BEFORE the 640px touch-floor block — declared here it would have
+   outranked that block and left `.btn.small` 32px under a thumb. */
+
+/* (2) THE ANYHELP REQUEST PICKER WAS 38px ON A PHONE. `.anyhelp-empty select`
+   is the live hiring-request picker in the team-chat panel (app.jsx). It set
+   its own `min-height: 38px`, `padding: 0 14px` and a 999px pill radius at a
+   specificity the shared control rules cannot reach, so it was the one control
+   in the panel that stayed 38px at 360 and 390 — under the 44px touch floor
+   the UI-readiness release asserts — and the one select in the product still
+   drawn as a pill while every other is on the 8px radius.
+   Height comes from --cl-ctl-lg, which section 13 already steps to 44px below
+   640px, so the touch floor is inherited rather than restated. Its FONT SIZE
+   is deliberately left alone: a font size is a typographic decision, never a
+   fitting mechanism (section 14 rule (6)). */
+.anyhelp-empty select {
+  min-height: var(--cl-ctl-lg);
+  padding: 0 var(--cl-4);
+  border-radius: var(--cl-r-md);
+}
+
+/* (3) THE COMPOSER TEXTAREA WAS THE ONLY 12px RADIUS IN THE PRODUCT. The mira
+   ramp is 4 / 6 / 8 / 10 / 14 / 18 / 22 / 26; `.anyhelp-composer textarea` sat
+   at 12, between two steps, beside a `.field textarea` on 8. Its HEIGHT is not
+   touched — a chat composer is deliberately a short box that grows to a
+   120px cap, and that is a component decision, not a drift. */
+.anyhelp-composer textarea { border-radius: var(--cl-r-md); }
+
+/* (4) THE FOCUS RING WAS BEING DELETED ON EVERY SCOPED FIELD.
+   `:focus-visible` was declared four times across the sheets. What actually
+   won, measured: a `.btn` got a 2px solid outline at 2px offset AND a 3px
+   box-shadow halo — two overlapping rings — while a `.field input`, a
+   `.field select`, a `.field textarea`, a `.toolbar input` or a `.toolbar
+   select` got NO outline at all, because `.field input:focus { outline: none }`
+   is (0,2,1) and the only rule that restored an outline,
+   `input:focus-visible`, is (0,1,1). Those fields fell back to a
+   near-white mint halo — about 1.1:1 on white, well under the 3:1 a focus
+   indicator is asked for, and the same objection the design system already recorded
+   when it replaced the mockup's mint ring on buttons.
+   So: one ring, on every control. The WIDTH, the OFFSET and the STYLE keyword
+   are geometry and live here; the outline COLOUR stays in the design system,
+   exactly as a border's width lives here and its colour does not. An outline
+   is painted outside the border box and reserves no space, which is why it is
+   the only emphasis a focus state may add. */
+.field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible,
+.toolbar input:focus-visible, .toolbar select:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline-style: solid;
+  outline-width: 2px;
+  outline-offset: 2px;
+}
+
+/* (5) NOT CHANGED, AND WHY.
+   36px vs 40px    the default control height still steps at the 1440/1441
+                   boundary (`arabtec-responsive.css` laptop band). Measured
+                   and confirmed; it is a KNOWN BACKLOG item and deliberately
+                   left for the step that owns it.
+   `.ask-input`    `arabtec-approved-ui.css` sets `min-width: 260px` and
+                   `arabtec-responsive.css` releases it through
+                   `.page-head:has(+ .ask-bar) + .ask-bar .ask-input
+                   { min-width: 0 }`. That selector IS live — PageHead renders
+                   `.page-head` immediately followed by `.toolbar.ask-bar` —
+                   and the computed `min-width` measures 0px at 390. Not a
+                   defect. Not touched.
+   `.pcard-actions .btn`
+                   styles.css gives it a 28px box and a `.55` disabled opacity.
+                   `.pcard-actions` contains only an `.icon-btn` and a `.menu`
+                   in every JSX file, so both rules are dead. Removing them is
+                   the dead-rule backlog, not this section; the divergent
+                   opacity is aligned at its source instead.
+   `.decision-select`, `.review-edit`, `.bulk-bar select`
+                   also sit under the 44px floor on a phone (38px and 30px) and
+                   carry off-ramp 7px radii. They belong to the review table
+                   and the bulk bar — table geometry, which this step does not
+                   touch. Measured and recorded, deliberately not changed.
+   `.view-toggle-btn`, `.pcard-name`
+                   resolve `outline-style: none` under `:focus-visible`, so
+                   they show no keyboard focus ring. `.view-toggle-btn` is a
+                   member of the tab family that section 19 owns and
+                   `.pcard-name` is a candidate-card title; both are outside
+                   the form-control family. Recorded, not changed.
+   BUSY LABEL WIDTH
+                   there is no loading COMPONENT, but there is a loading state:
+                   ~20 buttons swap their label while a request is in flight
+                   ("Save" -> "Saving…", "Ask" -> "Searching…"). That is a
+                   width change on state — measured at 1440 between -38.93px
+                   and +53.70px. No width is reserved, on purpose: every
+                   CSS-only reservation is a per-site magic number that is
+                   wrong the moment a label is reworded, and the markup
+                   alternative is a new busy-button component at ~20 call
+                   sites. The measured consequence is bounded: in
+                   `.page-head-actions`, `.toolbar.ask-bar` and
+                   `.anyhelp-composer` the flexible field absorbs it and no
+                   neighbour moves at all; only the right-anchored
+                   `.modal-foot` shifts its Cancel button, by 16.09px, after
+                   the user has already clicked. Recorded as backlog. */

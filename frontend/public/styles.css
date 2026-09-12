@@ -224,7 +224,12 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .btn:hover { background: var(--action-dark); }
 .btn:active { transform: translateY(.5px); }
 .btn:focus-visible { outline: none; box-shadow: var(--ring-action); }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
+/* One disabled value across the product. arabtec-design-system.css declares
+   the canonical .45 and wins the cascade from here; this used to say .5 and
+   `.pcard-actions .btn:disabled` used to say .55, so the resolved opacity
+   depended on which sheet you happened to read. Aligned, not deleted: the
+   value is now the same whichever rule wins. */
+.btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-block { width: 100%; padding: 12px; }
 .btn-secondary { background: var(--card-bg); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover { background: var(--neutral-tint); border-color: var(--muted); }
@@ -938,8 +943,12 @@ table.table tbody tr.row-link:hover { background: var(--action-primary-tint); }
 tr.row-pending { opacity: .6; }
 tr.row-pending td { pointer-events: none; }
 
-/* Disabled controls inside a card stay legible rather than washing out */
-.pcard-actions .btn:disabled { opacity: .55; cursor: default; }
+/* Disabled controls inside a card carry the same .45 as every other disabled
+   button. This said .55 and was the third of three different values; it is also
+   DEAD — `.pcard-actions` holds only an `.icon-btn` and a `.menu` in every JSX
+   file — so aligning it costs nothing and removes the divergence. Deleting it
+   belongs to the dead-rule backlog. */
+.pcard-actions .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; border-top-color: currentColor; opacity: .6; }

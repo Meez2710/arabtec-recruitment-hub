@@ -5719,8 +5719,17 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
           <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
         <div style={{ display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid var(--border)' }}>
+          {/* Selecting a tab may not change its metrics. fontWeight used to be
+              700 when selected and 500 when not, which widened the selected
+              label — measured +11.16px on "Interview Assessment" at 1600 — and
+              shoved the other tab sideways. Both tabs now carry 700, the same
+              way `.seg-tab` and `.tabbar-btn` raise their base weight to their
+              selected weight; the selection is still unmistakable from the
+              green ink and the 2px green underline, and that underline was
+              already reserved as `2px solid transparent` on the unselected tab,
+              so it never moved anything either. */}
           {[['profile', 'Candidate'], ['assessment', 'Interview Assessment']].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>
+            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: 700 }}>{label}</button>
           ))}
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
