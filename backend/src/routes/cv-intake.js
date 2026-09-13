@@ -29,6 +29,9 @@ import {
   createBatch, batchById, listBatches, controlBatch, markItemImported,
   classifySubject,
 } from '../lib/cv-intake/panel-store.js';
+// The mailbox pipeline's own tables — what the CV Inbox reports on.
+import { inboxRows, inboxCounts, connectionStatus } from '../lib/microsoft/connection-store.js';
+import { configuredMailbox } from '../lib/microsoft/config.js';
 
 const router = Router();
 
@@ -44,6 +47,37 @@ function isoOrNull(value) {
 }
 
 /* -------------------------------- reading --------------------------------- */
+
+/**
+ * The recruiter's CV Inbox.
+ *
+ * Reads the mailbox pipeline's own tables rather than the batch queue. The two
+ * describe different products: the batch panel was built around a recruiter
+ * approving CVs for parsing in tens, while the mailbox pipeline already
+ * validates, de-duplicates and parses on arrival. This endpoint reports what
+ * that pipeline actually did, which is what the page needs to show.
+ *
+ * Nothing here creates or converts anything — it is a read.
+ */
+router.get('/inbox', requirePermission('cv_intake.view'), (req, res) => {
+  try {
+    const state = String(req.query.state || 'inbox');
+    res.json({
+      state,
+      counts: inboxCounts(),
+      rows: inboxRows({
+        state,
+        limit: Number.parseInt(req.query.limit, 10) || 100,
+        offset: Number.parseInt(req.query.offset, 10) || 0,
+      }),
+      mailbox: configuredMailbox(),
+      connection: connectionStatus(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not read the CV inbox.' });
+    console.error(JSON.stringify({ level: 'error', msg: 'cv_intake.inbox_failed', error: e.message }));
+  }
+});
 
 router.get('/summary', requirePermission('cv_intake.view'), (req, res) => {
   try {

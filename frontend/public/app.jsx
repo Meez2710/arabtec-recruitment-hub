@@ -1126,6 +1126,15 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const persona = personaFor(user);
   const roleCode = primaryRole(user);
 
+  // Cross-module navigation. The CV Inbox ships as its own script and has no
+  // access to `go`, so it asks for a route by event rather than reaching into
+  // the shell — the same shape as `ats:open-request` and `ats:open-candidate`.
+  useEffect(() => {
+    const onNavigate = (e) => { const key = e.detail?.route; if (key) go(key); };
+    window.addEventListener('ats:navigate', onNavigate);
+    return () => window.removeEventListener('ats:navigate', onNavigate);
+  });
+
   // Ctrl/Cmd+K from anywhere. Ignored while typing in a field so it never steals
   // a keystroke from a form the recruiter is filling in.
   useEffect(() => {

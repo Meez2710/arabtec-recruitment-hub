@@ -986,5 +986,38 @@ for (const expected of ['microsoft.connect_started', 'microsoft.connected', 'mic
 }
 
 globalThis.fetch = realFetch;
+/* ---------------------------------------------------------------------------
+   $select must never name an OData annotation.
+
+   The attachments listing selected `@odata.type`. Graph rejects that outright —
+   400 BadRequest, "Term '@odata.type' is not valid in a $select or $expand
+   expression" — so every message carrying an attachment failed, and a live
+   mailbox reported "1 message, 0 attachments, 1 failed" with nothing ingested
+   and no way to tell from the summary that the URL was the problem.
+
+   The annotation is still returned, because the instances are derived types,
+   so removing it from $select costs the type branch nothing.
+   ------------------------------------------------------------------------ */
+{
+  const graphSrc = fs.readFileSync(new URL('./src/lib/microsoft/graph.js', import.meta.url), 'utf8');
+  const selects = [...graphSrc.matchAll(/encodeURIComponent\('([^']*)'\)/g)].map((m) => m[1]);
+
+  c('no $select names an @odata annotation',
+    !selects.some((sel) => /@odata/.test(sel)),
+    selects.filter((sel) => /@odata/.test(sel)).join(' | ') || 'none');
+
+  c('the attachment listing still avoids pulling contentBytes',
+    graphSrc.includes("'id,name,contentType,size,isInline'"),
+    'listing stays metadata-only');
+
+  // The consumer is in mailbox-sync.js, not graph.js — it is what rejects item
+  // and reference attachments, and it needs the annotation the $select must not
+  // ask for.
+  const syncSrc = fs.readFileSync(new URL('./src/lib/microsoft/mailbox-sync.js', import.meta.url), 'utf8');
+  c('the attachment type branch still reads the annotation',
+    /\['@odata\.type'\]/.test(syncSrc) && /#microsoft\.graph\.fileAttachment/.test(syncSrc),
+    'mailbox-sync still rejects non-file attachments');
+}
+
 console.log(`\n=== MICROSOFT INTEGRATION: ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

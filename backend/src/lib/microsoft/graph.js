@@ -172,7 +172,18 @@ export async function listInboxMessages({ sinceIso, top = 50, accessToken = null
 
 /** Attachment metadata for one message. Never fetches contentBytes. */
 export async function listAttachments(messageId, { accessToken = null, tokenRef = null, maxPages = 10 } = {}) {
-  const select = encodeURIComponent('id,name,contentType,size,isInline,@odata.type');
+  // `@odata.type` must NOT be listed here. It is an OData control annotation,
+  // not a selectable property, and Graph answers the whole request with
+  //   400 BadRequest — Term '@odata.type' is not valid in a $select or $expand
+  // which failed every message that had an attachment: the sync reported
+  // "1 message, 0 attachments, 1 failed" and nothing could ever be ingested.
+  //
+  // Graph emits the annotation anyway, because the instances are derived types,
+  // so `acceptable()` in mailbox-sync.js still sees
+  // '#microsoft.graph.fileAttachment' and can still reject item and reference
+  // attachments — verified against the live mailbox. Keeping the rest of the
+  // $select is what stops Graph returning contentBytes for the whole listing.
+  const select = encodeURIComponent('id,name,contentType,size,isInline');
   let next = `${mailboxRoot()}/messages/${encodeURIComponent(messageId)}/attachments?$select=${select}`;
   // A message's attachment collection paginates as well. Reading only the first
   // page silently completed the message and let the watermark move past it, so
