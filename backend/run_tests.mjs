@@ -45,6 +45,7 @@ const SUITES = [
   'ui_sort_stability_test.mjs', // sorting never unmounts the candidates table
   'ui_toolbar_layout_test.mjs', // shared filter toolbar structure and geometry
   'ui_layout_containers_test.mjs', // card rhythm and responsive container contract
+  'ui_gallery_test.mjs',      // the component gallery stays in step with the product
   'ui_overlays_test.mjs',     // dialogs, the stacked parse review, and the CV review side panel
   'branding_migration_test.mjs', // legacy red actions migrate without overwriting custom values
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider

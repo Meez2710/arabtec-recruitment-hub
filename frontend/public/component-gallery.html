@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Arabtec Recruitment Hub — Component Gallery</title>
+
+<!-- The five production stylesheets, in the EXACT order index.html loads them,
+     with the SAME ?v= cache-bust token. This page must never diverge from
+     that order/token: it exists to show the product's real styling, not a
+     copy of it. If you bump the token in index.html, bump it here too. -->
+<link rel="stylesheet" href="/styles.css?v=20260913c" />
+<link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260913c" />
+<link rel="stylesheet" href="/arabtec-design-system.css?v=20260913c" />
+<link rel="stylesheet" href="/claude-system.css?v=20260913c" />
+<link rel="stylesheet" href="/arabtec-responsive.css?v=20260913c" />
+
+<style>
+  /* This page adds NO colour, font-family or font-size of its own — every
+     visual property below is either layout-only (display/gap/margin/padding/
+     grid/border-width) or a var(--token) reference into the five stylesheets
+     above. The gallery must show the product's real styling, never its own,
+     so ui_gallery_test.mjs fails the build if a literal colour or a
+     font-family/font-size declaration ever appears in this block. */
+  .gallery-section { margin: 0 0 var(--sp-8, 32px) 0; }
+  .gallery-section > h2 { margin: 0 0 4px 0; }
+  .gallery-section > .muted { margin: 0 0 16px 0; }
+  .gallery-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 12px 0; }
+  .gallery-row:last-child { margin-bottom: 0; }
+  .gallery-row-label { flex-basis: 100%; }
+  .gallery-swatch { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .gallery-divider { border: none; border-top: 1px solid var(--line); margin: 24px 0; }
+  .gallery-inline-note { margin-top: 4px; }
+
+  /* --- Pseudo-class preview helpers -----------------------------------
+     :hover, :focus and :active cannot be forced on a static page, so these
+     classes duplicate the REAL declarations from the winning cascade layer
+     (arabtec-design-system.css's final ".btn" block — the sheet that "owns
+     colour" per index.html's own comments; claude-system.css only restates
+     geometry for focus). Nothing here is invented: every value is copy-pasted
+     from the corresponding live `:hover`/`:focus-visible`/`:active` rule. */
+  .btn.is-hover { background: var(--at-action-hover); color: #fff; border-color: var(--at-action-hover); }
+  .btn-secondary.is-hover, .btn-ghost.is-hover {
+    background: var(--at-action-tint); color: var(--at-action-hover); border-color: var(--green-border);
+  }
+  .btn-danger.is-hover { background: var(--danger-tint); color: var(--at-danger-hover); border-color: var(--at-danger-hover); }
+  .btn.is-focus, .btn-secondary.is-focus, .btn-ghost.is-focus, .btn-danger.is-focus {
+    outline: 2px solid var(--at-action); outline-offset: 2px; box-shadow: none;
+  }
+  .btn.is-active, .btn-secondary.is-active, .btn-ghost.is-active, .btn-danger.is-active {
+    transform: translateY(.5px);
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <span class="side-mark"><img src="/arabtec-logo.svg" alt="Arabtec" style="width:30px;max-width:100%;max-height:100%;object-fit:contain;display:block" /></span>
+      <span class="side-txt"><strong>Arabtec</strong><span>Recruitment Hub</span></span>
+    </div>
+    <nav class="nav" aria-label="Main navigation">
+      <div class="nav-section">Overview</div>
+      <button class="nav-item active" aria-current="page">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg></span>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-item">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg></span>
+        <span>Talent Pool</span>
+        <span class="nav-count">12</span>
+      </button>
+      <button class="nav-item">
+        <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /></svg></span>
+        <span>Requests</span>
+      </button>
+    </nav>
+    <div class="scope-card">
+      <strong>Gallery scope</strong>
+      <p>This sidebar is a static preview — it does not navigate anywhere.</p>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="tb-brand">
+        <span class="bn"><strong>Recruitment Hub</strong><span>Arabtec Construction</span></span>
+      </div>
+    </header>
+
+    <main id="main-content" class="content has-dock density-comfortable">
+
+      <div class="card card-pad gallery-section">
+        <h2>Component Gallery</h2>
+        <p>This page is a checked-in, static reference for every UI component the product actually
+          uses — it is not part of the app's routes, is not linked from the sidebar, and ships no
+          JavaScript logic of its own. It exists because the frontend has no bundler (<code>app.jsx</code>
+          is compiled in-browser by the vendored Babel) and Storybook would require a build pipeline
+          this app deliberately does not have.</p>
+        <p><strong>Every element below is copied verbatim out of <code>app.jsx</code></strong> (or, where a
+          component lives in <code>cv-intake.jsx</code>, transcribed from what it renders). When a component's
+          markup changes in the product, this page must be updated in the same change — that discipline
+          is enforced by <code>backend/ui_gallery_test.mjs</code>, which asserts every class name below
+          still exists and that this page loads the same five stylesheets, in the same order, at the
+          same cache-bust token as <code>index.html</code>.</p>
+        <p class="muted">Loaded stylesheets: styles.css, arabtec-approved-ui.css, arabtec-design-system.css,
+          claude-system.css, arabtec-responsive.css — all at <code>?v=20260913c</code>.</p>
+      </div>
+
+      <!-- ============================= BUTTONS ============================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Buttons</h2>
+        <p class="muted">Every <code>.btn</code> variant in use. Real states first (default / disabled, which
+          is a genuine HTML attribute), then a labelled PREVIEW row using <code>.is-hover</code> /
+          <code>.is-focus</code> / <code>.is-active</code> helper classes — CSS pseudo-classes cannot be
+          forced on a static page, so these duplicate the real declarations instead of simulating them
+          with new ones.</p>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">Default</span>
+          <button class="btn">Primary</button>
+          <button class="btn btn-secondary">Secondary</button>
+          <button class="btn btn-ghost">Ghost</button>
+          <button class="btn btn-danger">Danger</button>
+          <button class="btn btn-sm">Small</button>
+          <button class="btn btn-xs">Extra small</button>
+          <button class="btn btn-block" style="max-width:220px">Block</button>
+          <button class="icon-btn" aria-label="Close dialog"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">Disabled (real <code>disabled</code> attribute)</span>
+          <button class="btn" disabled>Primary</button>
+          <button class="btn btn-secondary" disabled>Secondary</button>
+          <button class="btn btn-ghost" disabled>Ghost</button>
+          <button class="btn btn-danger" disabled>Danger</button>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">Preview: hover (<code>.is-hover</code>, not a real <code>:hover</code>)</span>
+          <button class="btn is-hover">Primary</button>
+          <button class="btn btn-secondary is-hover">Secondary</button>
+          <button class="btn btn-ghost is-hover">Ghost</button>
+          <button class="btn btn-danger is-hover">Danger</button>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">Preview: focus (<code>.is-focus</code>, not a real <code>:focus-visible</code>)</span>
+          <button class="btn is-focus">Primary</button>
+          <button class="btn btn-secondary is-focus">Secondary</button>
+          <button class="btn btn-ghost is-focus">Ghost</button>
+          <button class="btn btn-danger is-focus">Danger</button>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">Preview: active (<code>.is-active</code>, not a real <code>:active</code>)</span>
+          <button class="btn is-active">Primary</button>
+          <button class="btn btn-secondary is-active">Secondary</button>
+          <button class="btn btn-ghost is-active">Ghost</button>
+          <button class="btn btn-danger is-active">Danger</button>
+        </div>
+      </div>
+
+      <!-- ======================= INPUTS / SELECTS / TEXTAREAS ======================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Inputs, selects and textareas</h2>
+        <p class="muted">In <code>.field</code> (form layout, from the user-edit and request forms) and in
+          <code>.toolbar</code> (the plain filter bar used by User Management etc.), each with a default and
+          a deliberately long value.</p>
+
+        <div class="gallery-grid">
+          <div class="field"><label>Full Name *</label><input value="Mohammed Al Farsi" /></div>
+          <div class="field"><label>Full Name *</label><input value="Abdul Rahman Khalifa bin Suhail Al-Mansouri Al Marzouqi" /></div>
+          <div class="field"><label>Department</label>
+            <select><option>—</option><option>Human Resources</option><option>Engineering</option></select>
+          </div>
+          <div class="field"><label>Status</label>
+            <select><option selected>planned</option><option>active</option><option>on_hold</option><option>closed</option></select>
+          </div>
+          <div class="field full"><label>Key Requirements</label>
+            <textarea rows="3" placeholder="Required experience, qualifications, skills…"></textarea>
+          </div>
+          <div class="field full"><label>Key Requirements</label>
+            <textarea rows="3">Minimum ten years' experience in heavy civil infrastructure delivery across the GCC, a professional engineering license recognised in the UAE, and demonstrated leadership of multi-disciplinary teams exceeding two hundred staff on projects valued above five hundred million AED.</textarea>
+          </div>
+        </div>
+
+        <div class="toolbar" style="margin-top:16px">
+          <input placeholder="Search name / email / employee no…" value="" style="min-width:280px" />
+        </div>
+        <div class="toolbar">
+          <input placeholder="Search name / email / employee no…" value="A very long search string a recruiter actually pasted from an email thread" style="min-width:280px" />
+        </div>
+      </div>
+
+      <!-- ============================= BADGES / CHIPS ============================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Badges, chips and pills</h2>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.chip (candidate tags)</span>
+          <span class="chip">Shortlisted</span>
+          <span class="chip">A deliberately overlong tag that a recruiter typed by hand and never trimmed</span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.badge (StatusBadge variants)</span>
+          <span class="badge badge-success">active</span>
+          <span class="badge badge-critical">inactive</span>
+          <span class="badge badge-warning">invited</span>
+          <span class="badge badge-info">planned</span>
+          <span class="badge badge-soft">closed</span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.status-chip (workflow / screening stage, via statusChipClass())</span>
+          <span class="status-chip filled">Active 3</span>
+          <span class="status-chip rejected">Disqualified 1</span>
+          <span class="status-chip sourcing">Screening</span>
+          <span class="status-chip closed">New</span>
+          <span class="status-chip pending">2 pending</span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.chip-filter (active filter pill with remove button)</span>
+          <span class="chip-filter" title="Location: Dubai">
+            <span class="chip-filter-label">Location: Dubai</span>
+            <button aria-label="Remove Location: Dubai filter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+          </span>
+          <span class="chip-filter" title="A very long saved filter label describing an unusually specific search someone built">
+            <span class="chip-filter-label">A very long saved filter label describing an unusually specific search someone built</span>
+            <button aria-label="Remove filter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+          </span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.count-pill (CountPill, right edge of a filter toolbar)</span>
+          <span class="count-pill">12 <em>candidates</em></span>
+          <span class="count-pill">3 of 128 <em>candidates</em></span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.tag-toggle (on / off — role and project pickers)</span>
+          <span class="tag-toggle on">Recruiter</span>
+          <span class="tag-toggle">Hiring Manager</span>
+          <span class="tag-toggle">A long department name that wraps a filter chip</span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.cvi-badge (CV intake, cv-intake.jsx)</span>
+          <span class="cvi-badge cvi-badge--neutral">Queued</span>
+          <span class="cvi-badge cvi-badge--info">Parsing</span>
+          <span class="cvi-badge cvi-badge--ok">Matched</span>
+          <span class="cvi-badge cvi-badge--warn">Needs review</span>
+          <span class="cvi-badge cvi-badge--bad">Failed</span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">.score-badge (AI shortlist match score, three bands not a gradient)</span>
+          <span class="score-badge score-strong" title="Match score 92 of 100">92</span>
+          <span class="score-badge score-fair" title="Match score 68 of 100">68</span>
+          <span class="score-badge score-weak" title="Match score 41 of 100">41</span>
+        </div>
+      </div>
+
+      <!-- ============================= TABS ============================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Tabs</h2>
+
+        <p class="muted gallery-inline-note">.tabbar-btn (ticket detail tabs)</p>
+        <div class="tabbar" role="tablist">
+          <button role="tab" aria-selected="true" class="tabbar-btn active">Thread</button>
+          <button role="tab" aria-selected="false" class="tabbar-btn">Pipeline</button>
+          <button role="tab" aria-selected="false" class="tabbar-btn">AI shortlist</button>
+          <button role="tab" aria-selected="false" class="tabbar-btn">JD</button>
+        </div>
+
+        <p class="muted gallery-inline-note">.profile-tab (candidate profile)</p>
+        <div class="profile-tabs">
+          <button class="profile-tab active">Overview</button>
+          <button class="profile-tab">CV &amp; Attachments</button>
+          <button class="profile-tab">Applications (2)</button>
+          <button class="profile-tab">Interviews</button>
+        </div>
+
+        <p class="muted gallery-inline-note">.seg-tab (talent-pool screening tabs)</p>
+        <div class="seg-tabs" title="Screen candidates for fitness before attaching them to a requisition">
+          <button class="seg-tab active">All<span class="seg-count">128</span></button>
+          <button class="seg-tab">New<span class="seg-count">6</span></button>
+          <button class="seg-tab">Screening<span class="seg-count">2</span></button>
+          <button class="seg-tab">Unfit<span class="seg-count">1</span></button>
+        </div>
+
+        <p class="muted gallery-inline-note">.control-tab (Control Center)</p>
+        <div class="control-tabs">
+          <button class="control-tab active">Buttons</button>
+          <button class="control-tab">Notifications</button>
+          <button class="control-tab">Branding &amp; Logo</button>
+        </div>
+
+        <p class="muted gallery-inline-note">.view-toggle-btn (ViewToggle — Cards / Table)</p>
+        <div class="view-toggle" role="tablist">
+          <button role="tab" aria-selected="true" class="view-toggle-btn active">Cards</button>
+          <button role="tab" aria-selected="false" class="view-toggle-btn">Table</button>
+        </div>
+
+        <p class="muted gallery-inline-note">.anyhelp-tabs button (Team / anyhelp launcher)</p>
+        <div class="anyhelp-tabs" role="tablist">
+          <button role="tab" aria-selected="true" class="on">Team</button>
+          <button role="tab" aria-selected="false" class="">anyhelp</button>
+        </div>
+      </div>
+
+      <!-- ============================= CARDS ============================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Cards</h2>
+
+        <p class="muted gallery-inline-note">.card (plain surface)</p>
+        <div class="card" style="padding:16px">Plain card content.</div>
+
+        <p class="muted gallery-inline-note">.card.card-pad with .card-head</p>
+        <div class="card">
+          <div class="card-head"><div><h3>Waiting on you</h3></div><span class="dash-headnote">Sorted by what blocks others first</span></div>
+          <div class="card-pad">Card body content goes here.</div>
+        </div>
+
+        <p class="muted gallery-inline-note">.dash-kpi (dashboard KPI tile)</p>
+        <div class="gallery-row">
+          <div class="dash-kpi" style="--kc: var(--success)">
+            <div class="dash-kpi-top"><span class="dash-kpi-label">Open requests</span></div>
+            <div class="dash-kpi-val">24</div>
+            <div class="dash-kpi-hint">Across all projects</div>
+          </div>
+          <div class="dash-kpi" style="--kc: var(--warning)">
+            <div class="dash-kpi-top"><span class="dash-kpi-label">Time to fill</span></div>
+            <div class="dash-kpi-val">34<small>days</small></div>
+            <div class="dash-kpi-hint">Median, last 90 days</div>
+          </div>
+        </div>
+
+        <p class="muted gallery-inline-note">.pcard (pipeline candidate card)</p>
+        <div class="gallery-row">
+          <div class="pcard">
+            <div class="pcard-top">
+              <div class="pcard-id">
+                <button class="pcard-name">Sara Al Mazrouei</button>
+                <span class="pcard-role">Senior Structural Engineer · ACME Contracting</span>
+              </div>
+            </div>
+          </div>
+          <div class="pcard pcard-pending">
+            <span class="pcard-busy" role="status"><i class="spin"></i>Moving…</span>
+            <div class="pcard-top">
+              <div class="pcard-id">
+                <button class="pcard-name" disabled>Yousef Al Nuaimi</button>
+                <span class="pcard-role">MEP Coordinator · Al Futtaim</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================= TOOLBAR ============================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Filter toolbar</h2>
+        <p class="muted">The shared <code>FilterToolbar</code>: search, a disclosure toggle for secondary
+          filters, secondary filters expanded, and the count pill.</p>
+        <div class="toolbar filter-toolbar">
+          <div class="toolbar-search"><input placeholder="Search name / id / company / email…" /></div>
+          <button class="btn btn-secondary filter-toggle" aria-expanded="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+            Filters (2)
+          </button>
+          <div class="toolbar-secondary expanded">
+            <input placeholder="Location" />
+            <input placeholder="Company" />
+            <input placeholder="Grad from" type="number" />
+            <input placeholder="Grad to" type="number" />
+            <input placeholder="Tag" />
+          </div>
+          <div class="toolbar-count"><span class="count-pill">12 <em>candidates</em></span></div>
+        </div>
+      </div>
+
+      <!-- ============================= OVERLAYS ============================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Overlays</h2>
+
+        <p class="muted gallery-inline-note">.modal (default width)</p>
+        <div style="position:relative; min-height:220px; border:1px solid var(--line); border-radius:8px; padding:16px">
+          <div class="modal-overlay" style="position:absolute; inset:0">
+            <div class="modal" role="dialog" aria-modal="true">
+              <div class="modal-head"><h3>Deactivate user</h3>
+                <button type="button" class="icon-btn" aria-label="Close dialog"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+              </div>
+              <div class="modal-body"><p style="margin-top:0">Are you sure you want to deactivate this account?</p></div>
+              <div class="modal-foot">
+                <button class="btn btn-ghost">Cancel</button>
+                <button class="btn btn-danger">Deactivate</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p class="muted gallery-inline-note">.modal.wide</p>
+        <div style="position:relative; min-height:220px; border:1px solid var(--line); border-radius:8px; padding:16px">
+          <div class="modal-overlay" style="position:absolute; inset:0">
+            <div class="modal" style="max-width:760px" role="dialog" aria-modal="true">
+              <div class="modal-head"><h3>Create User</h3>
+                <button type="button" class="icon-btn" aria-label="Close dialog"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+              </div>
+              <div class="modal-body">
+                <div class="field"><label>Full Name *</label><input value="" /></div>
+                <div class="field"><label>Email *</label><input type="email" value="" /></div>
+              </div>
+              <div class="modal-foot"><button class="btn">Save</button></div>
+            </div>
+          </div>
+        </div>
+
+        <p class="muted gallery-inline-note">.cvrev-panel (CV review side panel)</p>
+        <div style="position:relative; min-height:360px; border:1px solid var(--line); border-radius:8px; padding:16px">
+          <div class="modal-overlay cvrev-overlay" style="position:absolute; inset:0">
+            <div class="cvrev-panel" role="dialog" aria-modal="true">
+              <div class="modal-head cvrev-head">
+                <div class="cvrev-head-id">
+                  <h3>Sara Al Mazrouei — CV review</h3>
+                  <span class="cvrev-head-sub">C-00842 · sara_almazrouei_cv.pdf</span>
+                </div>
+                <button type="button" class="icon-btn" aria-label="Close dialog"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+              </div>
+              <div class="cvrev-body">
+                <div class="cvrev-details">
+                  <h4 class="cvrev-col-title">Details on record</h4>
+                  <table class="cvrev-table">
+                    <tbody>
+                      <tr class="cvrev-section-row"><td colspan="2">Profile</td></tr>
+                      <tr><td>Full name</td><td>Sara Al Mazrouei</td></tr>
+                      <tr><td>Current position</td><td>Senior Structural Engineer</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="cvrev-cv">
+                  <div class="cvrev-cv-state">CV preview would render here.</div>
+                </div>
+              </div>
+              <div class="cvrev-note">
+                <label class="cvrev-note-label">Anything irrelevant or needing checking?</label>
+                <div class="cvrev-note-row">
+                  <textarea rows="2" placeholder="e.g. the title on the CV does not match the position on record — confirm with the candidate."></textarea>
+                  <button type="button" class="btn">Save note</button>
+                </div>
+                <span class="cvrev-note-hint">One note instead of approving every parsed value. It is saved to this candidate's notes.</span>
+              </div>
+              <div class="modal-foot cvrev-foot">
+                <button type="button" class="btn btn-secondary">Download CV</button>
+                <button type="button" class="btn btn-ghost">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================= TABLE STATES ============================= -->
+      <div class="card card-pad gallery-section">
+        <h2>Table states</h2>
+
+        <p class="muted gallery-inline-note">Normal rows + a long-content row</p>
+        <div class="card flush"><div class="table-wrap">
+          <table class="table responsive-table candidates-table">
+            <thead><tr>
+              <th class="th-sel" data-col="select"><input type="checkbox" aria-label="Select all on this page" /></th>
+              <th data-col="name">Candidate</th>
+              <th data-col="position">Position</th>
+              <th data-priority="secondary" data-col="university">University</th>
+              <th data-col="location">Location</th>
+              <th class="th-request" data-col="request">Request</th>
+              <th data-col="stage">Stage</th>
+              <th data-col="cv">CV</th>
+            </tr></thead>
+            <tbody>
+              <tr class="row-link">
+                <td class="th-sel"><input type="checkbox" aria-label="Select Omar Hassan" /></td>
+                <td data-label="Candidate">
+                  <div class="idcell">
+                    <span class="idcell-av">OH</span>
+                    <span class="idcell-txt">
+                      <span class="cell-strong"><span class="idcell-name">Omar Hassan</span></span>
+                      <span class="cell-sub">C-00517</span>
+                    </span>
+                  </div>
+                </td>
+                <td data-label="Position"><span class="cell-strong">Site Engineer</span><span class="cell-sub">Arabtec Construction</span></td>
+                <td data-priority="secondary" data-label="University"><span class="cell-strong">American University of Sharjah</span></td>
+                <td data-label="Location" class="cell-sub-only">Dubai, UAE</td>
+                <td data-label="Request"><span class="muted">Not linked</span></td>
+                <td data-label="Stage"><span class="status-chip filled">Fit</span></td>
+                <td data-label="CV" class="cell-actions"><button class="btn btn-ghost btn-sm">Review</button></td>
+              </tr>
+              <tr class="row-link row-selected">
+                <td class="th-sel"><input type="checkbox" checked aria-label="Select the long-content example" /></td>
+                <td data-label="Candidate">
+                  <div class="idcell">
+                    <span class="idcell-av">AR</span>
+                    <span class="idcell-txt">
+                      <span class="cell-strong"><span class="idcell-name" title="Abdul Rahman Khalifa bin Suhail Al-Mansouri Al Marzouqi">Abdul Rahman Khalifa bin Suhail Al-Mansouri Al Marzouqi</span></span>
+                      <span class="cell-sub">C-00998</span>
+                    </span>
+                  </div>
+                  <div class="idcell-tags"><span class="chip">Shortlisted</span><span class="chip">Referral</span><span class="chip">Priority hire</span></div>
+                </td>
+                <td data-label="Position"><span class="cell-strong" title="Senior Principal Structural &amp; Geotechnical Engineer, Mega-Projects">Senior Principal Structural &amp; Geotechnical Engineer, Mega-Projects</span><span class="cell-sub">A Very Long Contracting and Civil Engineering Group Company LLC</span></td>
+                <td data-priority="secondary" data-label="University"><span class="cell-strong">Higher Colleges of Technology — Ras Al Khaimah Women's Campus</span></td>
+                <td data-label="Location" class="cell-sub-only" title="Abu Dhabi, United Arab Emirates">Abu Dhabi, United Arab Emirates</td>
+                <td data-label="Request"><span class="muted">Not linked</span></td>
+                <td data-label="Stage"><span class="status-chip sourcing">Screening</span></td>
+                <td data-label="CV" class="cell-actions"><span class="muted">—</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div></div>
+
+        <p class="muted gallery-inline-note">.table-busy (revalidating; rows dim to .72 opacity)</p>
+        <div class="card flush table-busy" aria-busy="true"><div class="table-wrap">
+          <table class="table responsive-table candidates-table">
+            <thead><tr><th>Candidate</th><th>Position</th><th>Stage</th></tr></thead>
+            <tbody>
+              <tr><td data-label="Candidate">Omar Hassan</td><td data-label="Position">Site Engineer</td><td data-label="Stage"><span class="status-chip filled">Fit</span></td></tr>
+            </tbody>
+          </table>
+        </div></div>
+
+        <p class="muted gallery-inline-note">Empty state (Empty, art="none-yet")</p>
+        <div class="card">
+          <div class="empty empty-neutral">
+            <div class="ico" aria-hidden="true">
+              <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+                <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#C7C4BF" stroke-width="1.25" stroke-linecap="round" />
+                <rect x="20" y="14" width="32" height="42" rx="2" stroke="#5B6472" stroke-width="1.25" />
+                <path d="M29 14v-3h14v3" stroke="#5B6472" stroke-width="1.25" stroke-linejoin="round" />
+                <path d="M27 26h18M27 33h18M27 40h11" stroke="#5B6472" stroke-width="1.25" stroke-linecap="round" />
+                <path d="M20 60h32" stroke="#C7C4BF" stroke-width="1.25" stroke-dasharray="3 4" stroke-linecap="round" />
+                <path d="M36 56v8" stroke="#008064" stroke-width="1.25" stroke-linecap="round" />
+                <path d="M32 60h8" stroke="#008064" stroke-width="1.25" stroke-linecap="round" />
+              </svg>
+            </div>
+            <h4 class="empty-title">The talent pool is empty</h4>
+            <p>Add a candidate manually, or import CVs against a hiring request to populate the pool.</p>
+          </div>
+        </div>
+
+        <p class="muted gallery-inline-note">Skeleton (loading state, detail shape — card-pad + .skeleton bars)</p>
+        <div class="card-pad" role="status" aria-label="Loading details" aria-busy="true">
+          <div class="skeleton" style="width:90%"></div>
+          <div class="skeleton" style="width:82%"></div>
+          <div class="skeleton" style="width:74%"></div>
+          <div class="skeleton" style="width:66%"></div>
+          <div class="skeleton" style="width:58%"></div>
+          <div class="skeleton" style="width:50%"></div>
+        </div>
+
+        <p class="muted gallery-inline-note">Skeleton (list shape — used by ListSkeleton while the candidates table loads)</p>
+        <div class="card flush list-skel" role="status" aria-label="Loading list" aria-busy="true">
+          <div class="list-skel-head"></div>
+          <div class="list-skel-row">
+            <div class="skeleton" style="width:70px"></div>
+            <div class="skeleton" style="flex:1; max-width:260px"></div>
+            <div class="skeleton" style="width:110px"></div>
+            <div class="skeleton" style="width:76px"></div>
+          </div>
+          <div class="list-skel-row">
+            <div class="skeleton" style="width:70px"></div>
+            <div class="skeleton" style="flex:1; max-width:260px"></div>
+            <div class="skeleton" style="width:110px"></div>
+            <div class="skeleton" style="width:76px"></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>
