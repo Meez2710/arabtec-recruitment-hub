@@ -4293,9 +4293,9 @@ function RequestsPage({ user, initialFilters }) {
           <tbody>{shown.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
               <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
-              <td data-label="Position"><span className="cell-strong rq-cell-title" title={r.title}>{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
+              <td data-label="Position"><span className="cell-strong clamp-2" title={r.title}>{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
               <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">
-                <span className="rq-place" title={placeLabel(r)}>{placeLabel(r)}</span>
+                <span className="clamp-2" title={placeLabel(r)}>{placeLabel(r)}</span>
               </td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
                 {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
@@ -8543,12 +8543,12 @@ function InterviewsPage({ user, initialFilters }) {
                   <div className="idcell">
                     <span className="idcell-av">{initials(iv.candidate?.fullName || '?')}</span>
                     <span className="idcell-txt">
-                      <span className="cell-strong">{iv.candidate?.fullName || '—'}</span>
-                      <span className="cell-sub">{iv.candidate?.currentPosition || '—'}</span>
+                      <span className="cell-strong clamp-2" title={iv.candidate?.fullName || undefined}>{iv.candidate?.fullName || '—'}</span>
+                      <span className="cell-sub clamp-2" title={iv.candidate?.currentPosition || undefined}>{iv.candidate?.currentPosition || '—'}</span>
                     </span>
                   </div>
                 </td>
-                <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub">{iv.request?.title || '—'}</div></td>
+                <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
                 <td data-label="Type / Mode"><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
                 <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
@@ -8782,12 +8782,12 @@ function OffersPage({ user, initialFilters }) {
                 <td data-label="Candidate">
                   <div className="idcell">
                     <span className="idcell-av">{initials(o.candidate?.fullName || '?')}</span>
-                    <span className="idcell-txt"><span className="cell-strong">{o.candidate?.fullName || '—'}</span></span>
+                    <span className="idcell-txt"><span className="cell-strong clamp-2" title={o.candidate?.fullName || undefined}>{o.candidate?.fullName || '—'}</span></span>
                   </div>
                 </td>
                 <td data-label="Request"><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
-                <td data-label="Position"><span className="cell-strong">{o.positionTitle || '—'}</span></td>
-                <td data-priority="secondary" data-label="Project" className="cell-sub-only">{o.project?.name || '—'}</td>
+                <td data-label="Position"><span className="cell-strong clamp-2" title={o.positionTitle || undefined}>{o.positionTitle || '—'}</span></td>
+                <td data-priority="secondary" data-label="Project" className="cell-sub-only"><span className="clamp-2" title={o.project?.name || undefined}>{o.project?.name || '—'}</span></td>
                 <td data-label="Status"><OfferStatusBadge status={o.status} /></td>
                 <td data-priority="secondary" data-label="Prepared by" className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
                 <td data-priority="secondary" data-label="Approved by" className="cell-sub-only">{o.approvedBy?.name || '—'}</td>

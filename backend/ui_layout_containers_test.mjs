@@ -254,6 +254,95 @@ check('KPI row gap and card inset resolve to the shared 16px/20px card rhythm', 
 });
 
 /* ---------------------------------------------------------------------------
+   The two-line clamp must actually win the cascade.
+
+   `.clamp-2` bounds the free-text cells in Hiring Requests, Interviews and
+   Offers; measured at 1440 it took their row-height spreads from 53/31/40px
+   down to 18/16/0px. But `-webkit-line-clamp` only does anything while
+   `display` resolves to `-webkit-box`, and this product declares `display:
+   block` on `.cell-strong` and `.cell-sub` from several sheets — including
+   `.table tbody td .cell-sub`, which scores (0,2,2) and beat an earlier
+   two-class `.cell-sub.clamp-2` (0,2,0). The clamp was inert in exactly the
+   tables it was written for, and nothing failed: the declaration was present,
+   it just never applied.
+
+   So assert the outcome, not the text: resolve which rule wins `display` for a
+   clamped cell and require it to be the clamp.
+   ------------------------------------------------------------------------ */
+check('the two-line clamp outranks every display rule that competes with it', () => {
+  // (ids, classes/attrs/pseudo-classes, elements) — enough for this sheet set.
+  const specificity = (sel) => {
+    const s = sel.trim();
+    const ids = (s.match(/#[\w-]+/g) || []).length;
+    const cls = (s.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) || []).length;
+    const els = (s.replace(/\.[\w-]+|\[[^\]]+\]|:{1,2}[\w-]+|#[\w-]+/g, ' ')
+      .match(/\b[a-zA-Z][\w-]*\b/g) || []).length;
+    return [ids, cls, els];
+  };
+  const cmp = (a, b) => (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]);
+
+  // Does `sel` match <span class="cell-sub clamp-2"> inside table>tbody>td?
+  const matchesClampedCell = (sel, leafClass) => {
+    if (/@|,/.test(sel)) return false;
+    const parts = sel.trim().split(/\s+/);
+    const leaf = parts[parts.length - 1];
+    const leafOk = new RegExp(`^(span|div)?(\\.(${leafClass}|clamp-2))+$`).test(leaf);
+    if (!leafOk) return false;
+    // Ancestors may only be things a row in these tables really has.
+    const allowed = /^(table|tbody|tr|td|\.table|\.responsive-table)$/;
+    return parts.slice(0, -1).every((p) => allowed.test(p));
+  };
+
+  for (const leafClass of ['cell-sub', 'cell-strong']) {
+    const competing = [];
+    sheets.forEach(({ name, css: sheetCss }, sheetIndex) => {
+      const clean = sheetCss.replace(/\/\*[\s\S]*?\*\//g, (c) => ' '.repeat(c.length));
+      for (const m of clean.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+        if (insideMedia(clean, m.index)) continue;
+        const decl = m[2].match(/(?:^|;)\s*display:\s*([^;]+)/);
+        if (!decl) continue;
+        for (const sel of m[1].split(',')) {
+          if (!matchesClampedCell(sel, leafClass)) continue;
+          competing.push({ name, sheetIndex, at: m.index, sel: sel.trim(),
+            value: decl[1].trim(), spec: specificity(sel) });
+        }
+      }
+    });
+    assert.ok(competing.length >= 2,
+      `${leafClass}: expected the clamp plus at least one competing display rule, found ${competing.length}`);
+    // Winner: highest specificity, then latest sheet, then latest in sheet.
+    const winner = competing.reduce((best, r) => {
+      const bySpec = cmp(r.spec, best.spec);
+      if (bySpec > 0) return r;
+      if (bySpec < 0) return best;
+      if (r.sheetIndex !== best.sheetIndex) return r.sheetIndex > best.sheetIndex ? r : best;
+      return r.at > best.at ? r : best;
+    });
+    assert.match(winner.value, /-webkit-box/,
+      `${leafClass}: "${winner.sel}" from ${winner.name} wins display with "${winner.value}" — `
+      + 'the clamp is present but inert');
+    assert.match(winner.sel, /clamp-2/, `${leafClass}: the winning display rule should be the clamp`);
+  }
+});
+
+// And the clamp has to be applied where the row-height measurements were taken.
+check('the three list tables actually use the clamp on their free-text cells', () => {
+  const app = read('app.jsx');
+  const slice = (from, to) => app.slice(app.indexOf(from), app.indexOf(to));
+  const requests = slice('function RequestsPage', 'function RequestDetail');
+  const interviews = slice('function InterviewsPage', 'function InterviewDetail');
+  const offers = slice('function OffersPage', 'function OfferDetail');
+  for (const [label, source] of [['Hiring Requests', requests], ['Interviews', interviews], ['Offers', offers]]) {
+    assert.ok(source.length > 0, `${label} page source was located`);
+    assert.match(source, /clamp-2/, `${label} clamps at least one free-text cell`);
+  }
+  // A clamped cell must keep the full string reachable.
+  for (const m of app.matchAll(/className="[^"]*\bclamp-2\b[^"]*"([^>]*)>/g)) {
+    assert.match(m[1], /title=/, `a clamp-2 cell without a title= drops the full value: ...${m[0].slice(0, 70)}`);
+  }
+});
+
+/* ---------------------------------------------------------------------------
    Containers.
    ------------------------------------------------------------------------ */
 check('page gutters only ever shrink as the viewport shrinks', () => {

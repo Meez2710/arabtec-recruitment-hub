@@ -920,29 +920,31 @@ table.candidates-table {
   .candidates-table > tbody > tr > td:not([data-label="Request"]) { overflow: visible; }
 }
 
-/* ============================================================================
-   17b. HIRING REQUESTS TABLE — Project / Site row-height swing
-   ----------------------------------------------------------------------------
-   `placeLabel()` joins project, site and location with " · " into one string
-   with no cap, and the plain-text cell it sat in had no line limit either, so
-   a row's height was whatever that string's wrap happened to need. Measured
-   across the 14 seeded rows at 1440: 59, 66, 86, 94 and 112px, because some
-   rows carry a two-part place ("Aliva — Mostakbal City · Giza") and others a
-   much longer three-part one ("I-City New Cairo — Lagoon Beach Park · Giza"
-   plus the em-dash sub-parts) that wraps to three or four lines.
+/* One opt-in clamp for every table cell whose value is free text of unbounded
+   length. Rows in Hiring Requests, Interviews and Offers were each as tall as
+   their longest string happened to wrap: measured at 1440, request rows ran
+   59-112px, interview rows 71-102px and offer rows 66-106px, so none of the
+   three tables had a scanning rhythm. Two lines, and the full string stays
+   reachable on the `title` — the pattern `.rq-link-chip` and the candidates
+   table already use.
 
-   Clamping to two lines with an ellipsis bounds every row to the same ceiling
-   without dropping the site information: the full string still carries as a
-   `title` (both on the cell's wrapper span here, matching the pattern already
-   used for `.rq-link-chip` and every truncated cell in `.candidates-table`),
-   so nothing is lost — it just is not always on the row itself. Desktop only;
-   this table has no phone-card variant of its own to disturb. */
-.rq-place,
-/* Two classes on purpose: the reflow layer loads last and declares a bare
+   The `.cell-strong` / `.cell-sub` variants are two-class selectors on
+   purpose: the reflow layer loads last and declares a bare
    `.cell-strong { display: block }`, which outranks a single-class rule here
-   no matter what it says. `.cell-strong.rq-cell-title` wins on specificity
-   instead of on order, so the clamp survives that layer. */
-.cell-strong.rq-cell-title {
+   whatever it says. Winning on specificity rather than on order is what keeps
+   the clamp alive through that layer. */
+.clamp-2,
+.cell-strong.clamp-2,
+.cell-sub.clamp-2,
+.cell-sub-only.clamp-2,
+/* `.table tbody td .cell-sub { display: block }` scores (0,2,2) and beat the
+   two-class form above, so the clamp went inert inside exactly the tables it
+   was written for — `-webkit-line-clamp` was set but `display` was not
+   `-webkit-box`, which silently does nothing. These reach (0,3,2). */
+.table tbody td .cell-sub.clamp-2,
+table tbody td .cell-sub.clamp-2,
+.table tbody td .cell-strong.clamp-2,
+table tbody td .cell-strong.clamp-2 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
