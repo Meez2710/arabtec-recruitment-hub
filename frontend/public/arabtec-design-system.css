@@ -115,7 +115,7 @@ body { color: var(--ink); font-size: 13px; line-height: 1.45; font-weight: 400; 
 .side-mark { width: 38px; height: 34px; display: grid; place-items: center; }
 /* Name over kicker, always two lines — they were running together as one. */
 .side-txt { display: grid; gap: 1px; min-width: 0; }
-.side-mark img, .side-mark svg { max-width: 38px; max-height: 32px; }
+.side-mark img, .side-mark svg { max-width: 38px; max-height: 32px; object-fit: contain; }
 .side-txt strong, .sidebar-title { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
 .side-txt span {
   font-size: 9px; color: var(--faint); letter-spacing: .12em; text-transform: uppercase; font-weight: 700;
@@ -384,6 +384,16 @@ tr.row-selected > td { background: var(--green-50); }
 .cell-strong { font-size: 13px; font-weight: 700; color: var(--ink); }
 .cell-sub, .cell-sub-only { font-size: 11.5px; color: var(--muted); }
 .sort-th { color: var(--muted); }
+/* Hiring plan by project: table-layout is auto and every cell was left/start
+   aligned, so the long Project name column pushed its leftover width onto
+   "Planned seats" / "Open roles" — a 2-digit or 1-digit value then sat far
+   from its header and from the Progress bar. Right-align header and body
+   together for the plain-number columns so each value reads under its own
+   label; the name and Progress columns are unaffected. */
+.plan-table th:nth-child(2), .plan-table th:nth-child(3), .plan-table th:nth-child(4),
+.plan-table td:nth-child(2), .plan-table td:nth-child(3), .plan-table td:nth-child(4) {
+  text-align: right;
+}
 .pager { font-size: 12px; color: var(--muted); }
 .pager-page { border-radius: 999px; }
 
@@ -422,7 +432,12 @@ tr.row-selected > td { background: var(--green-50); }
 .dash-state-ico { background: var(--green-50); color: var(--green-700); }
 
 /* Action list — the "waiting on you" pattern: signal, what, why, one action. */
-.action-list { display: grid; }
+/* Same fixed-launcher collision as .role-health below: this list's action sits
+   on the content's right edge, so as the list scrolls past the launcher the
+   button lands inside its footprint and stops taking clicks. Measured across
+   the full scroll range at 1440/1200/1024, this was the one remaining overlap
+   after .role-health got its lane. Reserve the same lane, for the same reason. */
+.action-list { display: grid; padding-right: 48px; }
 .action-item {
   display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 12px;
   align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line);
@@ -461,7 +476,15 @@ tr.row-selected > td { background: var(--green-50); }
 .event.risk strong { color: var(--brand-dark); }
 
 /* Role health rows — one line per requisition. */
-.role-health { display: grid; }
+/* The anyhelp launcher rests as a fixed 56x56 box anchored 22px off the
+   viewport's right/bottom edge (see section 11 below). This list's last
+   column (the age label + Open button) runs along that same right edge, and
+   because both offsets are fixed px values, the Open button lands ~33px
+   inside the launcher's footprint at every width from 1024 to 1440,
+   whichever row's vertical position happens to line up with it. The
+   launcher's Y position moves with scroll, so dodging it vertically isn't
+   reliable — reserve a lane clear of its X range instead, which is constant. */
+.role-health { display: grid; padding-right: 48px; }
 .role-row {
   display: grid; grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, .9fr) 92px;
   gap: 12px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line);
@@ -470,6 +493,11 @@ tr.row-selected > td { background: var(--green-50); }
 .role-row .cell-title { display: block; font-size: 13.5px; font-weight: 700; color: var(--ink); }
 .role-row .cell-meta { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .role-row .idle { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--muted); }
+/* Age label + Open button, 4th column. Both are inline-level, so without this
+   they sat on the same baseline with a 0px gap (the "0d" reading as part of
+   the button). Stack them with a real gap instead of the old inline
+   `margin-top:6px` on the button, which does nothing for two inline siblings. */
+.role-row-end { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .progress, .fit-bar { height: 10px; border-radius: 999px; background: #ECEEF0; overflow: hidden; }
 .progress > span, .fit-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--green); }
 
@@ -658,7 +686,12 @@ body:has(.modal-overlay) .more-sheet { display: none; }
      The approved design keeps a readable sidebar down to the 900px drawer
      breakpoint, so the labels — and the role-scope card — stay visible. */
   .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
-  .sidebar .side-txt,
+  /* .side-txt's base rule (line 117) is `display: grid` so "Arabtec" stacks
+     over "Recruitment Hub" on two lines. Restoring visibility here with
+     `display: block` flattened that grid, so the two lines ran together
+     inline with a 0px gap ("ArabtecRECRUITMENT HUB"). Give it back its own
+     display instead of sharing the flat `block` meant for the other two. */
+  .sidebar .side-txt { display: grid; }
   .sidebar .nav-section,
   .sidebar .nav-item > span:not(.nav-icon) { display: block; }
   .sidebar .nav-item > span:not(.nav-icon) { flex: 1; }
@@ -742,6 +775,12 @@ body:has(.modal-overlay) .more-sheet { display: none; }
   }
   .dash-grid-2, .report-grid, .form-grid { grid-template-columns: 1fr; }
   .kanban { grid-auto-columns: 82vw; }
+  /* The desktop FAB-lane reservations above (.role-health / .action-list
+     padding-right) are sized for the anyhelp launcher's desktop anchor
+     (right:22/bottom:22). At this width the launcher already relocates
+     (right:12px, bottom: 80px+ safe-area, just below) so the lane isn't
+     needed — drop it rather than waste width on an already-narrow screen. */
+  .role-health, .action-list { padding-right: 0; }
 }
 
 @media (max-width: 640px) {

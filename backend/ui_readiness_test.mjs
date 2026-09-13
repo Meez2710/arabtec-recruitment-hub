@@ -32,6 +32,14 @@ function check(name, condition) {
   else { failed++; console.error(`  \u2717 ${name}`); }
 }
 
+// UI Step 11: the Open-roles row's age label ("0d") and its Open button were
+// two inline-level children of a plain block div (`style={{ textAlign: 'right' }}`),
+// so they sat on the same line with a 0px gap; a stray `style={{ marginTop: 6 }}`
+// on the button did nothing because margin-top does not stack inline-block
+// siblings. `RoleRow` now wraps them in `.role-row-end`, a real stacked
+// composition — guard both the JSX (no inline hack) and the CSS (it actually stacks).
+const roleRow = app.slice(app.indexOf('function RoleRow'), app.indexOf('// Small date helpers'));
+
 const versions = [...html.matchAll(/\?v=([\w-]+)/g)].map((match) => match[1]);
 check('all deployed UI assets share one cache version', versions.length >= 7 && new Set(versions).size === 1);
 check('reflow stylesheet is the last product CSS linked', html.lastIndexOf('rel="stylesheet"') === html.indexOf('rel="stylesheet" href="/arabtec-responsive.css?'));
@@ -48,6 +56,12 @@ check('legacy tables receive a horizontal overflow owner', ruleHas(readinessCss,
 check('empty states use the four shared schematic marks', ['none-yet', 'no-match', 'failed', 'all-clear'].every(mark => app.includes(`'${mark}': <svg`)) && app.includes('<EmptyArt name={mark} />') && !/<Empty\s+icon=/.test(app));
 check('email module loads before the shell', html.indexOf('/email-settings.jsx?') > 0 && html.indexOf('/email-settings.jsx?') < html.indexOf('/app.jsx?'));
 check('intake review body copy meets the release size', ruleHas(readinessCss, '.review-table td, .review-table td > strong', 'font-size: 12.5px'));
+check('RoleRow found and is non-empty', roleRow.length > 0 && roleRow.length < 2000);
+check('role-row Open button carries no inline margin-top hack', !roleRow.includes('marginTop'));
+check('role-row age label + Open button share a dedicated stacking class', roleRow.includes('className="role-row-end"'));
+check('.role-row-end actually stacks its children with a real gap, not an inline nudge',
+  ruleHas(css, '.role-row-end', 'display: flex') && ruleHas(css, '.role-row-end', 'flex-direction: column')
+  && ruleHas(css, '.role-row-end', 'gap: 6px'));
 
 console.log(`\n=== UI READINESS: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);

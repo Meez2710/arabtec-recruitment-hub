@@ -1634,9 +1634,9 @@ function RoleRow({ r, onOpen }) {
         <span className="progress"><span style={{ width: filled + '%' }} /></span>
         <span className="cell-meta">{r.headcountFilled} of {r.headcount} seats · {(r.pipeline || {}).total || 0} in pipeline</span>
       </div>
-      <div style={{ textAlign: 'right' }}>
+      <div className="role-row-end">
         <span className="idle">{h.daysOpen == null ? '—' : h.daysOpen + 'd'}</span>
-        {onOpen && <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => onOpen(r)}>Open</button>}
+        {onOpen && <button className="btn btn-sm" onClick={() => onOpen(r)}>Open</button>}
       </div>
     </div>
   );
@@ -2084,7 +2084,7 @@ function PlanTable({ rows, unit }) {
   if (!rows.length) return <Empty art="none-yet" text="No hiring requests to summarise yet." />;
   return (
     <div className="table-wrap">
-      <table className="table responsive-table">
+      <table className="table responsive-table plan-table">
         <thead><tr><th>{unit}</th><th>Planned seats</th><th>Filled</th><th>Open roles</th><th>Progress</th></tr></thead>
         <tbody>
           {rows.map((r) => {

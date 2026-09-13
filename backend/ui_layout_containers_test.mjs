@@ -161,6 +161,99 @@ check('distinct card types keep their own identity', () => {
 });
 
 /* ---------------------------------------------------------------------------
+   UI Step 11 — sidebar wordmark keeps its two-line grid at <=1180px.
+
+   The base rule (arabtec-design-system.css, outside any media query) sets
+   `.side-txt { display: grid; }` so "Arabtec" stacks over "Recruitment Hub".
+   A tablet-width band restores visibility after styles.css's old icon-rail
+   design hid the text, but an earlier version of that restore flattened
+   `.side-txt` into the same `display: block` used for `.nav-section` and the
+   nav-item span — collapsing the grid and running the two lines together
+   with a 0px gap ("ArabtecRECRUITMENT HUB"). Assert the exact selector-to-
+   declaration mapping, not just that the string "grid" appears somewhere.
+   ------------------------------------------------------------------------ */
+check('sidebar wordmark keeps display:grid inside the 1180px restore band', () => {
+  const ds = read('arabtec-design-system.css');
+  const bands = mediaBlocks(ds, '@media (max-width: 1180px)');
+  const band = bands.find((b) => /\.side-txt/.test(b));
+  assert.ok(band, 'a 1180px band still touches .side-txt');
+
+  // Parse every `selector-list { body }` in the band and find the one whose
+  // selector list contains `.sidebar .side-txt` as its OWN entry — not
+  // folded into a comma group with other selectors that share a different
+  // intended display. Strip comments and the band's own leading `@media
+  // (...) {` first — otherwise the naive brace-pairing below mistakes the
+  // `@media` head for a selector, and any comment sitting right before a
+  // real rule gets glommed into that rule's "selector" text.
+  const cleanBand = band
+    .replace(/^@media[^{]*\{/, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [...cleanBand.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({
+    selectors: m[1].replace(/\s+/g, ' ').trim().split(',').map((s) => s.trim()),
+    body: m[2],
+  }));
+  const sideTxtRule = rules.find((r) => r.selectors.includes('.sidebar .side-txt'));
+  assert.ok(sideTxtRule, '.sidebar .side-txt has its own entry in a selector list here');
+  assert.match(sideTxtRule.body, /display:\s*grid/,
+    `.side-txt must resolve to display: grid in this band, got "${sideTxtRule.body.trim()}"`);
+
+  // And it must not ALSO still be grouped into a shared display:block rule
+  // with .nav-section / the nav-item span — that grouping is the regression.
+  const stillFlattened = rules.some((r) =>
+    r.selectors.includes('.sidebar .side-txt') && /display:\s*block/.test(r.body));
+  assert.ok(!stillFlattened,
+    '.side-txt must not share a flat display:block declaration with nav-section/nav-item span');
+});
+
+/* ---------------------------------------------------------------------------
+   UI Step 11 — KPI row rhythm matches the rest of the card system.
+
+   arabtec-design-system.css already puts `.dash-kpi-row` gap and `.dash-kpi`
+   padding on the approved 16px/20px rhythm, but claude-system.css loads
+   after it and was still pinning both back to the old 12px/16px pair
+   (--cl-4/--cl-5), so the KPI row sat on a different rhythm than the
+   dash-grid-2 cards directly below it. Resolve the actual cascade winner
+   (last non-media declaration, in sheet load order) and pin its value —
+   mirroring the .card-pad check above, which caught the same class of bug.
+   ------------------------------------------------------------------------ */
+check('KPI row gap and card inset resolve to the shared 16px/20px card rhythm', () => {
+  function resolve(exactSelector, prop) {
+    const decls = [];
+    sheets.forEach(({ name, css: sheetCss }) => {
+      // Strip comments before matching, and keep using this same stripped
+      // text (not the original) for insideMedia so offsets line up — a
+      // comment sitting right before a rule otherwise gets glommed into
+      // that rule's "selector" capture and the exact-match below misses it.
+      const clean = sheetCss.replace(/\/\*[\s\S]*?\*\//g, (c) => ' '.repeat(c.length));
+      for (const m of clean.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+        const parts = m[1].replace(/\s+/g, ' ').trim().split(',').map((s) => s.trim());
+        if (!parts.includes(exactSelector)) continue;
+        const pm = m[2].match(new RegExp(`(?:^|;)\\s*${prop}:\\s*([^;]+)`));
+        if (!pm) continue;
+        decls.push({ name, value: pm[1].trim(), scoped: insideMedia(clean, m.index) });
+      }
+    });
+    return decls.filter((d) => !d.scoped);
+  }
+
+  const rowGap = resolve('.dash-kpi-row', 'gap');
+  assert.ok(rowGap.length >= 1, '.dash-kpi-row declares a gap in at least one sheet');
+  const rowGapWinner = rowGap[rowGap.length - 1];
+  assert.equal(rowGapWinner.value, 'var(--cl-5)',
+    `the winning .dash-kpi-row gap should be the 16px token, got "${rowGapWinner.value}" from ${rowGapWinner.name}`);
+
+  const cardPad = resolve('.dash-kpi', 'padding');
+  assert.ok(cardPad.length >= 1, '.dash-kpi declares a padding in at least one sheet');
+  const cardPadWinner = cardPad[cardPad.length - 1];
+  assert.equal(cardPadWinner.value, 'var(--cl-6)',
+    `the winning .dash-kpi padding should be the 20px token, got "${cardPadWinner.value}" from ${cardPadWinner.name}`);
+
+  const cl = read('claude-system.css');
+  assert.match(cl, /--cl-5:\s*16px/, 'and --cl-5 is 16px');
+  assert.match(cl, /--cl-6:\s*20px/, 'and --cl-6 is 20px');
+});
+
+/* ---------------------------------------------------------------------------
    Containers.
    ------------------------------------------------------------------------ */
 check('page gutters only ever shrink as the viewport shrinks', () => {

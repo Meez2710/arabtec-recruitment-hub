@@ -20,7 +20,10 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 .sidebar{background:#111315;color:#fff;border-right:1px solid #26292b;position:relative}
 .sidebar-head{min-height:72px;padding:14px 18px;border-bottom:1px solid #2b2f31;position:relative}
 .sidebar-head:after{content:"";position:absolute;left:18px;right:18px;bottom:-1px;height:2px;background:linear-gradient(90deg,#d8232a 0 44px,transparent 44px)}
-.side-mark{width:44px;height:38px}.side-mark img{max-width:44px!important;width:44px!important;max-height:38px!important;object-fit:contain}
+/* Sidebar logo mark: sizing now lives solely in arabtec-design-system.css
+   (.side-mark 38x34, .side-mark img max 38x32). This layer used to force the
+   <img> to 44px wide with !important, which overrode the design system's
+   container size and clipped the logo — removed rather than re-overridden. */
 .side-txt strong{font-size:14px}.side-txt span{font-size:10px;color:#a9b0b4}
 .nav{padding:14px 10px}.nav-section{font-size:9.5px;color:#788086;letter-spacing:.11em;padding:16px 12px 6px}
 .nav-item{padding:9px 12px;border-radius:8px;color:#dce1e3;font-size:12.5px;border-left:0;position:relative}
