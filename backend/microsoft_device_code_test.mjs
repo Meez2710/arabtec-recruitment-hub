@@ -449,6 +449,37 @@ process.env.MS_MAILBOX_ACCESS = 'own';
     /providerMessage:/.test(route), 'the underlying error is recoverable from the log');
 }
 
+/* ---------------------------------------------------------------------------
+   MSAL's `cancel` is a BOOLEAN on the request it polls.
+
+   acquireByDeviceCode used to spread the caller's mutable { cancel: false }
+   holder straight into the MSAL request. Every object is truthy, so MSAL read
+   `request.cancel` as "cancel now" and abandoned polling on its first tick —
+   a few hundred milliseconds after the operator had, in fact, signed in
+   successfully. It surfaced as ClientAuthError device_code_polling_cancelled
+   and, because classify() folded it into a generic message, as nothing at all
+   in the log. Two live sign-ins were lost to it.
+   ------------------------------------------------------------------------ */
+{
+  const src = fs.readFileSync(new URL('./src/lib/microsoft/msal-client.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export async function acquireByDeviceCode'),
+    src.indexOf('export async function acquireGraphToken'));
+
+  c('the device-code request sends cancel as a boolean',
+    /cancel:\s*false\s*,/.test(fn), 'request.cancel starts false');
+
+  c('the caller holder is never spread into the MSAL request',
+    !/\.\.\.\(cancel \? \{ cancel \} : \{\}\)/.test(fn),
+    'no object is passed as cancel');
+
+  c('the holder is mirrored onto the request MSAL polls',
+    /cancel\.cancel/.test(fn) && /request\.cancel = true/.test(fn),
+    'flipping the holder still cancels');
+
+  c('the mirror is cleared when the flow ends',
+    /clearInterval\(mirror\)/.test(fn), 'no interval is left running');
+}
+
 console.log(`\n=== MICROSOFT DEVICE CODE: ${passed} passed, ${failed} failed ===`);
 for (const f of [DBF, DBF + '-journal', DBF + '-wal', DBF + '-shm']) {
   try { fs.rmSync(f); } catch { /* already gone */ }

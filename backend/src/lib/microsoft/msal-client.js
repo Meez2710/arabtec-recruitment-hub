@@ -254,9 +254,15 @@ export async function exchangeCodeForAccount({ code, state }) {
  * The caller checks who signed in first; a person who reached the prompt by
  * mistake never has a refresh token written to the ATS database.
  *
- * `cancel` is a mutable { cancel: boolean } MSAL polls, so a caller can abandon
- * a sign-in nobody is going to complete instead of holding the process open for
+ * `cancel` is a mutable { cancel: boolean } the CALLER flips to abandon a
+ * sign-in nobody is going to complete, instead of holding the process open for
  * the full 15-minute code lifetime.
+ *
+ * It must not be handed to MSAL directly. MSAL reads `request.cancel` as a
+ * BOOLEAN on each poll tick, and any object is truthy — passing the holder made
+ * MSAL abandon polling on its first tick, every time, and report
+ * `device_code_polling_cancelled` a moment after the operator had signed in
+ * successfully. The holder is mirrored onto the request instead.
  */
 export async function acquireByDeviceCode({ onCode, cancel } = {}) {
   const cfg = requireConfigured();
@@ -270,15 +276,23 @@ export async function acquireByDeviceCode({ onCode, cancel } = {}) {
   const holder = { serialized: null };
   const client = newClient(cfg, stagingCachePlugin(holder));
 
+  const request = {
+    scopes: [...authScopes()],
+    // MSAL's own `message` is the one Microsoft wants shown verbatim; the
+    // fields are passed through as well so a caller can format its own.
+    deviceCodeCallback: (response) => { try { onCode?.(response); } catch { /* display only */ } },
+    // A boolean, because that is what MSAL reads. See the note above.
+    cancel: false,
+  };
+  // Mirror the caller's holder onto the request MSAL actually polls. Cheap and
+  // bounded: it only runs while a sign-in is outstanding.
+  const mirror = cancel
+    ? setInterval(() => { if (cancel.cancel) request.cancel = true; }, 500)
+    : null;
+
   let result;
   try {
-    result = await client.acquireTokenByDeviceCode({
-      scopes: [...authScopes()],
-      // MSAL's own `message` is the one Microsoft wants shown verbatim; the
-      // fields are passed through as well so a caller can format its own.
-      deviceCodeCallback: (response) => { try { onCode?.(response); } catch { /* display only */ } },
-      ...(cancel ? { cancel } : {}),
-    });
+    result = await client.acquireTokenByDeviceCode(request);
   } catch (e) {
     // Log the provider's own fields BEFORE classify() folds anything it does
     // not recognise into a generic "the request failed". Without this a
@@ -287,6 +301,8 @@ export async function acquireByDeviceCode({ onCode, cancel } = {}) {
     // that only runs when a sign-in has already failed.
     logProviderFailure('device_code', e);
     throw classify(e);
+  } finally {
+    if (mirror) clearInterval(mirror);
   }
 
   if (!result || !result.account) {
