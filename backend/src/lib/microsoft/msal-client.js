@@ -124,6 +124,24 @@ function persistentCachePlugin() {
  * means the wrong account's tokens never touch disk at all: the blob is only
  * persisted after the account has been verified.
  */
+/**
+ * What Microsoft actually said. `classify()` deliberately returns operator-
+ * facing messages, which means the provider's own error code and description
+ * are discarded — fine once a connection works, useless while one is being
+ * established for the first time.
+ */
+function logProviderFailure(stage, e) {
+  try {
+    console.error(JSON.stringify({
+      level: 'error', msg: 'microsoft.provider_error', stage,
+      name: e?.name || null,
+      errorCode: e?.errorCode || null,
+      subError: e?.subError || null,
+      errorMessage: String(e?.errorMessage || e?.message || e || '').slice(0, 400),
+    }));
+  } catch { /* diagnostics must never mask the real failure */ }
+}
+
 function stagingCachePlugin(holder) {
   return {
     async beforeCacheAccess() { /* always starts empty */ },
@@ -262,6 +280,12 @@ export async function acquireByDeviceCode({ onCode, cancel } = {}) {
       ...(cancel ? { cancel } : {}),
     });
   } catch (e) {
+    // Log the provider's own fields BEFORE classify() folds anything it does
+    // not recognise into a generic "the request failed". Without this a
+    // first-time connection failure is undiagnosable: the thrown error carries
+    // our message and the original is gone. Cost is one log line on a path
+    // that only runs when a sign-in has already failed.
+    logProviderFailure('device_code', e);
     throw classify(e);
   }
 
