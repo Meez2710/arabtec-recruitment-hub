@@ -920,6 +920,16 @@ table.candidates-table {
   .candidates-table > tbody > tr > td:not([data-label="Request"]) { overflow: visible; }
 }
 
+/* Users row actions. A flex row that is allowed to wrap, instead of four
+   inline-block buttons held on one line by an inline `white-space: nowrap`:
+   the nowrap made the cell's intrinsic minimum 359px and pushed the whole
+   table 12px past its card at 1440. The gap replaces the `{' '}` separators
+   the markup used to rely on, so the spacing no longer depends on whitespace
+   text nodes. */
+.user-actions { white-space: normal; }
+.user-actions > button { margin: 2px 0; }
+.user-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
 /* One opt-in clamp for every table cell whose value is free text of unbounded
    length. Rows in Hiring Requests, Interviews and Offers were each as tall as
    their longest string happened to wrap: measured at 1440, request rows ran

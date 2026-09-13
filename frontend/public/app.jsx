@@ -2727,11 +2727,16 @@ function UsersPage({ user }) {
                   <td>{u.roles.map((r) => <span className="chip" key={r.code}>{r.name}</span>)}</td>
                   <td><StatusBadge status={u.status} /></td>
                   <td className="muted">{fmtDate(u.lastLoginAt)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
+                  {/* Four full-width text buttons behind `white-space: nowrap`
+                      gave this cell a 359px intrinsic minimum, which pushed the
+                      table to 1107px inside a 1095px card — a 12px horizontal
+                      scroll at 1440, the widest width we support. A wrapping
+                      row drops that floor without hiding any action. */}
+                  <td className="user-actions">
                     {canManage && <>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setEditing(u)}>Edit</button>{' '}
-                      <button className="btn btn-ghost btn-sm" onClick={() => showActivity(u)}>Activity</button>{' '}
-                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset Password</button>{' '}
+                      <button className="btn btn-secondary btn-sm" onClick={() => setEditing(u)}>Edit</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => showActivity(u)}>Activity</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset Password</button>
                       <button className={'btn btn-sm ' + (u.status === 'active' ? 'btn-danger' : '')} onClick={() => toggleStatus(u)} disabled={u.id === user.id}>
                         {u.status === 'active' ? 'Deactivate' : 'Activate'}</button>
                     </>}
