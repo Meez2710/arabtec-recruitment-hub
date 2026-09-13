@@ -729,10 +729,29 @@ body:has(.modal-overlay) .more-sheet { display: none; }
        is doing to 100vh on that device. */
     position: fixed; top: 2px; bottom: 0; left: 0; right: auto; height: auto;
     z-index: 95; width: min(300px, 88vw);
-    transform: translateX(-105%); transition: transform .18s ease; overflow-y: auto;
+    transform: translateX(-105%); overflow-y: auto;
+    /* A closed drawer must be INERT, not merely off-screen. Moved out of view
+       by transform alone it kept `visibility: visible`, so every one of its
+       ~24 navigation buttons stayed in the tab order and in the accessibility
+       tree: on a phone you tabbed through the whole hidden menu before
+       reaching the page, and a screen reader read it out. `visibility:
+       hidden` removes both, and delaying it by the slide duration lets the
+       close animation still play before the drawer goes inert. */
+    visibility: hidden;
+    transition: transform .18s ease, visibility 0s linear .18s;
   }
-  .sidebar.mobile-open { transform: translateX(0); box-shadow: 18px 0 50px rgba(0, 0, 0, .13); }
+  .sidebar.mobile-open {
+    transform: translateX(0); box-shadow: 18px 0 50px rgba(0, 0, 0, .13);
+    visibility: visible;
+    transition: transform .18s ease, visibility 0s linear 0s;
+  }
   .sidebar.collapsed { --sidebar-w: 236px; width: min(300px, 88vw); padding: 18px 14px 20px; }
+  /* Drawer rows are touch targets here, not pointer targets: they measured
+     34px, against the 44px floor the rest of the phone UI already holds
+     (arabtec-responsive.css). Height only — the label, icon and count chip
+     keep their desktop sizes. */
+  .sidebar .nav-item { min-height: 44px; }
+  .sidebar .nav-section { padding-top: 18px; }
   .sidebar-scrim {
     display: block; position: fixed; inset: 0; z-index: 90; background: rgba(20, 20, 20, .38);
     border: 0; padding: 0;

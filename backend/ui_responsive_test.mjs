@@ -109,5 +109,28 @@ check('it wraps, so the actions still get their own line',
 check('the title block claims that line explicitly, not via a height basis',
   talentPool.includes('.page-head-main') && talentPool.includes('flex: 1 1 100%'));
 
+/* ---------------------------------------------------------------------------
+   The phone drawer's focus contract.
+
+   Below 900px the sidebar becomes a drawer that is moved out of view with
+   `transform: translateX(-105%)`. A transform hides nothing from the keyboard
+   or from assistive technology: measured at 390px with the drawer CLOSED, all
+   23 navigation buttons were still focusable and still in the accessibility
+   tree, so tabbing into the page walked the whole hidden menu first. The
+   closed state has to be inert, and the visibility switch has to be delayed by
+   the slide duration or the drawer disappears instead of sliding away.
+   ------------------------------------------------------------------------ */
+const drawer = between(design, '@media (max-width: 900px)', '@media (max-width: 640px)');
+const drawerClosed = between(drawer, '.sidebar {', '}');
+const drawerOpen = between(drawer, '.sidebar.mobile-open {', '}');
+check('a closed phone drawer is inert, not merely moved off-screen',
+  /visibility:\s*hidden/.test(drawerClosed));
+check('the closed drawer waits for its slide before going inert',
+  /transition:[^;]*visibility\s+0s\s+linear\s+\.18s/.test(drawerClosed));
+check('opening the drawer restores it to the keyboard immediately',
+  /visibility:\s*visible/.test(drawerOpen) && /visibility\s+0s\s+linear\s+0s/.test(drawerOpen));
+check('drawer rows meet the 44px phone touch floor the rest of the UI holds',
+  /\.sidebar \.nav-item \{[^}]*min-height:\s*44px/.test(drawer));
+
 console.log(`\n=== UI RESPONSIVE: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
