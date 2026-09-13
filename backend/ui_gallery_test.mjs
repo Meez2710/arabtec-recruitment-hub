@@ -258,7 +258,67 @@ check('the gallery\'s own <style> block introduces no colour literal that is for
     'sanity: the mutation should actually introduce a colour literal the guard catches');
 });
 
+/* ---------------------------------------------------------------------------
+   THE DRIFT GUARD — the whole reason this gallery exists.
+
+   An adversarial review proved the gap empirically: rename `cvrev-panel` to
+   `cvrev-panel-live` in app.jsx and BOTH this suite and ui_overlays_test stayed
+   green, while the real CV panel would render completely unstyled. The gallery
+   only ever read its own frozen copy of the markup, and the overlay suite only
+   ever resolved selectors against the stylesheets — neither looked at what the
+   product actually renders.
+
+   So: every class the gallery advertises as a product component must still
+   appear in the JSX. This cannot prove the MARKUP matches, only that the class
+   names have not been renamed out from under the gallery — but a rename is the
+   realistic drift, and it is exactly what slipped through.
+   ------------------------------------------------------------------------ */
+// There is no `read` helper in this file — the fixtures are read directly from
+// publicDir. Reading from a helper that does not exist is how this guard first
+// passed vacuously on an empty string.
+// A class must match as a WHOLE token, delimited by a quote or whitespace.
+// `\\b` is not enough: `-` is itself a word boundary, so /\\bcvrev-panel\\b/
+// happily matches inside `cvrev-panel-live` — exactly the rename this guard
+// exists to catch, which is how it slipped through on the first attempt.
+const classToken = (cls) => new RegExp(`["'\\s]${cls}["'\\s]`);
+
+const JSX_SOURCES = ['app.jsx', 'org-structure.jsx', 'cv-intake.jsx',
+  'intake-review.jsx', 'email-settings.jsx']
+  .map((f) => { try { return fs.readFileSync(publicDir + f, 'utf8'); } catch { return ''; } })
+  .join('\n');
+
+check('every component class the gallery shows still exists in the product JSX', () => {
+  // Classes the gallery presents AS product components. Gallery-local helpers
+  // (.is-hover and friends, and its own layout scaffolding) are excluded by
+  // name — they are the page's own furniture, not product surface.
+  const PRODUCT_CLASSES = [
+    'btn', 'btn-secondary', 'btn-ghost', 'btn-danger', 'btn-sm', 'icon-btn',
+    'field', 'toolbar', 'filter-toolbar', 'toolbar-search', 'toolbar-secondary',
+    'toolbar-count', 'count-pill', 'chip', 'chip-filter', 'status-chip',
+    'tag-toggle', 'card', 'card-pad', 'card-head', 'dash-kpi', 'pcard',
+    'modal', 'cvrev-panel', 'seg-tab', 'view-toggle-btn', 'tabbar-btn',
+    'profile-tab', 'candidates-table', 'table-busy', 'skeleton',
+  ];
+  const missing = PRODUCT_CLASSES.filter((cls) => {
+    // the gallery must show it...
+    const inGallery = classToken(cls).test(galleryHtml);
+    // ...and the product must still render it
+    const inProduct = classToken(cls).test(JSX_SOURCES);
+    return inGallery && !inProduct;
+  });
+  // Meta FIRST: if the sources did not load, every class looks "missing" and the
+  // failure reads as 31 phantom drifts instead of one unreadable file.
+  assert.ok(JSX_SOURCES.length > 100000,
+    `the JSX sources should be substantial, read ${JSX_SOURCES.length} chars`);
+  assert.ok(classToken('cvrev-panel').test(JSX_SOURCES),
+    'sanity: the CV panel class is findable in the JSX, so a rename would be detected');
+
+  assert.deepEqual(missing, [],
+    `the gallery advertises classes the product no longer renders — it has drifted: ${missing.join(', ')}`);
+});
+
 console.log(`\n=== UI COMPONENT GALLERY: ${passed} passed, ${failed} failed ===`);
+
 console.log('NOTE: this suite proves the gallery\'s markup/link/style CONTRACT. It does');
 console.log('NOT prove pixel geometry, real :hover/:focus/:active rendering, or that no');
 console.log('component overflows a real viewport — that was verified once by hand in a');

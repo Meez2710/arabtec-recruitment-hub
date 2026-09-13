@@ -538,6 +538,18 @@ check('Download survives as a secondary action, in the panel and beside it', () 
   const cvTab = slice('function CandidateCvTab', 'const ACT_CATS');
   assert.ok(/downloadResume\(c, toast\)/.test(cvTab),
     'the profile CV tab lost its Download button');
+
+  // A review found this check had been written around a regression: it named
+  // three entry points and silently skipped the two that had actually lost
+  // one-click Download. Every entry point that opens a CV is now named, so the
+  // suite cannot again be satisfied by the subset that happens to pass.
+  const table = slice("view === 'table' ?", 'function ParsePreviewTable');
+  assert.ok(/downloadResume\(c, toast\)/.test(table),
+    'the Talent Pool CV column lost one-click Download — and that row has no overflow menu to fall back on');
+  const quick = slice('function CandidateQuickView', 'function AssessmentPanel');
+  assert.ok(/downloadResume\(cand, toast\)/.test(quick),
+    'CandidateQuickView lost its Download button');
+  assert.ok(/openCvReview\(/.test(quick), 'and it should still offer Review CV');
 });
 
 check('the panel is mounted once, at the shell, not per page', () => {

@@ -85,6 +85,11 @@ const ICON_MARKS = {
   sortNeutral: <><path d="m7 10 5-5 5 5" /><path d="m17 14-5 5-5-5" /></>,
   arrowUp: <><path d="M12 20V4m-6 6 6-6 6 6" /></>,
   arrowDown: <><path d="M12 4v16m-6-6 6 6 6-6" /></>,
+  // Download: the arrow lands on a tray. Same 24 viewBox, same stroke, same
+  // <Icon> as every other mark — no new icon library.
+  // Review: an eye. Same 24 viewBox, same stroke, same <Icon>.
+  eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" /><circle cx="12" cy="12" r="3" /></>,
+  download: <><path d="M12 3v12m-5-5 5 5 5-5" /><path d="M4 20h16" /></>,
   back: <><path d="M20 12H4m6-6-6 6 6 6" /></>,
   filter: <><path d="M4 6h16M7 12h10M10 18h4" /></>,
   sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m6-11-3 3 3 3" /></>,
@@ -5761,6 +5766,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>Review CV</button>}
+                  {cand.hasResume && <button className="btn btn-sm btn-ghost" onClick={() => downloadResume(cand, toast)}>Download</button>}
                   {cand.hasResume && canEditCand && <button className="btn btn-sm btn-ghost" onClick={reparseResume} disabled={resumeBusy} title="Re-run the CV parser on the file already attached">{resumeBusy ? 'Working…' : 'Re-parse'}</button>}
                   {canEditCand && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{resumeBusy ? 'Uploading…' : (cand.hasResume ? 'Replace' : '+ Upload')}<input type="file" style={{ display: 'none' }} onChange={uploadResume} disabled={resumeBusy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
                 </div>
@@ -7141,8 +7147,18 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                 <td data-label="Stage"><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
-                    ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Review this CV beside the record'}
-                        onClick={() => openCvReview(c.id, c)}>Review</button>
+                    ? <>
+                        <button className="icon-btn" title={c.resumeName ? `Review ${c.resumeName}` : 'Review this CV beside the record'}
+                          aria-label={`Review CV for ${c.fullName}`}
+                          onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
+                        {/* One-click download stays. Replacing it with Review alone cost a
+                            recruiter the file behind a panel and two fetches, and this row
+                            has no overflow menu to fall back on — the action menu is only
+                            rendered in the pipeline view. */}
+                        <button className="icon-btn" title={`Download ${c.resumeName || 'CV'}`}
+                          aria-label={`Download ${c.resumeName || 'CV'}`}
+                          onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
+                      </>
                     : <span className="muted">—</span>}
                 </td>
               </tr>
