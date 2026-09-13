@@ -3774,13 +3774,42 @@ function MicrosoftPage({ user, params }) {
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(null);          // 'connect' | 'test' | 'sync' | 'disconnect'
   const [result, setResult] = useState(null);      // last test / scan outcome, shown inline
+  const [deviceCode, setDeviceCode] = useState(null);
   const canManage = can(user, 'system.manage');
 
   const load = useCallback(async () => {
-    try { setData(await api.get('/integrations/microsoft/status')); setErr(null); }
-    catch (e) { setErr(e.message || 'Could not read the Microsoft 365 connection.'); }
+    try {
+      const r = await api.get('/integrations/microsoft/status');
+      setData(r); setErr(null);
+      // The server owns the flow; mirror whatever it reports so a code survives
+      // a page reload and a completed sign-in clears itself.
+      if (r.deviceCode) setDeviceCode(r.deviceCode);
+      else setDeviceCode(null);
+    } catch (e) { setErr(e.message || 'Could not read the Microsoft 365 connection.'); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // While a device sign-in is outstanding, poll for its outcome. Stops as soon
+  // as it resolves, so an idle admin page is not polling in the background.
+  const devicePending = deviceCode && (deviceCode.state === 'pending' || deviceCode.state === 'starting');
+  useEffect(() => {
+    if (!devicePending) return undefined;
+    const id = setInterval(load, 4000);
+    return () => clearInterval(id);
+  }, [devicePending, load]);
+
+  // Announce the result of a device sign-in once.
+  const deviceState = deviceCode && deviceCode.state;
+  const announced = useRef(null);
+  useEffect(() => {
+    if (!deviceState || announced.current === deviceState) return;
+    if (deviceState === 'connected') { announced.current = deviceState; toast('Microsoft 365 connected.'); }
+    if (deviceState === 'failed') {
+      announced.current = deviceState;
+      const build = MS_CALLBACK_MESSAGE[deviceCode.error];
+      toast(build ? build({ expected: data?.mailbox }) : 'The Microsoft 365 sign-in did not complete.', 'error');
+    }
+  }, [deviceState, deviceCode, data, toast]);
 
   // The outcome of an OAuth round trip, handed over in the redirect the callback
   // issued. Shown once, then the shell has already cleared it from the URL.
@@ -3801,6 +3830,14 @@ function MicrosoftPage({ user, params }) {
       // Microsoft requires. The API client sends a bearer token, so a plain link
       // would arrive unauthenticated.
       const r = await api.get('/integrations/microsoft/connect');
+      // Device code has no redirect to navigate to: Microsoft issues a short
+      // code, the administrator types it on microsoft.com, and the server polls
+      // until they finish. Show the code and let /status report the outcome.
+      if (r.mode === 'device-code') {
+        setDeviceCode(r.deviceCode || null);
+        setBusy(null);
+        return;
+      }
       window.location.assign(r.authUrl);
     } catch (e) {
       setBusy(null);
@@ -3900,13 +3937,37 @@ function MicrosoftPage({ user, params }) {
         </div>
       </section>
 
+      {/* A device sign-in in progress. Not an OAuth internal — it is the one
+          thing the administrator has to act on, so it sits above the actions. */}
+      {canManage && devicePending && deviceCode.userCode && (
+        <section className="card notice notice-info" style={{ marginBottom: 16 }}>
+          <div className="card-head"><h3>Finish signing in to Microsoft 365</h3></div>
+          <div className="card-pad">
+            <p style={{ marginTop: 0 }}>
+              Open <a href={deviceCode.verificationUri || 'https://login.microsoft.com/device'}
+                target="_blank" rel="noopener noreferrer">{deviceCode.verificationUri || 'login.microsoft.com/device'}</a>
+              {' '}and enter this code, signing in as <strong>{data.mailbox}</strong>:
+            </p>
+            <p className="device-code" style={{
+              fontSize: 30, fontWeight: 700, letterSpacing: '.16em',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', margin: '12px 0',
+            }}>{deviceCode.userCode}</p>
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Waiting for you to finish… this page updates itself. The code expires
+              {deviceCode.expiresAt ? ' at ' + new Date(deviceCode.expiresAt).toLocaleTimeString() : ' in about 15 minutes'}.
+            </p>
+          </div>
+        </section>
+      )}
+
       {canManage && (
         <section className="card" style={{ marginBottom: 16 }}>
           <div className="card-head"><h3>Actions</h3></div>
           <div className="card-pad" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button className="btn" onClick={connect} disabled={!data.configured || busy !== null}>
-              {busy === 'connect' ? 'Opening Microsoft…'
-                : connected ? 'Reconnect' : 'Connect Microsoft 365'}
+              {busy === 'connect' ? 'Starting…'
+                : devicePending ? 'Waiting for sign-in…'
+                  : connected ? 'Reconnect' : 'Connect Microsoft 365'}
             </button>
             <button className="btn btn-ghost" disabled={!canAttempt || busy !== null}
               onClick={() => act('test', '/integrations/microsoft/test', (r) => r.message || 'Connection is healthy.')}>

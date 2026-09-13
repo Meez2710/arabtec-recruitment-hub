@@ -410,6 +410,45 @@ c('a shared-mode read really goes to /users/<mailbox>',
 process.env.MS_MAILBOX_ACCESS = 'own';
 
 /* --------------------------------- done ----------------------------------- */
+/* ---------------------------------------------------------------------------
+   The connect ROUTE must honour device-code mode.
+
+   The library had `acquireByDeviceCode` from the start, but the route called
+   `buildAuthCodeUrl()` unconditionally — it never consulted MS_AUTH_MODE. So a
+   host correctly configured for device code still sent Entra its redirect URI
+   and got AADSTS50011, and on a plain-HTTP private address (http://10.20.0.9:4001)
+   there is no redirect URI that could ever be registered to fix it: Entra
+   permits http only for localhost. The mode has to branch in the route.
+   ------------------------------------------------------------------------ */
+{
+  const route = fs.readFileSync(new URL('./src/routes/integrations-microsoft.js', import.meta.url), 'utf8');
+  const connectFn = route.slice(route.indexOf('async function connect('), route.indexOf('router.get(\'/callback\''));
+
+  c('connect() branches on device-code before building an authorize URL',
+    /if \(isDeviceCodeMode\(\)\)/.test(connectFn)
+    && connectFn.indexOf('isDeviceCodeMode()') < connectFn.indexOf('buildAuthCodeUrl'),
+    'device-code is checked first');
+
+  c('connect() never builds a redirect URL in device-code mode',
+    /return res\.json\(\{\s*mode: 'device-code'/.test(connectFn),
+    'device-code returns a code, not an authUrl');
+
+  c('the device flow applies the same identity checks as the callback',
+    /assertMailbox\(signedInAs\)/.test(route)
+    && (route.match(/assertMailbox\(signedInAs\)/g) || []).length >= 2,
+    'both the callback and the device flow assert the mailbox');
+
+  c('the device flow persists through saveConnection, not its own path',
+    (route.match(/saveConnection\(\{/g) || []).length >= 2,
+    'one persistence contract for both flows');
+
+  c('status reports an in-flight device code so the panel can show it',
+    /deviceCode: deviceFlowPublic\(\)/.test(route), 'status exposes the pending code');
+
+  c('a failed device sign-in logs the provider message classify() would hide',
+    /providerMessage:/.test(route), 'the underlying error is recoverable from the log');
+}
+
 console.log(`\n=== MICROSOFT DEVICE CODE: ${passed} passed, ${failed} failed ===`);
 for (const f of [DBF, DBF + '-journal', DBF + '-wal', DBF + '-shm']) {
   try { fs.rmSync(f); } catch { /* already gone */ }
