@@ -195,6 +195,72 @@ check('unauthenticated users cannot view the chart', () => {
   assert.equal(anon.status, 401);
 });
 
+/* ---------------------------------------------------------------------------
+   The chart must frame itself. `.org-canvas` is `width: max-content` and the
+   tree centres inside it, so with the seeded org the canvas lays out ~19500px
+   wide and the root sits ~9700px in. Pan (0,0) shows the canvas's far-left
+   edge — and the wrap is `overflow: hidden` on both axes, so nothing scrolls
+   there. `fit()` used to be exactly `setScale(1); setPan({x:0,y:0})`, i.e. the
+   broken state itself, and zoom only scales about `transform-origin: 0 0`. Net
+   effect measured in a browser: 5 of 339 cards reachable, root not among them.
+   ------------------------------------------------------------------------ */
+{
+  const orgJsx = fs.readFileSync(new URL('../frontend/public/org-structure.jsx', import.meta.url), 'utf8');
+  const fnBody = (name) => {
+    const at = orgJsx.indexOf(name);
+    if (at < 0) return '';
+    let depth = 0;
+    for (let i = orgJsx.indexOf('{', at); i < orgJsx.length; i++) {
+      if (orgJsx[i] === '{') depth++;
+      else if (orgJsx[i] === '}') { depth--; if (depth === 0) return orgJsx.slice(at, i + 1); }
+    }
+    return '';
+  };
+  const fit = fnBody('function fit()');
+  check('fit() measures the canvas instead of resetting the pan to the origin', () => {
+    assert.ok(fit.length > 0, 'fit() is still declared');
+    assert.ok(/offsetWidth/.test(fit) && /clientWidth/.test(fit),
+      'fit() must measure the canvas against its wrapper, not assume a position');
+    assert.ok(!/setPan\(\s*\{\s*x:\s*0\s*,\s*y:\s*0\s*\}\s*\)\s*;?\s*\}\s*$/.test(fit.replace(/\s+/g, ' ')),
+      'fit() must not end by parking the canvas back at the origin');
+    assert.ok(/centerOn\(/.test(fit), 'fit() centres through the shared helper');
+  });
+  check('the centring helper positions the canvas midpoint, not its left edge', () => {
+    // The maths moved into the exported, pure `centerOffset` so it can be
+    // asserted on real numbers (ui_behavior_test.mjs); this only pins that
+    // centerOn still delegates there rather than re-deriving a pan of its own.
+    const centre = fnBody('const centerOn = useCallback');
+    assert.match(centre, /setPan\(centerOffset\(/, 'centerOn delegates to the shared maths');
+    // Matched against the file, not via fnBody: centerOffset destructures its
+    // argument, so the first `{` after the name is the parameter pattern and
+    // brace-matching from there returns the signature, never the body.
+    assert.match(orgJsx, /x:\s*Math\.round\(\(wrapW - canvasW \* scale\) \/ 2\)/,
+      'centerOffset offsets by half the difference between wrapper and canvas width');
+  });
+  check('re-framing watches the canvas width, not the visible-node count', () => {
+    // Keying on `visible.length` missed expand/collapse entirely — those change
+    // the `collapsed` Set, not `visible` — so collapsing the root left the pan
+    // 9228px from the only remaining card. The canvas's layout width is the
+    // signal that moves for every cause. The outcome (root on screen after each
+    // of those) is asserted on real numbers in ui_behavior_test.mjs.
+    assert.match(orgJsx, /new ResizeObserver\(reframe\)/, 'the canvas width is observed');
+    assert.match(orgJsx, /ro\.observe\(canvas\)/, 'the observer is attached to the canvas itself');
+    assert.match(orgJsx, /w === lastWidth/, 're-framing is skipped when the width has not moved');
+    assert.ok(!/framedFor\.current = visible\.length/.test(orgJsx),
+      'the old visible.length key is gone');
+    assert.match(orgJsx, /centerOn\(framedOnce\.current \? scaleRef\.current : 1\)/,
+      're-framing keeps the scale the user chose after the first frame');
+  });
+  check('searching brings the first match into view', () => {
+    assert.match(orgJsx, /querySelector\('\.org-card\.is-match'\)/,
+      'search pans to its match instead of only ringing it');
+  });
+  check('the collapse toggle is a full-size click target', () => {
+    const rule = orgJsx.slice(orgJsx.indexOf('.org-toggle {'), orgJsx.indexOf('}', orgJsx.indexOf('.org-toggle {')));
+    assert.match(rule, /min-height:\s*28px/, '.org-toggle keeps a 28px minimum height');
+  });
+}
+
 console.log(`\n${failures.length === 0 ? 'ALL PASS' : 'FAILURES'} — ${passed} passed, ${failures.length} failed`);
 if (failures.length) console.log('failed:', failures.join(' | '));
 process.exit(failures.length === 0 ? 0 : 1);

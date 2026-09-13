@@ -73,9 +73,14 @@
       .org-name { font-size:13px; font-weight:700; color:var(--text-dark); line-height:1.25; }
       .org-title { font-size:12px; color:var(--text-gray); line-height:1.3; }
       .org-meta { font-size:11px; color:var(--text-gray); margin-top:4px; }
+      /* Measured at 19px tall, the smallest control in the product and well
+         under the 28px the rest of the UI holds for a clickable target. The
+         label stays 11px — this buys the height back with padding, not by
+         inflating the type. */
       .org-toggle {
         margin-top:6px; border:1px solid var(--border); background:#fff; border-radius:999px;
-        font-size:11px; padding:2px 8px; cursor:pointer; color:var(--text-gray);
+        font-size:11px; padding:0 10px; min-height:28px; cursor:pointer; color:var(--text-gray);
+        display:inline-flex; align-items:center; justify-content:center;
       }
       .org-drop { outline:2px dashed var(--at-action, #008064); }
       .org-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--text-gray); }
@@ -83,6 +88,27 @@
     `;
     document.head.appendChild(el);
   }
+
+  /* Framing maths, kept pure and exported so it can be asserted on real
+     numbers instead of on the shape of the source. `transform-origin` is
+     `0 0`, so a canvas of width `canvasW` drawn at `scale` occupies
+     [0, canvasW*scale]; centring it is a translate of half the leftover. */
+  const ORG_MIN_SCALE = 0.45;
+  const ORG_MAX_SCALE = 1.8;
+  function centerOffset({ wrapW, wrapH, canvasW, canvasH, scale }) {
+    if (!wrapW || !wrapH || !canvasW || !canvasH) return { x: 0, y: 0 };
+    return {
+      x: Math.round((wrapW - canvasW * scale) / 2),
+      // Centre vertically only once the tree fits; otherwise keep the root's
+      // own row at the top, where you expect to start reading.
+      y: canvasH * scale <= wrapH ? Math.round((wrapH - canvasH * scale) / 2) : 0,
+    };
+  }
+  function fitScale({ wrapW, wrapH, canvasW, canvasH }) {
+    if (!wrapW || !wrapH || !canvasW || !canvasH) return 1;
+    return Math.min(ORG_MAX_SCALE, Math.max(ORG_MIN_SCALE, Math.min(1, wrapW / canvasW, wrapH / canvasH)));
+  }
+  window.ORG_CHART_MATH = { centerOffset, fitScale, ORG_MIN_SCALE, ORG_MAX_SCALE };
 
   function buildTree(nodes) {
     const byParent = new Map();
@@ -327,6 +353,96 @@
       ).map((n) => n.id));
     }, [visible, q]);
 
+    /* `.org-canvas` is `width: max-content` and `.org-tree` centres itself
+       inside it, so with the seeded 113 positions the canvas lays out 19552px
+       wide and the root sits ~9670px in. Pan (0, 0) therefore shows the far
+       LEFT edge of that canvas — an arbitrary handful of leaf nodes, with the
+       root and 334 of 339 cards off-screen and no way to reach them: the wrap
+       is `overflow: hidden` on both axes, so nothing scrolls, and `fit()` used
+       to BE `setPan({ x: 0, y: 0 })`, which is exactly that broken state.
+       Zoom-out only shrinks about `transform-origin: 0 0`, so it never brings
+       the middle of the canvas into view either.
+
+       Centre on the canvas's own midpoint instead. The tree is centred within
+       the canvas, so this frames the root at any scale. */
+    const centerOn = useCallback((nextScale) => {
+      const wrap = wrapRef.current;
+      const canvas = wrap && wrap.firstElementChild;
+      if (!wrap || !canvas) { setScale(nextScale); setPan({ x: 0, y: 0 }); return; }
+      // offsetWidth/Height are layout sizes — unaffected by the transform we are
+      // about to set, which is what makes this safe to call repeatedly.
+      const cw = canvas.offsetWidth;
+      const ch = canvas.offsetHeight;
+      const ww = wrap.clientWidth;
+      const wh = wrap.clientHeight;
+      setScale(nextScale);
+      setPan(centerOffset({ wrapW: ww, wrapH: wh, canvasW: cw, canvasH: ch, scale: nextScale }));
+    }, []);
+
+    /* Re-frame whenever the rendered tree changes WIDTH.
+
+       Keying this on `visible.length` was wrong: `visible` depends only on
+       `nodes` and the project filter, while expanding or collapsing a node
+       changes the `collapsed` Set instead. So the tree could be rebuilt at a
+       completely different width without the effect ever firing. Collapsing
+       the root shrank the canvas 19552px -> 1095px while the pan stayed at
+       -9228px, which put the only remaining card off-screen and left the
+       module blank; expanding from a collapsed state stranded every revealed
+       child off to the left. Both are the same defect the initial framing was
+       added to fix, just reached through the toolbar instead of on load.
+
+       The canvas's own layout width is the honest signal — it changes for
+       every one of those causes and for none of the others. A transform does
+       not affect layout size, so re-centring cannot retrigger the observer.
+       The first framing sets scale 1; later ones keep whatever scale the user
+       is on, so re-framing never fights a deliberate zoom. */
+    const scaleRef = useRef(1);
+    useEffect(() => { scaleRef.current = scale; }, [scale]);
+
+    const framedOnce = useRef(false);
+    const hasTree = visible.length > 0;
+    useEffect(() => {
+      const wrap = wrapRef.current;
+      const canvas = wrap && wrap.firstElementChild;
+      if (!hasTree || !wrap || !canvas) return undefined;
+      let lastWidth = 0;
+      const reframe = () => {
+        const w = canvas.offsetWidth;
+        if (!w || w === lastWidth) return;
+        lastWidth = w;
+        centerOn(framedOnce.current ? scaleRef.current : 1);
+        framedOnce.current = true;
+      };
+      const raf = requestAnimationFrame(reframe);
+      if (typeof ResizeObserver === 'undefined') return () => cancelAnimationFrame(raf);
+      const ro = new ResizeObserver(reframe);
+      ro.observe(canvas);
+      return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+    }, [hasTree, centerOn]);
+
+    /* Searching only added a highlight ring. On a canvas this wide the match is
+       almost always off-screen, so typing a name looked like it found nothing.
+       Bring the first match into view — a pure pan by the on-screen delta, so
+       it is scale-agnostic and does not disturb the zoom the user chose. The
+       tree's width does not change when a match is highlighted, so this never
+       races the width-driven reframing above. */
+    const matchCount = matches.size;
+    useEffect(() => {
+      if (!q.trim() || !matchCount) return undefined;
+      const raf = requestAnimationFrame(() => {
+        const wrap = wrapRef.current;
+        const hit = wrap && wrap.querySelector('.org-card.is-match');
+        if (!wrap || !hit) return;
+        const wr = wrap.getBoundingClientRect();
+        const hr = hit.getBoundingClientRect();
+        const dx = (wr.left + wr.width / 2) - (hr.left + hr.width / 2);
+        const dy = (wr.top + wr.height / 2) - (hr.top + hr.height / 2);
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        setPan((prev) => ({ x: Math.round(prev.x + dx), y: Math.round(prev.y + dy) }));
+      });
+      return () => cancelAnimationFrame(raf);
+    }, [q, matchCount]);
+
     function toggle(id) {
       setCollapsed((prev) => {
         const next = new Set(prev);
@@ -358,7 +474,21 @@
       panning.current = null;
       e.currentTarget.classList.remove('is-panning');
     }
-    function fit() { setScale(1); setPan({ x: 0, y: 0 }); }
+    function fit() {
+      const wrap = wrapRef.current;
+      const canvas = wrap && wrap.firstElementChild;
+      if (!wrap || !canvas) { centerOn(1); return; }
+      const cw = canvas.offsetWidth;
+      const ch = canvas.offsetHeight;
+      const ww = wrap.clientWidth;
+      const wh = wrap.clientHeight;
+      if (!cw || !ch || !ww || !wh) { centerOn(1); return; }
+      // Same 0.45 floor the zoom buttons and the wheel already enforce — this
+      // module's own definition of "still readable". A fully expanded chart is
+      // wider than any floor can fit, so Fit means "as much as stays legible,
+      // centred", not "shrink until it disappears".
+      centerOn(fitScale({ wrapW: ww, wrapH: wh, canvasW: cw, canvasH: ch }));
+    }
 
     async function saveNode(payload) {
       if (form && form.node) {

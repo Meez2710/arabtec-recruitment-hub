@@ -115,7 +115,7 @@ body { color: var(--ink); font-size: 13px; line-height: 1.45; font-weight: 400; 
 .side-mark { width: 38px; height: 34px; display: grid; place-items: center; }
 /* Name over kicker, always two lines — they were running together as one. */
 .side-txt { display: grid; gap: 1px; min-width: 0; }
-.side-mark img, .side-mark svg { max-width: 38px; max-height: 32px; }
+.side-mark img, .side-mark svg { max-width: 38px; max-height: 32px; object-fit: contain; }
 .side-txt strong, .sidebar-title { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
 .side-txt span {
   font-size: 9px; color: var(--faint); letter-spacing: .12em; text-transform: uppercase; font-weight: 700;
@@ -367,6 +367,19 @@ input:focus {
 .notice-success { border-left-color: var(--green); background: var(--green-50); }
 .notice-warn { border-left-color: var(--warning); background: var(--warning-tint); }
 .notice-danger { border-left-color: var(--brand); background: var(--brand-tint); }
+/* A refresh failed but the rows underneath are still usable — this reports it
+   without taking the page, which is what `LoadError` does and what makes sense
+   only on a first load. Warning, not danger: nothing is broken, the content is
+   simply not current. Sits in flow above the list so it cannot cover a row. */
+.refetch-error {
+  display: flex; align-items: center; gap: var(--cl-3, 8px);
+  margin: 0 0 12px; padding: 10px 14px;
+  border: 1px solid #F3D48A; border-left-width: 4px; border-left-color: var(--warning);
+  border-radius: 14px; background: var(--warning-tint); color: var(--warning-ink);
+  font-size: 12.5px;
+}
+.refetch-error > span { flex: 1 1 auto; min-width: 0; }
+.refetch-error > .btn { flex: 0 0 auto; color: var(--warning-ink); }
 .error-banner { border-radius: 14px; border: 1px solid var(--brand-tint-bd); background: var(--brand-tint); color: var(--brand-dark); }
 .success-banner { border-radius: 14px; border: 1px solid var(--green-border); background: var(--green-50); color: var(--green-700); }
 
@@ -384,6 +397,16 @@ tr.row-selected > td { background: var(--green-50); }
 .cell-strong { font-size: 13px; font-weight: 700; color: var(--ink); }
 .cell-sub, .cell-sub-only { font-size: 11.5px; color: var(--muted); }
 .sort-th { color: var(--muted); }
+/* Hiring plan by project: table-layout is auto and every cell was left/start
+   aligned, so the long Project name column pushed its leftover width onto
+   "Planned seats" / "Open roles" — a 2-digit or 1-digit value then sat far
+   from its header and from the Progress bar. Right-align header and body
+   together for the plain-number columns so each value reads under its own
+   label; the name and Progress columns are unaffected. */
+.plan-table th:nth-child(2), .plan-table th:nth-child(3), .plan-table th:nth-child(4),
+.plan-table td:nth-child(2), .plan-table td:nth-child(3), .plan-table td:nth-child(4) {
+  text-align: right;
+}
 .pager { font-size: 12px; color: var(--muted); }
 .pager-page { border-radius: 999px; }
 
@@ -422,7 +445,12 @@ tr.row-selected > td { background: var(--green-50); }
 .dash-state-ico { background: var(--green-50); color: var(--green-700); }
 
 /* Action list — the "waiting on you" pattern: signal, what, why, one action. */
-.action-list { display: grid; }
+/* Same fixed-launcher collision as .role-health below: this list's action sits
+   on the content's right edge, so as the list scrolls past the launcher the
+   button lands inside its footprint and stops taking clicks. Measured across
+   the full scroll range at 1440/1200/1024, this was the one remaining overlap
+   after .role-health got its lane. Reserve the same lane, for the same reason. */
+.action-list { display: grid; padding-right: 48px; }
 .action-item {
   display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 12px;
   align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line);
@@ -461,7 +489,15 @@ tr.row-selected > td { background: var(--green-50); }
 .event.risk strong { color: var(--brand-dark); }
 
 /* Role health rows — one line per requisition. */
-.role-health { display: grid; }
+/* The anyhelp launcher rests as a fixed 56x56 box anchored 22px off the
+   viewport's right/bottom edge (see section 11 below). This list's last
+   column (the age label + Open button) runs along that same right edge, and
+   because both offsets are fixed px values, the Open button lands ~33px
+   inside the launcher's footprint at every width from 1024 to 1440,
+   whichever row's vertical position happens to line up with it. The
+   launcher's Y position moves with scroll, so dodging it vertically isn't
+   reliable — reserve a lane clear of its X range instead, which is constant. */
+.role-health { display: grid; padding-right: 48px; }
 .role-row {
   display: grid; grid-template-columns: minmax(0, 1.4fr) 120px minmax(0, .9fr) 92px;
   gap: 12px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line);
@@ -470,6 +506,11 @@ tr.row-selected > td { background: var(--green-50); }
 .role-row .cell-title { display: block; font-size: 13.5px; font-weight: 700; color: var(--ink); }
 .role-row .cell-meta { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .role-row .idle { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--muted); }
+/* Age label + Open button, 4th column. Both are inline-level, so without this
+   they sat on the same baseline with a 0px gap (the "0d" reading as part of
+   the button). Stack them with a real gap instead of the old inline
+   `margin-top:6px` on the button, which does nothing for two inline siblings. */
+.role-row-end { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .progress, .fit-bar { height: 10px; border-radius: 999px; background: #ECEEF0; overflow: hidden; }
 .progress > span, .fit-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--green); }
 
@@ -556,8 +597,12 @@ body:has(.modal-overlay) .more-sheet { display: none; }
   background: #fff; color: var(--green-700); display: flex; align-items: center;
   justify-content: flex-start;
   box-shadow: 0 18px 40px rgba(16, 20, 26, .16); cursor: pointer; font: inherit;
-  transition: padding .16s ease, gap .16s ease, background .16s ease;
+  transition: padding .16s ease, gap .16s ease, background .16s ease, opacity .18s ease;
 }
+/* Yielding state — see the AnyHelp component. Opacity and pointer-events only:
+   nothing here changes the launcher's size or position, so it cannot shift
+   anything while it fades, and it can never be the reason a click misses. */
+.anyhelp-fab.is-yielding { opacity: .18; pointer-events: none; }
 .anyhelp-fab:hover, .anyhelp-fab:focus-visible {
   padding: 7px 16px 7px 7px; gap: 10px; background: var(--green-50);
 }
@@ -658,7 +703,12 @@ body:has(.modal-overlay) .more-sheet { display: none; }
      The approved design keeps a readable sidebar down to the 900px drawer
      breakpoint, so the labels — and the role-scope card — stay visible. */
   .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
-  .sidebar .side-txt,
+  /* .side-txt's base rule (line 117) is `display: grid` so "Arabtec" stacks
+     over "Recruitment Hub" on two lines. Restoring visibility here with
+     `display: block` flattened that grid, so the two lines ran together
+     inline with a 0px gap ("ArabtecRECRUITMENT HUB"). Give it back its own
+     display instead of sharing the flat `block` meant for the other two. */
+  .sidebar .side-txt { display: grid; }
   .sidebar .nav-section,
   .sidebar .nav-item > span:not(.nav-icon) { display: block; }
   .sidebar .nav-item > span:not(.nav-icon) { flex: 1; }
@@ -679,10 +729,29 @@ body:has(.modal-overlay) .more-sheet { display: none; }
        is doing to 100vh on that device. */
     position: fixed; top: 2px; bottom: 0; left: 0; right: auto; height: auto;
     z-index: 95; width: min(300px, 88vw);
-    transform: translateX(-105%); transition: transform .18s ease; overflow-y: auto;
+    transform: translateX(-105%); overflow-y: auto;
+    /* A closed drawer must be INERT, not merely off-screen. Moved out of view
+       by transform alone it kept `visibility: visible`, so every one of its
+       ~24 navigation buttons stayed in the tab order and in the accessibility
+       tree: on a phone you tabbed through the whole hidden menu before
+       reaching the page, and a screen reader read it out. `visibility:
+       hidden` removes both, and delaying it by the slide duration lets the
+       close animation still play before the drawer goes inert. */
+    visibility: hidden;
+    transition: transform .18s ease, visibility 0s linear .18s;
   }
-  .sidebar.mobile-open { transform: translateX(0); box-shadow: 18px 0 50px rgba(0, 0, 0, .13); }
+  .sidebar.mobile-open {
+    transform: translateX(0); box-shadow: 18px 0 50px rgba(0, 0, 0, .13);
+    visibility: visible;
+    transition: transform .18s ease, visibility 0s linear 0s;
+  }
   .sidebar.collapsed { --sidebar-w: 236px; width: min(300px, 88vw); padding: 18px 14px 20px; }
+  /* Drawer rows are touch targets here, not pointer targets: they measured
+     34px, against the 44px floor the rest of the phone UI already holds
+     (arabtec-responsive.css). Height only — the label, icon and count chip
+     keep their desktop sizes. */
+  .sidebar .nav-item { min-height: 44px; }
+  .sidebar .nav-section { padding-top: 18px; }
   .sidebar-scrim {
     display: block; position: fixed; inset: 0; z-index: 90; background: rgba(20, 20, 20, .38);
     border: 0; padding: 0;
@@ -742,6 +811,12 @@ body:has(.modal-overlay) .more-sheet { display: none; }
   }
   .dash-grid-2, .report-grid, .form-grid { grid-template-columns: 1fr; }
   .kanban { grid-auto-columns: 82vw; }
+  /* The desktop FAB-lane reservations above (.role-health / .action-list
+     padding-right) are sized for the anyhelp launcher's desktop anchor
+     (right:22/bottom:22). At this width the launcher already relocates
+     (right:12px, bottom: 80px+ safe-area, just below) so the lane isn't
+     needed — drop it rather than waste width on an already-narrow screen. */
+  .role-health, .action-list { padding-right: 0; }
 }
 
 @media (max-width: 640px) {
@@ -943,8 +1018,26 @@ html, body { max-width: 100%; overflow-x: hidden; }
   line-height: 1.2; text-align: center; white-space: nowrap; overflow: visible;
 }
 .btn:hover { background: var(--at-action-hover); color: #fff; border-color: var(--at-action-hover); }
-.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--at-action); outline-offset: 2px; box-shadow: var(--at-focus-ring);
+/* ONE focus treatment, for every button and every field: a 2px green outline
+   at 2px offset, and nothing else.
+   Two things were wrong before. A `.btn` drew the outline AND a 3px
+   `--at-focus-ring` halo — two rings, overlapping between 2px and 3px out,
+   which is not one indicator. And the scoped fields drew NO outline at all:
+   `.field input:focus { outline: none }` is (0,2,1) and the rule that was
+   meant to restore it, `input:focus-visible`, is only (0,1,1), so every
+   `.field` and `.toolbar` control fell back to the pale #E6F4F0 halo — about
+   1.1:1 on white, the very contrast this sheet already rejected for buttons a
+   few hundred lines above. The scoped forms are therefore spelled out here so
+   they match the `outline: none` they have to beat, and `box-shadow: none`
+   leaves exactly one ring on all of them. `.login-card .btn` is listed for the
+   same reason: styles.css pins a `--ring` shadow on it at (0,2,1).
+   Ring WIDTH, OFFSET and STYLE are geometry and are restated in section 20 of
+   claude-system.css; this rule owns the colour. */
+.btn:focus-visible, .login-card .btn:focus-visible,
+.field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible,
+.toolbar input:focus-visible, .toolbar select:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--at-action); outline-offset: 2px; box-shadow: none;
 }
 .btn-secondary, .btn-ghost {
   background: #fff; color: var(--ink-soft); border-color: var(--line-strong);
@@ -1138,4 +1231,50 @@ button.pcard-name { color: var(--ink); background: transparent; }
   .cvi-metrics { grid-template-columns: repeat(2, 1fr); }
   .cvi-dl { grid-template-columns: 1fr; gap: 2px 0; }
   .cvi-dl dd { margin-bottom: 10px; }
+}
+
+/* ============================================================================
+   CV REVIEW SIDE PANEL — colour, type and the brand rule
+   ----------------------------------------------------------------------------
+   The panel's BOX lives in claude-system.css section 21. Everything that is a
+   colour or a type decision lives here, with the rest of the palette, and uses
+   only tokens already declared in section 1 — no new hue is introduced.
+
+   The head carries the same 3px red rule every other full-height overlay in
+   the product carries (`.parse-review-panel`, `.rq-pop-head`): red is the
+   brand rule, never an action. Every action in this panel is green.
+   ========================================================================== */
+.cvrev-panel {
+  background: var(--surface);
+  border-inline-start: 1px solid var(--line);
+  border-top: 3px solid var(--brand);
+  box-shadow: var(--shadow-pop);
+}
+.cvrev-head-id h3 { font-family: var(--font); font-size: 18px; font-weight: 700; color: var(--ink); }
+.cvrev-head-sub { font-size: 12px; color: var(--muted); }
+
+.cvrev-col-title {
+  font-family: var(--font); font-size: 11px; font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--muted);
+}
+.cvrev-details { background: var(--surface); border-inline-end: 1px solid var(--line); }
+.cvrev-cv { background: var(--canvas); }
+
+.cvrev-table { font-size: 13px; }
+.cvrev-table td { border-bottom: 1px solid var(--border-soft); }
+.cvrev-table td:first-child { color: var(--muted); }
+.cvrev-table td:last-child { color: var(--ink); font-weight: 600; }
+.cvrev-section-row td {
+  border-bottom: 0; color: var(--muted);
+  font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+}
+
+.cvrev-note { background: var(--surface); border-top: 1px solid var(--line); }
+.cvrev-note-label { font-size: 12px; font-weight: 700; color: var(--ink); }
+.cvrev-note-hint { font-size: 11.5px; color: var(--muted); }
+
+/* Stacked, the details pane's inline-end hairline would draw a line down the
+   middle of nothing; it becomes the divider between the two stacked panes. */
+@media (max-width: 900px) {
+  .cvrev-details { border-inline-end: 0; border-bottom: 1px solid var(--line); }
 }

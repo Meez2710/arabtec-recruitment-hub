@@ -20,7 +20,10 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 .sidebar{background:#111315;color:#fff;border-right:1px solid #26292b;position:relative}
 .sidebar-head{min-height:72px;padding:14px 18px;border-bottom:1px solid #2b2f31;position:relative}
 .sidebar-head:after{content:"";position:absolute;left:18px;right:18px;bottom:-1px;height:2px;background:linear-gradient(90deg,#d8232a 0 44px,transparent 44px)}
-.side-mark{width:44px;height:38px}.side-mark img{max-width:44px!important;width:44px!important;max-height:38px!important;object-fit:contain}
+/* Sidebar logo mark: sizing now lives solely in arabtec-design-system.css
+   (.side-mark 38x34, .side-mark img max 38x32). This layer used to force the
+   <img> to 44px wide with !important, which overrode the design system's
+   container size and clipped the logo — removed rather than re-overridden. */
 .side-txt strong{font-size:14px}.side-txt span{font-size:10px;color:#a9b0b4}
 .nav{padding:14px 10px}.nav-section{font-size:9.5px;color:#788086;letter-spacing:.11em;padding:16px 12px 6px}
 .nav-item{padding:9px 12px;border-radius:8px;color:#dce1e3;font-size:12.5px;border-left:0;position:relative}
@@ -37,7 +40,7 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 .page-head{margin-bottom:18px}.page-head .page-title,.dash-head .page-title{font-size:23px;line-height:30px;font-weight:700}.page-sub{font-size:12px}.breadcrumb,.page-head .breadcrumb{font-size:10.5px}
 .card,.toolbar,.ticket-header-card{background:#fff;border:1px solid var(--border);box-shadow:var(--shadow-card)}
 .card.red-top,.ticket-header-card{border-top:3px solid #d8232a}.ticket-header-card:before{display:none}
-.card-head{min-height:54px;padding:13px 17px}.card-head h3{font-size:14px}.card-pad{padding:17px 18px}
+.card-head{min-height:54px;padding:13px 17px}.card-head h3{font-size:14px}.card-pad{padding:20px}
 .btn{min-height:35px;padding:0 13px;font-size:12px;border-radius:8px;background:#238356;border-color:#238356}.btn:hover{background:#0f5c34;border-color:#0f5c34}
 .btn-secondary{background:#fff;color:#2e373c;border-color:#b9c0c4}
 /* Variant rules that this overlay must restate.

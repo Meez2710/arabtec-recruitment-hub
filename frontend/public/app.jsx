@@ -85,11 +85,17 @@ const ICON_MARKS = {
   sortNeutral: <><path d="m7 10 5-5 5 5" /><path d="m17 14-5 5-5-5" /></>,
   arrowUp: <><path d="M12 20V4m-6 6 6-6 6 6" /></>,
   arrowDown: <><path d="M12 4v16m-6-6 6 6 6-6" /></>,
+  // Download: the arrow lands on a tray. Same 24 viewBox, same stroke, same
+  // <Icon> as every other mark — no new icon library.
+  // Review: an eye. Same 24 viewBox, same stroke, same <Icon>.
+  eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" /><circle cx="12" cy="12" r="3" /></>,
+  download: <><path d="M12 3v12m-5-5 5 5 5-5" /><path d="M4 20h16" /></>,
   back: <><path d="M20 12H4m6-6-6 6 6 6" /></>,
   filter: <><path d="M4 6h16M7 12h10M10 18h4" /></>,
   sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m6-11-3 3 3 3" /></>,
   more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
   bell: <><path d="M6 9a6 6 0 0112 0v5l2 3H4l2-3z" /><path d="M10 20h4" /></>,
+  alert: <><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5" /><path d="M12 16.2v.3" /></>,
 };
 function Icon({ name, size = 18, children }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">{children || ICON_MARKS[name]}</svg>;
@@ -474,6 +480,17 @@ function LoadError({ text, onRetry, title = 'Could not load this page' }) {
   return <div className="card"><Empty tone="error" title={title} text={text}
     action={<button className="btn" onClick={onRetry}>Retry</button>} /></div>;
 }
+// A refresh that failed while usable rows are still on screen. `LoadError`
+// replaces the page, which is right on a first load and wrong on a refetch —
+// it throws away content that is still perfectly readable, just not current.
+// This reports the failure above that content and leaves it in place.
+function RefetchError({ text, onRetry }) {
+  return <div className="refetch-error" role="status">
+    <Icon name="alert" size={16} />
+    <span>{text || 'Could not refresh. Showing the last loaded results.'}</span>
+    <button className="btn btn-ghost btn-sm" onClick={onRetry}>Retry</button>
+  </div>;
+}
 function Skeleton({ rows = 6, shape = 'detail' }) {
   if (shape === 'dashboard') return <DashboardSkeleton />;
   if (shape === 'list') return <div className="card flush list-skel" role="status" aria-label="Loading list" aria-busy="true">
@@ -840,6 +857,29 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
   const threadRef = useRef(null);
   const dockRef = useRef(null);
   const fabRef = useRef(null);
+
+  /* The launcher is fixed over the bottom-right 46px of the content column, so
+     whatever scrolls under it loses part of its click area — measured at the
+     desktop gate on Talent Pool, CV Intake, Users and Audit Log, and on the
+     dashboard before its two lists got an explicit lane. Reserving a lane on
+     every list that right-aligns an action does not generalise: any control
+     can end up under a fixed element at some scroll offset.
+     So the launcher yields instead. While the page is scrolling — which is
+     exactly when you are travelling to the row you want — it fades and stops
+     taking pointer events, then comes back shortly after you stop. Nothing
+     moves, no page gives up width, and the control underneath is reachable
+     during the gesture that brings it into view. */
+  const [scrolling, setScrolling] = useState(false);
+  useEffect(() => {
+    let timer = null;
+    const onScroll = () => {
+      setScrolling(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setScrolling(false), 450);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); clearTimeout(timer); };
+  }, []);
   const contextRequestId = context && context.requestId;
   const requestId = contextRequestId || pickedId;
   const canSeeRequests = can(user, 'request.view_all') || can(user, 'request.view_own');
@@ -948,7 +988,8 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
 
   return (
     <>
-      <button ref={fabRef} type="button" className={'anyhelp-fab' + (open ? ' is-open' : '')}
+      <button ref={fabRef} type="button"
+        className={'anyhelp-fab' + (open ? ' is-open' : '') + (scrolling && !open ? ' is-yielding' : '')}
         onClick={() => setOpen(true)} aria-expanded={open} aria-controls="anyhelp-dock"
         aria-label="Open anyhelp">
         <span className="anyhelp-fab-mark" aria-hidden="true">a</span>
@@ -1325,6 +1366,10 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
         </div>
       )}
 
+      {/* One CV review panel for the whole app; every entry point reaches it
+          through the `ats:open-cv-review` event rather than owning its state. */}
+      <CvReviewHost user={user} />
+
       <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
     </div>
   );
@@ -1625,9 +1670,9 @@ function RoleRow({ r, onOpen }) {
         <span className="progress"><span style={{ width: filled + '%' }} /></span>
         <span className="cell-meta">{r.headcountFilled} of {r.headcount} seats · {(r.pipeline || {}).total || 0} in pipeline</span>
       </div>
-      <div style={{ textAlign: 'right' }}>
+      <div className="role-row-end">
         <span className="idle">{h.daysOpen == null ? '—' : h.daysOpen + 'd'}</span>
-        {onOpen && <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => onOpen(r)}>Open</button>}
+        {onOpen && <button className="btn btn-sm" onClick={() => onOpen(r)}>Open</button>}
       </div>
     </div>
   );
@@ -2075,7 +2120,7 @@ function PlanTable({ rows, unit }) {
   if (!rows.length) return <Empty art="none-yet" text="No hiring requests to summarise yet." />;
   return (
     <div className="table-wrap">
-      <table className="table responsive-table">
+      <table className="table responsive-table plan-table">
         <thead><tr><th>{unit}</th><th>Planned seats</th><th>Filled</th><th>Open roles</th><th>Progress</th></tr></thead>
         <tbody>
           {rows.map((r) => {
@@ -2639,15 +2684,35 @@ function UsersPage({ user }) {
   const [activity, setActivity] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);   // user whose password is being reset
   const [otp, setOtp] = useState(null);                   // { title, email, roleNames, password }
+  const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const loadSeq = useRef(0);
   const canManage = can(user, 'user.manage');
 
+  // Roles, departments, projects and sites do not depend on the search box, but
+  // they used to sit in the same Promise.all as `/users` — so typing one letter
+  // refetched all five, and `setUsers(null)` blanked the table to a skeleton
+  // between every keystroke. The reference data loads once; only `/users`
+  // follows `q`.
+  useEffect(() => {
+    Promise.all([api.get('/roles'), api.get('/org/departments'), api.get('/org/projects'), api.get('/org/sites')])
+      .then(([r, d, p, s]) => { setRoles(r.roles); setDepts(d.departments); setProjects(p.projects); setSites(s.sites); })
+      .catch(() => { /* the table still works; the edit dialog surfaces its own errors */ });
+  }, []);
+
   const load = useCallback(async () => {
-    setUsers(null);
-    const [u, r, d, p, s] = await Promise.all([
-      api.get('/users' + (q ? '?q=' + encodeURIComponent(q) : '')),
-      api.get('/roles'), api.get('/org/departments'), api.get('/org/projects'), api.get('/org/sites'),
-    ]);
-    setUsers(u.users); setRoles(r.roles); setDepts(d.departments); setProjects(p.projects); setSites(s.sites);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
+    try {
+      const u = await api.get('/users' + (q ? '?q=' + encodeURIComponent(q) : ''));
+      if (seq !== loadSeq.current) return;
+      setUsers(u.users);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message || 'Could not load users.');
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [q]);
   useEffect(() => { load(); }, [load]);
 
@@ -2670,8 +2735,11 @@ function UsersPage({ user }) {
       <div className="toolbar">
         <input placeholder="Search name / email / employee no…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 280 }} />
       </div>
-      <div className="card">
-        {!users ? <Skeleton /> : users.length === 0 ? <Empty text="No users found." /> : (
+      {loadError && users ? <RefetchError text={loadError} onRetry={load} /> : null}
+      <div className={'card' + (busy && users ? ' table-busy' : '')} aria-busy={busy && !!users}>
+        {loadError && !users ? <Empty tone="error" title="Could not load users" text={loadError}
+          action={<button className="btn" onClick={load}>Retry</button>} />
+          : !users ? <Skeleton /> : users.length === 0 ? <Empty text="No users found." /> : (
           <table>
             <thead><tr><th>Name</th><th>Email</th><th>Job Title</th><th>Role(s)</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
             <tbody>
@@ -2683,11 +2751,16 @@ function UsersPage({ user }) {
                   <td>{u.roles.map((r) => <span className="chip" key={r.code}>{r.name}</span>)}</td>
                   <td><StatusBadge status={u.status} /></td>
                   <td className="muted">{fmtDate(u.lastLoginAt)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
+                  {/* Four full-width text buttons behind `white-space: nowrap`
+                      gave this cell a 359px intrinsic minimum, which pushed the
+                      table to 1107px inside a 1095px card — a 12px horizontal
+                      scroll at 1440, the widest width we support. A wrapping
+                      row drops that floor without hiding any action. */}
+                  <td className="user-actions">
                     {canManage && <>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setEditing(u)}>Edit</button>{' '}
-                      <button className="btn btn-ghost btn-sm" onClick={() => showActivity(u)}>Activity</button>{' '}
-                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset Password</button>{' '}
+                      <button className="btn btn-secondary btn-sm" onClick={() => setEditing(u)}>Edit</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => showActivity(u)}>Activity</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset Password</button>
                       <button className={'btn btn-sm ' + (u.status === 'active' ? 'btn-danger' : '')} onClick={() => toggleStatus(u)} disabled={u.id === user.id}>
                         {u.status === 'active' ? 'Deactivate' : 'Activate'}</button>
                     </>}
@@ -4104,6 +4177,8 @@ function RequestsPage({ user, initialFilters }) {
   const [creating, setCreating] = useState(false);
   const [assigning, setAssigning] = useState(null); // request row being assigned/reassigned
   const [recruiters, setRecruiters] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const loadSeq = useRef(0);
   const btns = useResolvedButtons();
 
   // Arriving from a dashboard card hands a fresh `initialFilters` object each
@@ -4131,8 +4206,15 @@ function RequestsPage({ user, initialFilters }) {
     return () => window.removeEventListener('ats:open-request', onOpen);
   }, []);
 
+  // Refetch keeps the rows that are already on screen. `setData(null)` used to
+  // run first, which sent the render branch below back to <Skeleton>: every
+  // filter change and every search keystroke unmounted the whole table and
+  // remounted it a moment later. `seq` is the same stale-response guard
+  // CandidatesPage uses — the last request to be STARTED is the only one
+  // allowed to write, so a slow early response cannot overwrite a newer one.
   const load = useCallback(async () => {
-    setData(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     // Only the outgoing `q` is normalized (RQ-26-001 → REQ-2026-00001) so the stored
     // ticket_no can be matched; the text the user typed is left as-is in the input.
@@ -4141,8 +4223,16 @@ function RequestsPage({ user, initialFilters }) {
       if (k === 'attention' || k === 'openOnly' || !v) return;
       params.set(k === 'owner' ? 'ownerId' : k, k === 'q' ? expandReqCode(v) : v);
     });
-    setLoadError(null);
-    try { setData(await api.get('/requests?' + params.toString())); } catch (e) { setLoadError(e.message); }
+    try {
+      const r = await api.get('/requests?' + params.toString());
+      if (seq !== loadSeq.current) return;
+      setData(r);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message);
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [filters]);
   useEffect(() => { load(); }, [load]);
 
@@ -4200,7 +4290,7 @@ function RequestsPage({ user, initialFilters }) {
           <input type="checkbox" checked={filters.openOnly} onChange={(e) => setFilters((f) => ({ ...f, openOnly: e.target.checked }))} />
           Open only
         </label>
-        <select value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
+        <select className="sort-select" value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
           <option value="created">Sort: Created</option><option value="priority">Priority</option><option value="title">Title</option><option value="status">Status</option><option value="ticket">Ticket No</option></select>
         <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}><Icon name={filters.dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={16} />{filters.dir === 'desc' ? 'Desc' : 'Asc'}</button>
         </FilterToolbar>
@@ -4217,20 +4307,25 @@ function RequestsPage({ user, initialFilters }) {
         </div>
       )}
 
-      {loadError ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
+      {/* A refetch that fails keeps the rows already on screen and reports it
+          above them; only a failure with nothing to fall back on takes the page. */}
+      {loadError && data ? <RefetchError text={loadError} onRetry={load} /> : null}
+      {loadError && !data ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
           title={activeChips.length || filters.q ? 'No requests match these filters' : 'No hiring requests yet'}
           text={activeChips.length || filters.q
             ? 'Try clearing the search box or widening the filters above.'
             : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
-        <div className="card flush"><div className="table-wrap"><table className="table responsive-table">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap"><table className="table responsive-table">
           <thead><tr><th>Request</th><th>Position</th><th data-priority="secondary">Project / Site</th><th>Owner</th><th data-priority="secondary">Pipeline</th><th>Priority</th><th>Status</th><th data-priority="secondary">Idle</th><th>SLA</th></tr></thead>
           <tbody>{shown.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
               <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
-              <td data-label="Position"><span className="cell-strong">{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
-              <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">{placeLabel(r)}</td>
+              <td data-label="Position"><span className="cell-strong clamp-2" title={r.title}>{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
+              <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">
+                <span className="clamp-2" title={placeLabel(r)}>{placeLabel(r)}</span>
+              </td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
                 {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
                   : !canAssign ? <span className="muted">Unassigned</span>
@@ -4449,7 +4544,7 @@ function AiShortlistTab({ request, user }) {
             text="An empty shortlist is a real answer — it means no current candidate evidences what this role asks for. Import CVs or widen the requirements." />
         </div>
       ) : (
-        <div className="card flush">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}>
           <table className="table">
             <thead><tr>
               <th style={{ width: 56 }}>Match</th>
@@ -5367,7 +5462,7 @@ function RequestPipeline({ request, user, btns }) {
                   <div className="kan-body">
                     {items.length === 0
                       ? <div className="kan-empty">No candidates at this stage</div>
-                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
                   </div>
                 </PipelineColumn>
               );
@@ -5375,7 +5470,7 @@ function RequestPipeline({ request, user, btns }) {
           </div>
         ) : view === 'list' ? (
           <div className="pipe-list">
-            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} btns={btns} />)}
+            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
           </div>
         ) : (
           <div className="card" style={{ overflowX: 'auto' }}><table>
@@ -5438,7 +5533,18 @@ function NextActionModal({ app, onClose, onSaved }) {
   );
 }
 
-function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, btns = {}, showRequest }) {
+/**
+ * The pipeline card's "Review CV" handler, or null when the viewer cannot read
+ * candidates at all. The applications serializer does not send `hasResume`, so
+ * whether a file exists is decided by the panel — which already has a clear
+ * "no CV stored" state — rather than guessed here.
+ */
+function cvReviewOpener(user, app) {
+  const id = app.candidate?.id || app.candidateId;
+  if (!id || !can(user, 'candidate.view')) return null;
+  return () => openCvReview(id, app.candidate || null);
+}
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, onReviewCv, btns = {}, showRequest }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null), triggerRef = useRef(null);
@@ -5480,6 +5586,7 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
         {menu && <div ref={menuRef} id={menuId} className="menu pipeline-menu" role="menu" onKeyDown={menuKeys}
           onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget) && e.relatedTarget !== triggerRef.current) setMenu(false); }}>
           <button className="menu-item" role="menuitem" onClick={() => action(onView)}>View candidate</button>
+          {onReviewCv && <button className="menu-item" role="menuitem" onClick={() => action(onReviewCv)}>Review CV</button>}
           {targets.map(stage => <button key={stage} className="menu-item" role="menuitem" onClick={() => action(() => onMove(stage))}>Move to {APP_STATUS[stage].label}</button>)}
           {movable && onNote && <button className="menu-item" role="menuitem" onClick={() => action(onNote)}>Set Next Action</button>}
           {movable && <button className="menu-item" role="menuitem" onClick={() => action(() => onMove('on_hold'))}>Put On Hold</button>}
@@ -5664,6 +5771,7 @@ function TalentPipeline({
                       onSelect={() => {}}
                       onView={() => onOpenCandidate(a.candidate?.id || a.candidateId)}
                       onMove={(s) => requestMove(a.id, s)}
+                      onReviewCv={cvReviewOpener(user, a)}
                       btns={btns} />
                   ))}
               </div>
@@ -5688,7 +5796,9 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   const [resumeBusy, setResumeBusy] = useState(false);
   const canEditCand = user?.permissions?.includes('candidate.edit');
   const canFeedback = user?.permissions?.includes('interview.feedback');
-  async function viewResume() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
+  // Opens the CV BESIDE this candidate's details instead of pushing the file
+  // at the browser; Download is still offered inside that panel.
+  function viewResume() { openCvReview(c.id, cand); }
   // D-02: re-run the parser against the résumé already on file.
   async function reparseResume() {
     setResumeBusy(true);
@@ -5719,8 +5829,17 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
           <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
         <div style={{ display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid var(--border)' }}>
+          {/* Selecting a tab may not change its metrics. fontWeight used to be
+              700 when selected and 500 when not, which widened the selected
+              label — measured +11.16px on "Interview Assessment" at 1600 — and
+              shoved the other tab sideways. Both tabs now carry 700, the same
+              way `.seg-tab` and `.tabbar-btn` raise their base weight to their
+              selected weight; the selection is still unmistakable from the
+              green ink and the 2px green underline, and that underline was
+              already reserved as `2px solid transparent` on the unselected tab,
+              so it never moved anything either. */}
           {[['profile', 'Candidate'], ['assessment', 'Interview Assessment']].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: tab === k ? 700 : 500 }}>{label}</button>
+            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: 700 }}>{label}</button>
           ))}
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
@@ -5732,7 +5851,8 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
                   <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? (cand.resumeName || 'Attached résumé') : <span className="muted">No résumé attached</span>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>View / Download</button>}
+                  {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>Review CV</button>}
+                  {cand.hasResume && <button className="btn btn-sm btn-ghost" onClick={() => downloadResume(cand, toast)}>Download</button>}
                   {cand.hasResume && canEditCand && <button className="btn btn-sm btn-ghost" onClick={reparseResume} disabled={resumeBusy} title="Re-run the CV parser on the file already attached">{resumeBusy ? 'Working…' : 'Re-parse'}</button>}
                   {canEditCand && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{resumeBusy ? 'Uploading…' : (cand.hasResume ? 'Replace' : '+ Upload')}<input type="file" style={{ display: 'none' }} onChange={uploadResume} disabled={resumeBusy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
                 </div>
@@ -6152,8 +6272,19 @@ function SortTh({ label, col, sort, onSort, align, priority }) {
     <th data-priority={priority} data-col={col} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
       onClick={() => onSort(col)} tabIndex="0" onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }} title={`Sort by ${label}`}
       role="columnheader" aria-sort={direction}>
-      <span className="sort-label">{label}</span>
-      <span className="sort-caret" data-sort={direction} aria-hidden="true"><Icon name={mark} size={16} /></span>
+      {/* The label and the caret need a flex row of their own. `.sort-caret`
+          has always declared `flex: 0 0 16px` and `.sort-label` `overflow:
+          hidden; text-overflow: ellipsis`, but nothing ever made their parent
+          a flex container — and a `<th>` cannot become one without giving up
+          its table-cell layout. So both declarations were inert: the label was
+          an inline box, where text-overflow does nothing, and in a narrow
+          column it guillotined mid-word while the caret was pushed clean
+          outside the cell and clipped away, taking the sort affordance with
+          it. This wrapper is the flex row they were written for. */}
+      <span className="sort-th-inner">
+        <span className="sort-label">{label}</span>
+        <span className="sort-caret" data-sort={direction} aria-hidden="true"><Icon name={mark} size={16} /></span>
+      </span>
     </th>
   );
 }
@@ -6409,9 +6540,9 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked, o
             {active.requestTitle ? <span className="rq-link-sub">{active.requestTitle}</span> : null}
           </button>
           {canLink && (
-            <button className="rq-link-btn" onClick={() => { setMode('move'); setOpen((v) => !v); setError(''); setBlocking(null); }}
-              aria-haspopup="dialog" aria-expanded={open}>
-              Move to another request <Icon name="chevronDown" size={16} />
+            <button className="rq-link-btn rq-link-btn-icon" onClick={() => { setMode('move'); setOpen((v) => !v); setError(''); setBlocking(null); }}
+              aria-haspopup="dialog" aria-expanded={open} aria-label="Move to another request" title="Move to another request">
+              <Icon name="chevronDown" size={16} />
             </button>
           )}
         </div>
@@ -6502,6 +6633,7 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
                   {canScreen && sc !== 'unfit' && <Item onClick={() => { setOpen(false); onUnfit(); }}>Mark unfit</Item>}
                   {canLink && !active && <Item onClick={() => { setPanel('link'); setPicked(null); setQ(''); }}>Link to request</Item>}
                   {canLink && active && <Item onClick={() => { setPanel('move'); setPicked(null); setQ(''); }}>Move to another request</Item>}
+                  {candidate.hasResume && <Item onClick={() => { setOpen(false); openCvReview(candidate.id, candidate); }}>Review CV</Item>}
                   {candidate.hasResume && <Item onClick={() => { setOpen(false); downloadResume(candidate, toast); }}>Download CV</Item>}
                   <Item onClick={() => { setOpen(false); onOpen(); }}>Open profile</Item>
                 </div>
@@ -7072,7 +7204,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
               <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />
-              <SortTh priority="secondary" label="Graduation" col="graduation" sort={sort} onSort={toggleSort} />
+              <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
               <th className="th-request" data-col="request">Request</th>
               <th data-col="stage">Stage</th>
@@ -7112,8 +7244,18 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                 <td data-label="Stage"><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
-                    ? <button className="btn btn-ghost btn-sm" title={c.resumeName || 'Download CV'}
-                        onClick={() => downloadResume(c, toast)}>Download</button>
+                    ? <>
+                        <button className="icon-btn" title={c.resumeName ? `Review ${c.resumeName}` : 'Review this CV beside the record'}
+                          aria-label={`Review CV for ${c.fullName}`}
+                          onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
+                        {/* One-click download stays. Replacing it with Review alone cost a
+                            recruiter the file behind a panel and two fetches, and this row
+                            has no overflow menu to fall back on — the action menu is only
+                            rendered in the pipeline view. */}
+                        <button className="icon-btn" title={`Download ${c.resumeName || 'CV'}`}
+                          aria-label={`Download ${c.resumeName || 'CV'}`}
+                          onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
+                      </>
                     : <span className="muted">—</span>}
                 </td>
               </tr>
@@ -7297,6 +7439,258 @@ function CvFilePreview({ fileUrl, fileName, mimeType }) {
       </div>
     </div>
   );
+}
+
+/* ===========================================================================
+   CV REVIEW SIDE PANEL — one CV viewer for the whole product
+   ---------------------------------------------------------------------------
+   Before this, EVERY "open the CV" path in the app called `api.download(...)`,
+   which pushes the file at the browser and leaves the recruiter to compare it
+   against the record in another window. The Product Owner asked for the
+   opposite: the CV opens ALONGSIDE the candidate's details, so the two can be
+   checked against each other without switching context, and instead of
+   approving each parsed value one by one the recruiter leaves ONE note at the
+   bottom flagging anything irrelevant or needing checking.
+
+   Reached by dispatching `ats:open-cv-review` (see `openCvReview`), which
+   `CvReviewHost` — mounted once in the Shell — listens for. That is the same
+   pattern `openRequest` already uses, and it is why a table cell, a row menu,
+   a drawer, a profile tab and a pipeline card can all open this panel without
+   any of them owning its state or threading props through the tree.
+
+   Nothing here is new backend surface: the details come from GET
+   /candidates/:id, the file from GET /candidates/:id/resume and the note from
+   POST /candidates/:id/notes — the endpoint `NoteModal` has always used.
+   ======================================================================== */
+
+/**
+ * The stored CV as an object URL.
+ *
+ * The resume endpoint requires an Authorization header, so a bare URL in an
+ * <iframe> or <img> gets a 401 and renders nothing — the file has to be
+ * fetched with the token and wrapped in a blob. The caller OWNS the returned
+ * url and MUST revoke it; see the effect in CvReviewPanel.
+ */
+async function fetchResumeBlobUrl(candidateId) {
+  const res = await fetch(`/api/candidates/${candidateId}/resume`, {
+    headers: api.token ? { Authorization: 'Bearer ' + api.token } : {},
+  });
+  if (!res.ok) {
+    throw new Error(res.status === 404
+      ? 'No CV is stored for this candidate yet.'
+      : res.status === 403 ? 'You do not have access to this CV.'
+      : 'Could not load the CV file.');
+  }
+  const blob = await res.blob();
+  // Content-Type can carry a charset; CvFilePreview compares the bare type.
+  const mimeType = String(res.headers.get('content-type') || blob.type || '').split(';')[0].trim();
+  return { url: URL.createObjectURL(blob), mimeType };
+}
+
+/** Open the CV review panel for a candidate from anywhere in the app. */
+function openCvReview(candidateId, seed) {
+  if (!candidateId) return;
+  window.dispatchEvent(new CustomEvent('ats:open-cv-review', { detail: { id: Number(candidateId), seed: seed || null } }));
+}
+
+/** The rows shown beside the CV — only fields the CV itself can be checked against. */
+function cvReviewDetailSections(c) {
+  const list = (v) => (Array.isArray(v) && v.length ? v.join(', ') : null);
+  return [
+    ['Identity', [
+      ['Name', c.fullName], ['Candidate No.', c.candidateNo], ['Email', c.email],
+      ['Phone', c.phone], ['Nationality', c.nationality], ['Location', c.location],
+      ['LinkedIn', c.linkedinUrl],
+    ]],
+    ['Experience', [
+      ['Current position', c.currentPosition], ['Current company', c.currentCompany],
+      ['Employer', c.employer], ['Current project', c.currentProject],
+      ['Years of experience', c.yearsExperience != null ? `${c.yearsExperience}` : null],
+      ['Notice period', c.noticePeriod],
+    ]],
+    ['Education', [
+      ['University', c.university], ['Major', c.major],
+      ['Graduation year', c.graduationYear != null ? `${c.graduationYear}` : null],
+    ]],
+    ['Skills & languages', [
+      ['Skills', list(c.skills)], ['Languages', list(c.languages)],
+      ['Certifications', list(c.certifications)],
+    ]],
+    ['Record', [
+      ['Source', c.source], ['Tags', list(c.tags)],
+      ['Expected salary', c.salaryVisible && c.expectedSalary != null ? `${c.expectedSalary}` : null],
+      ['Parsed', c.parsedAt ? fmtDate(c.parsedAt) : null],
+    ]],
+  ];
+}
+
+/**
+ * The CV beside the details, with one note at the bottom.
+ *
+ * THE OBJECT URL IS THE THING TO GET RIGHT. It is created in an effect keyed
+ * on the candidate and revoked in that effect's cleanup — on close, and on a
+ * switch to another candidate. A blob URL that is never revoked pins the whole
+ * file in memory for the lifetime of the document, so a recruiter opening
+ * twenty CVs in a session would be holding twenty files. The `alive` flag also
+ * revokes a URL that arrives AFTER the panel closed, which is the case a plain
+ * cleanup misses entirely.
+ */
+function CvReviewPanel({ candidateId, seed, user, onClose }) {
+  const toast = useToast();
+  const titleId = useId();
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const [cand, setCand] = useState(seed || null);
+  const [loadError, setLoadError] = useState('');
+  const [cv, setCv] = useState(null);          // { url, mimeType }
+  const [cvError, setCvError] = useState('');
+  const [cvBusy, setCvBusy] = useState(true);
+  const [note, setNote] = useState('');
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  // No composer at all when the user cannot write notes — a control that is
+  // guaranteed to 403 is worse than no control.
+  const canNote = can(user, 'candidate.note');
+
+  useEffect(() => {
+    let alive = true;
+    setLoadError('');
+    api.get(`/candidates/${candidateId}`)
+      .then((r) => { if (alive) setCand(r.candidate || null); })
+      .catch((e) => { if (alive) setLoadError(e.message || 'Could not load this candidate.'); });
+    return () => { alive = false; };
+  }, [candidateId]);
+
+  useEffect(() => {
+    let alive = true, created = null;
+    setCvBusy(true); setCvError(''); setCv(null);
+    fetchResumeBlobUrl(candidateId)
+      .then((r) => {
+        if (!alive) { URL.revokeObjectURL(r.url); return; }   // arrived after close
+        created = r.url; setCv(r);
+      })
+      .catch((e) => { if (alive) setCvError(e.message || 'Could not load the CV file.'); })
+      .finally(() => { if (alive) setCvBusy(false); });
+    return () => { alive = false; if (created) URL.revokeObjectURL(created); };
+  }, [candidateId]);
+
+  async function saveNote() {
+    const body = note.trim();
+    if (!body || noteBusy) return;
+    setNoteBusy(true);
+    try {
+      await api.post(`/candidates/${candidateId}/notes`, { body, noteType: 'note' });
+      toast('Note saved to this candidate');
+      setNote(''); setNoteSaved(true);
+    } catch (e) {
+      toast(e.message || 'Could not save the note.', 'error');
+    } finally { setNoteBusy(false); }
+  }
+
+  const c = cand || {};
+  const name = c.fullName || 'Candidate';
+  const sections = cvReviewDetailSections(c).map(([s, rows]) => [s, rows.filter(([, v]) => v != null && v !== '')]);
+  const filled = sections.filter(([, rows]) => rows.length > 0);
+
+  return (
+    <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head cvrev-head">
+          <div className="cvrev-head-id">
+            <h3 id={titleId}>{name} — CV review</h3>
+            <span className="cvrev-head-sub">{[c.candidateNo, c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
+          </div>
+          <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
+
+        <div className="cvrev-body">
+          <div className="cvrev-details">
+            <h4 className="cvrev-col-title">Details on record</h4>
+            {loadError
+              ? <Empty art="failed" tone="error" text={loadError} />
+              : !cand
+                ? <Skeleton rows={6} />
+                : filled.length === 0
+                  ? <Empty art="none-yet" text="Nothing is recorded for this candidate yet." />
+                  : (
+                    <table className="cvrev-table">
+                      <tbody>
+                        {filled.map(([section, rows]) => (
+                          <React.Fragment key={section}>
+                            <tr className="cvrev-section-row"><td colSpan={2}>{section}</td></tr>
+                            {rows.map(([label, value]) => (
+                              <tr key={section + label}><td>{label}</td><td>{value}</td></tr>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+          </div>
+
+          <div className="cvrev-cv">
+            {cvBusy
+              ? <div className="cvrev-cv-state"><Skeleton rows={5} /></div>
+              : cvError
+                ? (
+                  <div className="cvrev-cv-state">
+                    <Empty art="failed" tone="error" text={cvError} />
+                  </div>
+                )
+                : <CvFilePreview fileUrl={cv?.url} fileName={c.resumeName} mimeType={cv?.mimeType} />}
+          </div>
+        </div>
+
+        {canNote ? (
+          <div className="cvrev-note">
+            <label className="cvrev-note-label" htmlFor={titleId + '-note'}>
+              Anything irrelevant or needing checking?
+            </label>
+            <div className="cvrev-note-row">
+              <textarea id={titleId + '-note'} rows="2" value={note} disabled={noteBusy}
+                onChange={(e) => { setNote(e.target.value); setNoteSaved(false); }}
+                placeholder="e.g. the title on the CV does not match the position on record — confirm with the candidate." />
+              <button type="button" className="btn" onClick={saveNote} disabled={noteBusy || !note.trim()}>
+                {noteBusy ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+            <span className="cvrev-note-hint">
+              {noteSaved
+                ? 'Saved to this candidate’s notes.'
+                : 'One note instead of approving every parsed value. It is saved to this candidate’s notes.'}
+            </span>
+          </div>
+        ) : (
+          <div className="cvrev-note">
+            <span className="cvrev-note-hint">You do not have permission to add notes to candidates.</span>
+          </div>
+        )}
+
+        <div className="modal-foot cvrev-foot">
+          <button type="button" className="btn btn-secondary" disabled={!c.hasResume && !cv}
+            onClick={() => downloadResume({ id: candidateId, resumeName: c.resumeName, candidateNo: c.candidateNo }, toast)}>
+            Download CV
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Mounted ONCE in the Shell. Every entry point calls `openCvReview(id)`; this
+ * is what actually renders the panel, so no page owns the viewer's state.
+ */
+function CvReviewHost({ user }) {
+  const [open, setOpen] = useState(null);      // { id, seed }
+  useEffect(() => {
+    const onOpen = (e) => { const id = e.detail?.id; if (id) setOpen({ id, seed: e.detail?.seed || null }); };
+    window.addEventListener('ats:open-cv-review', onOpen);
+    return () => window.removeEventListener('ats:open-cv-review', onOpen);
+  }, []);
+  if (!open) return null;
+  return <CvReviewPanel key={open.id} candidateId={open.id} seed={open.seed} user={user} onClose={() => setOpen(null)} />;
 }
 
 /**
@@ -7620,7 +8014,8 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const canEdit = btns?.edit_candidate?.visible || user.permissions.includes('candidate.edit');
-  async function view() { try { await api.download(`/candidates/${c.id}/resume`); } catch (e) { toast(e.message, 'error'); } }
+  // Side-by-side review rather than a download; the panel keeps Download.
+  function view() { openCvReview(c.id, c); }
   async function reparse() {
     setBusy(true);
     try {
@@ -7643,7 +8038,8 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
         <div style={{ flex: 1, minWidth: 160 }}>
           <div style={{ fontWeight: 600 }}>{c.hasResume ? (c.resumeName || 'Attached résumé') : <span className="muted">No résumé on file</span>}</div>
         </div>
-        {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>View / Download</button>}
+        {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>Review CV</button>}
+        {c.hasResume && <button className="btn btn-sm btn-ghost" onClick={() => downloadResume(c, toast)}>Download</button>}
         {c.hasResume && canEdit && <button className="btn btn-sm btn-ghost" onClick={reparse} disabled={busy} title="Re-run the CV parser on the file already attached">{busy ? 'Working…' : 'Re-parse'}</button>}
         {canEdit && <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (c.hasResume ? 'Replace' : '+ Upload CV')}<input type="file" style={{ display: 'none' }} onChange={upload} disabled={busy} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt" /></label>}
       </div>
@@ -8102,6 +8498,8 @@ function InterviewsPage({ user, initialFilters }) {
   // `openId` jumps straight to one interview (a dashboard action item always
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
+  const [busy, setBusy] = useState(false);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     if (!initialFilters) return;
@@ -8109,12 +8507,23 @@ function InterviewsPage({ user, initialFilters }) {
     setFilter((f) => ({ ...f, ...initialFilters }));
   }, [initialFilters]);
 
+  // Same refetch contract as RequestsPage: keep the current rows mounted, mark
+  // the list busy, and let only the newest request write its result.
   const load = useCallback(async () => {
-    setData(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
-    setLoadError(null);
-    try { setData(await api.get('/interviews?' + params.toString())); } catch (e) { setLoadError(e.message); }
+    try {
+      const r = await api.get('/interviews?' + params.toString());
+      if (seq !== loadSeq.current) return;
+      setData(r);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message);
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
@@ -8143,14 +8552,17 @@ function InterviewsPage({ user, initialFilters }) {
         <div className="spacer" />
         <CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />
       </div>
-      {loadError ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
+      {/* A refetch that fails keeps the rows already on screen and reports it
+          above them; only a failure with nothing to fall back on takes the page. */}
+      {loadError && data ? <RefetchError text={loadError} onRetry={load} /> : null}
+      {loadError && !data ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
           title={filter.q || filter.status || filter.thisWeek ? 'No interviews match these filters' : 'No interviews scheduled'}
           text={filter.q || filter.status || filter.thisWeek
             ? 'Try clearing the search box or the filters above.'
             : 'Interviews scheduled from a candidate\u2019s application will appear here with date, panel and outcome.'} /></div>
       ) : (
-        <div className="card flush"><div className="table-wrap">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
           <table className="table responsive-table">
             <thead><tr><th>Scheduled</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th data-priority="secondary">Interview</th><th>Status</th><th>Outcome</th><th data-priority="secondary">Application</th></tr></thead>
             <tbody>{shown.map((iv) => (
@@ -8160,12 +8572,12 @@ function InterviewsPage({ user, initialFilters }) {
                   <div className="idcell">
                     <span className="idcell-av">{initials(iv.candidate?.fullName || '?')}</span>
                     <span className="idcell-txt">
-                      <span className="cell-strong">{iv.candidate?.fullName || '—'}</span>
-                      <span className="cell-sub">{iv.candidate?.currentPosition || '—'}</span>
+                      <span className="cell-strong clamp-2" title={iv.candidate?.fullName || undefined}>{iv.candidate?.fullName || '—'}</span>
+                      <span className="cell-sub clamp-2" title={iv.candidate?.currentPosition || undefined}>{iv.candidate?.currentPosition || '—'}</span>
                     </span>
                   </div>
                 </td>
-                <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub">{iv.request?.title || '—'}</div></td>
+                <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
                 <td data-label="Type / Mode"><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
                 <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
@@ -8332,22 +8744,32 @@ function OffersPage({ user, initialFilters }) {
   // value, and "to issue" (draft + approved, not yet sent) spans two of them.
   const [filter, setFilter] = useState({ status: '', q: '', joiningFrom: '', joiningTo: '', toIssue: false });
   const [selected, setSelected] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     if (!initialFilters) return;
     setFilter((f) => ({ ...f, ...initialFilters }));
   }, [initialFilters]);
 
+  // Same refetch contract as RequestsPage. The shape check stays — an offers
+  // payload that is not an array is a real failure, not an empty list.
   const load = useCallback(async () => {
-    setOffers(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'toIssue' && v) params.set(k, v); });
-    setLoadError(null);
     try {
       const result = await api.get('/offers?' + params.toString());
       if (!Array.isArray(result?.offers)) throw new Error('Offers are temporarily unavailable. Please retry.');
+      if (seq !== loadSeq.current) return;
       setOffers(result.offers);
-    } catch (e) { setLoadError(e.message || 'Could not load offers. Please retry.'); }
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message || 'Could not load offers. Please retry.');
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
@@ -8372,14 +8794,15 @@ function OffersPage({ user, initialFilters }) {
         <div className="spacer" />
         <CountPill n={offers ? shown.length : null} total={offers ? offers.length : null} noun="offer" />
       </div>
-      {loadError ? <LoadError text={loadError} onRetry={load} /> : !offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
+      {loadError && offers ? <RefetchError text={loadError} onRetry={load} /> : null}
+      {loadError && !offers ? <LoadError text={loadError} onRetry={load} /> : !offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
           title={filter.q || filter.status || filter.joiningFrom || filter.toIssue ? 'No offers match these filters' : 'No offers raised yet'}
           text={filter.q || filter.status || filter.joiningFrom || filter.toIssue
             ? 'Try clearing the search box, status filter or joining-date range.'
             : 'Offers raised from a candidate\u2019s application will appear here with approval state and joining date.'} /></div>
       ) : (
-        <div className="card flush"><div className="table-wrap">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
           <table className="table responsive-table">
             <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th data-priority="secondary">Project</th><th>Status</th><th data-priority="secondary">Prepared by</th><th data-priority="secondary">Approved by</th><th>Joining</th></tr></thead>
             <tbody>{shown.map((o) => (
@@ -8388,12 +8811,12 @@ function OffersPage({ user, initialFilters }) {
                 <td data-label="Candidate">
                   <div className="idcell">
                     <span className="idcell-av">{initials(o.candidate?.fullName || '?')}</span>
-                    <span className="idcell-txt"><span className="cell-strong">{o.candidate?.fullName || '—'}</span></span>
+                    <span className="idcell-txt"><span className="cell-strong clamp-2" title={o.candidate?.fullName || undefined}>{o.candidate?.fullName || '—'}</span></span>
                   </div>
                 </td>
                 <td data-label="Request"><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
-                <td data-label="Position"><span className="cell-strong">{o.positionTitle || '—'}</span></td>
-                <td data-priority="secondary" data-label="Project" className="cell-sub-only">{o.project?.name || '—'}</td>
+                <td data-label="Position"><span className="cell-strong clamp-2" title={o.positionTitle || undefined}>{o.positionTitle || '—'}</span></td>
+                <td data-priority="secondary" data-label="Project" className="cell-sub-only"><span className="clamp-2" title={o.project?.name || undefined}>{o.project?.name || '—'}</span></td>
                 <td data-label="Status"><OfferStatusBadge status={o.status} /></td>
                 <td data-priority="secondary" data-label="Prepared by" className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
                 <td data-priority="secondary" data-label="Approved by" className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
