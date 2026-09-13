@@ -226,14 +226,34 @@ check('unauthenticated users cannot view the chart', () => {
     assert.ok(/centerOn\(/.test(fit), 'fit() centres through the shared helper');
   });
   check('the centring helper positions the canvas midpoint, not its left edge', () => {
+    // The maths moved into the exported, pure `centerOffset` so it can be
+    // asserted on real numbers (ui_behavior_test.mjs); this only pins that
+    // centerOn still delegates there rather than re-deriving a pan of its own.
     const centre = fnBody('const centerOn = useCallback');
-    assert.ok(/\(ww - cw \* nextScale\) \/ 2/.test(centre),
-      'centerOn must offset by half the difference between wrapper and canvas width');
+    assert.match(centre, /setPan\(centerOffset\(/, 'centerOn delegates to the shared maths');
+    // Matched against the file, not via fnBody: centerOffset destructures its
+    // argument, so the first `{` after the name is the parameter pattern and
+    // brace-matching from there returns the signature, never the body.
+    assert.match(orgJsx, /x:\s*Math\.round\(\(wrapW - canvasW \* scale\) \/ 2\)/,
+      'centerOffset offsets by half the difference between wrapper and canvas width');
   });
-  check('the chart frames itself when the visible tree changes', () => {
-    assert.match(orgJsx, /framedFor/, 'an initial-framing guard exists');
-    assert.match(orgJsx, /requestAnimationFrame\(\(\) => \{ framedFor\.current = visible\.length; centerOn\(1\); \}\)/,
-      'framing runs after layout, once per distinct visible tree');
+  check('re-framing watches the canvas width, not the visible-node count', () => {
+    // Keying on `visible.length` missed expand/collapse entirely — those change
+    // the `collapsed` Set, not `visible` — so collapsing the root left the pan
+    // 9228px from the only remaining card. The canvas's layout width is the
+    // signal that moves for every cause. The outcome (root on screen after each
+    // of those) is asserted on real numbers in ui_behavior_test.mjs.
+    assert.match(orgJsx, /new ResizeObserver\(reframe\)/, 'the canvas width is observed');
+    assert.match(orgJsx, /ro\.observe\(canvas\)/, 'the observer is attached to the canvas itself');
+    assert.match(orgJsx, /w === lastWidth/, 're-framing is skipped when the width has not moved');
+    assert.ok(!/framedFor\.current = visible\.length/.test(orgJsx),
+      'the old visible.length key is gone');
+    assert.match(orgJsx, /centerOn\(framedOnce\.current \? scaleRef\.current : 1\)/,
+      're-framing keeps the scale the user chose after the first frame');
+  });
+  check('searching brings the first match into view', () => {
+    assert.match(orgJsx, /querySelector\('\.org-card\.is-match'\)/,
+      'search pans to its match instead of only ringing it');
   });
   check('the collapse toggle is a full-size click target', () => {
     const rule = orgJsx.slice(orgJsx.indexOf('.org-toggle {'), orgJsx.indexOf('}', orgJsx.indexOf('.org-toggle {')));

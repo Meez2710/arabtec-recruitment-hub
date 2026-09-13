@@ -89,6 +89,27 @@
     document.head.appendChild(el);
   }
 
+  /* Framing maths, kept pure and exported so it can be asserted on real
+     numbers instead of on the shape of the source. `transform-origin` is
+     `0 0`, so a canvas of width `canvasW` drawn at `scale` occupies
+     [0, canvasW*scale]; centring it is a translate of half the leftover. */
+  const ORG_MIN_SCALE = 0.45;
+  const ORG_MAX_SCALE = 1.8;
+  function centerOffset({ wrapW, wrapH, canvasW, canvasH, scale }) {
+    if (!wrapW || !wrapH || !canvasW || !canvasH) return { x: 0, y: 0 };
+    return {
+      x: Math.round((wrapW - canvasW * scale) / 2),
+      // Centre vertically only once the tree fits; otherwise keep the root's
+      // own row at the top, where you expect to start reading.
+      y: canvasH * scale <= wrapH ? Math.round((wrapH - canvasH * scale) / 2) : 0,
+    };
+  }
+  function fitScale({ wrapW, wrapH, canvasW, canvasH }) {
+    if (!wrapW || !wrapH || !canvasW || !canvasH) return 1;
+    return Math.min(ORG_MAX_SCALE, Math.max(ORG_MIN_SCALE, Math.min(1, wrapW / canvasW, wrapH / canvasH)));
+  }
+  window.ORG_CHART_MATH = { centerOffset, fitScale, ORG_MIN_SCALE, ORG_MAX_SCALE };
+
   function buildTree(nodes) {
     const byParent = new Map();
     for (const n of nodes) {
@@ -355,28 +376,72 @@
       const ww = wrap.clientWidth;
       const wh = wrap.clientHeight;
       setScale(nextScale);
-      if (!cw || !ch || !ww || !wh) { setPan({ x: 0, y: 0 }); return; }
-      setPan({
-        x: Math.round((ww - cw * nextScale) / 2),
-        // Only centre vertically once the tree actually fits; otherwise keep the
-        // root's own row at the top, where you expect to start reading.
-        y: ch * nextScale <= wh ? Math.round((wh - ch * nextScale) / 2) : 0,
-      });
+      setPan(centerOffset({ wrapW: ww, wrapH: wh, canvasW: cw, canvasH: ch, scale: nextScale }));
     }, []);
 
-    /* Frame the chart whenever the rendered tree changes size — on first load,
-       and again when a filter or the Head Office toggle rebuilds it. Without
-       this the module opens on the canvas's far-left edge (see `fit` below),
-       which is empty space or a few unrelated leaves. Keyed on the visible
-       count rather than the array identity so panning is never yanked back
-       while the user is reading the same tree. One frame's delay lets the new
-       tree lay out, so `offsetWidth` is the width we are actually centring. */
-    const framedFor = useRef(null);
+    /* Re-frame whenever the rendered tree changes WIDTH.
+
+       Keying this on `visible.length` was wrong: `visible` depends only on
+       `nodes` and the project filter, while expanding or collapsing a node
+       changes the `collapsed` Set instead. So the tree could be rebuilt at a
+       completely different width without the effect ever firing. Collapsing
+       the root shrank the canvas 19552px -> 1095px while the pan stayed at
+       -9228px, which put the only remaining card off-screen and left the
+       module blank; expanding from a collapsed state stranded every revealed
+       child off to the left. Both are the same defect the initial framing was
+       added to fix, just reached through the toolbar instead of on load.
+
+       The canvas's own layout width is the honest signal — it changes for
+       every one of those causes and for none of the others. A transform does
+       not affect layout size, so re-centring cannot retrigger the observer.
+       The first framing sets scale 1; later ones keep whatever scale the user
+       is on, so re-framing never fights a deliberate zoom. */
+    const scaleRef = useRef(1);
+    useEffect(() => { scaleRef.current = scale; }, [scale]);
+
+    const framedOnce = useRef(false);
+    const hasTree = visible.length > 0;
     useEffect(() => {
-      if (!visible.length || framedFor.current === visible.length) return;
-      const id = requestAnimationFrame(() => { framedFor.current = visible.length; centerOn(1); });
-      return () => cancelAnimationFrame(id);
-    }, [visible.length, centerOn]);
+      const wrap = wrapRef.current;
+      const canvas = wrap && wrap.firstElementChild;
+      if (!hasTree || !wrap || !canvas) return undefined;
+      let lastWidth = 0;
+      const reframe = () => {
+        const w = canvas.offsetWidth;
+        if (!w || w === lastWidth) return;
+        lastWidth = w;
+        centerOn(framedOnce.current ? scaleRef.current : 1);
+        framedOnce.current = true;
+      };
+      const raf = requestAnimationFrame(reframe);
+      if (typeof ResizeObserver === 'undefined') return () => cancelAnimationFrame(raf);
+      const ro = new ResizeObserver(reframe);
+      ro.observe(canvas);
+      return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+    }, [hasTree, centerOn]);
+
+    /* Searching only added a highlight ring. On a canvas this wide the match is
+       almost always off-screen, so typing a name looked like it found nothing.
+       Bring the first match into view — a pure pan by the on-screen delta, so
+       it is scale-agnostic and does not disturb the zoom the user chose. The
+       tree's width does not change when a match is highlighted, so this never
+       races the width-driven reframing above. */
+    const matchCount = matches.size;
+    useEffect(() => {
+      if (!q.trim() || !matchCount) return undefined;
+      const raf = requestAnimationFrame(() => {
+        const wrap = wrapRef.current;
+        const hit = wrap && wrap.querySelector('.org-card.is-match');
+        if (!wrap || !hit) return;
+        const wr = wrap.getBoundingClientRect();
+        const hr = hit.getBoundingClientRect();
+        const dx = (wr.left + wr.width / 2) - (hr.left + hr.width / 2);
+        const dy = (wr.top + wr.height / 2) - (hr.top + hr.height / 2);
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        setPan((prev) => ({ x: Math.round(prev.x + dx), y: Math.round(prev.y + dy) }));
+      });
+      return () => cancelAnimationFrame(raf);
+    }, [q, matchCount]);
 
     function toggle(id) {
       setCollapsed((prev) => {
@@ -422,8 +487,7 @@
       // module's own definition of "still readable". A fully expanded chart is
       // wider than any floor can fit, so Fit means "as much as stays legible,
       // centred", not "shrink until it disappears".
-      const s = Math.min(1.8, Math.max(0.45, Math.min(1, ww / cw, wh / ch)));
-      centerOn(s);
+      centerOn(fitScale({ wrapW: ww, wrapH: wh, canvasW: cw, canvasH: ch }));
     }
 
     async function saveNode(payload) {

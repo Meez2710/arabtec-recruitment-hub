@@ -223,4 +223,61 @@ await check('organization empty and failed loads show actionable content without
     page.dispose();
   }
 });
+/* Org chart framing, asserted on the real measured geometry rather than on the
+   shape of the source. The regex guards in org_chart_test.mjs proved a
+   `centerOn` formula existed; they could not prove the root ends up on screen,
+   and an independent reviewer used exactly that gap to find a blocker
+   (collapsing the root left the canvas panned 9228px away from the only card
+   remaining). These call the module's own exported maths. */
+{
+  const { centerOffset, fitScale, ORG_MIN_SCALE } = get('window.ORG_CHART_MATH');
+  // Measured live at 1440x900 with the seeded 113 positions.
+  const EXPANDED = { wrapW: 1095, wrapH: 753, canvasW: 19552, canvasH: 753 };
+  const COLLAPSED = { wrapW: 1095, wrapH: 753, canvasW: 1095, canvasH: 441 };
+  // The tree is centred inside the canvas, so the root's midpoint IS the
+  // canvas midpoint. On screen it lands at pan.x + canvasW*scale/2.
+  const rootOnScreen = (box, scale) => {
+    const pan = centerOffset({ ...box, scale });
+    const rootCentre = pan.x + (box.canvasW * scale) / 2;
+    return rootCentre > 0 && rootCentre < box.wrapW;
+  };
+
+  await check('a fully expanded chart still frames its root at scale 1', () => {
+    assert.equal(centerOffset({ ...EXPANDED, scale: 1 }).x, -9228,
+      'the measured pan for the seeded tree');
+    assert.ok(rootOnScreen(EXPANDED, 1), 'the root sits inside the viewport, not 9670px away');
+  });
+
+  await check('collapsing to a single card re-frames instead of stranding it', () => {
+    // The regression: the canvas shrank 19552 -> 1095 while the pan stayed at
+    // -9228, putting the only remaining card completely off screen.
+    const stalePan = centerOffset({ ...EXPANDED, scale: 1 }).x;
+    const staleCentre = stalePan + (COLLAPSED.canvasW * 1) / 2;
+    assert.ok(staleCentre < 0, 'keeping the old pan really does strand the card (the bug)');
+    assert.ok(rootOnScreen(COLLAPSED, 1), 're-framing for the new width brings it back');
+    assert.ok(centerOffset({ ...COLLAPSED, scale: 1 }).y > 0,
+      'and a tree that now fits is centred vertically rather than pinned to the top');
+  });
+
+  await check('Fit resolves to a readable scale and frames the root', () => {
+    const s = fitScale(EXPANDED);
+    assert.equal(s, ORG_MIN_SCALE, 'a tree this wide lands on the readable floor, not an invisible one');
+    assert.ok(rootOnScreen(EXPANDED, s), 'Fit puts the root on screen');
+    // Fit must never be the old no-op.
+    assert.notEqual(centerOffset({ ...EXPANDED, scale: s }).x, 0, 'Fit is not a reset to the origin');
+  });
+
+  await check('a tree that already fits is not scaled down by Fit', () => {
+    assert.equal(fitScale(COLLAPSED), 1);
+  });
+
+  await check('framing degrades safely before the canvas has been measured', () => {
+    // Field-wise: the helper is defined inside the vm realm, so its object
+    // literal does not share this realm's Object prototype.
+    const zero = centerOffset({ wrapW: 0, wrapH: 0, canvasW: 0, canvasH: 0, scale: 1 });
+    assert.equal(zero.x, 0); assert.equal(zero.y, 0);
+    assert.equal(fitScale({ wrapW: 0, wrapH: 0, canvasW: 0, canvasH: 0 }), 1);
+  });
+}
+
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);
