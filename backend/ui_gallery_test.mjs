@@ -77,9 +77,16 @@ check('the gallery loads exactly the five production stylesheets, in the same or
     `gallery stylesheet order was [${names.join(', ')}], expected [${PRODUCTION_SHEETS.join(', ')}]`);
 
   // Mutation check: reordering two sheets must be caught.
+  // Build the mutation from the token actually in the file. It used to hardcode
+  // one, so the next cache bump broke this check rather than the thing it
+  // guards — a self-test that fails on routine maintenance trains people to
+  // ignore it.
+  const galleryToken = (galleryHtml.match(/\?v=([A-Za-z0-9]+)/) || [])[1];
+  assert.ok(galleryToken, 'the gallery carries a cache token to build the mutation from');
+  const linkFor = (sheet) => `<link rel="stylesheet" href="/${sheet}?v=${galleryToken}" />`;
   const reordered = galleryHtml.replace(
-    '<link rel="stylesheet" href="/styles.css?v=20260913c" />\n<link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260913c" />',
-    '<link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260913c" />\n<link rel="stylesheet" href="/styles.css?v=20260913c" />',
+    `${linkFor('styles.css')}\n${linkFor('arabtec-approved-ui.css')}`,
+    `${linkFor('arabtec-approved-ui.css')}\n${linkFor('styles.css')}`,
   );
   assert.notEqual(reordered, galleryHtml, 'the reorder substitution did not match — fixture text drifted, fix the mutation');
   const mutatedNames = stylesheetHrefs(reordered).map((h) => h.split('?')[0].replace(/^\//, ''));
