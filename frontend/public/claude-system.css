@@ -433,7 +433,22 @@ table.table tbody td, .table tbody td, table tbody td {
 .permission-toggle { align-items: flex-start; }
 .mobile-nav > button { min-width: 0; }
 .mobile-nav > button > span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 24px; }
+/* UI Step 12: at 1440 every stage column was already at this 200px floor —
+   6+ columns need more than the board's client width, so `1fr` never gets to
+   grow and the kanban already scrolls inside itself (scrollWidth 1264 vs
+   client 1097, max scrollLeft 167 — accepted: the board owns that overflow,
+   the page never does). Measured the nesting inside one card at that 200px
+   floor: kan-body padding (10px/side) then .pcard padding (14px/side) then
+   an 8px gap to the ⋯ menu (32px) left only 108px for the name+role column —
+   46% of the card was chrome before either string started. Every one of
+   those paddings/gaps is a fixed px, not a percentage, so raising the floor
+   passes straight through: +32px here is +32px in that lane, unlike shaving
+   the paddings themselves, which would also thin the touch/visual rhythm of
+   every other card element for a few px each. The board already scrolls, so
+   spending width on the floor costs nothing this table did not already
+   accept — it just moves more of the board into view per scroll instead of
+   less. */
+.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 24px; }
 .kan-col { width: auto; min-width: 0; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr); }
 .kan-body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px; overflow: visible; min-height: 92px; }
 .kan-head { min-width: 0; }
@@ -443,6 +458,14 @@ table.table tbody td, .table tbody td, table tbody td {
 .pcard-id, .pcard-top, .pcard-actions, .pcard-footer, .pcard-facts { min-width: 0; }
 .pcard-top { align-items: flex-start; gap: 8px; }
 button.pcard-name { font: inherit; font-size: 14px; font-weight: 600; padding: 0; border: 0; max-width: 100%; text-align: left; cursor: pointer; }
+/* Measured: a 20.3px-tall single line of 14px/1.45 text is the whole click
+   target for "open this candidate" — the card's primary action. Padding
+   raises the hit area to 28.3px; the equal negative margin cancels the box
+   model change it would otherwise add, so `.pcard-id`'s layout height (and
+   therefore the card's) is unchanged — verified by comparing `.pcard-top`'s
+   rect before and after. The desktop card never grows to buy this; only the
+   button's own hit-testable padding box does. */
+button.pcard-name { padding-block: 4px; margin-block: -4px; }
 .pcard-role { font-size: 11.5px; }
 .pcard-actions { position: relative; display: block; padding: 0; border: 0; flex: 0 0 auto; }
 .pcard-menu-trigger { width: 32px; height: 32px; min-height: 32px; border: 1px solid transparent; }
@@ -675,7 +698,15 @@ table.table thead th, .table thead th {
    Reserved before any sorting happens: an unsorted header already renders its
    neutral glyph at full size. */
 .sort-th { cursor: pointer; user-select: none; }
-.sort-th > span:first-child, .sort-th .sort-label { overflow: hidden; text-overflow: ellipsis; }
+/* The flex row the caret and label were always written for (see SortTh). It
+   lives on a wrapper, not on the `<th>`, because `display: flex` on a table
+   cell drops the cell out of the table's column sizing. The label is the only
+   thing allowed to shrink; the caret keeps its reserved 16px, so a header can
+   never lose its sort affordance to a narrow column. */
+.sort-th-inner { display: flex; align-items: center; gap: var(--cl-1); min-width: 0; }
+.sort-th > span:first-child, .sort-th .sort-label {
+  min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .sort-th .sort-caret {
   display: inline-flex; align-items: center; justify-content: center;
   width: 16px; height: 16px; flex: 0 0 16px; margin-left: var(--sp-1);
@@ -787,6 +818,20 @@ table.candidates-table {
    Graduation is left alone because 6% is already only just enough for a
    four-digit year, and no operational column drops below the width it was
    measured readable at. */
+/* University and Graduation are the two narrowest columns in the nine-column
+   regime, and 24px of horizontal padding is 39% of Graduation's 61px at 1366 —
+   the width band where these two columns exist at all. The percentages above
+   are each at a measured floor (see the guards in ui_sort_stability_test), so
+   the only honest place to find room for the label is the padding that is
+   disproportionate on these two columns specifically. 4px here, and only here;
+   every other column keeps the table's standard 12px. Measured at 1366, the
+   narrowest width that renders these columns: it is what lets "University"
+   and "Year" print in full beside a caret that keeps its reserved 16px. */
+.candidates-table > thead > tr > th[data-priority="secondary"],
+.candidates-table > tbody > tr > td[data-priority="secondary"] { padding-left: 4px; padding-right: 4px; }
+/* Same reasoning for the caret gap: 4px is proportionate beside a 160px label
+   and not beside a 29px one. The caret itself keeps its full reserved 16px. */
+.candidates-table > thead > tr > th[data-priority="secondary"] .sort-th-inner { gap: 2px; }
 .candidates-table > thead > tr > th[data-col="select"]     { width: 4%; }
 .candidates-table > thead > tr > th[data-col="name"]       { width: 20%; }
 .candidates-table > thead > tr > th[data-col="position"]   { width: 16%; }
@@ -876,6 +921,75 @@ table.candidates-table {
 }
 
 /* ============================================================================
+   17b. HIRING REQUESTS TABLE — Project / Site row-height swing
+   ----------------------------------------------------------------------------
+   `placeLabel()` joins project, site and location with " · " into one string
+   with no cap, and the plain-text cell it sat in had no line limit either, so
+   a row's height was whatever that string's wrap happened to need. Measured
+   across the 14 seeded rows at 1440: 59, 66, 86, 94 and 112px, because some
+   rows carry a two-part place ("Aliva — Mostakbal City · Giza") and others a
+   much longer three-part one ("I-City New Cairo — Lagoon Beach Park · Giza"
+   plus the em-dash sub-parts) that wraps to three or four lines.
+
+   Clamping to two lines with an ellipsis bounds every row to the same ceiling
+   without dropping the site information: the full string still carries as a
+   `title` (both on the cell's wrapper span here, matching the pattern already
+   used for `.rq-link-chip` and every truncated cell in `.candidates-table`),
+   so nothing is lost — it just is not always on the row itself. Desktop only;
+   this table has no phone-card variant of its own to disturb. */
+.rq-place,
+/* Two classes on purpose: the reflow layer loads last and declares a bare
+   `.cell-strong { display: block }`, which outranks a single-class rule here
+   no matter what it says. `.cell-strong.rq-cell-title` wins on specificity
+   instead of on order, so the clamp survives that layer. */
+.cell-strong.rq-cell-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+/* The position title is the bigger half of the same defect, and was missed the
+   first time because Project / Site is the more obviously long-looking column.
+   Measured at 1440 with the clamp on Project / Site already in place, the row
+   heights still ran 59 / 66 / 77 / 94 / 112px, and the tallest row's cells
+   showed why: Project / Site was down to its bounded 40.6px while Position
+   was 85.7px — "Principal Mechanical, Electrical and Plumbing (MEP)
+   Coordination Engineer — Infrastructure Delivery" wrapping to four lines.
+   Same treatment, same reason: two lines, full string on the `title`.
+   Its own class, not `.rq-title` — that one is the request CARD heading
+   (h3, 15px, 12px bottom margin, styled across five sheets) and reusing
+   it here dragged all of that onto a table cell. */
+
+/* ============================================================================
+   17c. CANDIDATES TABLE — the "move" affordance was the tallest thing in the row
+   ----------------------------------------------------------------------------
+   `.rq-link-btn` is a text button ("Move to another request") and
+   `arabtec-responsive.css` forces `white-space: normal; overflow-wrap: anywhere`
+   on it unconditionally (a deliberate choice there — see its own "Link-to-
+   request is a control, not a desktop-only chip" comment — so the control
+   never overflows a phone card). Inside the Request column's 131px lane that
+   same wrap put the label on three lines stacked under the `.rq-link-chip`,
+   measured at 128px tall at 1440 and 143px at 1024 for one candidate — the
+   tallest thing on the row, for a SECONDARY action.
+
+   The primary chip (the active request) is untouched and stays fully visible.
+   The secondary "move" control becomes icon-only with the label preserved as
+   its accessible name (`aria-label` + `title`, the same pair every icon-only
+   control in this product already carries — see the CV column's review/
+   download buttons) instead of visible text, so keyboard and screen-reader
+   users keep an identical name and the box shrinks to one line. Two classes
+   so it outranks the unscoped `.rq-link-btn` wrap rule regardless of sheet
+   order, without touching that rule's phone behaviour for anything else that
+   still uses a plain `.rq-link-btn` (the "Link to Request" control, which
+   keeps its visible label — it is the primary action when nothing is linked
+   yet, not the secondary one this defect is about). */
+.rq-link-btn.rq-link-btn-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; flex: 0 0 auto;
+  white-space: nowrap; overflow-wrap: normal;
+}
+
+/* ============================================================================
    18. FILTER TOOLBAR — predictable rows, search-first proportions
    ----------------------------------------------------------------------------
    Shared by <FilterToolbar>, which has exactly two consumers: the Talent Pool
@@ -936,6 +1050,25 @@ table.candidates-table {
   .toolbar-secondary > input,
   .toolbar-secondary > select { max-width: 280px; }
 }
+
+/* (6) THE SORT SELECT TRUNCATED ITS OWN SELECTED LABEL. Every control in the
+   group shares the same 88px flex-basis regardless of the text it has to
+   carry — fine for "All statuses" (95.6px natural), "All priorities" (96.4px)
+   and "All owners" (88.6px), all of which fit inside the ~103px each control
+   actually renders at on Hiring Requests. The sort select is different: its
+   widest option, "Sort: Created", needs 129.5px including the native arrow
+   (measured with the real select, not a clone — a <select>'s intrinsic width
+   is set by its widest OPTION, not the one currently selected, so this is the
+   floor for every choice in the list). At an identical 103.2px it rendered
+   "Sort: Cre…".
+
+   Raising this one control's basis is not the same change as (5)'s cap: (5)
+   bounds how far a control may GROW on a sparse wrapped line; this only
+   raises where it STARTS from, so no wrap decision on Hiring Requests or the
+   Talent Pool (whose own toolbar does not use this class) changes. Scoped to
+   a class on the JSX select rather than a structural selector so it travels
+   with the control it fixes, not with whatever happens to sit in that slot. */
+.toolbar-secondary > select.sort-select { flex-basis: 132px; }
 
 /* (4) THE SCREEN TABS JUMPED WHEN YOU PICKED ONE. `.seg-tab` renders at
    font-weight 500 and `.seg-tab.active` at 600, so selecting a tab made its own

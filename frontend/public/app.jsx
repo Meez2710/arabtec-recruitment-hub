@@ -95,6 +95,7 @@ const ICON_MARKS = {
   sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m6-11-3 3 3 3" /></>,
   more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
   bell: <><path d="M6 9a6 6 0 0112 0v5l2 3H4l2-3z" /><path d="M10 20h4" /></>,
+  alert: <><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5" /><path d="M12 16.2v.3" /></>,
 };
 function Icon({ name, size = 18, children }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">{children || ICON_MARKS[name]}</svg>;
@@ -478,6 +479,17 @@ function ModulePreview({ title }) {
 function LoadError({ text, onRetry, title = 'Could not load this page' }) {
   return <div className="card"><Empty tone="error" title={title} text={text}
     action={<button className="btn" onClick={onRetry}>Retry</button>} /></div>;
+}
+// A refresh that failed while usable rows are still on screen. `LoadError`
+// replaces the page, which is right on a first load and wrong on a refetch —
+// it throws away content that is still perfectly readable, just not current.
+// This reports the failure above that content and leaves it in place.
+function RefetchError({ text, onRetry }) {
+  return <div className="refetch-error" role="status">
+    <Icon name="alert" size={16} />
+    <span>{text || 'Could not refresh. Showing the last loaded results.'}</span>
+    <button className="btn btn-ghost btn-sm" onClick={onRetry}>Retry</button>
+  </div>;
 }
 function Skeleton({ rows = 6, shape = 'detail' }) {
   if (shape === 'dashboard') return <DashboardSkeleton />;
@@ -2648,15 +2660,35 @@ function UsersPage({ user }) {
   const [activity, setActivity] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);   // user whose password is being reset
   const [otp, setOtp] = useState(null);                   // { title, email, roleNames, password }
+  const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const loadSeq = useRef(0);
   const canManage = can(user, 'user.manage');
 
+  // Roles, departments, projects and sites do not depend on the search box, but
+  // they used to sit in the same Promise.all as `/users` — so typing one letter
+  // refetched all five, and `setUsers(null)` blanked the table to a skeleton
+  // between every keystroke. The reference data loads once; only `/users`
+  // follows `q`.
+  useEffect(() => {
+    Promise.all([api.get('/roles'), api.get('/org/departments'), api.get('/org/projects'), api.get('/org/sites')])
+      .then(([r, d, p, s]) => { setRoles(r.roles); setDepts(d.departments); setProjects(p.projects); setSites(s.sites); })
+      .catch(() => { /* the table still works; the edit dialog surfaces its own errors */ });
+  }, []);
+
   const load = useCallback(async () => {
-    setUsers(null);
-    const [u, r, d, p, s] = await Promise.all([
-      api.get('/users' + (q ? '?q=' + encodeURIComponent(q) : '')),
-      api.get('/roles'), api.get('/org/departments'), api.get('/org/projects'), api.get('/org/sites'),
-    ]);
-    setUsers(u.users); setRoles(r.roles); setDepts(d.departments); setProjects(p.projects); setSites(s.sites);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
+    try {
+      const u = await api.get('/users' + (q ? '?q=' + encodeURIComponent(q) : ''));
+      if (seq !== loadSeq.current) return;
+      setUsers(u.users);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message || 'Could not load users.');
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [q]);
   useEffect(() => { load(); }, [load]);
 
@@ -2679,8 +2711,11 @@ function UsersPage({ user }) {
       <div className="toolbar">
         <input placeholder="Search name / email / employee no…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 280 }} />
       </div>
-      <div className="card">
-        {!users ? <Skeleton /> : users.length === 0 ? <Empty text="No users found." /> : (
+      {loadError && users ? <RefetchError text={loadError} onRetry={load} /> : null}
+      <div className={'card' + (busy && users ? ' table-busy' : '')} aria-busy={busy && !!users}>
+        {loadError && !users ? <Empty tone="error" title="Could not load users" text={loadError}
+          action={<button className="btn" onClick={load}>Retry</button>} />
+          : !users ? <Skeleton /> : users.length === 0 ? <Empty text="No users found." /> : (
           <table>
             <thead><tr><th>Name</th><th>Email</th><th>Job Title</th><th>Role(s)</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
             <tbody>
@@ -4113,6 +4148,8 @@ function RequestsPage({ user, initialFilters }) {
   const [creating, setCreating] = useState(false);
   const [assigning, setAssigning] = useState(null); // request row being assigned/reassigned
   const [recruiters, setRecruiters] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const loadSeq = useRef(0);
   const btns = useResolvedButtons();
 
   // Arriving from a dashboard card hands a fresh `initialFilters` object each
@@ -4140,8 +4177,15 @@ function RequestsPage({ user, initialFilters }) {
     return () => window.removeEventListener('ats:open-request', onOpen);
   }, []);
 
+  // Refetch keeps the rows that are already on screen. `setData(null)` used to
+  // run first, which sent the render branch below back to <Skeleton>: every
+  // filter change and every search keystroke unmounted the whole table and
+  // remounted it a moment later. `seq` is the same stale-response guard
+  // CandidatesPage uses — the last request to be STARTED is the only one
+  // allowed to write, so a slow early response cannot overwrite a newer one.
   const load = useCallback(async () => {
-    setData(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     // Only the outgoing `q` is normalized (RQ-26-001 → REQ-2026-00001) so the stored
     // ticket_no can be matched; the text the user typed is left as-is in the input.
@@ -4150,8 +4194,16 @@ function RequestsPage({ user, initialFilters }) {
       if (k === 'attention' || k === 'openOnly' || !v) return;
       params.set(k === 'owner' ? 'ownerId' : k, k === 'q' ? expandReqCode(v) : v);
     });
-    setLoadError(null);
-    try { setData(await api.get('/requests?' + params.toString())); } catch (e) { setLoadError(e.message); }
+    try {
+      const r = await api.get('/requests?' + params.toString());
+      if (seq !== loadSeq.current) return;
+      setData(r);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message);
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [filters]);
   useEffect(() => { load(); }, [load]);
 
@@ -4209,7 +4261,7 @@ function RequestsPage({ user, initialFilters }) {
           <input type="checkbox" checked={filters.openOnly} onChange={(e) => setFilters((f) => ({ ...f, openOnly: e.target.checked }))} />
           Open only
         </label>
-        <select value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
+        <select className="sort-select" value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
           <option value="created">Sort: Created</option><option value="priority">Priority</option><option value="title">Title</option><option value="status">Status</option><option value="ticket">Ticket No</option></select>
         <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}><Icon name={filters.dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={16} />{filters.dir === 'desc' ? 'Desc' : 'Asc'}</button>
         </FilterToolbar>
@@ -4226,20 +4278,25 @@ function RequestsPage({ user, initialFilters }) {
         </div>
       )}
 
-      {loadError ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
+      {/* A refetch that fails keeps the rows already on screen and reports it
+          above them; only a failure with nothing to fall back on takes the page. */}
+      {loadError && data ? <RefetchError text={loadError} onRetry={load} /> : null}
+      {loadError && !data ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
           title={activeChips.length || filters.q ? 'No requests match these filters' : 'No hiring requests yet'}
           text={activeChips.length || filters.q
             ? 'Try clearing the search box or widening the filters above.'
             : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
-        <div className="card flush"><div className="table-wrap"><table className="table responsive-table">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap"><table className="table responsive-table">
           <thead><tr><th>Request</th><th>Position</th><th data-priority="secondary">Project / Site</th><th>Owner</th><th data-priority="secondary">Pipeline</th><th>Priority</th><th>Status</th><th data-priority="secondary">Idle</th><th>SLA</th></tr></thead>
           <tbody>{shown.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
               <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
-              <td data-label="Position"><span className="cell-strong">{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
-              <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">{placeLabel(r)}</td>
+              <td data-label="Position"><span className="cell-strong rq-cell-title" title={r.title}>{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
+              <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">
+                <span className="rq-place" title={placeLabel(r)}>{placeLabel(r)}</span>
+              </td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
                 {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
                   : !canAssign ? <span className="muted">Unassigned</span>
@@ -4458,7 +4515,7 @@ function AiShortlistTab({ request, user }) {
             text="An empty shortlist is a real answer — it means no current candidate evidences what this role asks for. Import CVs or widen the requirements." />
         </div>
       ) : (
-        <div className="card flush">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}>
           <table className="table">
             <thead><tr>
               <th style={{ width: 56 }}>Match</th>
@@ -6186,8 +6243,19 @@ function SortTh({ label, col, sort, onSort, align, priority }) {
     <th data-priority={priority} data-col={col} className={'sort-th' + (active ? ' active' : '')} style={align ? { textAlign: align } : null}
       onClick={() => onSort(col)} tabIndex="0" onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }} title={`Sort by ${label}`}
       role="columnheader" aria-sort={direction}>
-      <span className="sort-label">{label}</span>
-      <span className="sort-caret" data-sort={direction} aria-hidden="true"><Icon name={mark} size={16} /></span>
+      {/* The label and the caret need a flex row of their own. `.sort-caret`
+          has always declared `flex: 0 0 16px` and `.sort-label` `overflow:
+          hidden; text-overflow: ellipsis`, but nothing ever made their parent
+          a flex container — and a `<th>` cannot become one without giving up
+          its table-cell layout. So both declarations were inert: the label was
+          an inline box, where text-overflow does nothing, and in a narrow
+          column it guillotined mid-word while the caret was pushed clean
+          outside the cell and clipped away, taking the sort affordance with
+          it. This wrapper is the flex row they were written for. */}
+      <span className="sort-th-inner">
+        <span className="sort-label">{label}</span>
+        <span className="sort-caret" data-sort={direction} aria-hidden="true"><Icon name={mark} size={16} /></span>
+      </span>
     </th>
   );
 }
@@ -6443,9 +6511,9 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked, o
             {active.requestTitle ? <span className="rq-link-sub">{active.requestTitle}</span> : null}
           </button>
           {canLink && (
-            <button className="rq-link-btn" onClick={() => { setMode('move'); setOpen((v) => !v); setError(''); setBlocking(null); }}
-              aria-haspopup="dialog" aria-expanded={open}>
-              Move to another request <Icon name="chevronDown" size={16} />
+            <button className="rq-link-btn rq-link-btn-icon" onClick={() => { setMode('move'); setOpen((v) => !v); setError(''); setBlocking(null); }}
+              aria-haspopup="dialog" aria-expanded={open} aria-label="Move to another request" title="Move to another request">
+              <Icon name="chevronDown" size={16} />
             </button>
           )}
         </div>
@@ -7107,7 +7175,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
               <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />
-              <SortTh priority="secondary" label="Graduation" col="graduation" sort={sort} onSort={toggleSort} />
+              <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
               <th className="th-request" data-col="request">Request</th>
               <th data-col="stage">Stage</th>
@@ -8401,6 +8469,8 @@ function InterviewsPage({ user, initialFilters }) {
   // `openId` jumps straight to one interview (a dashboard action item always
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
+  const [busy, setBusy] = useState(false);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     if (!initialFilters) return;
@@ -8408,12 +8478,23 @@ function InterviewsPage({ user, initialFilters }) {
     setFilter((f) => ({ ...f, ...initialFilters }));
   }, [initialFilters]);
 
+  // Same refetch contract as RequestsPage: keep the current rows mounted, mark
+  // the list busy, and let only the newest request write its result.
   const load = useCallback(async () => {
-    setData(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
-    setLoadError(null);
-    try { setData(await api.get('/interviews?' + params.toString())); } catch (e) { setLoadError(e.message); }
+    try {
+      const r = await api.get('/interviews?' + params.toString());
+      if (seq !== loadSeq.current) return;
+      setData(r);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message);
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
@@ -8442,14 +8523,17 @@ function InterviewsPage({ user, initialFilters }) {
         <div className="spacer" />
         <CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />
       </div>
-      {loadError ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
+      {/* A refetch that fails keeps the rows already on screen and reports it
+          above them; only a failure with nothing to fall back on takes the page. */}
+      {loadError && data ? <RefetchError text={loadError} onRetry={load} /> : null}
+      {loadError && !data ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
           title={filter.q || filter.status || filter.thisWeek ? 'No interviews match these filters' : 'No interviews scheduled'}
           text={filter.q || filter.status || filter.thisWeek
             ? 'Try clearing the search box or the filters above.'
             : 'Interviews scheduled from a candidate\u2019s application will appear here with date, panel and outcome.'} /></div>
       ) : (
-        <div className="card flush"><div className="table-wrap">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
           <table className="table responsive-table">
             <thead><tr><th>Scheduled</th><th>Candidate</th><th>Request</th><th>Type / Mode</th><th data-priority="secondary">Interview</th><th>Status</th><th>Outcome</th><th data-priority="secondary">Application</th></tr></thead>
             <tbody>{shown.map((iv) => (
@@ -8631,22 +8715,32 @@ function OffersPage({ user, initialFilters }) {
   // value, and "to issue" (draft + approved, not yet sent) spans two of them.
   const [filter, setFilter] = useState({ status: '', q: '', joiningFrom: '', joiningTo: '', toIssue: false });
   const [selected, setSelected] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     if (!initialFilters) return;
     setFilter((f) => ({ ...f, ...initialFilters }));
   }, [initialFilters]);
 
+  // Same refetch contract as RequestsPage. The shape check stays — an offers
+  // payload that is not an array is a real failure, not an empty list.
   const load = useCallback(async () => {
-    setOffers(null);
+    const seq = ++loadSeq.current;
+    setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'toIssue' && v) params.set(k, v); });
-    setLoadError(null);
     try {
       const result = await api.get('/offers?' + params.toString());
       if (!Array.isArray(result?.offers)) throw new Error('Offers are temporarily unavailable. Please retry.');
+      if (seq !== loadSeq.current) return;
       setOffers(result.offers);
-    } catch (e) { setLoadError(e.message || 'Could not load offers. Please retry.'); }
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setLoadError(e.message || 'Could not load offers. Please retry.');
+    } finally {
+      if (seq === loadSeq.current) setBusy(false);
+    }
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
@@ -8671,14 +8765,15 @@ function OffersPage({ user, initialFilters }) {
         <div className="spacer" />
         <CountPill n={offers ? shown.length : null} total={offers ? offers.length : null} noun="offer" />
       </div>
-      {loadError ? <LoadError text={loadError} onRetry={load} /> : !offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
+      {loadError && offers ? <RefetchError text={loadError} onRetry={load} /> : null}
+      {loadError && !offers ? <LoadError text={loadError} onRetry={load} /> : !offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
           title={filter.q || filter.status || filter.joiningFrom || filter.toIssue ? 'No offers match these filters' : 'No offers raised yet'}
           text={filter.q || filter.status || filter.joiningFrom || filter.toIssue
             ? 'Try clearing the search box, status filter or joining-date range.'
             : 'Offers raised from a candidate\u2019s application will appear here with approval state and joining date.'} /></div>
       ) : (
-        <div className="card flush"><div className="table-wrap">
+        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
           <table className="table responsive-table">
             <thead><tr><th>Offer</th><th>Candidate</th><th>Request</th><th>Position</th><th data-priority="secondary">Project</th><th>Status</th><th data-priority="secondary">Prepared by</th><th data-priority="secondary">Approved by</th><th>Joining</th></tr></thead>
             <tbody>{shown.map((o) => (

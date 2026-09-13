@@ -367,6 +367,19 @@ input:focus {
 .notice-success { border-left-color: var(--green); background: var(--green-50); }
 .notice-warn { border-left-color: var(--warning); background: var(--warning-tint); }
 .notice-danger { border-left-color: var(--brand); background: var(--brand-tint); }
+/* A refresh failed but the rows underneath are still usable — this reports it
+   without taking the page, which is what `LoadError` does and what makes sense
+   only on a first load. Warning, not danger: nothing is broken, the content is
+   simply not current. Sits in flow above the list so it cannot cover a row. */
+.refetch-error {
+  display: flex; align-items: center; gap: var(--cl-3, 8px);
+  margin: 0 0 12px; padding: 10px 14px;
+  border: 1px solid #F3D48A; border-left-width: 4px; border-left-color: var(--warning);
+  border-radius: 14px; background: var(--warning-tint); color: var(--warning-ink);
+  font-size: 12.5px;
+}
+.refetch-error > span { flex: 1 1 auto; min-width: 0; }
+.refetch-error > .btn { flex: 0 0 auto; color: var(--warning-ink); }
 .error-banner { border-radius: 14px; border: 1px solid var(--brand-tint-bd); background: var(--brand-tint); color: var(--brand-dark); }
 .success-banner { border-radius: 14px; border: 1px solid var(--green-border); background: var(--green-50); color: var(--green-700); }
 

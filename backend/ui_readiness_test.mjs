@@ -63,5 +63,62 @@ check('.role-row-end actually stacks its children with a real gap, not an inline
   ruleHas(css, '.role-row-end', 'display: flex') && ruleHas(css, '.role-row-end', 'flex-direction: column')
   && ruleHas(css, '.role-row-end', 'gap: 6px'));
 
+/* ---------------------------------------------------------------------------
+   Shared refetch contract (Requests / Interviews / Offers / Users).
+
+   All four loaders used to begin with `setUsers(null)` / `setData(null)` /
+   `setOffers(null)`, and all four render branches read that same state as
+   "still loading" — so every filter change and every search keystroke replaced
+   the live table with a skeleton and then rebuilt it. Measured in the browser
+   with a 700ms latency shim: rows went 14 -> 0, 25 skeleton elements appeared
+   and the count pill unmounted for 726ms before the new rows arrived.
+
+   The contract each loader must now keep:
+     - it does not null its list state before fetching (content stays mounted),
+     - it takes a `++loadSeq.current` ticket and drops its own result if a
+       newer request has since started (no stale overwrite),
+     - it clears the busy flag only for the newest request.
+   ------------------------------------------------------------------------ */
+const LOADERS = [
+  ['RequestsPage',   'function RequestsPage',   'setData(null)'],
+  ['InterviewsPage', 'function InterviewsPage', 'setData(null)'],
+  ['OffersPage',     'function OffersPage',     'setOffers(null)'],
+  ['UsersPage',      'function UsersPage',      'setUsers(null)'],
+];
+for (const [label, marker, clearCall] of LOADERS) {
+  const start = app.indexOf(marker);
+  const body = app.slice(start, app.indexOf('const load = useCallback', start));
+  const loader = app.slice(app.indexOf('const load = useCallback', start));
+  const fn = loader.slice(0, loader.indexOf('\n  useEffect(() => { load(); }, [load]);'));
+  // Strip comments so an explanatory mention of the old call is not a match.
+  const code = fn.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  check(`${label} refetch does not blank its list before fetching`, !code.includes(clearCall));
+  // Both write paths must bail, not just one: an earlier version of this check
+  // passed with the success-path guard deleted, because the catch block still
+  // had one. Count them, and require the finally to gate the busy flag too.
+  const bails = (code.match(/seq !== loadSeq\.current/g) || []).length;
+  check(`${label} refetch guards both write paths against a stale response`,
+    /\+\+loadSeq\.current/.test(code) && bails >= 2 && /seq === loadSeq\.current/.test(code));
+  check(`${label} declares the loadSeq ticket it uses`, /useRef\(0\)/.test(body + fn));
+}
+
+// The four supporting datasets on Users do not depend on the search box; they
+// were refetched with every keystroke because they shared one Promise.all with
+// `/users`. Measured after the split: one keystroke issues exactly one call.
+{
+  const start = app.indexOf('function UsersPage');
+  const loader = app.slice(app.indexOf('const load = useCallback', start));
+  const fn = loader.slice(0, loader.indexOf('\n  useEffect(() => { load(); }, [load]);'));
+  check('Users search refetches only /users, not its reference data',
+    fn.includes("api.get('/users'") && !/\/roles|org\/departments|org\/projects|org\/sites/.test(fn));
+}
+
+// A refetch that fails keeps the rows it already had; only a failure with
+// nothing to fall back on is allowed to take the page.
+check('a failed refetch reports without replacing usable content',
+  app.includes('function RefetchError')
+  && (app.match(/loadError && (data|offers|users) \? <RefetchError/g) || []).length >= 3
+  && (app.match(/loadError && !(data|offers|users) \?/g) || []).length >= 3);
+
 console.log(`\n=== UI READINESS: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
