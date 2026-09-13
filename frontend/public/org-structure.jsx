@@ -73,9 +73,14 @@
       .org-name { font-size:13px; font-weight:700; color:var(--text-dark); line-height:1.25; }
       .org-title { font-size:12px; color:var(--text-gray); line-height:1.3; }
       .org-meta { font-size:11px; color:var(--text-gray); margin-top:4px; }
+      /* Measured at 19px tall, the smallest control in the product and well
+         under the 28px the rest of the UI holds for a clickable target. The
+         label stays 11px — this buys the height back with padding, not by
+         inflating the type. */
       .org-toggle {
         margin-top:6px; border:1px solid var(--border); background:#fff; border-radius:999px;
-        font-size:11px; padding:2px 8px; cursor:pointer; color:var(--text-gray);
+        font-size:11px; padding:0 10px; min-height:28px; cursor:pointer; color:var(--text-gray);
+        display:inline-flex; align-items:center; justify-content:center;
       }
       .org-drop { outline:2px dashed var(--at-action, #008064); }
       .org-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--text-gray); }
@@ -327,6 +332,52 @@
       ).map((n) => n.id));
     }, [visible, q]);
 
+    /* `.org-canvas` is `width: max-content` and `.org-tree` centres itself
+       inside it, so with the seeded 113 positions the canvas lays out 19552px
+       wide and the root sits ~9670px in. Pan (0, 0) therefore shows the far
+       LEFT edge of that canvas — an arbitrary handful of leaf nodes, with the
+       root and 334 of 339 cards off-screen and no way to reach them: the wrap
+       is `overflow: hidden` on both axes, so nothing scrolls, and `fit()` used
+       to BE `setPan({ x: 0, y: 0 })`, which is exactly that broken state.
+       Zoom-out only shrinks about `transform-origin: 0 0`, so it never brings
+       the middle of the canvas into view either.
+
+       Centre on the canvas's own midpoint instead. The tree is centred within
+       the canvas, so this frames the root at any scale. */
+    const centerOn = useCallback((nextScale) => {
+      const wrap = wrapRef.current;
+      const canvas = wrap && wrap.firstElementChild;
+      if (!wrap || !canvas) { setScale(nextScale); setPan({ x: 0, y: 0 }); return; }
+      // offsetWidth/Height are layout sizes — unaffected by the transform we are
+      // about to set, which is what makes this safe to call repeatedly.
+      const cw = canvas.offsetWidth;
+      const ch = canvas.offsetHeight;
+      const ww = wrap.clientWidth;
+      const wh = wrap.clientHeight;
+      setScale(nextScale);
+      if (!cw || !ch || !ww || !wh) { setPan({ x: 0, y: 0 }); return; }
+      setPan({
+        x: Math.round((ww - cw * nextScale) / 2),
+        // Only centre vertically once the tree actually fits; otherwise keep the
+        // root's own row at the top, where you expect to start reading.
+        y: ch * nextScale <= wh ? Math.round((wh - ch * nextScale) / 2) : 0,
+      });
+    }, []);
+
+    /* Frame the chart whenever the rendered tree changes size — on first load,
+       and again when a filter or the Head Office toggle rebuilds it. Without
+       this the module opens on the canvas's far-left edge (see `fit` below),
+       which is empty space or a few unrelated leaves. Keyed on the visible
+       count rather than the array identity so panning is never yanked back
+       while the user is reading the same tree. One frame's delay lets the new
+       tree lay out, so `offsetWidth` is the width we are actually centring. */
+    const framedFor = useRef(null);
+    useEffect(() => {
+      if (!visible.length || framedFor.current === visible.length) return;
+      const id = requestAnimationFrame(() => { framedFor.current = visible.length; centerOn(1); });
+      return () => cancelAnimationFrame(id);
+    }, [visible.length, centerOn]);
+
     function toggle(id) {
       setCollapsed((prev) => {
         const next = new Set(prev);
@@ -358,7 +409,22 @@
       panning.current = null;
       e.currentTarget.classList.remove('is-panning');
     }
-    function fit() { setScale(1); setPan({ x: 0, y: 0 }); }
+    function fit() {
+      const wrap = wrapRef.current;
+      const canvas = wrap && wrap.firstElementChild;
+      if (!wrap || !canvas) { centerOn(1); return; }
+      const cw = canvas.offsetWidth;
+      const ch = canvas.offsetHeight;
+      const ww = wrap.clientWidth;
+      const wh = wrap.clientHeight;
+      if (!cw || !ch || !ww || !wh) { centerOn(1); return; }
+      // Same 0.45 floor the zoom buttons and the wheel already enforce — this
+      // module's own definition of "still readable". A fully expanded chart is
+      // wider than any floor can fit, so Fit means "as much as stays legible,
+      // centred", not "shrink until it disappears".
+      const s = Math.min(1.8, Math.max(0.45, Math.min(1, ww / cw, wh / ch)));
+      centerOn(s);
+    }
 
     async function saveNode(payload) {
       if (form && form.node) {

@@ -195,6 +195,52 @@ check('unauthenticated users cannot view the chart', () => {
   assert.equal(anon.status, 401);
 });
 
+/* ---------------------------------------------------------------------------
+   The chart must frame itself. `.org-canvas` is `width: max-content` and the
+   tree centres inside it, so with the seeded org the canvas lays out ~19500px
+   wide and the root sits ~9700px in. Pan (0,0) shows the canvas's far-left
+   edge — and the wrap is `overflow: hidden` on both axes, so nothing scrolls
+   there. `fit()` used to be exactly `setScale(1); setPan({x:0,y:0})`, i.e. the
+   broken state itself, and zoom only scales about `transform-origin: 0 0`. Net
+   effect measured in a browser: 5 of 339 cards reachable, root not among them.
+   ------------------------------------------------------------------------ */
+{
+  const orgJsx = fs.readFileSync(new URL('../frontend/public/org-structure.jsx', import.meta.url), 'utf8');
+  const fnBody = (name) => {
+    const at = orgJsx.indexOf(name);
+    if (at < 0) return '';
+    let depth = 0;
+    for (let i = orgJsx.indexOf('{', at); i < orgJsx.length; i++) {
+      if (orgJsx[i] === '{') depth++;
+      else if (orgJsx[i] === '}') { depth--; if (depth === 0) return orgJsx.slice(at, i + 1); }
+    }
+    return '';
+  };
+  const fit = fnBody('function fit()');
+  check('fit() measures the canvas instead of resetting the pan to the origin', () => {
+    assert.ok(fit.length > 0, 'fit() is still declared');
+    assert.ok(/offsetWidth/.test(fit) && /clientWidth/.test(fit),
+      'fit() must measure the canvas against its wrapper, not assume a position');
+    assert.ok(!/setPan\(\s*\{\s*x:\s*0\s*,\s*y:\s*0\s*\}\s*\)\s*;?\s*\}\s*$/.test(fit.replace(/\s+/g, ' ')),
+      'fit() must not end by parking the canvas back at the origin');
+    assert.ok(/centerOn\(/.test(fit), 'fit() centres through the shared helper');
+  });
+  check('the centring helper positions the canvas midpoint, not its left edge', () => {
+    const centre = fnBody('const centerOn = useCallback');
+    assert.ok(/\(ww - cw \* nextScale\) \/ 2/.test(centre),
+      'centerOn must offset by half the difference between wrapper and canvas width');
+  });
+  check('the chart frames itself when the visible tree changes', () => {
+    assert.match(orgJsx, /framedFor/, 'an initial-framing guard exists');
+    assert.match(orgJsx, /requestAnimationFrame\(\(\) => \{ framedFor\.current = visible\.length; centerOn\(1\); \}\)/,
+      'framing runs after layout, once per distinct visible tree');
+  });
+  check('the collapse toggle is a full-size click target', () => {
+    const rule = orgJsx.slice(orgJsx.indexOf('.org-toggle {'), orgJsx.indexOf('}', orgJsx.indexOf('.org-toggle {')));
+    assert.match(rule, /min-height:\s*28px/, '.org-toggle keeps a 28px minimum height');
+  });
+}
+
 console.log(`\n${failures.length === 0 ? 'ALL PASS' : 'FAILURES'} — ${passed} passed, ${failures.length} failed`);
 if (failures.length) console.log('failed:', failures.join(' | '));
 process.exit(failures.length === 0 ? 0 : 1);
