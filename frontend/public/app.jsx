@@ -857,6 +857,29 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
   const threadRef = useRef(null);
   const dockRef = useRef(null);
   const fabRef = useRef(null);
+
+  /* The launcher is fixed over the bottom-right 46px of the content column, so
+     whatever scrolls under it loses part of its click area — measured at the
+     desktop gate on Talent Pool, CV Intake, Users and Audit Log, and on the
+     dashboard before its two lists got an explicit lane. Reserving a lane on
+     every list that right-aligns an action does not generalise: any control
+     can end up under a fixed element at some scroll offset.
+     So the launcher yields instead. While the page is scrolling — which is
+     exactly when you are travelling to the row you want — it fades and stops
+     taking pointer events, then comes back shortly after you stop. Nothing
+     moves, no page gives up width, and the control underneath is reachable
+     during the gesture that brings it into view. */
+  const [scrolling, setScrolling] = useState(false);
+  useEffect(() => {
+    let timer = null;
+    const onScroll = () => {
+      setScrolling(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setScrolling(false), 450);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); clearTimeout(timer); };
+  }, []);
   const contextRequestId = context && context.requestId;
   const requestId = contextRequestId || pickedId;
   const canSeeRequests = can(user, 'request.view_all') || can(user, 'request.view_own');
@@ -965,7 +988,8 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
 
   return (
     <>
-      <button ref={fabRef} type="button" className={'anyhelp-fab' + (open ? ' is-open' : '')}
+      <button ref={fabRef} type="button"
+        className={'anyhelp-fab' + (open ? ' is-open' : '') + (scrolling && !open ? ' is-yielding' : '')}
         onClick={() => setOpen(true)} aria-expanded={open} aria-controls="anyhelp-dock"
         aria-label="Open anyhelp">
         <span className="anyhelp-fab-mark" aria-hidden="true">a</span>
