@@ -1106,6 +1106,130 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
   );
 }
 
+/* ============================ MOBILE TEMPLATE ============================
+   A dedicated phone presentation, not a reflowed desktop one. It renders
+   INSTEAD of the desktop shell — never alongside it — so there is exactly one
+   set of interactive controls in the DOM: no duplicate focus targets, no
+   duplicate ids, no second copy of a menu to keep in sync.
+
+   Everything it shows comes from the same props the desktop shell already
+   has: the same permission-filtered nav list, the same `go()`, the same work
+   counts, the same user and branding. Switching between the two presentations
+   changes nothing about the data layer, so crossing the breakpoint never
+   costs a request.
+
+   Arabtec identity is unchanged: the same Logo, the same tokens, the same
+   type. The composition is what is phone-specific.
+   ====================================================================== */
+function useIsPhone(query = '(max-width: 900px)') {
+  const get = () => (typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : false);
+  const [isPhone, setIsPhone] = useState(get);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(query);
+    const onChange = (e) => setIsPhone(e.matches);
+    setIsPhone(mq.matches);
+    // Safari < 14 only has the deprecated listener pair.
+    if (mq.addEventListener) { mq.addEventListener('change', onChange); return () => mq.removeEventListener('change', onChange); }
+    mq.addListener(onChange); return () => mq.removeListener(onChange);
+  }, [query]);
+  return isPhone;
+}
+
+/* The drawer owns focus while it is open: Escape closes it, focus moves in on
+   open and returns to the trigger on close, and nothing behind it is
+   reachable. When closed it is not rendered at all, which is the strongest
+   form of "the inactive presentation is not focusable". */
+function MobileDrawer({ open, onClose, nav, route, counts, onGo, user, roleCode, branding, onLogout, onChangePassword }) {
+  const panelRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const first = panelRef.current && panelRef.current.querySelector('button, a[href]');
+    if (first) first.focus();
+    function onKey(e) {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+      const items = [...panelRef.current.querySelectorAll('button, a[href], input, select, textarea')]
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!items.length) return;
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+      else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="mdrawer-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="mdrawer" ref={panelRef} role="dialog" aria-modal="true" aria-label="Navigation">
+        <div className="mdrawer-head">
+          <span className="side-mark"><Logo size={30} /></span>
+          <span className="side-txt">
+            <strong>{branding?.app_name || 'Arabtec'}</strong>
+            <span>Recruitment Hub</span>
+          </span>
+          <button className="icon-btn mdrawer-close" onClick={onClose} aria-label="Close navigation">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+
+        <div className="mdrawer-who">
+          <span className="avatar">{initials(user.fullName)}</span>
+          <span className="mdrawer-who-txt">
+            <strong>{user.fullName}</strong>
+            <span>{ROLE_NAMES[roleCode] || roleCode}</span>
+          </span>
+        </div>
+
+        <nav className="mdrawer-nav" aria-label="Sections">
+          {nav.map((n, i) => {
+            if (n.section) return <div key={'s' + i} className="mdrawer-section">{n.section}</div>;
+            const c = navCount(n.key, counts);
+            return (
+              <button key={n.key} className={'mdrawer-item' + (route === n.key ? ' active' : '')}
+                onClick={() => onGo(n.key)} aria-current={route === n.key ? 'page' : undefined}>
+                <span className="mdrawer-ico"><Icon name={n.icon} size={18} /></span>
+                <span className="mdrawer-label">{n.label}</span>
+                {c ? <span className="nav-count">{c}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="mdrawer-foot">
+          <button className="mdrawer-foot-btn" onClick={onChangePassword}>
+            <Icon name="shield" size={16} /> Change password
+          </button>
+          <button className="mdrawer-foot-btn" onClick={onLogout}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Compact application bar: who/where, then the two things a recruiter reaches
+   for on a phone (search and notifications). The page's own title lives in the
+   page header below it, not here, so the bar stays one line at 360px. */
+function MobileAppBar({ title, onMenu, onSearch, onGo }) {
+  return (
+    <header className="mtopbar">
+      <button className="mtopbar-btn" onClick={onMenu} aria-label="Open navigation">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+      </button>
+      <span className="mtopbar-title">{title}</span>
+      <button className="mtopbar-btn" onClick={onSearch} aria-label="Search candidates">
+        <Icon name="search" size={18} />
+      </button>
+      <NotificationBell onNavigate={onGo} />
+    </header>
+  );
+}
 /* ----------------------------- Shell ----------------------------- */
 function Shell({ user, branding, onLogout, refreshBranding }) {
   // Self-service password change, reachable from the user menu.
