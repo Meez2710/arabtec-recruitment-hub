@@ -345,13 +345,18 @@ export function claimAttachment(record) {
     return { claimed: true, key, retried: true };
   }
   try {
+    // subject / sender / category are what make selection-by-job-title possible:
+    // the panel groups WAITING attachments by category so a recruiter can parse
+    // "Civil Engineer" and leave the rest. They were never written, so every
+    // row grouped as uncategorised and the whole selection model was inert.
     run(`INSERT INTO mailbox_ingestion
           (provider, mailbox, dedup_key, message_id, internet_message_id, attachment_id,
-           attachment_name, received_at, status, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+           attachment_name, received_at, status, subject, sender, category, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [MICROSOFT_PROVIDER, String(record.mailbox).toLowerCase(), key, record.messageId ?? null,
       record.internetMessageId ?? null, record.attachmentId ?? null, record.attachmentName ?? null,
-      record.receivedAt ?? null, 'PROCESSING', at, at]);
+      record.receivedAt ?? null, record.status || 'PROCESSING',
+      record.subject ?? null, record.sender ?? null, record.category ?? null, at, at]);
     return { claimed: true, key };
   } catch (e) {
     // Lost the race to a concurrent claim — the constraint did its job.
@@ -420,6 +425,24 @@ export function inboxRows({ state = 'inbox', limit = 100, offset = 0 } = {}) {
   }[state] || `WHERE mi.status = 'IMPORTED' AND ci.status = 'PENDING'`;
 
   return all(`${base} ${where} ORDER BY mi.id DESC LIMIT ${n} OFFSET ${off}`);
+}
+
+/**
+ * WAITING attachments grouped by the job title read from the mail subject.
+ *
+ * This is the number a recruiter is deciding to spend: "Civil Engineer — 412
+ * CVs waiting". Uncategorised subjects group under their own label rather than
+ * being hidden, because they are the ones most likely to be worth a look.
+ */
+export function waitingByCategory() {
+  return all(`SELECT COALESCE(NULLIF(category,''), 'Unclassified') AS category,
+                     COUNT(*) AS count,
+                     MIN(received_at) AS oldest,
+                     MAX(received_at) AS newest
+                FROM mailbox_ingestion
+               WHERE status = 'WAITING'
+            GROUP BY COALESCE(NULLIF(category,''), 'Unclassified')
+            ORDER BY COUNT(*) DESC`) || [];
 }
 
 /** How many sit in each section, so the page can label its tabs honestly. */

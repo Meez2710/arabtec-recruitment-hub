@@ -341,7 +341,7 @@ const fakeParse = async (filePath) => {
 };
 
 const candidatesBefore = db.get('SELECT COUNT(*) n FROM candidate').n;
-const scan = await runMailboxSync({ parse: fakeParse });
+const scan = await runMailboxSync({ discoverOnly: false, parse: fakeParse });
 
 c('the scan succeeded', scan.ok === true, JSON.stringify({ imported: scan.imported, skipped: scan.skipped }));
 c('exactly one attachment was imported', scan.imported === 1, String(scan.imported));
@@ -372,7 +372,7 @@ c('NO candidate was created by an email arriving',
 console.log('\n- De-duplication -');
 
 const intakesAfterFirst = db.get('SELECT COUNT(*) n FROM candidate_intake').n;
-const second = await runMailboxSync({ parse: fakeParse });
+const second = await runMailboxSync({ discoverOnly: false, parse: fakeParse });
 c('the second scan of the same mailbox imports nothing', second.imported === 0, String(second.imported));
 c('and creates no second intake',
   db.get('SELECT COUNT(*) n FROM candidate_intake').n === intakesAfterFirst,

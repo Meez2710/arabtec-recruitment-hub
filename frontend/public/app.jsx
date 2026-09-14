@@ -7151,8 +7151,13 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               {bgParseJob.status === 'ready' ? `✓ ${bgParseJob.fileName || 'CV'} ready` : `${bgParseJob.fileName || 'CV'} — parsing…`}
             </button>
           )}
+          {/* No inline font-size here. This button sits in the same action row as
+              "Bulk Upload CVs" and "Parse CV", which all inherit `.btn`; pinning
+              this one to 11.5px made a single label visibly smaller than its
+              neighbours, and the gap widened under browser zoom because a fixed
+              px does not track the others' sizing. */}
           {btns.add_candidate?.visible && (
-            <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => setCreating(true)} title="Enter a candidate by hand, no CV reading">
+            <button className="btn btn-ghost" onClick={() => setCreating(true)} title="Enter a candidate by hand, no CV reading">
               Add manually
             </button>
           )}

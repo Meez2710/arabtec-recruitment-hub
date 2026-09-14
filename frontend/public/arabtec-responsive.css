@@ -509,9 +509,13 @@ img, svg, video, canvas {
   width: auto;
   flex: 0 0 auto;
 }
-.page-head:has(+ .ask-bar) .btn-ghost {
-  font-size: 13.5px;
-}
+/* A ghost button is the same PURPOSE as the secondary and primary buttons
+   beside it — an action in the same row — so it takes the same type. This
+   block used to shrink it to 13.5px, which put "Add manually" visibly below
+   "Bulk Upload CVs" and "Parse CV" at 14px, in the one layout that has an ask
+   bar. Emphasis is carried by fill and border; it is not carried by making one
+   label smaller, and a fixed px here drifted further from its neighbours under
+   browser zoom. */
 .page-head:has(+ .ask-bar) .view-toggle-btn,
 .tp-page .view-toggle-btn {
   min-height: 32px;

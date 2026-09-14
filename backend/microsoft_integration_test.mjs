@@ -287,9 +287,9 @@ async function connectAs({ username = MAILBOX, tid = TENANT } = {}) {
 }
 
 const PDF_BYTES = Buffer.from('%PDF-1.4\n% arabtec test cv\n%%EOF\n');
-function seedMessage({ id, internetMessageId, receivedDateTime, attachments }) {
+function seedMessage({ id, internetMessageId, receivedDateTime, attachments, subject = 'Application' }) {
   cloud.messages.push({
-    id, internetMessageId, receivedDateTime, subject: 'Application', hasAttachments: true,
+    id, internetMessageId, receivedDateTime, subject, hasAttachments: true,
     from: { emailAddress: { address: 'someone@example.test' } },
   });
   cloud.attachments.set(id, attachments.map((a) => ({
@@ -429,7 +429,7 @@ c('syncWindowStart never reaches back past the baseline',
   }) === baselineAt.toISOString());
 
 const intakesBefore = countIntakes();
-const firstScan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Historic Person')) });
+const firstScan = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Historic Person')) });
 c('the first scan reads nothing from before the baseline',
   firstScan.ok === true && firstScan.messages === 0 && countIntakes() === intakesBefore,
   JSON.stringify({ ok: firstScan.ok, messages: firstScan.messages }));
@@ -462,7 +462,7 @@ seedMessage({
 cloud.failDownload.add('msg-broken/att-broken');
 
 const candidatesBefore = countCandidates();
-const scan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Ahmed Hassan')) });
+const scan = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Ahmed Hassan')) });
 
 c('the scan imports the supported CV attachments',
   scan.ok === true && scan.imported === 2,
@@ -499,7 +499,7 @@ c('mailbox intakes appear on the existing review queue',
 
 /* ------------------------- 11. strong idempotency ------------------------- */
 console.log('\n- Idempotency -');
-const rescan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Ahmed Hassan')) });
+const rescan = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Ahmed Hassan')) });
 c('re-scanning the same mail imports nothing new',
   rescan.ok === true && rescan.imported === 0 && countIntakes() === intakesBefore + 2,
   JSON.stringify({ imported: rescan.imported, skipped: rescan.skipped }));
@@ -511,8 +511,8 @@ c('one ledger row per attachment, unique by dedup_key', (() => {
   return total === distinct && total > 0;
 })());
 const [runA, runB] = await Promise.all([
-  runMailboxSync({ parse: fakeParse(NAME_FIELD('Ahmed Hassan')) }),
-  runMailboxSync({ parse: fakeParse(NAME_FIELD('Ahmed Hassan')) }),
+  runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Ahmed Hassan')) }),
+  runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Ahmed Hassan')) }),
 ]);
 c('exactly one of two concurrent scans runs',
   (runA.code === 'already-running') !== (runB.code === 'already-running'),
@@ -526,11 +526,92 @@ c('POST /sync runs a scan and reports a result',
   JSON.stringify(routeScan.j).slice(0, 140));
 c('a manual scan through the route creates no extra intake', countIntakes() === intakesBefore + 2);
 
+/* ===========================================================================
+   THE APPROVED WORKFLOW: a scan discovers, it does not read.
+
+   Parsing every arriving CV spent real money on six months of applications to
+   roles that closed months ago, and buried live applications under them. The
+   default is now discovery: fetch, validate, de-duplicate, record what the CV
+   appears to be from its subject and filename, and stop. Anthropic is reached
+   only for groups a recruiter picked.
+   ======================================================================== */
+{
+  const { parseWaiting } = await import('./src/lib/microsoft/mailbox-sync.js');
+  const { waitingByCategory } = await import('./src/lib/microsoft/connection-store.js');
+  // Fresh mail: every earlier fixture has been consumed by the scans above, and
+  // a de-duplicated attachment is correctly never offered twice.
+  cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+  seedMessage({
+    id: 'wf-1', internetMessageId: '<wf-1@test>', receivedDateTime: '2026-03-01T09:00:00Z',
+    subject: 'Application for Site Engineer',
+    // Distinct bytes per fixture: identical bytes are correctly de-duplicated,
+    // which would otherwise make this look like a parsing failure.
+    attachments: [{ id: 'a1', name: 'Site Engineer CV.pdf', bytes: Buffer.from('%PDF-1.4 wf-one %%EOF') }],
+  });
+  seedMessage({
+    id: 'wf-2', internetMessageId: '<wf-2@test>', receivedDateTime: '2026-03-01T10:00:00Z',
+    subject: 'Application for Site Engineer',
+    attachments: [{ id: 'a2', name: 'Another Site Engineer.pdf', bytes: Buffer.from('%PDF-1.4 wf-two %%EOF') }],
+  });
+  seedMessage({
+    id: 'wf-3', internetMessageId: '<wf-3@test>', receivedDateTime: '2026-03-01T11:00:00Z',
+    subject: 'مهندس موقع — سيرة ذاتية',   // Arabic subject: must classify, not crash
+    attachments: [{ id: 'a3', name: 'CV عربي.pdf', bytes: Buffer.from('%PDF-1.4 wf-three عربي %%EOF') }],
+  });
+
+  // countIntakes / countCandidates are the file's own helpers (line ~267).
+  const intakesBefore = countIntakes();
+  const candidatesBefore = countCandidates();
+
+  // A parser that fails the test if it is ever called during a scan.
+  let parserCalls = 0;
+  const forbiddenParser = async () => { parserCalls += 1; return { ok: false, fields: [], permanent: true }; };
+
+  // An explicit window, so the assertion does not depend on where earlier
+  // scans happened to leave the watermark.
+  const discovery = await runMailboxSync({ parse: forbiddenParser, since: '2026-01-01T00:00:00Z' });
+
+  c('a scan reaches Anthropic zero times', parserCalls === 0, `parser called ${parserCalls}x`);
+  c('a scan creates no intake', countIntakes() === intakesBefore,
+    `${intakesBefore} -> ${countIntakes()}`);
+  c('a scan creates no candidate', countCandidates() === candidatesBefore);
+  c('a scan records attachments as WAITING', (discovery.waiting || 0) > 0, String(discovery.waiting));
+
+  const groups = waitingByCategory();
+  c('waiting work is grouped for selection', groups.length > 0 && groups.every((g) => g.category && g.count > 0),
+    groups.map((g) => `${g.category}:${g.count}`).join(', '));
+  c('an unmatched subject groups as Unclassified, never an invented title',
+    groups.every((g) => typeof g.category === 'string' && g.category.length > 0));
+
+  // Now the recruiter picks ONE group.
+  const chosen = groups[0].category;
+  const others = groups.slice(1).reduce((n, g) => n + Number(g.count), 0);
+  let parsedCalls = 0;
+  const realish = async () => { parsedCalls += 1; return fakeParse(NAME_FIELD('Selected Person'))(); };
+
+  const run = await parseWaiting({ categories: [chosen], limit: 50, parse: realish });
+
+  c('parsing a selection reads only that group', parsedCalls === run.parsed && run.parsed > 0,
+    `${parsedCalls} calls for ${run.parsed} parsed`);
+  c('the groups nobody picked are untouched',
+    waitingByCategory().reduce((n, g) => n + (g.category === chosen ? 0 : Number(g.count)), 0) === others,
+    `${others} left waiting`);
+  c('parsing a selection creates PENDING intakes', countIntakes() === intakesBefore + run.parsed);
+  c('parsing NEVER creates a candidate', countCandidates() === candidatesBefore,
+    `candidates ${candidatesBefore} -> ${countCandidates()}`);
+
+  // Idempotence: the same attachment must not be read twice.
+  const again = await parseWaiting({ categories: [chosen], limit: 50, parse: realish });
+  c('an already-parsed attachment is not parsed again', again.parsed === 0, `parsed ${again.parsed}`);
+  c('already-processed work leaves the waiting counts',
+    !waitingByCategory().some((g) => g.category === chosen && Number(g.count) > 0));
+}
+
 /* ------------------------- 13. Graph throttling --------------------------- */
 console.log('\n- Graph throttling -');
 cloud.throttleOnce.add('/me/mailFolders/inbox/messages');
 const listCallsBefore = calls.graph.filter((g) => g.path.startsWith('/me/mailFolders/inbox/messages')).length;
-const throttled = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Ahmed Hassan')) });
+const throttled = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Ahmed Hassan')) });
 const listCallsAfter = calls.graph.filter((g) => g.path.startsWith('/me/mailFolders/inbox/messages')).length;
 c('a 429 with Retry-After is retried, and the scan still completes',
   throttled.ok === true && listCallsAfter - listCallsBefore >= 2,
@@ -617,7 +698,7 @@ for (let i = 1; i <= 7; i++) {
 }
 cloud.pageSize = 2;                       // 7 messages over 4 pages
 const intakesBeforePaging = countIntakes();
-const paged = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Paged Person')) });
+const paged = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Paged Person')) });
 c('the scan follows @odata.nextLink across every page',
   paged.ok === true && paged.messages === 7,
   JSON.stringify({ messages: paged.messages, imported: paged.imported }));
@@ -643,7 +724,7 @@ c('the disconnected row still holds no token material', !store.connectionRow().t
 // that never wrote an audit entry.
 await connectAs();
 db.run("DELETE FROM audit_log WHERE action='microsoft.sync'");
-await runMailboxSync({ parse: fakeParse(NAME_FIELD('Scheduled Person')) });
+await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Scheduled Person')) });
 const scheduled = db.get("SELECT COUNT(*) AS c FROM audit_log WHERE action='microsoft.sync'");
 c('a scheduled scan (no actor, no req) is audited', scheduled.c === 1, `rows=${scheduled.c}`);
 
@@ -695,7 +776,7 @@ seedMessage({
 });
 const noReader = async () => ({ ok: false, permanent: false, reason: 'No CV reader is configured.', fields: [], preview: [] });
 const beforeRetry = countIntakes();
-const retryScan = await runMailboxSync({ parse: noReader });
+const retryScan = await runMailboxSync({ discoverOnly: false, parse: noReader });
 c('a retryable parse is not counted as skipped', retryScan.retryable === 1 && retryScan.imported === 0,
   JSON.stringify({ retryable: retryScan.retryable, skipped: retryScan.skipped }));
 c('no ledger row claims it was handled',
@@ -704,7 +785,7 @@ c('the watermark did not advance past the unfinished message',
   retryScan.watermark <= retryAt, `watermark=${retryScan.watermark} msg=${retryAt}`);
 
 // ...and once a reader exists, the very same message imports.
-const recovered = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Recovered Person')) });
+const recovered = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Recovered Person')) });
 c('the same CV imports once the reader is available',
   recovered.imported === 1 && countIntakes() === beforeRetry + 1,
   JSON.stringify({ imported: recovered.imported }));
@@ -799,9 +880,9 @@ seedMessage({
 });
 const noReader2 = async () => ({ ok: false, permanent: false, reason: 'No CV reader.', fields: [], preview: [] });
 const blobsBefore = db.get('SELECT COUNT(*) AS c FROM file_blob').c;
-await runMailboxSync({ parse: noReader2 });
-await runMailboxSync({ parse: noReader2 });
-await runMailboxSync({ parse: noReader2 });
+await runMailboxSync({ discoverOnly: false, parse: noReader2 });
+await runMailboxSync({ discoverOnly: false, parse: noReader2 });
+await runMailboxSync({ discoverOnly: false, parse: noReader2 });
 c('three retryable passes leak no stored files',
   db.get('SELECT COUNT(*) AS c FROM file_blob').c === blobsBefore,
   `blobs ${blobsBefore} -> ${db.get('SELECT COUNT(*) AS c FROM file_blob').c}`);
@@ -822,7 +903,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
   return realFetchList(input, init);
 };
-const listFail = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Never')) });
+const listFail = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Never')) });
 globalThis.fetch = realFetchList;
 c('a message that fails before any claim holds the watermark',
   listFail.failed === 1 && listFail.watermark <= failAt,
@@ -854,7 +935,7 @@ seedMessage({
 });
 cloud.attachPageSize = 2;                       // 5 attachments over 3 pages
 const attIntakesBefore = countIntakes();
-const attScan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Attachment Person')) });
+const attScan = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Attachment Person')) });
 c('every attachment page is followed',
   attScan.imported === 5 && countIntakes() === attIntakesBefore + 5,
   JSON.stringify({ imported: attScan.imported, attachments: attScan.attachments }));
@@ -895,7 +976,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
   return realFetchTok(input, init);
 };
-const tokScan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Token Person')) });
+const tokScan = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Token Person')) });
 globalThis.fetch = realFetchTok;
 c('the scan completes after one mid-scan renewal',
   tokScan.ok === true && tokScan.imported === 3, JSON.stringify({ imported: tokScan.imported }));
@@ -932,13 +1013,13 @@ seedMessage({
   attachments: [{ id: 'att-unread', name: 'Storage Blip.pdf', bytes: Buffer.from('%PDF blip') }],
 });
 const unreadable = async () => ({ ok: false, reason: 'The document could not be read from storage.', fields: [], preview: [] });
-const blipScan = await runMailboxSync({ parse: unreadable });
+const blipScan = await runMailboxSync({ discoverOnly: false, parse: unreadable });
 c('a parse with no `permanent` field is retryable, not skipped',
   blipScan.retryable === 1 && blipScan.skipped === 0,
   JSON.stringify({ retryable: blipScan.retryable, skipped: blipScan.skipped }));
 c('nothing claims that attachment as handled',
   db.get("SELECT COUNT(*) AS c FROM mailbox_ingestion WHERE attachment_name='Storage Blip.pdf'").c === 0);
-const afterBlip = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Recovered Blip')) });
+const afterBlip = await runMailboxSync({ discoverOnly: false, parse: fakeParse(NAME_FIELD('Recovered Blip')) });
 c('it imports once storage recovers', afterBlip.imported === 1);
 
 // Watermarks must compare as instants: "…00Z" sorts AFTER "…00.500Z" as a
@@ -1018,6 +1099,7 @@ globalThis.fetch = realFetch;
     /\['@odata\.type'\]/.test(syncSrc) && /#microsoft\.graph\.fileAttachment/.test(syncSrc),
     'mailbox-sync still rejects non-file attachments');
 }
+
 
 console.log(`\n=== MICROSOFT INTEGRATION: ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

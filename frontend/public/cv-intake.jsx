@@ -96,9 +96,14 @@
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState(null);
     const [advanced, setAdvanced] = useState(false);
+    const [waiting, setWaiting] = useState(null);     // [{category,count,oldest,newest}]
+    const [days, setDays] = useState(7);          // sensible for daily operations
+    const [howMany, setHowMany] = useState(50);
+    const [picked, setPicked] = useState(() => new Set());
 
     const mayAdmin = can(user, 'system.manage');
     const mayReview = can(user, 'candidate.view');
+    const maySelect = can(user, 'cv_intake.approve_batch');
 
     const load = useCallback(async (next) => {
       const want = next || state;
@@ -117,6 +122,54 @@
     }, [state]);
 
     useEffect(() => { load(); }, [load]);
+
+    const loadWaiting = useCallback(async () => {
+      try { setWaiting((await api().get('/cv-intake/waiting')).groups || []); }
+      catch { /* the inbox still works without the backlog view */ }
+    }, []);
+    useEffect(() => { if (maySelect) loadWaiting(); }, [loadWaiting, maySelect]);
+
+    async function discover() {
+      setBusy(true); setNotice(null); setError(null);
+      try {
+        const r = await api().post('/cv-intake/discover', { days: Number(days) });
+        setNotice(`Found ${r.waiting || 0} CV${(r.waiting || 0) === 1 ? '' : 's'} in the last ${r.days} days. `
+          + 'Nothing has been read yet — choose below what is worth reading.');
+        await loadWaiting();
+      } catch (e) {
+        setError(e.message || 'Could not read the mailbox.');
+      } finally { setBusy(false); }
+    }
+
+    const toggle = (category) => setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category); else next.add(category);
+      return next;
+    });
+
+    // What the recruiter is about to spend, before they spend it.
+    const selectedCount = (waiting || [])
+      .filter((g) => picked.has(g.category))
+      .reduce((n, g) => n + Number(g.count || 0), 0);
+    const willParse = Math.min(selectedCount, Number(howMany) || 0);
+
+    async function parseSelected() {
+      if (!picked.size) return;
+      setBusy(true); setNotice(null); setError(null);
+      try {
+        const r = await api().post('/cv-intake/parse-waiting', {
+          categories: [...picked], limit: Number(howMany),
+        });
+        setNotice(`Read ${r.parsed} CV${r.parsed === 1 ? '' : 's'}`
+          + (r.skipped ? `, ${r.skipped} already on file` : '')
+          + (r.failed ? `, ${r.failed} could not be read` : '')
+          + '. They are now waiting for review.');
+        setPicked(new Set());
+        await Promise.all([loadWaiting(), load()]);
+      } catch (e) {
+        setError(e.message || 'Could not read the selection.');
+      } finally { setBusy(false); }
+    }
 
     async function scanNow() {
       setBusy(true); setNotice(null); setError(null);
@@ -140,8 +193,8 @@
       h(PageHead, {
         crumb: 'Recruitment / CV Inbox',
         title: 'CV Inbox',
-        sub: 'CVs emailed to the careers mailbox, read automatically on arrival. '
-          + 'Adding someone to the Talent Pool is always your decision.',
+        sub: 'CVs emailed to the careers mailbox. Choose which are worth reading '
+          + 'before any are parsed; adding someone to the Talent Pool stays your decision.',
       }),
 
       /* The operational header: the four facts somebody needs before they trust
@@ -159,7 +212,7 @@
             h('strong', null, when(conn.lastSuccessfulSyncAt))),
           h('div', { className: 'cvi-status-item' },
             h('span', { className: 'cvi-status-k' }, 'Parsing'),
-            h('strong', null, 'Automatic on arrival')),
+            h('strong', null, 'On request, by selection')),
           mayAdmin && h('div', { className: 'cvi-status-actions' },
             h('button', {
               className: 'btn btn-secondary btn-sm',
@@ -169,6 +222,61 @@
                 ? 'Fetch anything that has arrived since the last scan'
                 : 'Connect Microsoft 365 first, under Administration',
             }, busy ? 'Scanning…' : 'Scan inbox now')))),
+
+      /* Waiting to parse — the decision surface. Counts come from subject and
+         filename metadata the scan already has; no model call was made to
+         produce them, which is the whole point of showing them first. */
+      maySelect && h('section', { className: 'card', style: { marginBottom: 16 } },
+        h('div', { className: 'card-head' },
+          h('h3', null, 'Waiting to parse'),
+          h('div', { className: 'cvi-range' },
+            h('label', { className: 'cvi-range-label', htmlFor: 'cvi-days' }, 'Period'),
+            h('select', {
+              id: 'cvi-days', value: days, disabled: busy,
+              onChange: (e) => setDays(Number(e.target.value)),
+            },
+            h('option', { value: 1 }, 'Last 24 hours'),
+            h('option', { value: 7 }, 'Last 7 days'),
+            h('option', { value: 30 }, 'Last 30 days'),
+            h('option', { value: 90 }, 'Last 90 days')),
+            h('button', {
+              className: 'btn btn-secondary btn-sm', onClick: discover,
+              disabled: busy || conn.status !== 'CONNECTED',
+            }, busy ? 'Reading mailbox…' : 'Refresh from mailbox'))),
+        h('div', { className: 'card-pad' },
+          !waiting ? h('p', { className: 'muted', style: { margin: 0 } }, 'Loading…')
+            : waiting.length === 0
+              ? h('p', { className: 'muted', style: { margin: 0 } },
+                'Nothing waiting. Choose a period and select Refresh from mailbox to see what has arrived. '
+                + 'Reading the mailbox does not parse anything.')
+              : h('div', null,
+                h('ul', { className: 'cvi-groups' }, waiting.map((g) => h('li', { key: g.category },
+                  h('label', { className: 'cvi-group' },
+                    h('input', {
+                      type: 'checkbox', checked: picked.has(g.category), disabled: busy,
+                      onChange: () => toggle(g.category),
+                    }),
+                    h('span', { className: 'cvi-group-name' }, g.category),
+                    h('span', { className: 'cvi-group-count' }, String(g.count)))))),
+                h('div', { className: 'cvi-parsebar' },
+                  h('span', { className: 'cvi-selected' },
+                    picked.size === 0
+                      ? 'Nothing selected'
+                      : `${selectedCount} CV${selectedCount === 1 ? '' : 's'} selected`
+                        + (selectedCount > willParse ? ` — will read the newest ${willParse}` : '')),
+                  h('label', { className: 'cvi-range-label', htmlFor: 'cvi-cap' }, 'At most'),
+                  h('select', {
+                    id: 'cvi-cap', value: howMany, disabled: busy,
+                    onChange: (e) => setHowMany(Number(e.target.value)),
+                  },
+                  h('option', { value: 25 }, '25'),
+                  h('option', { value: 50 }, '50'),
+                  h('option', { value: 100 }, '100'),
+                  h('option', { value: 200 }, '200')),
+                  h('button', {
+                    className: 'btn', onClick: parseSelected,
+                    disabled: busy || picked.size === 0,
+                  }, busy ? 'Reading…' : 'Parse selected CVs'))))),
 
       conn.status !== 'CONNECTED' && h('div', { className: 'notice notice-warn', style: { marginBottom: 16, padding: '12px 16px' } },
         h('p', { style: { margin: 0 } },

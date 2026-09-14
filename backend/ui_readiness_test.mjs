@@ -10,6 +10,7 @@ const publicDir = path.resolve(here, '../frontend/public');
 const app = fs.readFileSync(path.join(publicDir, 'app.jsx'), 'utf8');
 const css = fs.readFileSync(path.join(publicDir, 'arabtec-design-system.css'), 'utf8');
 const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
+const responsiveCss = fs.readFileSync(path.join(publicDir, 'arabtec-responsive.css'), 'utf8');
 const defaults = fs.readFileSync(path.join(here, 'src/lib/permissions.js'), 'utf8');
 const schema = fs.readFileSync(path.join(here, 'src/lib/schema.js'), 'utf8');
 const readinessCss = css.slice(css.indexOf('16. UI READINESS RELEASE'));
@@ -119,6 +120,24 @@ check('a failed refetch reports without replacing usable content',
   app.includes('function RefetchError')
   && (app.match(/loadError && (data|offers|users) \? <RefetchError/g) || []).length >= 3
   && (app.match(/loadError && !(data|offers|users) \?/g) || []).length >= 3);
+
+/* ---------------------------------------------------------------------------
+   Same-purpose controls share their typography.
+
+   "Add manually" rendered at 11.5px beside "Bulk Upload CVs", "Parse CV" and
+   "Scan CV Inbox" at 14px — one label visibly smaller than the three actions
+   next to it, in the same row, doing the same kind of job. Two separate causes,
+   both removed: an inline `style={{ fontSize: 11.5 }}` on the button, and an
+   unexplained `.page-head:has(+ .ask-bar) .btn-ghost { font-size: 13.5px }` in
+   the reflow layer, which shrank ghost buttons for that one page layout.
+
+   Emphasis on a button is carried by fill and border, not by size.
+   ------------------------------------------------------------------------ */
+check('no control carries an inline font-size',
+  !/<(?:button|select|input)[^>]*fontSize/.test(app));
+check('ghost buttons are not shrunk relative to their action row',
+  !/\.btn-ghost\s*\{[^}]*font-size/.test(responsiveCss)
+  && !/:has\(\+ \.ask-bar\) \.btn-ghost \{\s*font-size/.test(responsiveCss));
 
 console.log(`\n=== UI READINESS: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
