@@ -43,7 +43,11 @@ const roleRow = app.slice(app.indexOf('function RoleRow'), app.indexOf('// Small
 
 const versions = [...html.matchAll(/\?v=([\w-]+)/g)].map((match) => match[1]);
 check('all deployed UI assets share one cache version', versions.length >= 7 && new Set(versions).size === 1);
-check('reflow stylesheet is the last product CSS linked', html.lastIndexOf('rel="stylesheet"') === html.indexOf('rel="stylesheet" href="/arabtec-responsive.css?'));
+// The last-loaded sheet is the one that wins a tie. That is now the phone
+// presentation, with the reflow layer immediately before it.
+check('phone stylesheet is the last product CSS linked, reflow immediately before it',
+  html.lastIndexOf('rel="stylesheet"') === html.indexOf('rel="stylesheet" href="/arabtec-mobile.css?')
+  && html.indexOf('/arabtec-responsive.css?') < html.indexOf('/arabtec-mobile.css?'));
 check('authenticated shell has a render recovery boundary', app.includes('<AppErrorBoundary key={user.id}') && app.includes("console.error('ui.render_failed'"));
 check('shared modal binds dialog semantics and keyboard handler', sharedModal.includes('ref={dialogRef}') && sharedModal.includes('role="dialog" aria-modal="true" aria-labelledby={titleId}') && sharedModal.includes('onKeyDown={onDialogKeyDown}'));
 check('candidate drawer binds dialog semantics and keyboard handler', candidateDrawer.includes('ref={dialogRef}') && candidateDrawer.includes('role="dialog" aria-modal="true" aria-labelledby={titleId}') && candidateDrawer.includes('onKeyDown={onDialogKeyDown}'));

@@ -1,7 +1,7 @@
 // Regression guard for the static component gallery (UI Step 10).
 //
 // component-gallery.html is a checked-in, no-build reference page: it loads
-// the five real production stylesheets and shows every component family in
+// the six real production stylesheets and shows every component family in
 // its real states, so a reviewer (or a future change) can see the actual
 // rendered system without spinning up Storybook — which this app deliberately
 // does not have (no bundler; app.jsx is compiled in-browser by vendored
@@ -46,7 +46,7 @@ function stylesheetHrefs(html) {
 
 const PRODUCTION_SHEETS = [
   'styles.css', 'arabtec-approved-ui.css', 'arabtec-design-system.css',
-  'claude-system.css', 'arabtec-responsive.css',
+  'claude-system.css', 'arabtec-responsive.css', 'arabtec-mobile.css',
 ];
 
 /* ---------------------------------------------------------------------------
@@ -60,17 +60,17 @@ const indexHtml = fs.readFileSync(indexPath, 'utf8');
 const galleryHtml = fs.readFileSync(galleryPath, 'utf8');
 
 /* ---------------------------------------------------------------------------
-   Stylesheets: same five, same order, same cache-bust token as index.html.
+   Stylesheets: same six, same order, same cache-bust token as index.html.
    This is the real regression this suite exists to catch.
    ------------------------------------------------------------------------ */
-check('index.html itself still loads exactly the five expected stylesheets, in order (fixture sanity)', () => {
+check('index.html itself still loads exactly the six expected stylesheets, in order (fixture sanity)', () => {
   const hrefs = stylesheetHrefs(indexHtml);
   const names = hrefs.map((h) => h.split('?')[0].replace(/^\//, ''));
   assert.deepEqual(names, PRODUCTION_SHEETS,
     `if this fails, PRODUCTION_SHEETS in this test is out of date with index.html, not the gallery`);
 });
 
-check('the gallery loads exactly the five production stylesheets, in the same order as index.html', () => {
+check('the gallery loads exactly the six production stylesheets, in the same order as index.html', () => {
   const hrefs = stylesheetHrefs(galleryHtml);
   const names = hrefs.map((h) => h.split('?')[0].replace(/^\//, ''));
   assert.deepEqual(names, PRODUCTION_SHEETS,
@@ -101,7 +101,7 @@ check('every gallery stylesheet link carries the SAME ?v= token index.html uses'
   assert.ok(token, 'index.html stylesheet links must carry a ?v= token');
 
   const galleryHrefs = stylesheetHrefs(galleryHtml);
-  assert.equal(galleryHrefs.length, 5, 'expected 5 stylesheet links in the gallery');
+  assert.equal(galleryHrefs.length, 6, 'expected 6 stylesheet links in the gallery');
   for (const href of galleryHrefs) {
     const t = href.split('?v=')[1];
     assert.equal(t, token, `${href} does not carry the current cache-bust token ${token} — the gallery has drifted from index.html`);
@@ -227,13 +227,13 @@ check('the gallery\'s own <style> block declares no font-size', () => {
     'sanity: the mutation actually introduces a font-size declaration');
 });
 
-// The five production stylesheets already hardcode plenty of literal colours
+// The six production stylesheets already hardcode plenty of literal colours
 // themselves (e.g. `color: #fff` on ~100 button/badge rules) — copying one of
 // those EXACT literals is transcription, not invention (this is exactly how
 // the pseudo-class preview block reproduces the real `:hover` declaration for
 // `.btn`, which itself hardcodes `color: #fff`). What must never appear is a
 // colour literal that is NOT already present somewhere in the product's own
-// five stylesheets — that would be the gallery choosing its own colour.
+// six stylesheets — that would be the gallery choosing its own colour.
 const productCss = PRODUCTION_SHEETS.map((f) => fs.readFileSync(publicDir + f, 'utf8')).join('\n');
 function literalColorTokens(css) {
   const out = new Set();
@@ -256,7 +256,7 @@ function findForeignColorLiterals(html) {
 check('the gallery\'s own <style> block introduces no colour literal that is foreign to the product stylesheets', () => {
   const offenders = findForeignColorLiterals(galleryHtml);
   assert.deepEqual(offenders, [],
-    `found a colour literal in the gallery's own CSS that does not appear anywhere in the five product stylesheets (should be a var() token, or an EXACT copy of an existing literal, instead): ${offenders.join(' | ')}`);
+    `found a colour literal in the gallery's own CSS that does not appear anywhere in the six product stylesheets (should be a var() token, or an EXACT copy of an existing literal, instead): ${offenders.join(' | ')}`);
 
   // Mutation check: a brand-new hex colour must be caught.
   const mutated = galleryHtml.replace('</style>', '  .gallery-divider { border-top-color: #ff00ff; }\n</style>');
@@ -330,7 +330,7 @@ console.log('NOTE: this suite proves the gallery\'s markup/link/style CONTRACT. 
 console.log('NOT prove pixel geometry, real :hover/:focus/:active rendering, or that no');
 console.log('component overflows a real viewport — that was verified once by hand in a');
 console.log('browser and is not re-checked by this process. That check, at');
-console.log('1440/768/390: all five product stylesheets loaded at the same ?v=');
+console.log('1440/768/390: all six product stylesheets loaded at the same ?v=');
 console.log('token; page horizontal overflow 0 at every width (scrollWidth ===');
 console.log('clientWidth); buttons 40px on desktop and 44px on mobile. The only');
 console.log('boxes wider than the viewport are the data table and the CV table,');

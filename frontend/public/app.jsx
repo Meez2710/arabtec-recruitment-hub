@@ -780,12 +780,12 @@ function navCount(key, counts) {
   const d = counts.dash;
   if (key === 'candidateReview') return counts.intakes || null;
   if (!d) return null;
-  if (key === 'interviews') return d.kpis.upcomingInterviews || null;
+  if (key === 'interviews') return d.kpis?.upcomingInterviews || null;
   if (key === 'offers') {
     const n = (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((s, o) => s + o.count, 0);
     return n || null;
   }
-  if (key === 'requests') return d.kpis.openRequests || null;
+  if (key === 'requests') return d.kpis?.openRequests || null;
   return null;
 }
 
@@ -1106,6 +1106,160 @@ function AnyhelpDock({ user, route, context, onNavigate }) {
   );
 }
 
+/* ============================ MOBILE TEMPLATE ============================
+   A dedicated phone presentation, not a reflowed desktop one. It renders
+   INSTEAD of the desktop shell — never alongside it — so there is exactly one
+   set of interactive controls in the DOM: no duplicate focus targets, no
+   duplicate ids, no second copy of a menu to keep in sync.
+
+   Everything it shows comes from the same props the desktop shell already
+   has: the same permission-filtered nav list, the same `go()`, the same work
+   counts, the same user and branding. The phone chrome owns no data and issues
+   no request of its own; see the note in `Shell` for what a live resize across
+   the breakpoint does cost.
+
+   Arabtec identity is unchanged: the same Logo, the same tokens, the same
+   type. The composition is what is phone-specific.
+   ====================================================================== */
+function useIsPhone(query = '(max-width: 900px)') {
+  const get = () => (typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : false);
+  const [isPhone, setIsPhone] = useState(get);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(query);
+    const onChange = (e) => setIsPhone(e.matches);
+    setIsPhone(mq.matches);
+    // Safari < 14 only has the deprecated listener pair.
+    if (mq.addEventListener) { mq.addEventListener('change', onChange); return () => mq.removeEventListener('change', onChange); }
+    mq.addListener(onChange); return () => mq.removeListener(onChange);
+  }, [query]);
+  return isPhone;
+}
+
+/* The drawer owns focus while it is open: Escape closes it, focus moves in on
+   open and returns to the trigger on close, and nothing behind it is
+   reachable. When closed it is not rendered at all, which is the strongest
+   form of "the inactive presentation is not focusable". */
+function MobileDrawer({ open, onClose, nav, route, counts, onGo, user, roleCode, branding, onLogout, onChangePassword }) {
+  const panelRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const first = panelRef.current && panelRef.current.querySelector('button, a[href]');
+    if (first) first.focus();
+    function onKey(e) {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+      const items = [...panelRef.current.querySelectorAll('button, a[href], input, select, textarea')]
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!items.length) return;
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+      else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="mdrawer-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="mdrawer" ref={panelRef} role="dialog" aria-modal="true" aria-label="Navigation">
+        <div className="mdrawer-head">
+          <span className="side-mark"><Logo size={30} /></span>
+          <span className="side-txt">
+            <strong>{branding?.app_name || 'Arabtec'}</strong>
+            <span>Recruitment Hub</span>
+          </span>
+          <button className="icon-btn mdrawer-close" onClick={onClose} aria-label="Close navigation">
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+
+        <div className="mdrawer-who">
+          <span className="avatar">{initials(user.fullName)}</span>
+          <span className="mdrawer-who-txt">
+            <strong>{user.fullName}</strong>
+            <span>{ROLE_NAMES[roleCode] || roleCode}</span>
+          </span>
+        </div>
+
+        <nav className="mdrawer-nav" aria-label="Sections">
+          {nav.map((n, i) => {
+            if (n.section) return <div key={'s' + i} className="mdrawer-section">{n.section}</div>;
+            const c = navCount(n.key, counts);
+            return (
+              <button key={n.key} className={'mdrawer-item' + (route === n.key ? ' active' : '')}
+                onClick={() => onGo(n.key)} aria-current={route === n.key ? 'page' : undefined}>
+                <span className="mdrawer-ico"><Icon name={n.icon} size={18} /></span>
+                <span className="mdrawer-label">{n.label}</span>
+                {c ? <span className="nav-count">{c}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="mdrawer-foot">
+          <button className="mdrawer-foot-btn" onClick={onChangePassword}>
+            <Icon name="shield" size={16} /> Change password
+          </button>
+          <button className="mdrawer-foot-btn" onClick={onLogout}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Compact application bar: who/where, then the two things a recruiter reaches
+   for on a phone (search and notifications). The page's own title lives in the
+   page header below it, not here, so the bar stays one line at 360px. */
+function MobileAppBar({ title, onMenu, onSearch, onGo }) {
+  return (
+    <header className="mtopbar">
+      <button className="mtopbar-btn" onClick={onMenu} aria-label="Open navigation">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+      </button>
+      <span className="mtopbar-title">{title}</span>
+      <button className="mtopbar-btn" onClick={onSearch} aria-label="Search candidates">
+        <Icon name="search" size={18} />
+      </button>
+      <NotificationBell onNavigate={onGo} />
+    </header>
+  );
+}
+
+/* Bottom tab bar: the sections this persona actually works in, one tap each.
+   "More" opens the drawer rather than a second sheet, so there is one menu on
+   a phone, not two lists of the same links that can disagree. */
+function MobileTabBar({ items, route, counts, onGo, onMore, moreOpen }) {
+  const SHORT = { dashboard: 'Home', candidates: 'Talent', requests: 'Requests', candidateReview: 'Review', interviews: 'Interviews', offers: 'Offers', cvIntake: 'CV Inbox' };
+  return (
+    <nav className="mtabbar" aria-label="Primary">
+      {items.map((n) => {
+        const c = navCount(n.key, counts);
+        return (
+          <button key={n.key} className={'mtab' + (route === n.key ? ' active' : '')}
+            onClick={() => onGo(n.key)} aria-current={route === n.key ? 'page' : undefined}>
+            <span className="mtab-ico">
+              <Icon name={n.icon} size={20} />
+              {c ? <span className="mtab-dot" aria-hidden="true" /> : null}
+            </span>
+            <span className="mtab-label">{SHORT[n.key] || n.label}</span>
+          </button>
+        );
+      })}
+      <button className={'mtab' + (moreOpen ? ' active' : '')} onClick={onMore} aria-expanded={moreOpen} aria-label="More sections">
+        <span className="mtab-ico">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
+        </span>
+        <span className="mtab-label">More</span>
+      </button>
+    </nav>
+  );
+}
 /* ----------------------------- Shell ----------------------------- */
 function Shell({ user, branding, onLogout, refreshBranding }) {
   // Self-service password change, reachable from the user menu.
@@ -1117,12 +1271,13 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   // filter from a previous jump can never leak into an unrelated visit.
   const [routeParams, setRouteParams] = useState(null);
   const [collapsed, setCollapsed] = useState(branding?.sidebar_mode === 'collapsed');
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);   // drawer, <=900px
-  const [moreOpen, setMoreOpen] = useState(false);             // bottom-sheet "More"
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);   // the phone drawer
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const density = branding?.table_density || 'comfortable';
   const [counts] = useWorkCounts(user);
+  // Drives which presentation renders. One boolean, one source of truth.
+  const isPhone = useIsPhone();
   const persona = personaFor(user);
   const roleCode = primaryRole(user);
 
@@ -1156,7 +1311,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   // nothing, which clears whatever the previous jump left behind.
   const go = useCallback((r, params = null) => {
     if (!confirmPageExit()) return false;
-    setRoute(r); setRouteParams(params); setMobileNavOpen(false); setMoreOpen(false);
+    setRoute(r); setRouteParams(params); setMobileNavOpen(false);
   }, []);
 
   // Accept OAuth deep links and in-app settings links through the same guarded
@@ -1242,10 +1397,105 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     meta: ROLE_SCOPE[roleCode] || 'Access follows your role.',
   };
 
+  /* Everything below is shared by both presentations and defined ONCE. These
+     are singletons by contract: two CvReviewHosts would open two panels on one
+     `ats:open-cv-review` event, and two CommandPalettes would answer one
+     shortcut twice. Defining them here rather than in each branch is what makes
+     "one of each" a property of the code, not of remembering to keep two
+     branches in step. */
+  const overlays = (
+    <>
+      {pwdOpen && (
+        <Modal title="Change password" onClose={() => setPwdOpen(false)}>
+          <ChangePasswordForm onDone={() => setPwdOpen(false)} onCancel={() => setPwdOpen(false)} />
+        </Modal>
+      )}
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onPick={(c) => {
+          // Hand the id to the Talent Pool, then navigate. CandidatesPage picks
+          // this up on mount (pending id) or live (event) if already mounted.
+          window.__atsPendingCandidateId = c.id;
+          setPaletteOpen(false);
+          go('candidates');
+          window.dispatchEvent(new CustomEvent('ats:open-candidate', { detail: { id: c.id } }));
+        }}
+      />
+
+      {/* One CV review panel for the whole app; every entry point reaches it
+          through the `ats:open-cv-review` event rather than owning its state. */}
+      <CvReviewHost user={user} />
+
+      <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
+    </>
+  );
+
+  /* ONE presentation at a time.
+
+     Below the breakpoint the desktop sidebar, topbar and bottom nav are not
+     rendered at all — not hidden with CSS. Hiding them would leave a second
+     full set of buttons, menus and dialogs in the DOM: duplicate focus targets
+     for a keyboard, duplicate ids, and two copies of a menu to keep in sync.
+
+     Everything the phone shell shows comes from the state this component
+     already holds: the same permission-filtered `visibleNav`, the same `go`,
+     the same work counts, the same user. Nothing here fetches: the phone chrome
+     reads what the shell already has, so it adds no request of its own.
+
+     Measured caveat, stated rather than assumed: the two chromes are different
+     element trees, so React cannot reconcile the <main> subtree across them.
+     Crossing the breakpoint on a LIVE window therefore keeps the shell (route,
+     work counts, session) but remounts the page, which reloads its own list —
+     seven requests on Hiring Requests, none of them the shell's. A phone never
+     crosses 900px; only a desktop window being dragged does, and a fresh load
+     of the page you are already on is the right outcome there. */
+  if (isPhone) {
+    return (
+      <div className="shell shell-phone">
+        <MobileAppBar
+          title={(NAV.find((n) => n.key === route) || {}).label || 'Arabtec'}
+          onMenu={() => setMobileNavOpen(true)}
+          onSearch={() => setPaletteOpen(true)}
+          onGo={go}
+        />
+
+        <MobileDrawer
+          open={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
+          nav={visibleNav}
+          route={route}
+          counts={counts}
+          onGo={(key) => { setMobileNavOpen(false); go(key); }}
+          user={user}
+          roleCode={roleCode}
+          branding={branding}
+          onLogout={() => { if (confirmPageExit()) onLogout(); }}
+          onChangePassword={() => { setMobileNavOpen(false); setPwdOpen(true); }}
+        />
+
+        <main id="main-content" className={'content content-phone density-' + density} tabIndex="-1">
+          <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
+        </main>
+
+        <MobileTabBar
+          items={primaryMobile}
+          route={route}
+          counts={counts}
+          onGo={go}
+          onMore={() => setMobileNavOpen(true)}
+          moreOpen={mobileNavOpen}
+        />
+
+        {overlays}
+      </div>
+    );
+  }
+
   return (
     <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '264px' }}>
-      {mobileNavOpen && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
-      <aside className={'sidebar' + (collapsed ? ' collapsed' : '') + (mobileNavOpen ? ' mobile-open' : '')}>
+      <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
         <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
           <span className="side-mark"><Logo size={30} /></span>
           {!collapsed && (
@@ -1328,58 +1578,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
           <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
         </main>
 
-        {pwdOpen && (
-          <Modal title="Change password" onClose={() => setPwdOpen(false)}>
-            <ChangePasswordForm onDone={() => setPwdOpen(false)} onCancel={() => setPwdOpen(false)} />
-          </Modal>
-        )}
-
-        <CommandPalette
-          open={paletteOpen}
-          onClose={() => setPaletteOpen(false)}
-          onPick={(c) => {
-            // Hand the id to the Talent Pool, then navigate. CandidatesPage picks
-            // this up on mount (pending id) or live (event) if already mounted.
-            window.__atsPendingCandidateId = c.id;
-            setPaletteOpen(false);
-            go('candidates');
-            window.dispatchEvent(new CustomEvent('ats:open-candidate', { detail: { id: c.id } }));
-          }}
-        />
       </div>
 
-      {/* Five-item bottom navigation. Below 900px this replaces the sidebar; the
-          sidebar itself becomes the drawer behind the menu button. */}
-      <nav className="mobile-nav" aria-label="Primary">
-        {primaryMobile.map((n) => (
-          <button key={n.key} className={route === n.key ? 'active' : ''} onClick={() => go(n.key)}
-            aria-current={route === n.key ? 'page' : undefined}>
-            <Icon name={n.icon} size={18} />
-            <span>{({ dashboard: 'Home', candidates: 'Talent', requests: 'Requests' })[n.key] || n.label}</span>
-          </button>
-        ))}
-        <button className={moreOpen ? 'active' : ''} onClick={() => setMoreOpen((o) => !o)} aria-expanded={moreOpen}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
-          <span>More</span>
-        </button>
-      </nav>
-
-      {moreOpen && (
-        <div className="more-sheet" role="dialog" aria-label="All sections">
-          <div className="nav-section">All available sections</div>
-          <div className="more-grid">
-            {navItems.map((n) => (
-              <button key={n.key} className={route === n.key ? 'active' : ''} onClick={() => go(n.key)}>{n.label}</button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* One CV review panel for the whole app; every entry point reaches it
-          through the `ats:open-cv-review` event rather than owning its state. */}
-      <CvReviewHost user={user} />
-
-      <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
+      {overlays}
     </div>
   );
 }
@@ -4227,12 +4428,19 @@ function RequestTicketCard({ r, onOpen }) {
 function needsAction(r) { return (r.health || {}).level === 'red' || (r.health || {}).level === 'amber' || !!r.slaBreached; }
 
 function RequestsPage({ user, initialFilters }) {
+  const isPhone = useIsPhone();
   const toast = useToast();
   const [loadError, setLoadError] = useState(null);
   const [data, setData] = useState(null);
   // Approved layout is the table: it is what a recruiter scans down. Cards stay
   // one click away for people who prefer them.
-  const [view, setView] = useState('table'); // table | cards
+  //
+  // On a phone that ordering inverts. A stacked table row is a 390px-tall
+  // column of LABEL/value pairs — three rows to a screen — while a card is the
+  // same record in a shape built for the width. The toggle is unchanged and the
+  // choice still sticks; only the first view a phone lands on differs, and only
+  // at mount, so nobody's chosen view is yanked away by a rotate.
+  const [view, setView] = useState(() => (isPhone ? 'cards' : 'table')); // table | cards
   // `owner`, `attention` and `openOnly` are NOT sent to the API — `owner` maps
   // onto the server's `ownerId` param (see the outgoing params below); `attention`
   // and `openOnly` are judged from fields every row already carries, the same way
@@ -5388,10 +5596,12 @@ function MatchScore({ score }) {
 }
 
 function RequestPipeline({ request, user, btns }) {
+  const isPhone = useIsPhone();
   const toast = useToast();
   const [apps, setApps] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const [view, setView] = useState('kanban'); // kanban | list | compact
+  // Same reason as the Talent Pool: a board does not fit a phone, a list does.
+  const [view, setView] = useState(() => (isPhone ? 'list' : 'kanban')); // kanban | list | compact
   const [selected, setSelected] = useState(new Set());
   const [quickView, setQuickView] = useState(null);
   const [moveModal, setMoveModal] = useState(null); // {appIds, toStatus?}
@@ -6748,6 +6958,7 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
 }
 
 function CandidatesPage({ user, onNavigate, initialFilters }) {
+  const isPhone = useIsPhone();
   const toast = useToast();
   const [candidates, setCandidates] = useState(null);
   // `setFiltersRaw` is referenced exactly once — by the `setFilters` wrapper
@@ -6817,7 +7028,9 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   }, [bgParseJob?.jobId, bgParseJob?.status, parsingCv, toast]);
 
   const [importOpen, setImportOpen] = useState(false);
-  const [view, setView] = useState('pipeline'); // pipeline | cards | table
+  // A pipeline board is columns side by side: on a phone that is a horizontal
+  // scroll through mostly-empty stages. Cards are the phone's first view.
+  const [view, setView] = useState(() => (isPhone ? 'cards' : 'pipeline')); // pipeline | cards | table
   const [profileTab, setProfileTab] = useState(null);
   const [profileFocusPrior, setProfileFocusPrior] = useState(false);
   const CAND_FILTER_KEYS = ['q', 'source', 'location', 'minExp', 'maxExp', 'noticePeriod',

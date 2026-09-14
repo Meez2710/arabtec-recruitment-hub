@@ -1,0 +1,349 @@
+/* ==========================================================================
+   Arabtec Recruitment Hub — phone presentation
+   --------------------------------------------------------------------------
+   The styles for the dedicated phone shell (`MobileAppBar`, `MobileTabBar`,
+   `MobileDrawer`). It is a separate presentation, not a reflowed desktop one,
+   and `Shell` renders it INSTEAD of the desktop chrome — so none of these
+   classes exist in the DOM on desktop.
+
+   That is why almost nothing here is inside a media query: the selectors are
+   scoped to classes only the phone shell emits. A media query would give us a
+   second breakpoint that could drift out of step with `useIsPhone()`; keying on
+   the class means the CSS and the JS can never disagree about which
+   presentation is on screen.
+
+   Loads after arabtec-responsive.css, which keeps doing what it is good at —
+   reflowing page CONTENT (tables into cards at 640px). This file owns the
+   CHROME.
+   ========================================================================== */
+
+:root {
+  --ats-mtop-h: 56px;                 /* app bar */
+  --ats-mtab-h: 62px;                 /* tab bar, excluding the safe area */
+  --ats-msafe: env(safe-area-inset-bottom, 0px);
+}
+
+/* ------------------------------------------------------------------ shell */
+.shell-phone {
+  display: block;
+  min-height: 100vh;
+  min-height: 100dvh;                 /* survives the URL bar collapsing */
+  background: var(--app-bg, #F4F5F7);
+}
+
+/* The page scrolls; the two bars do not. Top padding clears the app bar,
+   bottom padding clears the tab bar, the FAB and the home indicator, so the
+   last row of every list stays reachable. */
+.shell-phone .content,
+.shell-phone .content.content-phone {
+  margin-left: 0;
+  padding: 14px 14px calc(var(--ats-mtab-h) + var(--ats-msafe) + var(--ats-fab-size, 52px) + 22px);
+  padding-top: calc(var(--ats-mtop-h) + 14px);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;                 /* a wide table scrolls in its own wrap */
+}
+
+/* -------------------------------------------------------------- app bar */
+.mtopbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 72;
+  height: var(--ats-mtop-h);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, .97);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+  box-sizing: border-box;
+}
+.mtopbar-btn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;                       /* full tap target, not the icon's size */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.mtopbar-btn:active { background: var(--surface-3, #ECEEF0); }
+.mtopbar-btn:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.mtopbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 2px;
+}
+/* The bell is a shared component; give it the same 44px target here, and let
+   its panel use the screen width instead of hanging off the right edge. */
+.mtopbar .icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+.mtopbar .notif { flex: 0 0 auto; }
+.mtopbar .notif-panel {
+  position: fixed;
+  top: calc(var(--ats-mtop-h) + 6px);
+  left: 8px;
+  right: 8px;
+  width: auto;
+  max-width: none;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* -------------------------------------------------------------- tab bar */
+.mtabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 70;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;             /* 4 or 6 tabs share the width evenly */
+  align-items: stretch;
+  height: calc(var(--ats-mtab-h) + var(--ats-msafe));
+  padding-bottom: var(--ats-msafe);
+  background: rgba(255, 255, 255, .97);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+.mtab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.15;
+  cursor: pointer;
+}
+.mtab-ico {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* A dot, not a number: five counts across 360px cannot be read anyway, and the
+   drawer shows the real figures. */
+.mtab-dot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2px #fff;
+}
+.mtab-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mtab.active { color: var(--green-700); font-weight: 700; }
+.mtab.active .mtab-ico { color: var(--green-700); }
+.mtab:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; border-radius: 10px; }
+
+/* --------------------------------------------------------------- drawer */
+.mdrawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;                        /* above both bars */
+  background: rgba(20, 22, 24, .44);
+  display: flex;
+}
+.mdrawer {
+  width: min(84vw, 320px);
+  max-width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #fff);
+  border-right: 1px solid var(--line);
+  box-shadow: 0 0 40px rgba(0, 0, 0, .18);
+  animation: mdrawer-in .18s ease-out;
+}
+@keyframes mdrawer-in { from { transform: translateX(-14px); opacity: .6; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .mdrawer { animation: none; } }
+
+.mdrawer-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 10px 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.mdrawer-head .side-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.mdrawer-head .side-txt strong { font-size: 14px; color: var(--ink); }
+.mdrawer-head .side-txt span { font-size: 11.5px; color: var(--muted); }
+.mdrawer-close { margin-left: auto; width: 40px; height: 40px; }
+
+.mdrawer-who {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2, #F4F5F7);
+}
+.mdrawer-who-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.mdrawer-who-txt strong { font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mdrawer-who-txt span { font-size: 11.5px; color: var(--muted); }
+
+.mdrawer-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 8px 14px;
+}
+.mdrawer-section {
+  padding: 14px 8px 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.mdrawer-item {
+  width: 100%;
+  min-height: 46px;                   /* comfortable one-handed target */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.mdrawer-item + .mdrawer-item { margin-top: 2px; }
+.mdrawer-ico { flex: 0 0 auto; display: inline-flex; color: var(--muted); }
+.mdrawer-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mdrawer-item .nav-count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--green-50);
+  color: var(--green-700);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.mdrawer-item:active { background: var(--surface-3, #ECEEF0); }
+.mdrawer-item.active { background: var(--green-50); color: var(--green-700); font-weight: 700; }
+.mdrawer-item.active .mdrawer-ico { color: var(--green-700); }
+.mdrawer-item:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+
+.mdrawer-foot {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+  padding: 10px 10px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  border-top: 1px solid var(--line);
+}
+.mdrawer-foot-btn {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-soft, #4A4641);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.mdrawer-foot-btn:active { background: var(--surface-3, #ECEEF0); }
+.mdrawer-foot-btn:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+
+/* ------------------------------------------------- floating help launcher */
+/* Sits above the tab bar at every phone width. The reflow layer already does
+   this below 640px; this keeps it true in the 641-900px band, where the phone
+   chrome is on screen but that media query is not. */
+.shell-phone .anyhelp-fab {
+  right: var(--ats-fab-gutter, 12px);
+  bottom: calc(var(--ats-mtab-h) + var(--ats-msafe) + var(--ats-fab-gutter, 12px));
+}
+.shell-phone .anyhelp-dock {
+  bottom: calc(var(--ats-mtab-h) + var(--ats-msafe) + var(--ats-fab-size, 52px) + 18px);
+}
+
+/* A dialog covers the chrome rather than competing with it. */
+body:has(.modal-overlay) .mtabbar,
+body:has(.intake-modal-backdrop) .mtabbar,
+body:has(.mdrawer-scrim) .mtabbar { display: none; }
+
+/* ------------------------------------------------------- page furniture */
+/* The page header stacks on a phone: title, then its actions full width. */
+.shell-phone .page-head,
+.shell-phone .dash-head {
+  display: block;
+}
+.shell-phone .page-head-actions,
+.shell-phone .dash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.shell-phone .page-head-actions > .btn,
+.shell-phone .dash-actions > .btn {
+  flex: 1 1 auto;
+  min-height: 40px;
+}
+/* Filter bars and toolbars wrap instead of scrolling sideways. */
+.shell-phone .toolbar,
+.shell-phone .filters,
+.shell-phone .filter-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.shell-phone .toolbar > *,
+.shell-phone .filters > * { min-width: 0; }
+/* Modals become near-full-screen sheets: a centred 640px dialog on a 360px
+   screen leaves no room for its own content. Scoped to the phone shell, so a
+   desktop dialog keeps the width it was designed at. */
+.shell-phone .modal-overlay { padding: 10px; align-items: flex-end; }
+.shell-phone .modal-overlay .modal {
+  width: 100%;
+  max-width: 100%;
+  max-height: calc(100dvh - 20px);
+  margin: 0;
+}

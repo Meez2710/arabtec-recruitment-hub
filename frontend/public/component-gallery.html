@@ -5,20 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Arabtec Recruitment Hub — Component Gallery</title>
 
-<!-- The five production stylesheets, in the EXACT order index.html loads them,
+<!-- The six production stylesheets, in the EXACT order index.html loads them,
      with the SAME ?v= cache-bust token. This page must never diverge from
      that order/token: it exists to show the product's real styling, not a
      copy of it. If you bump the token in index.html, bump it here too. -->
-<link rel="stylesheet" href="/styles.css?v=20260914b" />
-<link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260914b" />
-<link rel="stylesheet" href="/arabtec-design-system.css?v=20260914b" />
-<link rel="stylesheet" href="/claude-system.css?v=20260914b" />
-<link rel="stylesheet" href="/arabtec-responsive.css?v=20260914b" />
+<link rel="stylesheet" href="/styles.css?v=20260914g" />
+<link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260914g" />
+<link rel="stylesheet" href="/arabtec-design-system.css?v=20260914g" />
+<link rel="stylesheet" href="/claude-system.css?v=20260914g" />
+<link rel="stylesheet" href="/arabtec-responsive.css?v=20260914g" />
+<link rel="stylesheet" href="/arabtec-mobile.css?v=20260914g" />
 
 <style>
   /* This page adds NO colour, font-family or font-size of its own — every
      visual property below is either layout-only (display/gap/margin/padding/
-     grid/border-width) or a var(--token) reference into the five stylesheets
+     grid/border-width) or a var(--token) reference into the six stylesheets
      above. The gallery must show the product's real styling, never its own,
      so ui_gallery_test.mjs fails the build if a literal colour or a
      font-family/font-size declaration ever appears in this block. */
@@ -101,11 +102,11 @@
         <p><strong>Every element below is copied verbatim out of <code>app.jsx</code></strong> (or, where a
           component lives in <code>cv-intake.jsx</code>, transcribed from what it renders). When a component's
           markup changes in the product, this page must be updated in the same change — that discipline
-          is checked by <code>backend/ui_gallery_test.mjs</code>, which pins the five stylesheets and their cache token and verifies every class shown below is still rendered somewhere in the product's JSX. It cannot tell you the markup still matches &mdash; only that the class names have not been renamed out from under this page; keep the markup in step by hand. It asserts every class name below
-          still exists and that this page loads the same five stylesheets, in the same order, at the
+          is checked by <code>backend/ui_gallery_test.mjs</code>, which pins the six stylesheets and their cache token and verifies every class shown below is still rendered somewhere in the product's JSX. It cannot tell you the markup still matches &mdash; only that the class names have not been renamed out from under this page; keep the markup in step by hand. It asserts every class name below
+          still exists and that this page loads the same six stylesheets, in the same order, at the
           same cache-bust token as <code>index.html</code>.</p>
         <p class="muted">Loaded stylesheets: styles.css, arabtec-approved-ui.css, arabtec-design-system.css,
-          claude-system.css, arabtec-responsive.css — all at <code>?v=20260914b</code>.</p>
+          claude-system.css, arabtec-responsive.css, arabtec-mobile.css — all at <code>?v=20260914g</code>.</p>
       </div>
 
       <!-- ============================= BUTTONS ============================= -->
