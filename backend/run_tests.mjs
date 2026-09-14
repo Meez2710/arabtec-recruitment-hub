@@ -25,6 +25,8 @@ const SUITES = [
   'production_reset_test.mjs', // go-live reset clears the pipeline and keeps the company
   'auth_security_test.mjs',   // C1.1 rotation + C1.3 password policy + lockout
   'rate_limit_test.mjs',      // C1.4 global rate limiter
+  'cv_inbox_backfill_pg_test.mjs', // transactional migration under PostgreSQL semantics
+  'audit_regression_test.mjs', // role backfill, SMTP validation, image discovery and historical metadata
   'email_settings_test.mjs', // encrypted settings, draft test and RBAC
   'email_test.mjs',           // C2.2 email module (provider selection, dry-run)
   'microsoft_integration_test.mjs', // M365 delegated OAuth mailbox: connect, scan, intake, idempotency

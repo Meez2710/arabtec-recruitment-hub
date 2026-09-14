@@ -412,6 +412,7 @@ async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, 
       subject: message.subject ?? null,
       sender: message.from?.emailAddress?.address ?? null,
       category: classifySubject(message.subject ?? ''),
+      retryUnsupported: discoverOnly && verdict.accept,
     });
 
     // Seen before — by an earlier scan, by the overlap window, or by a restart.

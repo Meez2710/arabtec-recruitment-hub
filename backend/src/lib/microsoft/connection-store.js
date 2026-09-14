@@ -333,6 +333,24 @@ export function claimAttachment(record) {
   const at = nowISO();
   const existing = get('SELECT * FROM mailbox_ingestion WHERE dedup_key=?', [key]);
   if (existing) {
+    // Re-listing old mail must fill the metadata introduced by CV Inbox without
+    // downloading or parsing an already handled attachment again. Do not change
+    // updated_at here: it also serves as the PROCESSING lease timestamp.
+    run(`UPDATE mailbox_ingestion SET
+      subject=COALESCE(NULLIF(subject,''), ?),
+      sender=COALESCE(NULLIF(sender,''), ?),
+      category=COALESCE(NULLIF(category,''), ?)
+      WHERE dedup_key=?`, [record.subject ?? null, record.sender ?? null, record.category ?? null, key]);
+    // Only discovery opts into retrying files rejected by the old allow-list.
+    // The caller has already validated the current file type and size. Genuine
+    // duplicates and all other terminal outcomes remain terminal.
+    if (record.retryUnsupported && existing.status === 'SKIPPED'
+      && /^unsupported file type \./.test(existing.reason || '')) {
+      const changed = run("UPDATE mailbox_ingestion SET status='PROCESSING', reason=NULL, updated_at=? WHERE dedup_key=? AND status='SKIPPED' AND reason=?",
+        [at, key, existing.reason]);
+      if (!changed.changes) return { claimed: false, key, reason: 'already-processed' };
+      return { claimed: true, key, retried: true };
+    }
     if (existing.status !== 'PROCESSING') {
       return { claimed: false, key, reason: 'already-processed', row: existing };
     }
