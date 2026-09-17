@@ -1087,6 +1087,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .intake-queue { border-top-color: var(--at-action); }
 .intake-list-copy strong { font-size: 13px; }
 .intake-list-copy small { font-size: 11.5px; }
+/* Why this CV needs a person. It is the reason the row exists, so it is allowed
+   to wrap rather than being ellipsed away like the metadata line above it. */
+.intake-list-copy .intake-why {
+  margin-top: 2px;
+  color: var(--ink-soft);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
+}
 .intake-state, .preview-status-badge { font-size: 10.5px; }
 .intake-review-head p, .intake-back { font-size: 12.5px; }
 .intake-banner { font-size: 12.5px; line-height: 1.5; }

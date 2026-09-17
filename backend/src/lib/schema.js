@@ -679,6 +679,19 @@ export function ensureSchema() {
   addColumnIfMissing('candidate', 'parse_confidence', 'REAL');
   addColumnIfMissing('candidate', 'parsed_at', 'TEXT');
 
+  // Broad professional grouping, for SEARCH ONLY. Never a hiring-request match
+  // and never grounds for rejection: an accountant is a real hire for a
+  // construction company. Nullable, because every candidate created before this
+  // column existed is still a perfectly good candidate.
+  // See lib/cv-intake/auto-ingest.js for the buckets and how they are derived.
+  addColumnIfMissing('candidate', 'discipline_class', 'TEXT');
+
+  // Why an intake did NOT become a candidate on its own. Read by Candidate
+  // Review so a recruiter is told what needs their judgement instead of having
+  // to work it out from the document.
+  addColumnIfMissing('candidate_intake', 'auto_code', 'TEXT');
+  addColumnIfMissing('candidate_intake', 'classification', 'TEXT');
+
   // Indexes supporting server-side pagination, sorting and filtering on the
   // Talent Pool. Created idempotently; harmless if they already exist.
   for (const stmt of [

@@ -819,6 +819,14 @@ export const Candidates = {
     run('UPDATE candidate SET retention_until=? WHERE id=?', [due.toISOString(), id]);
     return this.byId(id);
   },
+  /* Broad professional grouping, for search only. Set after creation rather than
+     in create(): the column is nullable and search-only, so it must never be
+     able to fail the insert that makes the candidate exist. */
+  setDisciplineClass(id, disciplineClass) {
+    run('UPDATE candidate SET discipline_class=?, updated_at=? WHERE id=?',
+      [disciplineClass || null, nowISO(), id]);
+    return this.byId(id);
+  },
   // GDPR/PDPL — record or withdraw consent (lawful basis to hold/process this person's data).
   setConsent(id, { status, source, note }) {
     run('UPDATE candidate SET consent_status=?, consent_at=?, consent_source=?, consent_note=?, updated_at=? WHERE id=?',
@@ -932,6 +940,10 @@ export const Candidates = {
     if (f.tag) { sql += ' AND tags LIKE ?'; p.push(`%"${f.tag}"%`); }
     if (f.screeningStatus) { sql += ' AND screening_status=?'; p.push(f.screeningStatus); }
     if (f.parseStatus) { sql += ' AND parse_status=?'; p.push(f.parseStatus); }
+    // Broad professional grouping, set at ingest. Exact match on one of the five
+    // buckets; a candidate created before the column existed has NULL and is
+    // simply not in any bucket, never excluded from an unfiltered search.
+    if (f.disciplineClass) { sql += ' AND discipline_class=?'; p.push(f.disciplineClass); }
     return { sql, p };
   },
 

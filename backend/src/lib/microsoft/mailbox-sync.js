@@ -22,6 +22,7 @@ import { createIntake } from '../intake-store.js';
 // Job-title classification from the mail subject — the same function the
 // intake panel groups by, so discovery and selection agree on the label.
 import { classifySubject } from '../cv-intake/panel-store.js';
+import { ingestIntake } from '../cv-intake/auto-ingest.js';
 import { writeAudit } from '../audit.js';
 import fs from 'node:fs';
 import { get, all, run as dbRun } from '../db.js';
@@ -371,10 +372,28 @@ export async function parseWaiting({ categories = null, limit = 25, actor = null
       });
       summary.parsed += 1;
       summary.intakeIds.push(intake.id);
+
+      // A clean CV goes straight to the Talent Pool. Arabtec collects CVs long
+      // before a vacancy exists, so holding a good parse for a review click is
+      // what left 41 parsed CVs sitting behind a queue and zero candidates in
+      // the pool. `ingestIntake` never throws: anything it cannot resolve stays
+      // PENDING with a reason, which is exactly what Candidate Review is for.
+      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null });
+      summary.autoIngested = (summary.autoIngested || 0) + (outcome.outcome === 'CONVERTED' ? 1 : 0);
+      summary.duplicates = (summary.duplicates || 0) + (outcome.outcome === 'DUPLICATE' ? 1 : 0);
+      summary.needsReview = (summary.needsReview || 0) + (outcome.outcome === 'NEEDS_REVIEW' ? 1 : 0);
+      if (outcome.candidateId) summary.candidateIds = [...(summary.candidateIds || []), outcome.candidateId];
+
       try {
         writeAudit(req || { user: actor, ip: null, headers: {} }, {
           action: 'candidate.intake_created', entityType: 'candidate_intake', entityId: intake.id,
-          newValue: { origin: 'mailbox.microsoft', via: 'selection', category: row.category || null },
+          newValue: {
+            origin: 'mailbox.microsoft', via: 'selection', category: row.category || null,
+            // What actually happened to it, so the audit answers "did this CV
+            // reach the pool?" without joining to another table.
+            outcome: outcome.outcome, candidateId: outcome.candidateId ?? null,
+            classification: outcome.classification ?? null, reason: outcome.reason ?? null,
+          },
         });
       } catch { /* the intake still stands */ }
     } catch (e) {
@@ -528,12 +547,22 @@ async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, 
       summary.imported += 1;
       summary.intakeIds.push(intake.id);
 
+      // Same rule as the selection path: a clean parse belongs in the Talent
+      // Pool, not in a queue. No requisition is involved here either.
+      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null });
+      summary.autoIngested = (summary.autoIngested || 0) + (outcome.outcome === 'CONVERTED' ? 1 : 0);
+      summary.duplicates = (summary.duplicates || 0) + (outcome.outcome === 'DUPLICATE' ? 1 : 0);
+      summary.needsReview = (summary.needsReview || 0) + (outcome.outcome === 'NEEDS_REVIEW' ? 1 : 0);
+      if (outcome.candidateId) summary.candidateIds = [...(summary.candidateIds || []), outcome.candidateId];
+
       try {
         writeAudit(req ?? { user: actor, headers: {} }, {
           action: 'candidate.intake_created', entityType: 'candidate_intake', entityId: intake.id,
           newValue: {
             fileName: attachment.name, fields: intake.fields.length,
             source: 'microsoft-mailbox', mailbox,
+            outcome: outcome.outcome, candidateId: outcome.candidateId ?? null,
+            classification: outcome.classification ?? null,
           },
         });
       } catch { /* an audit failure must not lose the intake */ }
