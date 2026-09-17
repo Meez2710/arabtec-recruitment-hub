@@ -1,6 +1,6 @@
 # CV Intake → Talent Pool — deployment handoff
 
-Prepared 17 September 2026. **Nothing in this change has been deployed.** Local
+Prepared 17 September 2026, revised the same day. **Nothing in this change has been deployed.** Local
 work only; production (`10.20.0.9`) is untouched and still runs `6bf7bc1`.
 
 ---
@@ -25,17 +25,23 @@ currently deployed on `10.20.0.9`.
 ## 3. Final SHA
 
 ```
-7d6f50008d7d6ab5ba61f265c75aa6c2ea598352
+f0aa455b90f56d166359602f050be4b75b6b2e61
 ```
-"A clean CV becomes a Talent Pool candidate without a human"
+"Classification is a search fact; a newer CV refreshes the profile"
 
 **This is the SHA to deploy** — the last commit containing code, and the exact
-tree every test below was run against. One code commit ahead of production.
+tree every test below was run against. Two code commits ahead of production:
 
-Anything after it on `prod/cv-inbox-m365` is documentation only (this file), so
-deploying the branch head is equivalent. Pin the SHA anyway: it is the tree that
-was tested, and `08-redeploy.sh` takes a ref precisely so a deploy cannot drift
-from what was verified.
+| SHA | |
+|---|---|
+| `7d6f500` | auto-ingest — accepted baseline, superseded by the one below |
+| `f0aa455` | **deploy this** — classification/review separation + profile refresh |
+
+Deploy `f0aa455` only. It contains `7d6f500` in full; there is no reason to
+deploy the baseline separately. Anything after it on `prod/cv-inbox-m365` is
+documentation, so the branch head is equivalent — pin the SHA anyway, because it
+is the tree that was tested and `08-redeploy.sh` takes a ref precisely so a
+deploy cannot drift from what was verified.
 
 ## 4. The old workflow
 
@@ -80,7 +86,11 @@ career mailbox
         │                      → intake CONVERTED, classification stamped
         │
         ├── exact duplicate  → intake DUPLICATE, linked to the existing person
-        │                      (one candidate; both CVs retained as history)
+        │                      → career data refreshed from the newer CV
+        │                        (identity never touched); both CVs retained
+        │
+        ├── identity conflict → NEEDS_REVIEW: a shared contact detail but a
+        │                       materially different name. Neither record moves.
         │
         └── needs judgement  → intake stays PENDING + auto_code + reason
                                →  CANDIDATE REVIEW (exceptions only)
@@ -108,21 +118,61 @@ the reader got past (`invalid`).
 **Classification** — five buckets, keyword-matched from the candidate's own
 words (position, company, major, skills), offline and free:
 `Construction / Engineering Core`, `Construction / Engineering Support`,
-`Adjacent / Transferable`, `Other Professional Background`,
-`Unclear / Needs Review`. For search and filtering only. It never matches a
-hiring request and never rejects anyone.
+`Adjacent / Transferable`, `Other Professional Background`, `Unclassified`.
+
+For search and filtering ONLY. It never matches a hiring request, never rejects
+anyone, and is never read by the ingest gate. `Unclassified` means "not
+categorised", not "needs a person" — a clean CV nobody can bucket goes to the
+Talent Pool as `Unclassified` and never appears in Candidate Review.
 
 **No Application is ever created automatically.** `reviewIntake` raises one only
 when the intake names a requisition, so `ingestIntake` refuses any intake
 carrying a `requestId` — enforced inside the orchestrator, not at each call
 site, so a future caller cannot wire around it.
 
+## 5a. Exact-duplicate / update policy
+
+When a new CV matches someone already in the pool on email, phone, LinkedIn or
+file hash, one of two things happens.
+
+**Identity conflict → a person decides.** If the incoming name is materially
+different from the name on file — normalised, and allowing an added middle name
+or a dropped initial — the intake becomes NEEDS_REVIEW (`identity-conflict`) and
+**neither record is modified**. A shared family address or a forwarded CV must
+never write one person's career onto another's record.
+
+**Otherwise, the same person sent a newer CV.** Career data moves; identity
+never does.
+
+| Field group | Fields | Behaviour |
+|---|---|---|
+| Career | currentPosition, currentCompany, yearsExperience, skills, location, university, major, graduationYear, languages, certifications, nationality, noticePeriod | **Refreshed automatically**, only where the new CV differs from what is stored |
+| Identity / contact | fullName, email, phone, linkedinUrl | **Never changed automatically.** Proposed and recorded as deliberately held, so the history shows they were read |
+| Classification | discipline_class | Re-derived from the newer CV, but only when something else actually changed |
+
+Mechanism: `raiseProposal` → `reviewProposal`, the same path a recruiter's
+review uses, with a fixed decision map instead of a person's clicks. Nothing new
+was built.
+
+**Nothing is destroyed silently.** Every applied change is written to the
+`candidate_proposal` record with the value it replaced and lands in the audit
+log, so a curated value that a newer CV overwrites is always recoverable and
+always attributable. An unchanged re-send writes nothing at all and leaves no
+noise in the history.
+
+**Both CVs are kept.** The document is attached to the candidate on first ingest
+and on every subsequent one, which also makes `classifyDuplicates`' own
+file-hash rule work — before this, the CV history was empty and an identical
+file was only caught when it shared a contact detail.
+
+**No Application, ever.** Unchanged from the baseline and re-asserted by test.
+
 ## 6. Files changed
 
 | File | Change |
 |---|---|
-| `backend/src/lib/cv-intake/auto-ingest.js` | **new** — the gate, the classifier, and `ingestIntake()` |
-| `backend/cv_auto_ingest_test.mjs` | **new** — 24 assertions over all specified edge cases |
+| `backend/src/lib/cv-intake/auto-ingest.js` | **new** — the gate, the classifier, `ingestIntake()`; then (`f0aa455`) the `Unclassified` rename, `identityConflict()`, `refreshExisting()` and `attachDocument()` |
+| `backend/cv_auto_ingest_test.mjs` | **new** — 36 assertions: all specified edge cases, plus C1–C4 (separation) and U1–U6 (update policy) |
 | `backend/src/lib/intake-store.js` | `markIntakeDuplicate`, `markIntakeNeedsReview`, `stampIntakeClassification`; `toIntake` carries `autoCode` + `classification` |
 | `backend/src/lib/microsoft/mailbox-sync.js` | both ingest paths call `ingestIntake`; summary counters; richer audit |
 | `backend/src/routes/candidates.js` | `/parse-cv` and `/parse-cv-async` call `ingestIntake`; `disciplineClass` filter; `disciplineClass` in `serialize()` |
@@ -160,10 +210,10 @@ place and unused. No data is lost by a rollback.
 
 ```
 node --experimental-sqlite run_tests.mjs
-→ Ran 65 suites in 197.6s · 65 passed, 0 failed · ALL SUITES PASSED
+→ Ran 65 suites in 135.2s · 65 passed, 0 failed · ALL SUITES PASSED
 ```
 
-New suite, `cv_auto_ingest_test.mjs` — **0 failures, 24 assertions**:
+New suite, `cv_auto_ingest_test.mjs` — **0 failures, 36 assertions**:
 
 | # | Case | Result |
 |---|---|---|
@@ -198,6 +248,26 @@ the test can fail:
 | lookalike check removed | 9+10 |
 | requisition refusal removed | 18b |
 | exact-duplicate check removed | 7, 8 |
+| refresh disabled | U1, U2, U3 |
+| identity fields made refreshable | U2, U5 |
+| identity-conflict check disabled | U4 |
+| classification allowed back into the gate | 16, C1, C2, C4 |
+| document not attached | U1 |
+
+Added in `f0aa455`:
+
+| # | Case | Result |
+|---|---|---|
+| C1 | clean CV, unrecognisable profession | CONVERTED, `Unclassified`, not in review |
+| C2 | Arabic-only CV | CONVERTED, `Unclassified`, not in review |
+| C3 | no bucket contains review language | asserted over every bucket |
+| C4 | the gate never reads classification | same verdict, different buckets |
+| U1 | MEP Engineer / 8y → Senior MEP Engineer / 11y | 1 candidate, both documents, position and years refreshed, proposal recorded, **0 applications** |
+| U2 | newer CV carries a new phone | career moved, phone NOT rewritten, held recorded |
+| U3 | newer CV fills previously empty fields | filled |
+| U4 | shared email, different person | NEEDS_REVIEW (`identity-conflict`), neither record touched |
+| U5 | identical CV re-sent | nothing written, no history noise |
+| U6 | identity never appears in the refreshable set | asserted against the source |
 
 **Browser verification** (local SQLite, seeded, ten CVs through the real path):
 Talent Pool 7 candidates, all `source: cv_auto_ingest`, each classified and
@@ -206,11 +276,15 @@ exactly 3, each showing its reason; `/api/applications` total **0**.
 
 ## 9. Known limitations
 
-- **Classification is keyword-based and English-only.** Arabic job titles fall
-  to `Unclear / Needs Review` — deliberately, rather than guessing. Those
-  candidates are still in the Talent Pool and fully searchable; only the bucket
-  is absent. On the production backlog measured on 14 Sep, roughly a third of
-  subjects classified; expect a similar order for positions.
+- **Classification is keyword-based and English-only.** Arabic and mixed-language
+  job titles fall to `Unclassified` — deliberately, rather than guessing. Those
+  candidates enter the Talent Pool normally and are fully searchable by name,
+  contact, position text, experience and location; only the bucket is absent,
+  and they are never routed to Candidate Review for it. On the production
+  backlog measured on 14 Sep, roughly a third of subjects classified; expect a
+  similar order for positions. A later release may classify Arabic
+  asynchronously through Anthropic — **ingestion must never depend on that
+  provider call**, which is why the classifier is offline and free today.
 - **`MIN_IDENTITY_CONFIDENCE` (0.55) is a first setting, not a tuned one.** It
   admits a deterministic read and a solid model read. Watch the ratio of
   `low-confidence` rows in Candidate Review after go-live and adjust — it is one
@@ -330,7 +404,16 @@ Run in order after the deploy. Stop and roll back on any ✗.
 - [ ] **No Application was created** — `select count(*) from application` is
       still the number recorded in step 2
 - [ ] Parse the same CV again → **no second candidate**; the intake resolves as
-      `DUPLICATE` against the first
+      `DUPLICATE` against the first, and the reason says it added nothing
+- [ ] **Send a second, UPDATED CV for the same person** (same email, a changed
+      job title and years of experience) → still one candidate; the Talent Pool
+      shows the NEW position and years; `select origin,status from
+      candidate_proposal where candidate_id=<id>` shows a reviewed
+      `cv_auto_refresh` row; `select count(*) from candidate_document where
+      candidate_id=<id>` is 2; **still zero applications**
+- [ ] Confirm the candidate's **email and phone are unchanged** by that refresh
+- [ ] If any CV in the batch could not be bucketed, confirm it is in the Talent
+      Pool with classification `Unclassified` and **NOT** in Candidate Review
 - [ ] Filter the Talent Pool by that classification and confirm the candidate is
       returned
 - [ ] `select status, count(*) from candidate_intake group by 1` — expect
