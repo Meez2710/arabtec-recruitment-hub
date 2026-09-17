@@ -8,6 +8,7 @@
 // these assertions are about the ingest decision itself and stay deterministic.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 process.env.DATABASE_URL = `file:/tmp/ats-autoingest-${randomUUID()}.db`;
 process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY = 'b'.repeat(64);
@@ -299,7 +300,8 @@ await checkAsync('16. an Arabic CV is ingested on its own merits', async () => {
   assert.equal(Candidates.byId(r.candidateId).full_name, 'محمد عبد الرحمن');
   // The bucket cannot be read from Arabic job titles by keyword, and says so
   // honestly rather than guessing — the candidate is still in the pool.
-  assert.equal(r.classification, CLASSES.UNCLEAR);
+  assert.equal(r.classification, CLASSES.UNCLASSIFIED,
+    'an unbucketed profile is Unclassified — a search fact, not a review state');
 });
 
 await checkAsync('17. a mixed Arabic/English CV classifies from the part it can read', async () => {
@@ -348,11 +350,204 @@ check('classification never returns something outside the five buckets', () => {
   }
 });
 
-check('an empty profile is Unclear, not a crash', () => {
-  assert.equal(classifyProfile(valuesOf([])), CLASSES.UNCLEAR);
+check('an empty profile is Unclassified, not a crash', () => {
+  assert.equal(classifyProfile(valuesOf([])), CLASSES.UNCLASSIFIED);
   const v = assessIntake({ fields: [] });
   assert.equal(v.ok, false);
   assert.equal(v.code, 'no-fields');
+});
+
+
+console.log('\n--- classification is a search fact, never a review state ---');
+
+await checkAsync('C1. an unclassifiable but clean CV still goes to the Talent Pool', async () => {
+  const before = countCandidates();
+  const intake = makeIntake([
+    F('fullName', 'Zahra Mostafa'), F('email', 'zahra.mostafa@example.com'),
+    F('phone', '+201445556677'), F('currentPosition', 'Falconry Master'),
+    F('currentCompany', 'Desert Heritage Trust'),
+  ]);
+  const r = await ingestIntake(intake, ACTOR);
+  assert.equal(r.outcome, 'CONVERTED', 'an unknown profession must not need a recruiter');
+  assert.equal(r.classification, CLASSES.UNCLASSIFIED);
+  assert.equal(countCandidates(), before + 1);
+  assert.equal(intakeById(intake.id).status, 'CONVERTED', 'not parked in Candidate Review');
+  assert.equal(Candidates.byId(r.candidateId).discipline_class, CLASSES.UNCLASSIFIED);
+});
+
+await checkAsync('C2. an Arabic-only CV is Unclassified and still auto-ingested', async () => {
+  const intake = makeIntake([
+    F('fullName', 'سارة خليل'), F('email', 'sara.khalil@example.com'),
+    F('phone', '+201778889999'), F('currentPosition', 'أخصائي موارد بشرية'),
+  ]);
+  const r = await ingestIntake(intake, ACTOR);
+  assert.equal(r.outcome, 'CONVERTED');
+  assert.equal(r.classification, CLASSES.UNCLASSIFIED);
+  assert.equal(intakeById(intake.id).status, 'CONVERTED');
+});
+
+check('C3. no classification bucket carries review language', () => {
+  for (const v of Object.values(CLASSES)) {
+    assert.ok(!/review/i.test(v), `"${v}" reads like a workflow state, not a category`);
+  }
+  assert.equal(CLASSES.UNCLASSIFIED, 'Unclassified');
+});
+
+check('C4. the gate never reads the classification', () => {
+  // Same identity and profile strength, wildly different professions: the
+  // verdict must be identical, because classification is not an input to it.
+  const mk = (position) => ({ fields: [
+    { field: 'fullName', value: 'Gate Probe', confidence: 0.9 },
+    { field: 'email', value: 'gate.probe@example.com', confidence: 0.9 },
+    { field: 'currentPosition', value: position, confidence: 0.9 },
+  ] });
+  const core = assessIntake(mk('Site Engineer'));
+  const odd = assessIntake(mk('Falconry Master'));
+  assert.equal(core.ok, true);
+  assert.equal(odd.ok, true, 'an unrecognised profession is still a clean parse');
+  assert.equal(core.code, odd.code);
+  assert.notEqual(core.classification, odd.classification, 'they DO bucket differently');
+});
+
+console.log('\n--- an updated CV from someone already in the pool ---');
+
+await checkAsync('U1. a newer CV refreshes career data, keeps one candidate and both documents', async () => {
+  const v1 = [
+    F('fullName', 'Rasha Elsayed'), F('email', 'rasha.update@example.com'),
+    F('phone', '+201335550001'), F('currentPosition', 'MEP Engineer'),
+    F('yearsExperience', 8), F('location', 'Cairo'),
+  ];
+  const first = await ingestIntake(makeIntake(v1, { fileHash: 'nour-upd-v1' }), ACTOR);
+  assert.equal(first.outcome, 'CONVERTED', first.reason || '');
+  const id = first.candidateId;
+  const beforeCount = countCandidates();
+  const beforeApps = countApplications();
+  assert.equal(Candidates.byId(id).current_position, 'MEP Engineer');
+  assert.equal(Number(Candidates.byId(id).years_experience), 8);
+
+  // The same person, two years on.
+  const v2 = [
+    F('fullName', 'Rasha Elsayed'), F('email', 'rasha.update@example.com'),
+    F('phone', '+201335550001'), F('currentPosition', 'Senior MEP Engineer'),
+    F('yearsExperience', 11), F('location', 'Cairo'),
+  ];
+  const second = await ingestIntake(makeIntake(v2, { fileHash: 'nour-upd-v2' }), ACTOR);
+
+  assert.equal(second.outcome, 'DUPLICATE', 'still the same person');
+  assert.equal(second.candidateId, id);
+  assert.equal(countCandidates(), beforeCount, 'candidate count remains 1 for this person');
+
+  const after = Candidates.byId(id);
+  assert.equal(after.current_position, 'Senior MEP Engineer', 'searchable position is the newest');
+  assert.equal(Number(after.years_experience), 11, 'searchable experience is the newest');
+
+  // Both CVs on file.
+  const docs = all('SELECT file_hash FROM candidate_document WHERE candidate_id=?', [id])
+    .map((d) => d.file_hash);
+  assert.ok(docs.includes('nour-upd-v1'), 'the original CV is retained');
+  assert.ok(docs.includes('nour-upd-v2'), 'the newer CV is retained');
+
+  // History: the change is recorded, not silent.
+  const proposals = all('SELECT id, origin, status FROM candidate_proposal WHERE candidate_id=?', [id]);
+  assert.ok(proposals.some((pr) => pr.origin === 'cv_auto_refresh'),
+    'the refresh is recorded as a reviewed proposal, with what it replaced');
+  assert.ok(second.refreshed.includes('currentPosition'));
+  assert.ok(second.refreshed.includes('yearsExperience'));
+
+  assert.equal(countApplications(), beforeApps, 'zero applications created');
+  assert.notEqual(intakeById(0)?.status, 'PENDING');
+  const intakes = all('SELECT status FROM candidate_intake WHERE candidate_id=?', [id]).map((i) => i.status);
+  assert.ok(intakes.includes('CONVERTED') && intakes.includes('DUPLICATE'),
+    'both intakes resolved, neither left needing a recruiter');
+});
+
+await checkAsync('U2. identity and contact are never rewritten by an automatic refresh', async () => {
+  const base = [
+    F('fullName', 'Hany Kamal'), F('email', 'hany.kamal@example.com'),
+    F('phone', '+201556667777'), F('currentPosition', 'Planning Engineer'),
+  ];
+  const first = await ingestIntake(makeIntake(base, { fileHash: 'hany-v1' }), ACTOR);
+  const id = first.candidateId;
+
+  // A newer CV with a new phone number AND a promotion.
+  const second = await ingestIntake(makeIntake([
+    F('fullName', 'Hany Kamal'), F('email', 'hany.kamal@example.com'),
+    F('phone', '+201999998888'), F('currentPosition', 'Senior Planning Engineer'),
+  ], { fileHash: 'hany-v2' }), ACTOR);
+
+  assert.equal(second.outcome, 'DUPLICATE');
+  const after = Candidates.byId(id);
+  assert.equal(after.current_position, 'Senior Planning Engineer', 'career data moved');
+  assert.equal(after.phone, '+201556667777', 'the phone on file was NOT rewritten');
+  assert.ok((second.heldBack || []).includes('phone'), 'and the contact change is recorded as held');
+});
+
+await checkAsync('U3. empty fields are filled from the newer CV', async () => {
+  const first = await ingestIntake(makeIntake([
+    F('fullName', 'Sherif Adel'), F('email', 'sherif.adel@example.com'),
+    F('currentPosition', 'Surveyor'),
+  ], { fileHash: 'sherif-v1' }), ACTOR);
+  const id = first.candidateId;
+  assert.equal(Candidates.byId(id).years_experience, null);
+
+  const second = await ingestIntake(makeIntake([
+    F('fullName', 'Sherif Adel'), F('email', 'sherif.adel@example.com'),
+    F('currentPosition', 'Surveyor'), F('yearsExperience', 6), F('location', 'Alexandria'),
+  ], { fileHash: 'sherif-v2' }), ACTOR);
+
+  assert.equal(second.outcome, 'DUPLICATE');
+  const after = Candidates.byId(id);
+  assert.equal(Number(after.years_experience), 6);
+  assert.equal(after.location, 'Alexandria');
+});
+
+await checkAsync('U4. a shared contact detail with a DIFFERENT person goes to a human', async () => {
+  const first = await ingestIntake(makeIntake([
+    F('fullName', 'Amira Fouad'), F('email', 'shared.family@example.com'),
+    F('phone', '+201220003333'), F('currentPosition', 'Architect'),
+  ], { fileHash: 'shared-v1' }), ACTOR);
+  assert.equal(first.outcome, 'CONVERTED');
+  const before = countCandidates();
+  const positionBefore = Candidates.byId(first.candidateId).current_position;
+
+  // A brother using the same family address. Same email, different human.
+  const second = await ingestIntake(makeIntake([
+    F('fullName', 'Bassem Zaki'), F('email', 'shared.family@example.com'),
+    F('phone', '+201220003333'), F('currentPosition', 'Electrical Engineer'),
+  ], { fileHash: 'shared-v2' }), ACTOR);
+
+  assert.equal(second.outcome, 'NEEDS_REVIEW');
+  assert.equal(second.code, 'identity-conflict');
+  assert.equal(countCandidates(), before, 'no candidate created on a guess');
+  assert.equal(Candidates.byId(first.candidateId).current_position, positionBefore,
+    "and Amira's profile was NOT overwritten with Bassem's career");
+});
+
+await checkAsync('U5. a re-sent identical CV changes nothing and still needs nobody', async () => {
+  const fields = [
+    F('fullName', 'Static Sample'), F('email', 'static.sample@example.com'),
+    F('phone', '+201001112222'), F('currentPosition', 'Cost Control Engineer'),
+  ];
+  const first = await ingestIntake(makeIntake(fields, { fileHash: 'static-1' }), ACTOR);
+  const id = first.candidateId;
+  const updatedBefore = Candidates.byId(id).updated_at;
+
+  const second = await ingestIntake(makeIntake(fields, { fileHash: 'static-1' }), ACTOR);
+  assert.equal(second.outcome, 'DUPLICATE');
+  assert.deepEqual(second.refreshed, [], 'nothing to refresh, so nothing was written');
+  assert.equal(Candidates.byId(id).current_position, 'Cost Control Engineer');
+  assert.ok(second.reason.includes('added nothing'), `reason says so: ${second.reason}`);
+});
+
+check('U6. the refresh policy never lists an identity field as refreshable', () => {
+  // Reading the policy through behaviour: assessIntake/ingest aside, the two
+  // sets must not overlap, or a future edit could quietly make email movable.
+  const bad = ['fullName', 'email', 'phone', 'linkedinUrl'];
+  const src = readFileSync(new URL('./src/lib/cv-intake/auto-ingest.js', import.meta.url), 'utf8');
+  const refreshable = src.slice(src.indexOf('const REFRESHABLE'), src.indexOf('const IDENTITY'));
+  for (const f of bad) {
+    assert.ok(!refreshable.includes(`'${f}'`), `${f} must never be auto-refreshable`);
+  }
 });
 
 console.log(`\n=== CV AUTO-INGEST: ${failures} failure(s) ===\n`);

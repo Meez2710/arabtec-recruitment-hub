@@ -24,7 +24,8 @@ import {
   reviewIntake, classifyDuplicates, IntakeReviewError,
   markIntakeDuplicate, markIntakeNeedsReview, stampIntakeClassification,
 } from '../intake-store.js';
-import { Candidates } from '../models.js';
+import { Candidates, CandidateDocuments } from '../models.js';
+import { raiseProposal, reviewProposal } from '../proposal-store.js';
 
 /* --------------------------------------------------------------------------
    Identity sufficiency.
@@ -82,7 +83,13 @@ export const CLASSES = Object.freeze({
   SUPPORT: 'Construction / Engineering Support',
   ADJACENT: 'Adjacent / Transferable',
   OTHER: 'Other Professional Background',
-  UNCLEAR: 'Unclear / Needs Review',
+  // NOT a review state. "I could not bucket this" and "a person must look at
+  // this" are different facts, and the earlier label 'Unclear / Needs Review'
+  // conflated them — an Arabic CV, an unusual job title or a sector the English
+  // keyword rules do not cover would read as though it needed a recruiter when
+  // the parse was perfectly good. Classification is a SEARCH aid and has never
+  // been consulted by the gate; the name now says so.
+  UNCLASSIFIED: 'Unclassified',
 });
 
 // Ordered most-specific first: the first bucket that matches wins, so
@@ -134,14 +141,14 @@ export function classifyProfile(values) {
     parts.push(Array.isArray(v) ? v.join(' ') : String(v));
   }
   const hay = ` ${parts.join(' ').toLowerCase()} `;
-  if (hay.trim() === '') return CLASSES.UNCLEAR;
+  if (hay.trim() === '') return CLASSES.UNCLASSIFIED;
 
   for (const [bucket, terms] of RULES) {
     if (terms.some((t) => hay.includes(t))) return bucket;
   }
   // Words were found but none of them are recognisable work. Still a candidate,
   // still searchable — just not sorted into a bucket a recruiter can trust.
-  return CLASSES.UNCLEAR;
+  return CLASSES.UNCLASSIFIED;
 }
 
 /* --------------------------------------------------------------------------
@@ -220,6 +227,161 @@ export function assessIntake(intake) {
   return verdict(true, null, null);
 }
 
+
+/* ==========================================================================
+   An updated CV from someone already in the pool.
+   --------------------------------------------------------------------------
+   Preventing a second candidate was never the whole job. A person who sends a
+   newer CV two years later is telling us they are now a Senior MEP Engineer
+   with eleven years behind them, and a Talent Pool that still says "MEP
+   Engineer, 8 years" cannot be searched for the person they actually are.
+
+   BUILT ON WHAT EXISTS. `raiseProposal` / `reviewProposal` are the mechanism
+   the product already uses to change an existing candidate from a parsed
+   document: they supersede any pending proposal, apply accepted fields to the
+   candidate row, and keep the per-field accept/reject record with the previous
+   value. Nothing new is invented here — the refresh is a proposal that the
+   system reviews with a fixed, conservative policy instead of a person.
+
+   THE POLICY, in one line: career data moves, identity never does.
+   ========================================================================== */
+
+/**
+ * Career data. A newer CV is the candidate's own more recent statement about
+ * their working life, so these are refreshed without asking.
+ *
+ * Nothing is destroyed silently: every change lands in the proposal record with
+ * the value it replaced, and in the audit log.
+ */
+const REFRESHABLE = new Set([
+  'currentPosition', 'currentCompany', 'yearsExperience',
+  'skills', 'location', 'university', 'major', 'graduationYear',
+  'languages', 'certifications', 'nationality', 'noticePeriod',
+]);
+
+/**
+ * Identity and contact. NEVER changed automatically, even for a confirmed
+ * match: the new document proved this is the same person, which is not the
+ * same as proving their name or number should be rewritten. A recruiter
+ * changes these, through the review they already have.
+ */
+const IDENTITY = new Set(['fullName', 'email', 'phone', 'linkedinUrl']);
+
+/** Compare names for "is this even the same person", not for equality. */
+const normName = (v) => String(v ?? '')
+  .toLowerCase().normalize('NFKD')
+  .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+/**
+ * Does the new CV dispute WHO this is, rather than update what they do?
+ *
+ * A shared email with a different person's name is the dangerous case — a
+ * colleague forwarding a CV, a family address, a recruiter's own mailbox — and
+ * silently rewriting a career onto the wrong record is worse than any queue.
+ * A name that merely grew or shrank (an added middle name, a dropped initial)
+ * is the same person and passes.
+ */
+export function identityConflict(existing, values) {
+  const incoming = normName(values.get ? values.get('fullName') : values.fullName);
+  const current = normName(existing?.full_name);
+  if (!incoming || !current) return false;
+  if (incoming === current) return false;
+  // One contained in the other: "nour ibrahim" vs "nour a ibrahim".
+  if (incoming.includes(current) || current.includes(incoming)) return false;
+  // Otherwise require a real overlap of name parts before calling it the same
+  // person; two entirely different names sharing one contact detail is exactly
+  // what a human should look at.
+  const a = new Set(incoming.split(' ').filter((x) => x.length > 1));
+  const b = new Set(current.split(' ').filter((x) => x.length > 1));
+  const shared = [...a].filter((x) => b.has(x)).length;
+  return shared < Math.min(a.size, b.size);
+}
+
+/**
+ * Apply a newer CV to the person already on file.
+ *
+ * @returns {Promise<{refreshed: string[], held: string[], proposalId: number|null}>}
+ */
+async function refreshExisting(existing, intake, values, actor) {
+  // Career fields the new CV actually carries AND that would change something.
+  // A field proposing the value already stored is noise in the history.
+  const changed = [];
+  for (const f of intake.fields) {
+    if (!REFRESHABLE.has(f.field) || !present(f.value)) continue;
+    const column = CANDIDATE_COLUMN[f.field];
+    const before = column ? existing[column] : undefined;
+    const same = Array.isArray(f.value)
+      ? JSON.stringify(f.value) === JSON.stringify(decodeMaybeList(before))
+      : String(before ?? '') === String(f.value);
+    if (!same) changed.push(f);
+  }
+
+  // Identity fields are proposed too, so the record shows they were read and
+  // deliberately not applied, rather than appearing never to have been seen.
+  const identityFields = intake.fields.filter((f) => IDENTITY.has(f.field) && present(f.value));
+  const fields = [...changed, ...identityFields];
+  if (fields.length === 0) return { refreshed: [], held: [], proposalId: null };
+
+  const proposal = await raiseProposal({
+    candidateId: existing.id,
+    origin: 'cv_auto_refresh',
+    taskId: intake.taskId || '',
+    modelId: intake.modelId || '',
+    documentId: intake.documentId,
+    generation: intake.generation,
+    fields,
+  });
+  if (proposal === null) return { refreshed: [], held: [], proposalId: null };
+
+  // The fixed policy, expressed as the decision map the reviewer would send.
+  const decisions = {};
+  for (const f of proposal.fields) decisions[f.field] = REFRESHABLE.has(f.field);
+
+  const reviewed = await reviewProposal(proposal.id, decisions, actor);
+  return {
+    refreshed: reviewed?.applied ?? [],
+    held: proposal.fields.filter((f) => IDENTITY.has(f.field)).map((f) => f.field),
+    proposalId: proposal.id,
+  };
+}
+
+/** candidate table column for a proposable field, for before/after comparison. */
+const CANDIDATE_COLUMN = {
+  currentPosition: 'current_position', currentCompany: 'current_company',
+  yearsExperience: 'years_experience', location: 'location', university: 'university',
+  major: 'major', graduationYear: 'graduation_year', skills: 'skills',
+  languages: 'languages', certifications: 'certifications',
+  nationality: 'nationality', noticePeriod: 'notice_period',
+};
+
+/** Stored list columns are JSON text; compare like with like. */
+function decodeMaybeList(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v !== 'string' || v === '') return [];
+  try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; }
+}
+
+/** Keep the document itself, so the CV history is real and hash dedup works. */
+function attachDocument(candidateId, intake, actor) {
+  if (!candidateId || !intake?.fileHash) return;
+  try {
+    const already = CandidateDocuments.byHash(intake.fileHash)
+      .some((d) => Number(d.candidate_id) === Number(candidateId));
+    if (already) return;
+    CandidateDocuments.add({
+      candidateId,
+      docType: 'cv',
+      fileName: intake.fileName || intake.storedName || 'cv',
+      fileHash: intake.fileHash,
+      fileSize: null,
+      note: null,
+      uploadedBy: actor?.id ?? null,
+    });
+  } catch { /* the candidate and the intake both stand without the document row */ }
+}
+
 /* --------------------------------------------------------------------------
    Applying the verdict.
    -------------------------------------------------------------------------- */
@@ -262,14 +424,56 @@ export async function autoIngest(intake, actor) {
   const { exact, potential } = classifyDuplicates(assessment.values, intake.fileHash ?? null);
 
   if (exact.length > 0) {
+    const existing = Candidates.byId(exact[0].id);
+
+    // Same contact detail, a different person's name. The match proved a shared
+    // identifier, not a shared person — writing one career onto the other's
+    // record is worse than any queue, so this is the one duplicate a human
+    // must settle.
+    if (existing && identityConflict(existing, assessment.values)) {
+      return {
+        outcome: 'NEEDS_REVIEW', candidateId: null,
+        classification: assessment.classification,
+        code: 'identity-conflict',
+        reason: `This CV shares ${exact[0].matchedFields.join(', ')} with `
+          + `${exact[0].candidateNo} (${existing.full_name}) but names someone else. `
+          + 'Whether these are the same person is a judgement about a real person.',
+        matches: exact,
+      };
+    }
+
+    // Same person, newer document: move the career data, leave the identity,
+    // keep both CVs. See refreshExisting() for the policy and why.
+    let refresh = { refreshed: [], held: [], proposalId: null };
+    if (existing) {
+      attachDocument(existing.id, intake, actor);
+      try {
+        refresh = await refreshExisting(existing, intake, assessment.values, actor);
+        if (refresh.refreshed.length > 0) {
+          Candidates.setDisciplineClass(existing.id, assessment.classification);
+        }
+      } catch (e) {
+        // The person is still correctly deduplicated and the document is kept.
+        // A stale profile is a worse search result, never a lost CV.
+        refresh = { refreshed: [], held: [], proposalId: null, error: e.message };
+      }
+    }
+
+    const moved = refresh.refreshed.length;
     return {
       outcome: 'DUPLICATE',
       candidateId: exact[0].id,
       classification: assessment.classification,
       code: 'duplicate',
       reason: `Already in the Talent Pool as ${exact[0].candidateNo} `
-        + `(matched on ${exact[0].matchedFields.join(', ')}).`,
+        + `(matched on ${exact[0].matchedFields.join(', ')}). `
+        + (moved > 0
+          ? `Profile refreshed from the newer CV: ${refresh.refreshed.join(', ')}.`
+          : 'The newer CV added nothing the profile did not already hold.'),
       matches: exact,
+      refreshed: refresh.refreshed,
+      heldBack: refresh.held,
+      proposalId: refresh.proposalId,
     };
   }
 
@@ -336,7 +540,7 @@ export async function autoIngest(intake, actor) {
 export async function ingestIntake(intake, actor) {
   if (!intake || !intake.id) {
     return { outcome: 'NEEDS_REVIEW', candidateId: null, code: 'no-intake', reason: null,
-      classification: CLASSES.UNCLEAR };
+      classification: CLASSES.UNCLASSIFIED };
   }
 
   /* NEVER auto-create an Application. `reviewIntake` raises one whenever the
@@ -350,7 +554,7 @@ export async function ingestIntake(intake, actor) {
      incoming-mail flow is unaffected. */
   if (intake.requestId !== null && intake.requestId !== undefined) {
     return {
-      outcome: 'NEEDS_REVIEW', candidateId: null, classification: CLASSES.UNCLEAR,
+      outcome: 'NEEDS_REVIEW', candidateId: null, classification: CLASSES.UNCLASSIFIED,
       code: 'request-linked',
       reason: 'This CV was uploaded against a hiring request, so putting the person '
         + 'forward stays a recruiter decision.',
@@ -363,7 +567,7 @@ export async function ingestIntake(intake, actor) {
   } catch (e) {
     // The gate itself failing must never cost the CV. Leave it for a person.
     result = {
-      outcome: 'NEEDS_REVIEW', candidateId: null, classification: CLASSES.UNCLEAR,
+      outcome: 'NEEDS_REVIEW', candidateId: null, classification: CLASSES.UNCLASSIFIED,
       code: 'error', reason: `Automatic ingest could not run: ${e.message}`,
     };
   }
@@ -373,6 +577,10 @@ export async function ingestIntake(intake, actor) {
       stampIntakeClassification(intake.id, result.classification);
       if (result.candidateId) {
         Candidates.setDisciplineClass(result.candidateId, result.classification);
+        // Without this the CV history is empty and classifyDuplicates' own
+        // documentHash rule can never match, so the same file arriving twice
+        // would only be caught if it also shared a contact detail.
+        attachDocument(result.candidateId, intake, actor);
       }
     } else if (result.outcome === 'DUPLICATE') {
       markIntakeDuplicate(intake.id, result.candidateId, result.reason, actor);
