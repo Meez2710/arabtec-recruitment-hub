@@ -1,6 +1,6 @@
 # CV Intake → Talent Pool — deployment handoff
 
-Prepared 17 September 2026, revised the same day. **Nothing in this change has been deployed.** Local
+Prepared 17 September 2026, revised twice the same day (CV Intake direction change). **Nothing in this change has been deployed.** Local
 work only; production (`10.20.0.9`) is untouched and still runs `6bf7bc1`.
 
 ---
@@ -25,23 +25,23 @@ currently deployed on `10.20.0.9`.
 ## 3. Final SHA
 
 ```
-f0aa455b90f56d166359602f050be4b75b6b2e61
+765c91859c4b2cdc6ff6ec6fcac20cf090bd3fd8
 ```
-"Classification is a search fact; a newer CV refreshes the profile"
+"Label what is uncertain; stop withholding the candidate"
 
 **This is the SHA to deploy** — the last commit containing code, and the exact
-tree every test below was run against. Two code commits ahead of production:
+tree every test below was run against. Three code commits ahead of production:
 
 | SHA | |
 |---|---|
-| `7d6f500` | auto-ingest — accepted baseline, superseded by the one below |
-| `f0aa455` | **deploy this** — classification/review separation + profile refresh |
+| `7d6f500` | auto-ingest — superseded |
+| `f0aa455` | classification/review split + profile refresh — superseded |
+| `765c918` | **deploy this** — uncertainty is labelled, not blocked |
 
-Deploy `f0aa455` only. It contains `7d6f500` in full; there is no reason to
-deploy the baseline separately. Anything after it on `prod/cv-inbox-m365` is
-documentation, so the branch head is equivalent — pin the SHA anyway, because it
-is the tree that was tested and `08-redeploy.sh` takes a ref precisely so a
-deploy cannot drift from what was verified.
+Deploy `765c918` only; it contains both earlier commits in full. Anything after
+it on `prod/cv-inbox-m365` is documentation, so the branch head is equivalent —
+pin the SHA anyway, because it is the tree that was tested and `08-redeploy.sh`
+takes a ref precisely so a deploy cannot drift from what was verified.
 
 ## 4. The old workflow
 
@@ -73,73 +73,77 @@ The parsing worked; nothing ever reached the Talent Pool.
 ## 5. The new workflow
 
 ```
-career mailbox
-  → discovery (mailbox_ingestion: WAITING)
-  → recruiter selects by job title
-  → download + hash + dedup
-  → AI parse
-  → createIntake()  ──►  candidate_intake, status PENDING
-  → ingestIntake()       ← NEW: the assessment a recruiter was doing by hand
+career mailbox → discovery → recruiter selects → download + dedup → AI parse
+  → createIntake()
+  → ingestIntake()
         │
-        ├── clean            → reviewIntake(all fields accepted)
-        │                      → Candidates.create()  →  TALENT POOL
-        │                      → intake CONVERTED, classification stamped
+        ├── clean or merely incomplete  →  TALENT POOL
+        │        with data-quality labels for whatever was uncertain
         │
-        ├── exact duplicate  → intake DUPLICATE, linked to the existing person
-        │                      → career data refreshed from the newer CV
-        │                        (identity never touched); both CVs retained
+        ├── exact duplicate, same person →  one candidate, career data
+        │        refreshed from the newer CV, both documents kept
         │
-        ├── identity conflict → NEEDS_REVIEW: a shared contact detail but a
-        │                       materially different name. Neither record moves.
-        │
-        └── needs judgement  → intake stays PENDING + auto_code + reason
-                               →  CANDIDATE REVIEW (exceptions only)
+        └── one of FOUR hard exceptions  →  no candidate; intake stays PENDING
+                 and a person looks at the document itself
 ```
 
-**Auto-ingest requires all four:**
+**Almost every successfully parsed CV goes straight into the Talent Pool.**
+Candidate Review is not a gate for ordinary data-quality problems.
 
-| Condition | Rule |
-|---|---|
-| Name | present, ≥ 3 characters |
-| Reachable | at least one of email, phone, linkedinUrl |
-| Confidence | mean confidence of identity fields ≥ `0.55` |
-| Profile | at least one of currentPosition, currentCompany, yearsExperience, skills, university, major, location |
+### The only four hard blocks
 
-Missing enrichment never forces review. Name + phone with no email is valid;
-name + email with no phone is valid. Nothing is invented to fill a gap.
+1. Nothing could be read from the document (`unreadable`)
+2. No usable candidate name could be extracted (`no-identity`)
+3. The candidate record itself rejects a value the reader got past
+4. The write would corrupt another person's identity — handled by creating a
+   separate flagged candidate rather than touching the record on file
 
-**Candidate Review now contains only:** unreadable/empty parse (`no-fields`),
-no usable name or no contact detail (`identity-unclear`), low-confidence
-identity (`low-confidence`), nothing readable about the work (`thin-profile`),
-a name-only lookalike already in the pool (`duplicate-ambiguous`), a CV
-uploaded against a requisition (`request-linked`), or a candidate-record rule
-the reader got past (`invalid`).
+### Data-quality labels
 
-**Classification** — five buckets, keyword-matched from the candidate's own
-words (position, company, major, skills), offline and free:
-`Construction / Engineering Core`, `Construction / Engineering Support`,
-`Adjacent / Transferable`, `Other Professional Background`, `Unclassified`.
+Everything else that used to block is now a label on a real candidate.
 
-For search and filtering ONLY. It never matches a hiring request, never rejects
-anyone, and is never read by the ingest gate. `Unclassified` means "not
-categorised", not "needs a person" — a clean CV nobody can bucket goes to the
-Talent Pool as `Unclassified` and never appears in Candidate Review.
+| Label | Raised when | Sentence shown |
+|---|---|---|
+| `Contact Missing` | no email, phone or LinkedIn | "No email or phone could be extracted." |
+| `Incomplete Profile` | nothing readable about the work | "Current position and experience could not be extracted reliably." |
+| `Low Confidence` | mean identity confidence < 0.55 | "Some parsed fields have low extraction confidence." |
+| `Unclassified` | the classifier could not bucket the profession | "Professional classification could not be determined confidently." |
+| `Possible Duplicate` | a namesake with no shared contact detail | names the candidate they resemble |
+| `Needs Review` | shared contact detail, materially different name | names the record it conflicts with |
 
-**No Application is ever created automatically.** `reviewIntake` raises one only
-when the intake names a requisition, so `ingestIntake` refuses any intake
-carrying a `requestId` — enforced inside the orchestrator, not at each call
-site, so a future caller cannot wire around it.
+Labels are **replaced, not accumulated**: a newer CV supplying the missing phone
+number clears `Contact Missing` rather than leaving it on the record for ever.
+
+Stored as `candidate.quality_flags` (JSON codes) and `candidate.quality_note`
+(the sentences). Filtering is **opt-in** — the default Talent Pool shows
+everyone, flagged or not.
+
+**Classification** — `Construction / Engineering Core`,
+`Construction / Engineering Support`, `Adjacent / Transferable`,
+`Other Professional Background`, `Unclassified`. Search and filtering only;
+never read by the ingest gate, never a reason to reject anyone.
+
+**No Application is ever created automatically**, and nothing depends on a
+hiring request existing. Shortlisting, interviews, offers and stage progression
+remain human decisions.
 
 ## 5a. Exact-duplicate / update policy
 
 When a new CV matches someone already in the pool on email, phone, LinkedIn or
 file hash, one of two things happens.
 
-**Identity conflict → a person decides.** If the incoming name is materially
-different from the name on file — normalised, and allowing an added middle name
-or a dropped initial — the intake becomes NEEDS_REVIEW (`identity-conflict`) and
-**neither record is modified**. A shared family address or a forwarded CV must
-never write one person's career onto another's record.
+**Namesake, no shared contact → a separate flagged candidate.** Two people with
+one name is ordinary. The second is created as their own candidate labelled
+`Possible Duplicate`, naming who they resemble. Never auto-merged; a recruiter
+merges later if they turn out to be one person.
+
+**Identity conflict → separate candidate, other record untouched.** If the
+incoming name is materially different from the name on file — normalised, and
+allowing an added middle name or a dropped initial — the record on file is left
+**entirely alone** and this CV becomes its own candidate labelled `Needs Review`.
+A shared family address or a forwarded CV must never write one person's career
+onto another's record. `reviewIntake`'s duplicate refusal is overridden only on
+this path, deliberately and with a reason written to the record.
 
 **Otherwise, the same person sent a newer CV.** Career data moves; identity
 never does.
@@ -191,9 +195,15 @@ migration to run and no manual SQL.**
 
 ```
 candidate.discipline_class        TEXT   NULL   -- search bucket
-candidate_intake.auto_code        TEXT   NULL   -- why a person is needed
+candidate.quality_flags           TEXT   NULL   -- JSON array of label codes
+candidate.quality_note            TEXT   NULL   -- the sentences a recruiter reads
+candidate_intake.auto_code        TEXT   NULL   -- why a document was blocked
 candidate_intake.classification   TEXT   NULL   -- bucket, recorded on the intake
 ```
+
+`quality_flags` is filtered with the same JSON `LIKE` pattern the existing
+`tags` column already uses, so it needs **no new index** and no new query
+machinery.
 
 `candidate_intake.status` gains the value `DUPLICATE`. The column has always
 been free text with **no CHECK constraint**, so this needs no migration; an
@@ -213,66 +223,52 @@ node --experimental-sqlite run_tests.mjs
 → Ran 65 suites in 135.2s · 65 passed, 0 failed · ALL SUITES PASSED
 ```
 
-New suite, `cv_auto_ingest_test.mjs` — **0 failures, 36 assertions**:
+New suite, `cv_auto_ingest_test.mjs` — **0 failures, 39 assertions**, covering
+the full matrix:
 
 | # | Case | Result |
 |---|---|---|
-| 1 | clean construction CV | CONVERTED, Core, in Talent Pool |
-| 2 | clean support-function CV | CONVERTED, Support |
-| 3 | unrelated professional (accountant) | CONVERTED, Other — not rejected |
-| 4 | no hiring requests exist | pipeline completes (0 requisitions in fixture) |
-| 5 | missing email, usable phone | CONVERTED, email stays null |
-| 6 | missing phone, usable email | CONVERTED, phone stays null |
-| 7 | exact duplicate CV | DUPLICATE, one candidate |
-| 8 | existing candidate sends updated CV | one candidate, both documents retained |
-| 9+10 | same name, different person | NEEDS_REVIEW, never merged |
-| 11 | failed/ambiguous parse | NEEDS_REVIEW + reason (4 variants: a–d) |
-| 12 | multiple attachments | processed independently |
-| 14 | provider/record failure | intake retained, still retryable |
-| 15 | repeated sync | idempotent, no second candidate |
-| 16 | Arabic CV | CONVERTED, name preserved, bucket honestly Unclear |
-| 17 | mixed Arabic/English | CONVERTED, Core from the English half |
-| 18 | clean auto-ingest | **0 applications created** |
-| 18b | CV uploaded against a requisition | NEEDS_REVIEW (`request-linked`) |
+| 1 | normal clean CV | Talent Pool, no flags |
+| 2 | missing email, usable phone | Talent Pool, no `Contact Missing` |
+| 2c | no contact at all | Talent Pool **with** `Contact Missing` |
+| 3 | missing phone, usable email | Talent Pool |
+| 4 | sparse professional data | Talent Pool **with** `Incomplete Profile` |
+| 5 | low confidence on identity | Talent Pool **with** `Low Confidence` |
+| 6 | valid Arabic CV | Talent Pool, `Unclassified` |
+| 7 | same name, different contacts | **separate** candidate, `Possible Duplicate`, no merge |
+| 8 | exact duplicate | one candidate, both documents retained |
+| 9 | completely unreadable file | hard exception, no candidate |
+| 10 | no usable name | hard exception, no candidate |
+| 11 | flagged candidate | searchable by name, role, experience, location, classification, source |
+| 12 | every label is a filter | each finds the right people; `flagged` yes/no views are disjoint |
+| 13 | no Application auto-created | 0 across the entire suite |
+| 14 | no Hiring Request dependency | 0 requisitions existed throughout |
+| U1–U6 | updated-CV policy | career refreshed, identity never, both documents kept |
+| C1–C4 | classification is a search fact | never blocks, never named "review" |
 
-Case 13 (CVs plus signatures/logos) is covered by the existing attachment
-classifier and asserted in `audit_regression_test.mjs`: inline images are
-excluded, real attachments are accepted.
-
-**Mutation testing** — each load-bearing guard was broken on purpose to prove
-the test can fail:
+**Mutation testing** — the new behaviour is enforced, not merely intended:
 
 | Mutation | Test that failed |
 |---|---|
-| gate always returns ok | 11, 11b, 11c, 11d |
-| lookalike check removed | 9+10 |
-| requisition refusal removed | 18b |
-| exact-duplicate check removed | 7, 8 |
-| refresh disabled | U1, U2, U3 |
-| identity fields made refreshable | U2, U5 |
-| identity-conflict check disabled | U4 |
-| classification allowed back into the gate | 16, C1, C2, C4 |
-| document not attached | U1 |
+| missing contact blocks again | 2c, 11, 12 |
+| namesakes blocked instead of flagged | 7 |
+| labels never persisted | 7, 2c, 4, 5, U4 |
+| identity conflict overwrites the other person | U4 |
+| a nameless CV creates a candidate | 10 |
 
-Added in `f0aa455`:
-
-| # | Case | Result |
-|---|---|---|
-| C1 | clean CV, unrecognisable profession | CONVERTED, `Unclassified`, not in review |
-| C2 | Arabic-only CV | CONVERTED, `Unclassified`, not in review |
-| C3 | no bucket contains review language | asserted over every bucket |
-| C4 | the gate never reads classification | same verdict, different buckets |
-| U1 | MEP Engineer / 8y → Senior MEP Engineer / 11y | 1 candidate, both documents, position and years refreshed, proposal recorded, **0 applications** |
-| U2 | newer CV carries a new phone | career moved, phone NOT rewritten, held recorded |
-| U3 | newer CV fills previously empty fields | filled |
-| U4 | shared email, different person | NEEDS_REVIEW (`identity-conflict`), neither record touched |
-| U5 | identical CV re-sent | nothing written, no history noise |
-| U6 | identity never appears in the refreshable set | asserted against the source |
+Five assertions in `microsoft_integration_test.mjs` were **inverted, not
+weakened**. They encoded the pre-change rule ("parsing NEVER creates a
+candidate", "the reviewed intake flow is still the only way in") and now assert
+what genuinely still holds: a scan fills the Talent Pool and creates **no
+application**. One was measuring against a count captured at the top of the
+file and is re-anchored to just before the disconnect it describes.
 
 **Browser verification** (local SQLite, seeded, ten CVs through the real path):
-Talent Pool 7 candidates, all `source: cv_auto_ingest`, each classified and
-filterable by classification / position / minimum experience; Candidate Review
-exactly 3, each showing its reason; `/api/applications` total **0**.
+**nine** reached the Talent Pool — including every incomplete one — carrying the
+correct badges; **one** hard exception (no extractable name) stayed in Candidate
+Review; each label filter returned exactly the right people; the default pool
+hid nobody; both namesakes existed separately with the second flagged; and
+`/api/applications` returned **0**.
 
 ## 9. Known limitations
 
@@ -285,14 +281,22 @@ exactly 3, each showing its reason; `/api/applications` total **0**.
   similar order for positions. A later release may classify Arabic
   asynchronously through Anthropic — **ingestion must never depend on that
   provider call**, which is why the classifier is offline and free today.
-- **`MIN_IDENTITY_CONFIDENCE` (0.55) is a first setting, not a tuned one.** It
-  admits a deterministic read and a solid model read. Watch the ratio of
-  `low-confidence` rows in Candidate Review after go-live and adjust — it is one
-  constant in `auto-ingest.js`.
+- **`LOW_CONFIDENCE_BELOW` (0.55) is a first setting, not a tuned one.** It no
+  longer blocks anything — it decides whether a candidate carries the
+  `Low Confidence` badge. Watch how many candidates wear it after go-live and
+  adjust; it is one constant in `auto-ingest.js`.
+- **Labels are derived only at ingest.** Editing a candidate by hand does not
+  recompute them, so a recruiter who fills in a missing phone number still sees
+  `Contact Missing` until a newer CV arrives for that person. Clearing a label
+  manually is not yet possible from the UI.
 - **A parser that reports no confidence scores 1.0** by design, so a provider
   that does not grade itself is not silently treated as untrustworthy.
 - **Existing production intakes stay PENDING.** The 41 already in the queue were
-  created before this change and are not retro-processed. They can be reviewed
+  created before this change and are not retro-processed, so Candidate Review
+  will not be empty on day one. They can be reviewed by hand or re-parsed;
+  nothing in this deploy touches them.
+- **Existing candidates carry no labels.** `quality_flags` is NULL for everyone
+  created before this change, which the filters read as "unflagged". They can be reviewed
   by hand, or re-parsed, but nothing in this deploy touches them.
 - **`discipline_class` is only set at ingest.** Candidates created before this
   change, and any created manually, have NULL.
@@ -414,6 +418,14 @@ Run in order after the deploy. Stop and roll back on any ✗.
 - [ ] Confirm the candidate's **email and phone are unchanged** by that refresh
 - [ ] If any CV in the batch could not be bucketed, confirm it is in the Talent
       Pool with classification `Unclassified` and **NOT** in Candidate Review
+- [ ] **Send a deliberately incomplete CV** (a name and a job title, no email or
+      phone) → it appears in the Talent Pool carrying a `Contact Missing` badge,
+      and is **NOT** in Candidate Review
+- [ ] The default Talent Pool (no filter selected) shows flagged and unflagged
+      candidates together
+- [ ] Each data-quality filter returns only candidates carrying that label
+- [ ] `select count(*) from candidate_intake where status='PENDING'` has not
+      grown beyond the pre-existing 41 plus any genuine hard exceptions
 - [ ] Filter the Talent Pool by that classification and confirm the candidate is
       returned
 - [ ] `select status, count(*) from candidate_intake group by 1` — expect
