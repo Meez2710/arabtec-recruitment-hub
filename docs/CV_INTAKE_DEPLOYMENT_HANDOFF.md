@@ -1,7 +1,11 @@
 # CV Intake → Talent Pool — deployment handoff
 
-Prepared 17 September 2026, revised twice the same day (CV Intake direction change). **Nothing in this change has been deployed.** Local
-work only; production (`10.20.0.9`) is untouched and still runs `6bf7bc1`.
+Prepared 17 September 2026, revised twice the same day (CV Intake direction
+change).
+
+> **DEPLOYED 17 September 2026, 08:41 UTC.** `10.20.0.9` now runs
+> `765c918`. Rollback ref: `6bf7bc1`. See the deployment record at the end of
+> this document for what was verified and what the backlog run produced.
 
 ---
 
@@ -438,3 +442,71 @@ Run in order after the deploy. Stop and roll back on any ✗.
 (they are not retro-processed); every CV parsed *after* the deploy either
 reaches the Talent Pool or sits in Candidate Review with a stated reason; the
 `application` count is unchanged throughout.
+
+
+---
+
+# Deployment record — 17 September 2026
+
+| | |
+|---|---|
+| Previous SHA | `6bf7bc12a5ed15df3abae5675ea3342fc58447ec` |
+| Deployed SHA | `765c91859c4b2cdc6ff6ec6fcac20cf090bd3fd8` |
+| Deployed at | 2026-09-17 08:41 UTC |
+| Backup | `/home/ats/backups/pre-labelling-20260917-084019.dump` (44.4 MB, `pg_restore --list` parses it, 53 table-data entries) |
+| Service | active, `/api/health` 200, `/api/health/ready` `{"ok":true,"ready":true}` |
+| Errors in the log | 0 |
+
+**Pre-deploy tree state.** Two untracked items were present and left alone:
+`.config-baseline-20260910/` (an operator's config snapshot) and a 90-byte stub
+`package-lock.json` at the repo root. No *tracked* file was modified, so the
+reset could discard nothing.
+
+**Protected counts across the deploy itself** — every one unchanged:
+users 45, candidate 0, recruitment_request 1, application 0, interview 0,
+offer 0, candidate_intake 127, mailbox_ingestion 1856, file_blob 129,
+role_permission 244, microsoft_connection 1.
+
+**Schema.** Five additive nullable columns created by `ensureSchema()` on boot;
+zero destructive statements in the diff. No migration was run by hand.
+
+## What the live tests produced
+
+One real Site Engineer CV was parsed from the careers mailbox through the
+production path. It became **CAN-00001 Hamada Said, Senior Project Engineer**,
+classified `Construction / Engineering Core`, unflagged, intake CONVERTED, and
+**no application**. That is the first candidate in the Talent Pool's history.
+
+The 127-intake backlog was then reprocessed through `ingestIntake()` in batches
+of 25 — normal business logic, no SQL shortcut, and **no re-parsing**, because
+the parsed fields were already persisted (so the backlog run cost nothing in
+model calls).
+
+| | |
+|---|---|
+| Talent Pool | **136 candidates** (from 0) |
+| Flagged | 21 — carrying Contact Missing, Unclassified, Incomplete Profile, Possible Duplicate, Needs Review |
+| Unflagged | 115 |
+| Intakes CONVERTED / DUPLICATE / PENDING | 136 / 6 / **4** |
+| Remaining PENDING | exactly the 4 predicted `no-identity` hard exceptions |
+| Applications / interviews / offers | **0 / 0 / 0** |
+| Documents / proposals retained | 149 / audit intact |
+
+Classification spread: Core 85, Support 20, Other Professional 14,
+Unclassified 10, Adjacent 7.
+
+**Idempotency** was proven without parsing: re-running `ingestIntake()` over
+already-CONVERTED intakes resolved each as DUPLICATE against the person already
+on file and created no candidate and no application.
+
+## Operational note from this deployment
+
+A verification script of mine passed `limit: 0` to `parseWaiting()` intending
+"none". `Number(0) || 25` falls back to the default, so it parsed 15 real CVs
+before it was stopped. The candidates it produced are legitimate — real CVs,
+correctly ingested — and nothing was corrupted, but the run was unintended and
+spent model budget.
+
+`parseWaiting({ limit })` should treat 0 as zero, or reject it, rather than
+silently meaning 25. Worth fixing before anyone else writes a batch script
+against it.
