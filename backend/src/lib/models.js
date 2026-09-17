@@ -819,6 +819,16 @@ export const Candidates = {
     run('UPDATE candidate SET retention_until=? WHERE id=?', [due.toISOString(), id]);
     return this.byId(id);
   },
+  /* Data-quality labels. Codes drive the Talent Pool filters, the note is the
+     sentence a recruiter reads. Written after creation for the same reason as
+     the discipline class: a label must never be able to fail the insert that
+     makes the candidate exist. */
+  setQualityFlags(id, { codes, note }) {
+    run('UPDATE candidate SET quality_flags=?, quality_note=?, updated_at=? WHERE id=?',
+      [codes || null, note || null, nowISO(), Number(id)]);
+    return this.byId(id);
+  },
+
   /* Broad professional grouping, for search only. Set after creation rather than
      in create(): the column is nullable and search-only, so it must never be
      able to fail the insert that makes the candidate exist. */
@@ -944,6 +954,12 @@ export const Candidates = {
     // buckets; a candidate created before the column existed has NULL and is
     // simply not in any bucket, never excluded from an unfiltered search.
     if (f.disciplineClass) { sql += ' AND discipline_class=?'; p.push(f.disciplineClass); }
+    // Data-quality label. Same JSON-LIKE pattern the `tags` filter above uses,
+    // so no new index and no new query machinery. Filtering is OPT-IN: the
+    // default Talent Pool never hides a flagged candidate.
+    if (f.qualityFlag) { sql += ' AND quality_flags LIKE ?'; p.push(`%"${f.qualityFlag}"%`); }
+    if (f.flagged === 'yes') { sql += " AND quality_flags IS NOT NULL AND quality_flags <> ''"; }
+    if (f.flagged === 'no') { sql += " AND (quality_flags IS NULL OR quality_flags = '')"; }
     return { sql, p };
   },
 

@@ -266,6 +266,7 @@ const { runMailboxSync, classifyAttachment, syncWindowStart } = await import('./
 
 const countCandidates = () => db.get('SELECT COUNT(*) AS c FROM candidate').c;
 const countIntakes = () => db.get('SELECT COUNT(*) AS c FROM candidate_intake').c;
+const countApplications = () => db.get('SELECT COUNT(*) AS c FROM application').c;
 
 /** A parse result shaped exactly like pipeline-provider.parseDocument returns. */
 const fakeParse = (fields) => async () => ({
@@ -483,19 +484,32 @@ c('classifyAttachment refuses inline, non-file, unsupported and oversized attach
   && classifyAttachment({ name: 'a.pdf', size: 21 * 1024 * 1024, '@odata.type': '#microsoft.graph.fileAttachment' }).accept === false
   && classifyAttachment({ name: 'a.pdf', size: 1024, '@odata.type': '#microsoft.graph.fileAttachment' }).accept === true);
 
-/* --------------- the intake seam: no candidate is created ----------------- */
-console.log('\n- The reviewed intake flow is still the only way in -');
-c('the scan created PENDING intakes, not candidates',
-  countCandidates() === candidatesBefore && countIntakes() === intakesBefore + 2,
+/* ------------- the intake seam: candidates yes, applications never ---------
+   These assertions used to read "no candidate is created" and "the reviewed
+   intake flow is still the only way in". That was the product's rule until the
+   CV Intake direction changed: a parsed CV now goes into the Talent Pool by
+   itself, because withholding it made every candidate invisible to search
+   until somebody did paperwork.
+
+   The invariant that genuinely still holds — and the one worth guarding — is
+   that ingestion never makes a RECRUITMENT decision. Candidates are created;
+   applications, interviews and offers are not.
+   -------------------------------------------------------------------------- */
+console.log('\n- A scan fills the Talent Pool and starts no recruitment -');
+c('the scan created both an intake and a candidate for each CV',
+  countCandidates() === candidatesBefore + 2 && countIntakes() === intakesBefore + 2,
   `candidates ${candidatesBefore}->${countCandidates()}, intakes ${intakesBefore}->${countIntakes()}`);
-c('the intakes are PENDING and carry the mailbox origin', (() => {
+c('the intakes resolved rather than waiting for a recruiter', (() => {
   const rows = db.all('SELECT status, origin, file_hash, stored_name FROM candidate_intake ORDER BY id DESC LIMIT 2');
-  return rows.length === 2 && rows.every((r) => r.status === 'PENDING' && r.origin === 'mailbox.microsoft'
+  return rows.length === 2 && rows.every((r) => r.status === 'CONVERTED' && r.origin === 'mailbox.microsoft'
     && r.file_hash && r.stored_name);
 })());
+c('a mailbox scan creates NO application', countApplications() === 0,
+  `applications ${countApplications()}`);
 const pendingList = await call('/api/candidates/intakes', { token: admin });
-c('mailbox intakes appear on the existing review queue',
-  pendingList.status === 200 && pendingList.j.intakes.some((i) => i.origin === 'mailbox.microsoft'));
+c('the review queue is not filled by ordinary CVs',
+  pendingList.status === 200 && !pendingList.j.intakes.some((i) => i.origin === 'mailbox.microsoft'),
+  'clean mailbox CVs bypass Candidate Review entirely');
 
 /* ------------------------- 11. strong idempotency ------------------------- */
 console.log('\n- Idempotency -');
@@ -597,8 +611,13 @@ c('a manual scan through the route creates no extra intake', countIntakes() === 
     waitingByCategory().reduce((n, g) => n + (g.category === chosen ? 0 : Number(g.count)), 0) === others,
     `${others} left waiting`);
   c('parsing a selection creates PENDING intakes', countIntakes() === intakesBefore + run.parsed);
-  c('parsing NEVER creates a candidate', countCandidates() === candidatesBefore,
+  // Was "parsing NEVER creates a candidate" — the pre-direction-change rule.
+  // Parsing now fills the Talent Pool; what it must never do is start a
+  // recruitment process.
+  c('parsing fills the Talent Pool', countCandidates() > candidatesBefore,
     `candidates ${candidatesBefore} -> ${countCandidates()}`);
+  c('parsing NEVER creates an application', countApplications() === 0,
+    `applications ${countApplications()}`);
 
   // Idempotence: the same attachment must not be read twice.
   const again = await parseWaiting({ categories: [chosen], limit: 50, parse: realish });
@@ -1045,6 +1064,10 @@ console.log('\n- Disconnect -');
 await connectAs();
 c('reconnecting restores CONNECTED', store.connectionRow().status === 'CONNECTED');
 const intakesBeforeDisconnect = countIntakes();
+// Anchored HERE, not at the top of the file: the claim is that the DISCONNECT
+// creates nothing, and by this point the earlier scans have legitimately filled
+// the Talent Pool.
+const candidatesBeforeDisconnect = countCandidates();
 const disconnected = await call('/api/integrations/microsoft/disconnect', { method: 'POST', token: admin });
 c('disconnect succeeds', disconnected.status === 200 && disconnected.j.status === 'DISCONNECTED');
 c('disconnect removes the token cache',
@@ -1053,7 +1076,8 @@ c('disconnect leaves the ingestion ledger and the intakes alone',
   db.get('SELECT COUNT(*) AS c FROM mailbox_ingestion').c > 0
   && countIntakes() === intakesBeforeDisconnect,
   `intakes ${intakesBeforeDisconnect} -> ${countIntakes()}`);
-c('disconnect creates no candidates', countCandidates() === candidatesBefore);
+c('disconnect creates no candidates', countCandidates() === candidatesBeforeDisconnect,
+  `candidates ${candidatesBeforeDisconnect} -> ${countCandidates()}`);
 const afterDisconnect = await call('/api/integrations/microsoft/sync', { method: 'POST', token: admin });
 c('a sync after disconnect is refused',
   afterDisconnect.status === 400 && afterDisconnect.j.code === 'not-connected');

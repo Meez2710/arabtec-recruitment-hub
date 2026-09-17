@@ -67,6 +67,13 @@ function serialize(c, user, { withDetail = false } = {}) {
     // Broad professional grouping, for filtering the pool. Never a hiring
     // decision and never a reason a candidate is hidden.
     disciplineClass: c.discipline_class || null,
+    // Data-quality labels. Shown as badges; never a reason a candidate is
+    // hidden from an unfiltered Talent Pool.
+    qualityFlags: (() => {
+      try { const v = JSON.parse(c.quality_flags || '[]'); return Array.isArray(v) ? v : []; }
+      catch { return []; }
+    })(),
+    qualityNote: c.quality_note || null,
     parsedAt: c.parsed_at || null,
     screeningStatus: c.screening_status || 'new',
     // GDPR/PDPL status (shown on the candidate profile)
@@ -179,6 +186,7 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
     minExp: q.minExp, maxExp: q.maxExp, tag: q.tag,
     screeningStatus: q.screeningStatus, parseStatus: q.parseStatus,
     disciplineClass: q.disciplineClass,
+    qualityFlag: q.qualityFlag, flagged: q.flagged,
     sort: q.sort, dir: q.dir,
   };
   const total = Candidates.count(filters);

@@ -152,13 +152,63 @@ export function classifyProfile(values) {
 }
 
 /* --------------------------------------------------------------------------
-   The gate.
+   Data-quality labels, and the four things that actually stop a candidate.
+
+   THE PHILOSOPHY CHANGED HERE, deliberately. An earlier version of this file
+   treated a missing phone number, a thin profile or a low-confidence read as
+   reasons to withhold the candidate until a recruiter approved them. That is
+   backwards for a talent pool: the cost of a slightly incomplete record is that
+   one field is blank, and the cost of withholding it is that the person is
+   invisible to every search until somebody does paperwork.
+
+   So uncertainty is now LABELLED, not blocked. A recruiter opening the Talent
+   Pool sees everyone, with what is uncertain written on the record.
+
+   Only four things stop a candidate being created, and each is a case where
+   there is no person to create or creating one would damage someone else.
    -------------------------------------------------------------------------- */
+
+/** The labels. Code, the badge a recruiter sees, and the sentence explaining it. */
+export const FLAGS = Object.freeze({
+  CONTACT_MISSING: {
+    code: 'contact-missing', label: 'Contact Missing',
+    reason: 'No email or phone could be extracted.',
+  },
+  INCOMPLETE_PROFILE: {
+    code: 'incomplete-profile', label: 'Incomplete Profile',
+    reason: 'Current position and experience could not be extracted reliably.',
+  },
+  LOW_CONFIDENCE: {
+    code: 'low-confidence', label: 'Low Confidence',
+    reason: 'Some parsed fields have low extraction confidence.',
+  },
+  UNCLASSIFIED: {
+    code: 'unclassified', label: 'Unclassified',
+    reason: 'Professional classification could not be determined confidently.',
+  },
+  POSSIBLE_DUPLICATE: {
+    code: 'possible-duplicate', label: 'Possible Duplicate',
+    reason: 'Another candidate has the same name, but no shared contact details were found.',
+  },
+  NEEDS_REVIEW: {
+    code: 'needs-review', label: 'Needs Review',
+    reason: 'Identity information is incomplete or conflicting.',
+  },
+});
+
+/** Every flag code, for validating a filter value. */
+export const FLAG_CODES = Object.freeze(Object.values(FLAGS).map((f) => f.code));
+
+/** Hard exceptions: no candidate is created. There is no person, or making one would hurt. */
+export const BLOCKED = Object.freeze({
+  UNREADABLE: 'unreadable',
+  NO_IDENTITY: 'no-identity',
+});
 
 /**
  * Average confidence across the identity fields that actually carry weight.
- * A CV where the name and the phone number were both read at 0.35 is a guess,
- * however many other fields came back.
+ * Parsers that report no confidence score 1 by the rule below, because a
+ * provider that does not grade itself must not be treated as untrustworthy.
  */
 export function identityConfidence(fields) {
   const wanted = new Set(['fullName', ...REACHABLE]);
@@ -168,65 +218,74 @@ export function identityConfidence(fields) {
   return Number((sum / scored.length).toFixed(3));
 }
 
-/**
- * The minimum confidence an identity may carry and still be trusted unattended.
- *
- * Tuned to admit a deterministic read (an email matched by rule scores 1.0) and
- * a solid model read, while sending a genuinely uncertain one to a person.
- * Parsers that report no confidence at all score 1 by the rule in
- * identityConfidence(), because a provider that does not grade itself must not
- * be silently treated as untrustworthy.
- */
-export const MIN_IDENTITY_CONFIDENCE = 0.55;
-
-/** Distinct profile signals required before a record is worth searching. */
-export const MIN_PROFILE_SIGNALS = 1;
+/** Below this, identity fields are labelled Low Confidence — never withheld. */
+export const LOW_CONFIDENCE_BELOW = 0.55;
 
 /**
- * Decide whether an intake may enter the Talent Pool unattended.
+ * Assess a parsed CV.
  *
- * Returns a verdict, never a throw: the caller records the reason on the intake
- * so a recruiter opening Candidate Review is told WHY this one needed them.
+ * Returns whether a candidate can be created at all, and the labels that should
+ * travel with them. `ok: false` happens only for the two document-level
+ * failures; every other kind of uncertainty comes back as a flag on an
+ * otherwise perfectly good candidate.
  *
- * @returns {{ok: boolean, code: string|null, reason: string|null,
+ * @returns {{ok: boolean, blockCode: string|null, reason: string|null,
+ *            flags: Array<{code: string, label: string, reason: string}>,
  *            classification: string, values: Map<string, unknown>}}
  */
 export function assessIntake(intake) {
   const fields = intake?.fields || [];
   const values = valuesOf(fields);
   const classification = classifyProfile(values);
-  const verdict = (ok, code, reason) => ({ ok, code, reason, classification, values });
+  const flags = [];
 
+  /* ---- hard exception 1: nothing was read at all ---- */
   if (fields.length === 0) {
-    return verdict(false, 'no-fields', 'The reader returned no usable field from this document.');
+    return {
+      ok: false, blockCode: BLOCKED.UNREADABLE,
+      reason: 'The document could not be read — no candidate field was extracted.',
+      flags, classification, values,
+    };
   }
 
+  /* ---- hard exception 2: there is no person to create ---- */
   const name = values.get('fullName');
   if (!present(name) || String(name).trim().length < 3) {
-    return verdict(false, 'identity-unclear', 'No usable full name could be read from the CV.');
+    return {
+      ok: false, blockCode: BLOCKED.NO_IDENTITY,
+      reason: 'No usable candidate name could be extracted from the document.',
+      flags, classification, values,
+    };
   }
 
-  const reachable = REACHABLE.filter((f) => present(values.get(f)));
-  if (reachable.length === 0) {
-    return verdict(false, 'identity-unclear',
-      'The CV has a name but no email, phone or LinkedIn — the person could not be contacted.');
-  }
+  /* ---- everything below is a LABEL, never a blocker ---- */
 
-  const confidence = identityConfidence(fields);
-  if (confidence < MIN_IDENTITY_CONFIDENCE) {
-    return verdict(false, 'low-confidence',
-      `Identity fields were read with low confidence (${confidence}).`);
-  }
+  // Reachable by nothing. Still a real person with a real CV on file, and a
+  // recruiter can often find a number in the document itself.
+  if (REACHABLE.every((f) => !present(values.get(f)))) flags.push(FLAGS.CONTACT_MISSING);
 
-  const signals = PROFILE_SIGNALS.filter((f) => present(values.get(f)));
-  if (signals.length < MIN_PROFILE_SIGNALS) {
-    return verdict(false, 'thin-profile',
-      'Nothing about the person\'s work could be read, so the record would not be searchable.');
-  }
+  // Nothing readable about the work. Searchable by name and by CV text; the
+  // label says the structured fields are thin.
+  if (!PROFILE_SIGNALS.some((f) => present(values.get(f)))) flags.push(FLAGS.INCOMPLETE_PROFILE);
 
-  return verdict(true, null, null);
+  if (identityConfidence(fields) < LOW_CONFIDENCE_BELOW) flags.push(FLAGS.LOW_CONFIDENCE);
+
+  // A search limitation, stated as one. Never a review state.
+  if (classification === CLASSES.UNCLASSIFIED) flags.push(FLAGS.UNCLASSIFIED);
+
+  return { ok: true, blockCode: null, reason: null, flags, classification, values };
 }
 
+/** Flags as they are stored: codes for filtering, one note a person reads. */
+export function encodeFlags(flags) {
+  const unique = [];
+  for (const f of flags) if (!unique.some((x) => x.code === f.code)) unique.push(f);
+  return {
+    codes: unique.length ? JSON.stringify(unique.map((f) => f.code)) : null,
+    note: unique.length ? unique.map((f) => `${f.label}: ${f.reason}`).join(' ') : null,
+    list: unique,
+  };
+}
 
 /* ==========================================================================
    An updated CV from someone already in the pool.
@@ -363,6 +422,19 @@ function decodeMaybeList(v) {
   try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; }
 }
 
+/**
+ * Write the labels onto the candidate.
+ *
+ * Replaces rather than accumulates: the flags describe what the LATEST document
+ * left uncertain, so a newer CV that supplies the missing phone number should
+ * clear "Contact Missing" rather than leave it on the record for ever.
+ */
+function applyFlags(candidateId, flags) {
+  if (!candidateId) return;
+  try { Candidates.setQualityFlags(candidateId, encodeFlags(flags)); }
+  catch { /* the candidate stands; a label is not worth losing them over */ }
+}
+
 /** Keep the document itself, so the CV history is real and hash dedup works. */
 function attachDocument(candidateId, intake, actor) {
   if (!candidateId || !intake?.fileHash) return;
@@ -408,61 +480,61 @@ function attachDocument(candidateId, intake, actor) {
  */
 export async function autoIngest(intake, actor) {
   const assessment = assessIntake(intake);
+
+  // The only two document-level failures. There is no person to create, so the
+  // intake stays PENDING and a human looks at the file itself.
   if (!assessment.ok) {
     return {
-      outcome: 'NEEDS_REVIEW',
+      outcome: 'BLOCKED',
       candidateId: null,
       classification: assessment.classification,
-      code: assessment.code,
+      code: assessment.blockCode,
       reason: assessment.reason,
+      flags: [],
     };
   }
 
-  // Name-only lookalikes are checked BEFORE the write. `reviewIntake` reports
-  // them after the fact because a human had already decided; unattended, a
-  // second "Ahmed Hassan" is exactly the case a machine must not resolve.
   const { exact, potential } = classifyDuplicates(assessment.values, intake.fileHash ?? null);
+  const flags = [...assessment.flags];
 
-  if (exact.length > 0) {
-    const existing = Candidates.byId(exact[0].id);
+  const existing = exact.length > 0 ? Candidates.byId(exact[0].id) : null;
 
-    // Same contact detail, a different person's name. The match proved a shared
-    // identifier, not a shared person — writing one career onto the other's
-    // record is worse than any queue, so this is the one duplicate a human
-    // must settle.
-    if (existing && identityConflict(existing, assessment.values)) {
-      return {
-        outcome: 'NEEDS_REVIEW', candidateId: null,
-        classification: assessment.classification,
-        code: 'identity-conflict',
-        reason: `This CV shares ${exact[0].matchedFields.join(', ')} with `
-          + `${exact[0].candidateNo} (${existing.full_name}) but names someone else. `
-          + 'Whether these are the same person is a judgement about a real person.',
-        matches: exact,
-      };
-    }
+  // A shared contact detail but a materially different name — a family address,
+  // a forwarded CV. Refreshing the person on file would write one career onto
+  // another's record, which IS the case this module hard-refuses. That record is
+  // left entirely alone; this CV becomes its own candidate carrying the flag, so
+  // nothing is merged and nothing is withheld. A recruiter resolves it later.
+  const conflicted = !!(existing && identityConflict(existing, assessment.values));
+  if (conflicted) {
+    flags.push({
+      ...FLAGS.NEEDS_REVIEW,
+      reason: `This CV shares ${exact[0].matchedFields.join(', ')} with `
+        + `${exact[0].candidateNo} (${existing.full_name}) but names someone else.`,
+    });
+  }
 
-    // Same person, newer document: move the career data, leave the identity,
-    // keep both CVs. See refreshExisting() for the policy and why.
+  // Same person, newer document: move the career data, leave the identity, keep
+  // both CVs. See refreshExisting() for the policy and why.
+  if (existing && !conflicted) {
     let refresh = { refreshed: [], held: [], proposalId: null };
-    if (existing) {
-      attachDocument(existing.id, intake, actor);
-      try {
-        refresh = await refreshExisting(existing, intake, assessment.values, actor);
-        if (refresh.refreshed.length > 0) {
-          Candidates.setDisciplineClass(existing.id, assessment.classification);
-        }
-      } catch (e) {
-        // The person is still correctly deduplicated and the document is kept.
-        // A stale profile is a worse search result, never a lost CV.
-        refresh = { refreshed: [], held: [], proposalId: null, error: e.message };
+    attachDocument(existing.id, intake, actor);
+    try {
+      refresh = await refreshExisting(existing, intake, assessment.values, actor);
+      if (refresh.refreshed.length > 0) {
+        Candidates.setDisciplineClass(existing.id, assessment.classification);
       }
+    } catch (e) {
+      // The person is still correctly deduplicated and the document is kept.
+      // A stale profile is a worse search result, never a lost CV.
+      refresh = { refreshed: [], held: [], proposalId: null, error: e.message };
     }
+    // Flags found on THIS document apply to the person it describes.
+    applyFlags(existing.id, flags);
 
     const moved = refresh.refreshed.length;
     return {
       outcome: 'DUPLICATE',
-      candidateId: exact[0].id,
+      candidateId: existing.id,
       classification: assessment.classification,
       code: 'duplicate',
       reason: `Already in the Talent Pool as ${exact[0].candidateNo} `
@@ -474,38 +546,59 @@ export async function autoIngest(intake, actor) {
       refreshed: refresh.refreshed,
       heldBack: refresh.held,
       proposalId: refresh.proposalId,
+      flags: encodeFlags(flags).list,
     };
   }
 
+  // A namesake with no shared contact detail. Two people genuinely called
+  // Mohamed Ali are ordinary, and withholding the second one until a recruiter
+  // adjudicates makes them invisible to every search in the meantime. Create
+  // them, label the uncertainty, and let a recruiter merge later if they turn
+  // out to be one person. Auto-merging remains forbidden.
   if (potential.length > 0) {
-    return {
-      outcome: 'NEEDS_REVIEW',
-      candidateId: null,
-      classification: assessment.classification,
-      code: 'duplicate-ambiguous',
-      reason: `${potential.length} existing candidate(s) share this name but no contact detail. `
-        + 'Merging or separating them is a judgement about a real person.',
-      matches: potential,
-    };
+    flags.push({
+      ...FLAGS.POSSIBLE_DUPLICATE,
+      reason: potential.length === 1
+        ? `${potential[0].fullName} (${potential[0].candidateNo}) has the same name, `
+          + 'but no shared contact details were found.'
+        : `${potential.length} existing candidates share this name, `
+          + 'but no shared contact details were found.',
+    });
   }
 
   const decisions = {};
   for (const f of intake.fields) decisions[f.field] = true;
 
   try {
-    const result = await reviewIntake(intake.id, decisions, actor, { source: 'cv_auto_ingest' });
+    // On an identity conflict we have already decided this is a DIFFERENT
+    // person from the one sharing that contact detail, so reviewIntake's own
+    // duplicate refusal — which exists to make a human choose — must be
+    // overridden deliberately and with a reason on the record. Every other
+    // path leaves it in force.
+    const result = await reviewIntake(intake.id, decisions, actor, {
+      source: 'cv_auto_ingest',
+      ...(conflicted ? {
+        overrideDuplicate: true,
+        overrideReason: `Shares ${exact[0].matchedFields.join(', ')} with `
+          + `${exact[0].candidateNo} but names a different person; `
+          + 'created separately and flagged for a recruiter rather than merged.',
+      } : {}),
+    });
     if (!result || result.status !== 'CONVERTED') {
       return {
         outcome: 'NEEDS_REVIEW', candidateId: null, classification: assessment.classification,
         code: 'not-converted', reason: 'The intake could not be converted automatically.',
       };
     }
+    const encoded = encodeFlags(flags);
     return {
       outcome: 'CONVERTED',
       candidateId: result.candidateId,
       classification: assessment.classification,
       code: null,
-      reason: null,
+      reason: encoded.note,
+      flags: encoded.list,
+      matches: potential.length ? potential : undefined,
     };
   } catch (e) {
     // A rule the candidate record itself enforces (an invalid email that got
@@ -577,6 +670,7 @@ export async function ingestIntake(intake, actor) {
       stampIntakeClassification(intake.id, result.classification);
       if (result.candidateId) {
         Candidates.setDisciplineClass(result.candidateId, result.classification);
+        applyFlags(result.candidateId, result.flags || []);
         // Without this the CV history is empty and classifyDuplicates' own
         // documentHash rule can never match, so the same file arriving twice
         // would only be caught if it also shared a contact detail.

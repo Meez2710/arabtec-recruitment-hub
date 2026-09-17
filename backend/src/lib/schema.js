@@ -686,6 +686,19 @@ export function ensureSchema() {
   // See lib/cv-intake/auto-ingest.js for the buckets and how they are derived.
   addColumnIfMissing('candidate', 'discipline_class', 'TEXT');
 
+  // DATA-QUALITY LABELS, not a workflow gate. A CV with a thin profile, a
+  // missing phone number or a namesake already in the pool still belongs in the
+  // Talent Pool — a recruiter needs to SEE the person and be told what is
+  // uncertain, not be prevented from finding them until someone does paperwork.
+  //
+  // `quality_flags` is a JSON array of codes, filtered with the same LIKE
+  // pattern the existing `tags` column already uses, so this needs no new index
+  // and no new query machinery. `quality_note` is the plain-language reason a
+  // recruiter reads. Both nullable: a clean CV carries neither, and every
+  // candidate created before these columns existed is simply unflagged.
+  addColumnIfMissing('candidate', 'quality_flags', 'TEXT');
+  addColumnIfMissing('candidate', 'quality_note', 'TEXT');
+
   // Why an intake did NOT become a candidate on its own. Read by Candidate
   // Review so a recruiter is told what needs their judgement instead of having
   // to work it out from the document.

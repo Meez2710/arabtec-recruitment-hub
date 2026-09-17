@@ -18,7 +18,7 @@ const { ensureSchema } = await import('./src/lib/schema.js');
 const { run, get, all } = await import('./src/lib/db.js');
 const { ROLES } = await import('./src/lib/permissions.js');
 const { createIntake, intakeById } = await import('./src/lib/intake-store.js');
-const { ingestIntake, classifyProfile, assessIntake, CLASSES, valuesOf } =
+const { ingestIntake, classifyProfile, assessIntake, CLASSES, valuesOf, FLAGS, FLAG_CODES } =
   await import('./src/lib/cv-intake/auto-ingest.js');
 const { Candidates } = await import('./src/lib/models.js');
 
@@ -186,7 +186,7 @@ await checkAsync('8. an updated CV from an existing candidate keeps one person a
   assert.ok(intakes.some((i) => i.status === 'DUPLICATE'));
 });
 
-await checkAsync('9+10. the same name with no shared contact detail is never merged — it goes to a person', async () => {
+await checkAsync('7. a namesake with different contacts becomes its OWN flagged candidate', async () => {
   const a = await ingestIntake(makeIntake([
     F('fullName', 'Mohamed Ali'), F('email', 'mohamed.ali.1@example.com'),
     F('phone', '+201447778888'), F('currentPosition', 'Civil Engineer'),
@@ -200,50 +200,84 @@ await checkAsync('9+10. the same name with no shared contact detail is never mer
     F('phone', '+201559990000'), F('currentPosition', 'Architect'),
   ]), ACTOR);
 
-  assert.equal(b.outcome, 'NEEDS_REVIEW', `expected a human decision, got ${b.outcome}`);
-  assert.equal(b.code, 'duplicate-ambiguous');
-  assert.equal(countCandidates(), before, 'no candidate created on a guess');
-  assert.equal(intakeById(b.candidateId ?? 0)?.status ?? 'PENDING', 'PENDING');
-  const row = get('SELECT status, auto_code, reason FROM candidate_intake ORDER BY id DESC LIMIT 1');
-  assert.equal(row.status, 'PENDING', 'it waits in Candidate Review, it is not lost');
-  assert.equal(row.auto_code, 'duplicate-ambiguous');
-  assert.ok(row.reason && row.reason.length > 0, 'the recruiter is told why');
+  assert.equal(b.outcome, 'CONVERTED', 'two people with one name is ordinary, not a blocker');
+  assert.equal(countCandidates(), before + 1, 'a SEPARATE candidate, not a merge');
+  assert.notEqual(b.candidateId, a.candidateId);
+  const codes = JSON.parse(Candidates.byId(b.candidateId).quality_flags || '[]');
+  assert.ok(codes.includes('possible-duplicate'), `expected the label, got ${codes}`);
+  assert.match(Candidates.byId(b.candidateId).quality_note, /same name/i);
+  // And the first person is untouched.
+  assert.equal(Candidates.byId(a.candidateId).current_position, 'Civil Engineer');
 });
 
-console.log('\n--- 11-14: exceptions reach Candidate Review, never the void ---');
+console.log('\n--- uncertainty is LABELLED, not blocked ---');
 
-await checkAsync('11. an unusable parse waits for a person, with the reason recorded', async () => {
-  const intake = makeIntake([F('currentPosition', 'Engineer')]); // no name, no contact
-  const r = await ingestIntake(intake, ACTOR);
-  assert.equal(r.outcome, 'NEEDS_REVIEW');
-  assert.equal(r.code, 'identity-unclear');
-  const row = intakeById(intake.id);
-  assert.equal(row.status, 'PENDING');
-  assert.ok(r.reason.includes('name'), `the reason names the problem: ${r.reason}`);
+const flagsOf = (id) => {
+  try { return JSON.parse(Candidates.byId(id).quality_flags || '[]'); } catch { return []; }
+};
+
+await checkAsync('2b. no email but a usable phone: Talent Pool, no Contact Missing flag', async () => {
+  const r = await ingestIntake(makeIntake([
+    F('fullName', 'Hoda Salem'), F('phone', '+201220009999'),
+    F('currentPosition', 'Site Engineer'),
+  ]), ACTOR);
+  assert.equal(r.outcome, 'CONVERTED');
+  assert.ok(!flagsOf(r.candidateId).includes('contact-missing'), 'a phone IS a contact');
 });
 
-await checkAsync('11b. a name with no way to reach the person waits for review', async () => {
-  const intake = makeIntake([F('fullName', 'Anonymous Applicant'), F('currentPosition', 'Site Engineer')]);
-  const r = await ingestIntake(intake, ACTOR);
-  assert.equal(r.outcome, 'NEEDS_REVIEW');
-  assert.equal(r.code, 'identity-unclear');
+await checkAsync('2c. no contact at all: Talent Pool WITH Contact Missing', async () => {
+  const before = countCandidates();
+  const r = await ingestIntake(makeIntake([
+    F('fullName', 'Walid Nasser'), F('currentPosition', 'Site Engineer'),
+    F('currentCompany', 'Hassan Allam'),
+  ]), ACTOR);
+  assert.equal(r.outcome, 'CONVERTED', 'missing contact must NOT block the pool');
+  assert.equal(countCandidates(), before + 1);
+  assert.ok(flagsOf(r.candidateId).includes('contact-missing'));
+  assert.match(Candidates.byId(r.candidateId).quality_note, /No email or phone/);
+  assert.equal(intakeById(r.candidateId ? 0 : 0)?.status ?? 'n/a', 'n/a');
 });
 
-await checkAsync('11c. a low-confidence identity waits for review', async () => {
-  const intake = makeIntake([
-    F('fullName', 'Blurry Scan', 0.3), F('email', 'maybe@example.com', 0.2),
+await checkAsync('4. sparse professional data: Talent Pool WITH Incomplete Profile', async () => {
+  const r = await ingestIntake(makeIntake([
+    F('fullName', 'Ramy Gaber'), F('phone', '+201330008888'),
+  ]), ACTOR);
+  assert.equal(r.outcome, 'CONVERTED', 'a thin profile is a label, not a gate');
+  assert.ok(flagsOf(r.candidateId).includes('incomplete-profile'));
+  assert.match(Candidates.byId(r.candidateId).quality_note, /position and experience/i);
+});
+
+await checkAsync('5. low confidence on identity: Talent Pool WITH Low Confidence', async () => {
+  const r = await ingestIntake(makeIntake([
+    F('fullName', 'Faded Print', 0.30), F('email', 'faded.print@example.com', 0.25),
     F('currentPosition', 'Site Engineer', 0.9),
-  ]);
-  const r = await ingestIntake(intake, ACTOR);
-  assert.equal(r.outcome, 'NEEDS_REVIEW');
-  assert.equal(r.code, 'low-confidence');
+  ]), ACTOR);
+  assert.equal(r.outcome, 'CONVERTED', 'low confidence is visible, not blocking');
+  assert.ok(flagsOf(r.candidateId).includes('low-confidence'));
 });
 
-await checkAsync('11d. a name and a phone but nothing about the work waits for review', async () => {
-  const intake = makeIntake([F('fullName', 'Sami Adel'), F('phone', '+201660001111')]);
+await checkAsync('9. a completely unreadable file is a hard exception — no candidate', async () => {
+  const before = countCandidates();
+  const intake = makeIntake([], { fileName: 'corrupt.pdf' });
+  // createIntake refuses an empty field set, which IS the hard block upstream.
+  if (intake === null) {
+    assert.equal(countCandidates(), before, 'nothing was created');
+    return;
+  }
   const r = await ingestIntake(intake, ACTOR);
-  assert.equal(r.outcome, 'NEEDS_REVIEW');
-  assert.equal(r.code, 'thin-profile');
+  assert.equal(r.outcome, 'BLOCKED');
+  assert.equal(r.code, 'unreadable');
+  assert.equal(countCandidates(), before);
+});
+
+await checkAsync('10. no usable name is a hard exception — no candidate', async () => {
+  const before = countCandidates();
+  const intake = makeIntake([F('currentPosition', 'Engineer'), F('email', 'x@example.com')]);
+  const r = await ingestIntake(intake, ACTOR);
+  assert.equal(r.outcome, 'BLOCKED', 'there is no person to create');
+  assert.equal(r.code, 'no-identity');
+  assert.equal(countCandidates(), before);
+  assert.equal(intakeById(intake.id).status, 'PENDING', 'the file waits for a person');
 });
 
 await checkAsync('12. two CVs in one email are processed independently', async () => {
@@ -257,17 +291,16 @@ await checkAsync('12. two CVs in one email are processed independently', async (
   assert.equal(one.outcome, 'CONVERTED');
   assert.equal(two.outcome, 'CONVERTED');
   assert.notEqual(one.candidateId, two.candidateId);
-  assert.equal(countCandidates(), before + 2, 'one attachment does not affect the other');
+  assert.equal(countCandidates(), before + 2);
 });
 
-await checkAsync('14. a transient failure keeps the CV and leaves it retryable', async () => {
-  // A field the candidate record itself refuses: the intake must survive.
+await checkAsync('14. a candidate-record rule the reader got past keeps the CV', async () => {
   const intake = makeIntake([
     F('fullName', 'Broken Record'), F('email', 'not-an-email-address'),
     F('phone', '+201770002222'), F('currentPosition', 'Site Engineer'),
   ]);
   const r = await ingestIntake(intake, ACTOR);
-  assert.equal(r.outcome, 'NEEDS_REVIEW', 'the CV is kept, not discarded');
+  assert.notEqual(r.outcome, 'CONVERTED');
   const row = intakeById(intake.id);
   assert.equal(row.status, 'PENDING', 'still reviewable and still retryable');
   assert.ok(row.storedName, 'the original document is still on file');
@@ -353,8 +386,8 @@ check('classification never returns something outside the five buckets', () => {
 check('an empty profile is Unclassified, not a crash', () => {
   assert.equal(classifyProfile(valuesOf([])), CLASSES.UNCLASSIFIED);
   const v = assessIntake({ fields: [] });
-  assert.equal(v.ok, false);
-  assert.equal(v.code, 'no-fields');
+  assert.equal(v.ok, false, 'nothing read is one of the two hard exceptions');
+  assert.equal(v.blockCode, 'unreadable');
 });
 
 
@@ -501,7 +534,7 @@ await checkAsync('U3. empty fields are filled from the newer CV', async () => {
   assert.equal(after.location, 'Alexandria');
 });
 
-await checkAsync('U4. a shared contact detail with a DIFFERENT person goes to a human', async () => {
+await checkAsync('U4. a shared contact with a DIFFERENT person: separate flagged candidate, other record untouched', async () => {
   const first = await ingestIntake(makeIntake([
     F('fullName', 'Amira Fouad'), F('email', 'shared.family@example.com'),
     F('phone', '+201220003333'), F('currentPosition', 'Architect'),
@@ -516,11 +549,17 @@ await checkAsync('U4. a shared contact detail with a DIFFERENT person goes to a 
     F('phone', '+201220003333'), F('currentPosition', 'Electrical Engineer'),
   ], { fileHash: 'shared-v2' }), ACTOR);
 
-  assert.equal(second.outcome, 'NEEDS_REVIEW');
-  assert.equal(second.code, 'identity-conflict');
-  assert.equal(countCandidates(), before, 'no candidate created on a guess');
-  assert.equal(Candidates.byId(first.candidateId).current_position, positionBefore,
-    "and Amira's profile was NOT overwritten with Bassem's career");
+  assert.equal(second.outcome, 'CONVERTED', 'Bassem is a real person and belongs in the pool');
+  assert.equal(countCandidates(), before + 1, 'as his OWN candidate, never merged into Amira');
+  assert.notEqual(second.candidateId, first.candidateId);
+
+  const codes = JSON.parse(Candidates.byId(second.candidateId).quality_flags || '[]');
+  assert.ok(codes.includes('needs-review'), `expected needs-review, got ${codes}`);
+  assert.match(Candidates.byId(second.candidateId).quality_note, /names someone else/i);
+
+  // The decisive assertion: Amira's record was not disturbed at all.
+  assert.equal(Candidates.byId(first.candidateId).current_position, positionBefore);
+  assert.equal(Candidates.byId(first.candidateId).full_name, 'Amira Fouad');
 });
 
 await checkAsync('U5. a re-sent identical CV changes nothing and still needs nobody', async () => {
@@ -548,6 +587,69 @@ check('U6. the refresh policy never lists an identity field as refreshable', () 
   for (const f of bad) {
     assert.ok(!refreshable.includes(`'${f}'`), `${f} must never be auto-refreshable`);
   }
+});
+
+
+console.log('\n--- flagged candidates are first-class members of the Talent Pool ---');
+
+await checkAsync('11. a flagged candidate is searchable by every ordinary field', async () => {
+  const r = await ingestIntake(makeIntake([
+    F('fullName', 'Searchable Flagged'), F('currentPosition', 'Planning Engineer'),
+    F('currentCompany', 'Arab Contractors'), F('yearsExperience', 12),
+    F('location', 'Cairo'), F('skills', ['Primavera', 'Cost Control']),
+  ]), ACTOR);
+  assert.equal(r.outcome, 'CONVERTED');
+  const id = r.candidateId;
+  assert.ok(JSON.parse(Candidates.byId(id).quality_flags || '[]').includes('contact-missing'),
+    'fixture sanity: this candidate IS flagged');
+
+  const found = (f) => Candidates.list({ ...f, limit: 200, offset: 0 }).some((c) => c.id === id);
+  assert.ok(found({}), 'the DEFAULT Talent Pool must not hide a flagged candidate');
+  assert.ok(found({ q: 'Searchable' }), 'searchable by name');
+  assert.ok(found({ currentPosition: 'Planning Engineer' }), 'searchable by role');
+  assert.ok(found({ minExp: 10 }), 'searchable by experience');
+  assert.ok(found({ location: 'Cairo' }), 'searchable by location');
+  assert.ok(found({ disciplineClass: CLASSES.CORE }), 'searchable by classification');
+  assert.ok(found({ source: 'cv_auto_ingest' }), 'searchable by source');
+});
+
+await checkAsync('12. each label is its own Talent Pool filter', async () => {
+  const has = (flag, id) => Candidates.list({ qualityFlag: flag, limit: 200, offset: 0 })
+    .some((c) => c.id === id);
+
+  const contactless = await ingestIntake(makeIntake([
+    F('fullName', 'Filter Contactless'), F('currentPosition', 'Surveyor'),
+  ]), ACTOR);
+  const lowconf = await ingestIntake(makeIntake([
+    F('fullName', 'Filter Lowconf', 0.2), F('email', 'filter.lowconf@example.com', 0.2),
+    F('currentPosition', 'Site Engineer', 0.95),
+  ]), ACTOR);
+
+  assert.ok(has('contact-missing', contactless.candidateId), 'Contact Missing filter finds it');
+  assert.ok(has('low-confidence', lowconf.candidateId), 'Low Confidence filter finds it');
+  assert.ok(!has('low-confidence', contactless.candidateId), 'and does not over-match');
+
+  // The "everything that needs attention" view, and its inverse.
+  const flagged = Candidates.list({ flagged: 'yes', limit: 500, offset: 0 }).map((c) => c.id);
+  const clean = Candidates.list({ flagged: 'no', limit: 500, offset: 0 }).map((c) => c.id);
+  assert.ok(flagged.includes(contactless.candidateId));
+  assert.ok(!clean.includes(contactless.candidateId));
+  assert.equal(flagged.filter((id) => clean.includes(id)).length, 0, 'the two views are disjoint');
+});
+
+check('13+14. no application and no requisition was involved anywhere above', () => {
+  assert.equal(countApplications(), 0, 'not one application across the whole suite');
+  assert.equal(Number(get('SELECT COUNT(*) AS n FROM recruitment_request').n), 0,
+    'and not one hiring request had to exist');
+});
+
+check('every flag carries a code, a label and a human sentence', () => {
+  for (const [key, f] of Object.entries(FLAGS)) {
+    assert.ok(f.code && /^[a-z-]+$/.test(f.code), `${key} needs a filterable code`);
+    assert.ok(f.label && !/[.]/.test(f.label), `${key} needs a short badge label`);
+    assert.ok(f.reason && f.reason.trim().endsWith('.'), `${key} needs a full sentence`);
+  }
+  assert.equal(FLAG_CODES.length, Object.keys(FLAGS).length);
 });
 
 console.log(`\n=== CV AUTO-INGEST: ${failures} failure(s) ===\n`);

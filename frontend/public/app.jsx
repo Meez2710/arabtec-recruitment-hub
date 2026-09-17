@@ -1794,6 +1794,41 @@ const PERSONA_BY_ROLE = {
 // Highest-privilege role wins when a user holds more than one.
 const ROLE_RANK = ['system_admin', 'hr_director', 'hr_manager', 'recruitment_manager',
   'recruiter', 'project_manager', 'hiring_manager', 'interviewer', 'viewer'];
+/* Data-quality labels a CV can carry into the Talent Pool. Kept in step with
+   backend/src/lib/cv-intake/auto-ingest.js — a label is never a reason a
+   candidate is hidden, only a reason a recruiter might look sooner. */
+const QUALITY_FLAGS = [
+  ['needs-review', 'Needs Review'],
+  ['possible-duplicate', 'Possible Duplicate'],
+  ['contact-missing', 'Contact Missing'],
+  ['incomplete-profile', 'Incomplete Profile'],
+  ['low-confidence', 'Low Confidence'],
+  ['unclassified', 'Unclassified'],
+];
+const QUALITY_LABEL = Object.fromEntries(QUALITY_FLAGS);
+
+const DISCIPLINE_CLASSES = [
+  'Construction / Engineering Core',
+  'Construction / Engineering Support',
+  'Adjacent / Transferable',
+  'Other Professional Background',
+  'Unclassified',
+];
+
+/* What the parse could not establish, shown ON the candidate rather than used
+   to withhold them. The full sentence is the tooltip: the badge is for
+   scanning a grid, the sentence is for deciding what to do about it. */
+function QualityBadges({ flags, note }) {
+  if (!flags || flags.length === 0) return null;
+  return (
+    <div className="cc-flags" title={note || undefined}>
+      {flags.map((code) => (
+        <span key={code} className={'cc-flag cc-flag-' + code}>{QUALITY_LABEL[code] || code}</span>
+      ))}
+    </div>
+  );
+}
+
 function primaryRole(user) {
   const held = user?.roles || [];
   return ROLE_RANK.find((r) => held.includes(r)) || held[0] || 'viewer';
@@ -7034,7 +7069,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const [profileTab, setProfileTab] = useState(null);
   const [profileFocusPrior, setProfileFocusPrior] = useState(false);
   const CAND_FILTER_KEYS = ['q', 'source', 'location', 'minExp', 'maxExp', 'noticePeriod',
-    'currentCompany', 'tag', 'currentPosition', 'university', 'graduationFrom', 'graduationTo'];
+    'currentCompany', 'tag', 'currentPosition', 'university', 'graduationFrom', 'graduationTo',
+    // Data-quality labels. OPT-IN only — with none selected the Talent Pool
+    // shows everyone, flagged or not, which is the whole point of labelling
+    // uncertainty instead of queueing it.
+    'qualityFlag', 'disciplineClass'];
 
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
   // (custom event) and page mounting fresh after navigation (pending id).
@@ -7408,6 +7447,19 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
         <input placeholder="Grad from" type="number" value={filters.graduationFrom} onChange={(e) => setFilters((f) => ({ ...f, graduationFrom: e.target.value }))} title="Graduation year from" />
         <input placeholder="Grad to" type="number" value={filters.graduationTo} onChange={(e) => setFilters((f) => ({ ...f, graduationTo: e.target.value }))} title="Graduation year to" />
         <input placeholder="Tag" value={filters.tag} onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))} />
+        {/* Data quality. Nothing is selected by default, so the Talent Pool
+            shows every candidate — flagged people are members of the pool, not
+            a queue parked outside it. */}
+        <select value={filters.qualityFlag || ''} title="Data quality"
+          onChange={(e) => setFilters((f) => ({ ...f, qualityFlag: e.target.value }))}>
+          <option value="">All candidates</option>
+          {QUALITY_FLAGS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+        </select>
+        <select value={filters.disciplineClass || ''} title="Professional classification"
+          onChange={(e) => setFilters((f) => ({ ...f, disciplineClass: e.target.value }))}>
+          <option value="">All classifications</option>
+          {DISCIPLINE_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
         </FilterToolbar>
       )}
 
@@ -7574,6 +7626,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} />
                   </div>
                   <div className="cc-headline">{c.currentPosition || '—'}</div>
+                  <QualityBadges flags={c.qualityFlags} note={c.qualityNote} />
                 </div>
                 <div className="cc-uni">
                   <div className="cc-uni-name" title={c.university || ''}>{c.university || '—'}</div>

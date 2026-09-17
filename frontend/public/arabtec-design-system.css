@@ -1288,3 +1288,23 @@ button.pcard-name { color: var(--ink); background: transparent; }
 @media (max-width: 900px) {
   .cvrev-details { border-inline-end: 0; border-bottom: 1px solid var(--line); }
 }
+
+
+/* ---- data-quality labels on a Talent Pool card ----------------------------
+   A candidate carrying one of these is a full member of the pool; the badge
+   says what the CV left uncertain, not that the person is pending anything.
+   Amber for "look at this", grey for "we simply could not tell". */
+.cc-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.cc-flag {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-3, #ECEEF0);
+  color: var(--ink-soft, #4A4641);
+  white-space: nowrap;
+}
+.cc-flag-needs-review,
+.cc-flag-possible-duplicate { background: #F8EEDC; color: #8A5A00; }
+.cc-flag-contact-missing { background: #F8E7E5; color: #A8271F; }
