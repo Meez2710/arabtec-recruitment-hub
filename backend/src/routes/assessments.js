@@ -17,7 +17,16 @@ const router = Router();
 router.use(requireAuth);
 
 const INTERVIEW_STAGES = ['interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
-const FINAL = ['proceed', 'hold', 'reject', 'hired'];
+// The shared final decision is its own, shorter vocabulary — distinct from the
+// per-evaluator DECISIONS list (which adds 'proceed_conditions'/'cv_pool' and
+// has no 'hired', since only the final decision reaches that outcome).
+const FINAL_DECISIONS = [
+  { value: 'proceed', label: 'Proceed' },
+  { value: 'hold', label: 'Hold' },
+  { value: 'reject', label: 'Reject' },
+  { value: 'hired', label: 'Hired' },
+];
+const FINAL = FINAL_DECISIONS.map((d) => d.value);
 
 function parse(a) {
   if (!a) return null;
@@ -93,6 +102,7 @@ router.get('/meta', (req, res) => {
     criticalFlags: CRITICAL_FLAGS,
     decisions: DECISIONS,
     fitLevels: FIT_LEVELS,
+    finalDecisions: FINAL_DECISIONS,
     scoreGuide: SCORE_GUIDE,
   });
 });
