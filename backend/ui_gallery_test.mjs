@@ -159,8 +159,8 @@ const REQUIRED_CLASSES = [
   // Inputs
   'class="field"', 'class="toolbar"',
   // Badges / chips
-  'class="chip"', 'badge-success', 'status-chip filled', 'status-chip rejected',
-  'chip-filter', 'count-pill', 'tag-toggle', 'cvi-badge', 'score-badge',
+  'class="chip"', 'badge-success', 'badge-info', 'badge-critical', 'badge-soft',
+  'chip-filter', 'count-pill', 'tag-toggle', 'score-badge',
   // Tabs
   'tabbar-btn', 'profile-tab', 'seg-tab', 'control-tab', 'view-toggle-btn', 'anyhelp-tabs',
   // Cards

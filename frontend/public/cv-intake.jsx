@@ -32,7 +32,10 @@
   const can = (user, perm) => !!(user && Array.isArray(user.permissions) && user.permissions.includes(perm));
 
   /* Batch states, in the order work moves through them. The label is what a
-     recruiter reads; the tone drives the badge colour. */
+     recruiter reads; the tone drives the badge colour. Tones map onto the
+     canonical <Badge> variant vocabulary (below) rather than a local palette,
+     the same treatment the rest of the product already gives every other
+     status pill. */
   const STATE = {
     PENDING: { label: 'Pending', tone: 'neutral' },
     PROCESSING: { label: 'Processing', tone: 'info' },
@@ -43,6 +46,11 @@
     CANCELLED: { label: 'Cancelled', tone: 'neutral' },
   };
   const STATE_ORDER = ['PENDING', 'PROCESSING', 'PAUSED', 'AWAITING_REVIEW', 'COMPLETED', 'FAILED', 'CANCELLED'];
+  // 'info' and 'ok' both resolve to Badge's green — the same choice
+  // REQ_STATUS already makes for 'Sourcing'/'In Progress' alongside 'Filled'
+  // in app.jsx: an in-progress state shares success's colour and is told
+  // apart by its label, not a colour of its own.
+  const TONE_VARIANT = { neutral: 'soft', info: 'info', warn: 'warning', ok: 'success', bad: 'critical' };
 
   const when = (iso) => {
     if (!iso) return '—';
@@ -54,13 +62,9 @@
   const todayISO = () => new Date().toISOString().slice(0, 10);
   const daysAgoISO = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 
-  function Badge({ tone, children }) {
-    return h('span', { className: `cvi-badge cvi-badge--${tone || 'neutral'}` }, children);
-  }
-
   /* ------------------------------ the panel ------------------------------- */
 
-  function CvIntakePage({ user, PageHead, Empty, Skeleton, Icon }) {
+  function CvIntakePage({ user, PageHead, Empty, Skeleton, Icon, Badge }) {
     const [summary, setSummary] = useState(null);
     const [queue, setQueue] = useState({ total: 0, items: [] });
     const [batches, setBatches] = useState([]);
@@ -227,7 +231,7 @@
           activeStates.length
             ? h('div', { className: 'cvi-states' }, activeStates.map((k) =>
               h('span', { key: k, className: 'cvi-state' },
-                h(Badge, { tone: STATE[k].tone }, STATE[k].label),
+                h(Badge, { variant: TONE_VARIANT[STATE[k].tone] }, STATE[k].label),
                 h('strong', null, String(counts[k])))))
             : h('p', { className: 'muted' }, 'No batches yet. Select CVs below and approve one to begin.')),
 
@@ -294,7 +298,7 @@
                 })) : null,
                 h('td', null,
                   h('strong', null, item.sender || '—'),
-                  item.duplicate ? h(Badge, { tone: 'warn' }, 'Duplicate') : null),
+                  item.duplicate ? h('span', { style: { marginInlineStart: 8 } }, h(Badge, { variant: 'warning' }, 'Duplicate')) : null),
                 h('td', null, item.category === 'Unclassified'
                   ? h('em', { className: 'muted' }, 'Unclassified')
                   : (item.subject || item.category || '—')),
@@ -320,7 +324,7 @@
                 h('tbody', null, batches.map((b) => h('tr', { key: b.id },
                   h('td', null, `#${b.id}`),
                   h('td', null, b.category || h('em', { className: 'muted' }, 'Mixed')),
-                  h('td', null, h(Badge, { tone: (STATE[b.status] || {}).tone }, (STATE[b.status] || {}).label || b.status)),
+                  h('td', null, h(Badge, { variant: TONE_VARIANT[(STATE[b.status] || {}).tone] || 'soft' }, (STATE[b.status] || {}).label || b.status)),
                   h('td', { className: 'cvi-num' }, String(b.totals.items)),
                   h('td', { className: 'cvi-num' }, String(b.totals.imported)),
                   h('td', null, when(b.approvedAt)),
