@@ -9,11 +9,11 @@
      with the SAME ?v= cache-bust token. This page must never diverge from
      that order/token: it exists to show the product's real styling, not a
      copy of it. If you bump the token in index.html, bump it here too. -->
-<link rel="stylesheet" href="/styles.css?v=20260920a" />
-<link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260920a" />
-<link rel="stylesheet" href="/arabtec-design-system.css?v=20260920a" />
-<link rel="stylesheet" href="/claude-system.css?v=20260920a" />
-<link rel="stylesheet" href="/arabtec-responsive.css?v=20260920a" />
+<link rel="stylesheet" href="/styles.css?v=20260920b" />
+<link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260920b" />
+<link rel="stylesheet" href="/arabtec-design-system.css?v=20260920b" />
+<link rel="stylesheet" href="/claude-system.css?v=20260920b" />
+<link rel="stylesheet" href="/arabtec-responsive.css?v=20260920b" />
 
 <style>
   /* This page adds NO colour, font-family or font-size of its own — every
@@ -105,7 +105,7 @@
           still exists and that this page loads the same five stylesheets, in the same order, at the
           same cache-bust token as <code>index.html</code>.</p>
         <p class="muted">Loaded stylesheets: styles.css, arabtec-approved-ui.css, arabtec-design-system.css,
-          claude-system.css, arabtec-responsive.css — all at <code>?v=20260920a</code>.</p>
+          claude-system.css, arabtec-responsive.css — all at <code>?v=20260920b</code>.</p>
       </div>
 
       <!-- ============================= BUTTONS ============================= -->
@@ -214,12 +214,18 @@
         </div>
 
         <div class="gallery-row">
-          <span class="gallery-row-label muted">.status-chip (workflow / screening stage, via statusChipClass())</span>
-          <span class="status-chip filled">Active 3</span>
-          <span class="status-chip rejected">Disqualified 1</span>
-          <span class="status-chip sourcing">Screening</span>
-          <span class="status-chip closed">New</span>
-          <span class="status-chip pending">2 pending</span>
+          <span class="gallery-row-label muted">Talent Pool screening stage (Badge, migrated off .status-chip)</span>
+          <span class="badge badge-soft">New</span>
+          <span class="badge badge-info">Screening</span>
+          <span class="badge badge-success">Fit</span>
+          <span class="badge badge-critical">Unfit</span>
+        </div>
+
+        <div class="gallery-row">
+          <span class="gallery-row-label muted">Application pipeline summary (Badge, migrated off .status-chip / .meta-chip)</span>
+          <span class="badge badge-success">Active 3</span>
+          <span class="badge badge-critical">Disqualified 1</span>
+          <span class="badge badge-soft">Total 4</span>
         </div>
 
         <div class="gallery-row">
@@ -248,12 +254,12 @@
         </div>
 
         <div class="gallery-row">
-          <span class="gallery-row-label muted">.cvi-badge (CV intake, cv-intake.jsx)</span>
-          <span class="cvi-badge cvi-badge--neutral">Queued</span>
-          <span class="cvi-badge cvi-badge--info">Parsing</span>
-          <span class="cvi-badge cvi-badge--ok">Matched</span>
-          <span class="cvi-badge cvi-badge--warn">Needs review</span>
-          <span class="cvi-badge cvi-badge--bad">Failed</span>
+          <span class="gallery-row-label muted">CV Intake batch states (Badge, migrated off .cvi-badge, cv-intake.jsx)</span>
+          <span class="badge badge-soft">Pending</span>
+          <span class="badge badge-info">Processing</span>
+          <span class="badge badge-success">Completed</span>
+          <span class="badge badge-warning">Paused</span>
+          <span class="badge badge-critical">Failed</span>
         </div>
 
         <div class="gallery-row">
@@ -495,7 +501,7 @@
                 <td data-priority="secondary" data-label="University"><span class="cell-strong">American University of Sharjah</span></td>
                 <td data-label="Location" class="cell-sub-only">Dubai, UAE</td>
                 <td data-label="Request"><span class="muted">Not linked</span></td>
-                <td data-label="Stage"><span class="status-chip filled">Fit</span></td>
+                <td data-label="Stage"><span class="badge badge-success">Fit</span></td>
                 <td data-label="CV" class="cell-actions"><button class="btn btn-ghost btn-sm">Review</button></td>
               </tr>
               <tr class="row-link row-selected">
@@ -514,7 +520,7 @@
                 <td data-priority="secondary" data-label="University"><span class="cell-strong">Higher Colleges of Technology — Ras Al Khaimah Women's Campus</span></td>
                 <td data-label="Location" class="cell-sub-only" title="Abu Dhabi, United Arab Emirates">Abu Dhabi, United Arab Emirates</td>
                 <td data-label="Request"><span class="muted">Not linked</span></td>
-                <td data-label="Stage"><span class="status-chip sourcing">Screening</span></td>
+                <td data-label="Stage"><span class="badge badge-info">Screening</span></td>
                 <td data-label="CV" class="cell-actions"><span class="muted">—</span></td>
               </tr>
             </tbody>
@@ -526,7 +532,7 @@
           <table class="table responsive-table candidates-table">
             <thead><tr><th>Candidate</th><th>Position</th><th>Stage</th></tr></thead>
             <tbody>
-              <tr><td data-label="Candidate">Omar Hassan</td><td data-label="Position">Site Engineer</td><td data-label="Stage"><span class="status-chip filled">Fit</span></td></tr>
+              <tr><td data-label="Candidate">Omar Hassan</td><td data-label="Position">Site Engineer</td><td data-label="Stage"><span class="badge badge-success">Fit</span></td></tr>
             </tbody>
           </table>
         </div></div>

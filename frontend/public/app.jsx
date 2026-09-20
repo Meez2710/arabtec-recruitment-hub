@@ -1184,7 +1184,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     interviews: <InterviewsPage user={user} initialFilters={route === 'interviews' ? routeParams : null} />,
     cvIntake: can(user, 'cv_intake.view')
       ? (CvIntakePage
-        ? <CvIntakePage user={user} PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} />
+        ? <CvIntakePage user={user} PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} Badge={Badge} />
         : <LoadError text="CV Intake module failed to load." onRetry={() => window.location.reload()} />)
       : <Forbidden what="CV Intake" need="CV intake access, granted per user by a System Admin" />,
     orgStructure: OrgStructurePage ? <OrgStructurePage user={user} /> : <ModulePreview title="Organization Structure" />,
@@ -5399,9 +5399,9 @@ function RequestPipeline({ request, user, btns }) {
     <div>
       {apps.length > 0 && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-          <span className="status-chip filled">Active {activeApps.length}</span>
-          {disqualifiedCount > 0 && <span className="status-chip rejected">Disqualified {disqualifiedCount}</span>}
-          <span className="meta-chip">Total {apps.length}</span>
+          <Badge variant="success">Active {activeApps.length}</Badge>
+          {disqualifiedCount > 0 && <Badge variant="critical">Disqualified {disqualifiedCount}</Badge>}
+          <Badge variant="soft">Total {apps.length}</Badge>
         </div>
       )}
       <div className="toolbar">
@@ -7044,9 +7044,12 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
       load();
     } catch (e) { toast(e.message, 'error'); }
   }
-  // Map screening state → existing status-chip style + label.
+  // Map screening state → canonical Badge variant + label. 'screening' uses
+  // 'info' (green), the same treatment REQ_STATUS gives 'Sourcing'/'In
+  // Progress' alongside 'Filled' — an in-progress state sharing success's
+  // colour, distinguished by label, not a new colour.
   const SCREEN_CHIP = {
-    new: ['closed', 'New'], screening: ['sourcing', 'Screening'], fit: ['filled', 'Fit'], unfit: ['rejected', 'Unfit'],
+    new: ['soft', 'New'], screening: ['info', 'Screening'], fit: ['success', 'Fit'], unfit: ['critical', 'Unfit'],
   };
   const canScreen = user.permissions.includes('candidate.edit');
 
@@ -7228,7 +7231,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
                     onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
                 </td>
-                <td data-label="Stage"><span className={'status-chip ' + (SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</span></td>
+                <td data-label="Stage"><Badge variant={(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</Badge></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
                     ? <>
@@ -8271,12 +8274,12 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
             <div className="ph-name">{c.fullName} <HistoryBadge history={c.history} onOpen={() => setTab('activity')} /></div>
             <div className="ph-headline">{c.currentPosition || '—'}{c.currentCompany ? ' · ' + c.currentCompany : ''}</div>
             <div className="ph-meta">
-              <span className="meta-chip">{c.candidateNo}</span>
+              <Badge variant="soft">{c.candidateNo}</Badge>
               <SourceChip source={c.source} />
-              {c.yearsExperience != null && <span className="meta-chip">{c.yearsExperience}y exp</span>}
-              {c.location && <span className="meta-chip">{c.location}</span>}
-              {c.noticePeriod && <span className="meta-chip">Notice: {c.noticePeriod}</span>}
-              <span className="meta-chip">{c.applicationCount} application{c.applicationCount === 1 ? '' : 's'}</span>
+              {c.yearsExperience != null && <Badge variant="soft">{c.yearsExperience}y exp</Badge>}
+              {c.location && <Badge variant="soft">{c.location}</Badge>}
+              {c.noticePeriod && <Badge variant="soft">Notice: {c.noticePeriod}</Badge>}
+              <Badge variant="soft">{c.applicationCount} application{c.applicationCount === 1 ? '' : 's'}</Badge>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
