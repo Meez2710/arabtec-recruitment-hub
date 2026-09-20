@@ -1605,19 +1605,6 @@ const ROLE_SCOPE = {
 };
 
 // ---- Shared dashboard pieces (presentation only) ---------------------------
-function DashHead({ eyebrow, title, sub, actions }) {
-  return (
-    <div className="dash-head">
-      <div>
-        <div className="dash-eyebrow">{eyebrow}</div>
-        <h1 className="page-title">{title}</h1>
-        <p className="page-sub">{sub}</p>
-      </div>
-      <div className="dash-actions">{actions}</div>
-    </div>
-  );
-}
-
 // `onClick` is optional. Present, this renders as a real button — keyboard-
 // reachable, screen-reader-announced, with the same hover lift the ticket
 // cards use. Absent, it renders exactly as before: a plain div, no pointer
@@ -1810,7 +1797,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
 
   return (
     <div>
-      <DashHead eyebrow="Recruiter workspace" title="Your next actions"
+      <PageHead crumb="Recruiter workspace" title="Your next actions"
         sub="Every item here links to a hiring request, a candidate, an interview or an offer."
         actions={<>
           <button className="btn btn-secondary" onClick={() => onNavigate('requests')}>Open my roles</button>
@@ -1986,7 +1973,7 @@ function ManagerDashboard({ user, data, onNavigate }) {
 
   return (
     <div>
-      <DashHead eyebrow="Recruitment operations" title="Team command"
+      <PageHead crumb="Recruitment operations" title="Team command"
         sub="The blocker, who owns it, and how long it has been sitting there."
         actions={<>
           <button className="btn btn-secondary" onClick={() => onNavigate('requests')}>All hiring requests</button>
@@ -2155,7 +2142,7 @@ function DirectorDashboard({ user, data, onNavigate }) {
 
   return (
     <div>
-      <DashHead eyebrow="Hiring plan and governance" title="Hiring plan and recruitment health"
+      <PageHead crumb="Hiring plan and governance" title="Hiring plan and recruitment health"
         sub="Demand against delivery, and the decisions that are waiting on you."
         actions={<>
           <button className="btn btn-secondary" onClick={() => onNavigate('reports')}>Reports</button>
@@ -2229,7 +2216,7 @@ function ExecutiveDashboard({ user, data, onNavigate }) {
 
   return (
     <div>
-      <DashHead eyebrow="Executive workforce overview" title="Hiring progress against the approved plan"
+      <PageHead crumb="Executive workforce overview" title="Hiring progress against the approved plan"
         sub="Delivery against plan. Aggregate figures only — no candidate names in this view."
         actions={can(user, 'report.export') ? <button className="btn" onClick={() => onNavigate('reports')}>Reports</button> : null} />
 
@@ -2294,7 +2281,7 @@ function InterviewerDashboard({ user, data, onNavigate }) {
 
   return (
     <div>
-      <DashHead eyebrow="Interview panel" title="Your interviews"
+      <PageHead crumb="Interview panel" title="Your interviews"
         sub="Only interviews you are on the panel for. Salary and offer terms are not part of this view."
         actions={<button className="btn" onClick={() => onNavigate('interviews')}>All my interviews</button>} />
 
@@ -2344,11 +2331,11 @@ function Dashboard({ user, onNavigate, dash }) {
   }
   if (data.loading) {
     return (<div>
-      <DashHead eyebrow="Recruitment workspace" title="Dashboard" sub="Your scoped recruitment overview." />
+      <PageHead crumb="Recruitment workspace" title="Dashboard" sub="Your scoped recruitment overview." />
       <Skeleton shape="dashboard" />
     </div>);
   }
-  if (data.err) return <div><DashHead eyebrow="Recruitment workspace" title="Dashboard" />
+  if (data.err) return <div><PageHead crumb="Recruitment workspace" title="Dashboard" />
     <LoadError title="Could not load the dashboard" text={data.err} onRetry={data.reload} /></div>;
 
   const props = { user, data, onNavigate };
@@ -8541,17 +8528,16 @@ function InterviewsPage({ user, initialFilters }) {
       <PageHead crumb="Recruitment / Interviews" title={data?.scoped ? 'My Interviews' : 'Interviews'}
         sub={data?.scoped ? 'Interviews where you are on the panel.' : 'Every interview links to an application, candidate and request. Interview status is tracked separately from application status.'}
         actions={data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>} />
-      <div className="toolbar">
-        <input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 220 }} />
+      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (filter.thisWeek ? 1 : 0)}
+        search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
+        count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(IV_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <label className="switch" title="Scheduled interviews in the next 7 days">
           <input type="checkbox" checked={filter.thisWeek} onChange={(e) => setFilter((f) => ({ ...f, thisWeek: e.target.checked }))} />
           This week
         </label>
-        <div className="spacer" />
-        <CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />
-      </div>
+      </FilterToolbar>
       {/* A refetch that fails keeps the rows already on screen and reports it
           above them; only a failure with nothing to fall back on takes the page. */}
       {loadError && data ? <RefetchError text={loadError} onRetry={load} /> : null}
@@ -8782,8 +8768,9 @@ function OffersPage({ user, initialFilters }) {
       <PageHead crumb="Recruitment / Offers" title="Offers"
         sub="Offer preparation, approval, result tracking and joining date. Compensation is not shown in this list."
         actions={<Badge variant="info">Read-only list</Badge>} />
-      <div className="toolbar">
-        <input placeholder="Search offer no / position…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 220 }} />
+      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (filter.toIssue ? 1 : 0) + (filter.joiningFrom ? 1 : 0)}
+        search={<input placeholder="Search offer no / position…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
+        count={<CountPill n={offers ? shown.length : null} total={offers ? offers.length : null} noun="offer" />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(OFFER_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <label className="switch" title="Approved and waiting to go out — not held for approval">
@@ -8791,9 +8778,7 @@ function OffersPage({ user, initialFilters }) {
           To issue
         </label>
         <label className="muted" style={{ fontSize: 12 }}>Joining from <input type="date" value={filter.joiningFrom} onChange={(e) => setFilter((f) => ({ ...f, joiningFrom: e.target.value }))} /></label>
-        <div className="spacer" />
-        <CountPill n={offers ? shown.length : null} total={offers ? offers.length : null} noun="offer" />
-      </div>
+      </FilterToolbar>
       {loadError && offers ? <RefetchError text={loadError} onRetry={load} /> : null}
       {loadError && !offers ? <LoadError text={loadError} onRetry={load} /> : !offers ? <ListSkeleton rows={5} /> : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"

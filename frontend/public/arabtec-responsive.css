@@ -334,12 +334,22 @@ img, svg, video, canvas {
   }
 
   /* ---- headers / toolbars: stack, do not cram ---- */
+  /* Row + wrap, not column: the Talent Pool composition rule below (`.tp-page
+     > .page-head`) already explains why — claude-system.css's
+     `.page-head-main { flex: 1 1 320px }` is a ROW basis, and flipping this
+     container to a column turns that same declaration into a 320px basis on
+     HEIGHT, reserving 320px of empty page under a ~60px title block. Wrapping
+     a row gets the same stacked look without redefining what the basis means. */
   .page-head,
   .dash-head {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     align-items: stretch;
     gap: 12px;
+  }
+  .page-head-main {
+    flex: 1 1 100%;
   }
   .page-head-actions,
   .dash-actions {
