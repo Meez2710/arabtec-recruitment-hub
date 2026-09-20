@@ -580,9 +580,9 @@ const NAV = [
   { key: 'orgStructure', label: 'Organization Structure', icon: 'building', perm: null },
   { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
   { section: 'Administration' },
-  { key: 'projects', label: 'Projects', icon: 'hardhat', perm: null },
-  { key: 'sites', label: 'Sites', icon: 'pin', perm: null },
-  { key: 'departments', label: 'Departments', icon: 'building', perm: null },
+  { key: 'projects', label: 'Projects', icon: 'hardhat', perm: 'org.manage' },
+  { key: 'sites', label: 'Sites', icon: 'pin', perm: 'org.manage' },
+  { key: 'departments', label: 'Departments', icon: 'building', perm: 'org.manage' },
   { key: 'notifications', label: 'Notification Settings', icon: 'bell', perm: 'notification.manage' },
   { key: 'users', label: 'Users', icon: 'users', perm: 'user.manage' },
   { key: 'roles', label: 'Roles & Permissions', icon: 'shield', perm: 'role.manage' },
@@ -1797,7 +1797,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
 
   return (
     <div>
-      <PageHead crumb="Recruiter workspace" title="Your next actions"
+      <PageHead crumb={`${ROLE_NAMES[primaryRole(user)] || 'Recruiter'} workspace`} title="Your next actions"
         sub="Every item here links to a hiring request, a candidate, an interview or an offer."
         actions={<>
           <button className="btn btn-secondary" onClick={() => onNavigate('requests')}>Open my roles</button>
@@ -2062,11 +2062,8 @@ function ManagerDashboard({ user, data, onNavigate }) {
                   <span className="cell-strong">{r.title}</span>
                   <div className="cell-sub">{shortReqCode(r.ticketNo)} · {placeLabel(r)} · <PriorityBadge p={r.priority} /></div>
                 </td>
-                <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
-                  {r.owner ? r.owner.name
-                    : canAssignStatus(r.status)
-                      ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign recruiter</button>
-                      : <button className="btn btn-ghost btn-sm" disabled title={ASSIGN_BLOCKED_TITLE}>Assign recruiter</button>}
+                <td data-label="Owner">
+                  {r.owner ? r.owner.name : <span className="muted">Unassigned</span>}
                 </td>
                 <td data-label="Stage / Idle"><span className="cell-strong">{r.displayStatus}</span><div className="cell-sub">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd idle'}</div></td>
                 <td data-label="Blocker"><span className="cell-strong">{blockerFor(r)}</span></td>
@@ -5895,7 +5892,9 @@ function AssessmentPanel({ app, canFeedback }) {
           </button>
         ))}
       </div>
-      <p className="muted" style={{ fontSize: 11.5, marginTop: 0 }}>{meta.scoreGuide}</p>
+      <p className="muted" style={{ fontSize: 11.5, marginTop: 0 }}>
+        {Object.entries(meta.scoreGuide).sort((a, b) => b[0] - a[0]).map(([score, label]) => `${score} ${label}`).join(' · ')}
+      </p>
 
       <EvaluationForm
         key={evalType}
@@ -5969,10 +5968,10 @@ function EvaluationForm({ type, meta, existing, readOnly, onSaved, appId }) {
       <div className="form-grid" style={{ marginTop: 12 }}>
         <div className="field"><label>Recommendation</label>
           <select value={rec} disabled={readOnly} onChange={(e) => setRec(e.target.value)}>
-            <option value="">— Select —</option>{meta.recommendations.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
+            <option value="">— Select —</option>{meta.decisions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
         <div className="field"><label>{type === 'hr' ? 'Behavioral Fit' : 'Technical Fit'}</label>
           <select value={fit} disabled={readOnly} onChange={(e) => setFit(e.target.value)}>
-            <option value="">— Select —</option>{meta.fits.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
+            <option value="">— Select —</option>{meta.fitLevels.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
       </div>
       <div className="field"><label>Justification / Notes</label>
         <textarea rows="3" value={justification} disabled={readOnly} onChange={(e) => setJustification(e.target.value)} placeholder="Evidence, examples, rationale…" /></div>
