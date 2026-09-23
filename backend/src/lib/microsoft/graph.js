@@ -105,7 +105,7 @@ export async function graphRequest(path, { method = 'GET', json, raw = false, ac
     );
   }
   if (response.status >= 500) {
-    throw new MicrosoftAuthError('Microsoft Graph is unavailable. The next scheduled scan will retry.',
+    throw new MicrosoftAuthError('Microsoft 365 did not respond (a temporary error on Microsoft\'s side). Nothing was lost — press Scan inbox now again in a few minutes.',
       CODES.GRAPH_UNAVAILABLE, { status: response.status });
   }
   if (!response.ok) {

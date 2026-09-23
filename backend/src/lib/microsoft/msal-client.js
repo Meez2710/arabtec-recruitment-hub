@@ -405,7 +405,7 @@ export function classify(error) {
     );
   }
   if (/429|throttl|too many requests/.test(haystack)) {
-    return new MicrosoftAuthError('Microsoft is throttling requests. The next scheduled scan will retry.',
+    return new MicrosoftAuthError('Microsoft is limiting how fast the mailbox can be read. Nothing was lost — press Scan inbox now again in a few minutes.',
       CODES.GRAPH_THROTTLED, { errorCode: code || null });
   }
   if (/network|econnrefused|enotfound|etimedout|socket|fetch failed|503|502|504|service_unavailable/.test(haystack)) {

@@ -257,10 +257,14 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     }
     summary.watermark = watermark;
     delete summary.unfinished;   // an internal working set, not a result
-    // A discovery sweep deliberately reads history, so its endpoint says
-    // nothing about how far the NORMAL scan has got. Moving the watermark here
-    // would skip live mail that arrived while we were reading the backlog.
-    if (!discoverOnly) markSyncSuccess(summary, watermark, scanGeneration);
+    // A sweep over an EXPLICIT window (CV Inbox "Refresh from mailbox")
+    // deliberately reads history, so its endpoint says nothing about how far
+    // the NORMAL scan has got — moving the watermark there would skip live mail
+    // that arrived while it read the backlog. It is the window that makes it a
+    // sweep, not discover-first: that became every scan's default, and keying
+    // this on `discoverOnly` meant "Scan inbox now" never saved its progress
+    // and re-read the same first batch forever.
+    if (!sinceOverride) markSyncSuccess(summary, watermark, scanGeneration);
     log({ msg: 'microsoft.sync.complete', ...summary, imported: summary.imported });
     // ALWAYS audited. This used to be gated on `req || actor`, which meant the
     // 08:00 timer — the authoritative ingestion path, and the only one that
