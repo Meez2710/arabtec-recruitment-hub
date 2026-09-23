@@ -152,19 +152,45 @@ img, svg, video, canvas {
     padding: 14px 16px;
     margin-bottom: 12px;
   }
-  /* Leave a clear column for the FAB so STAGE / actions stay tappable. */
+  /* Symmetric padding. This used to reserve a 56px lane down the right of every
+     card so the floating help button could never cover an action. The price was
+     paid on every card, all the time: dividers stopped short and the content sat
+     off-centre. The button floats over whatever card scrolls beneath it — the
+     standard pattern — and a scroll moves it clear; the page's bottom padding
+     already keeps the last card reachable. */
   .responsive-table tr,
   .cand-card,
   .rq-card,
   .ticket-card {
-    padding-right: 56px;
+    padding-right: 16px;
+  }
+
+  /* A stacked cell grows with its content. claude-system.css fixes desktop rows
+     at `table.table tbody td { height: var(--cl-row-h) }` (0,1,3), which outranks
+     the plain `.responsive-table td` below — so without this the cell stayed 40px,
+     the value spilled 8px out of it, and the next cell's border struck through
+     the text. Two selectors: one ties on specificity and wins on load order, the
+     other outranks it outright, so a later reordering cannot bring the bug back. */
+  table.responsive-table tbody td,
+  table.table.responsive-table tbody td {
+    height: auto;
+    min-height: 0;
+    /* Numbers are right-aligned on desktop so they line up down a column
+       (`.plan-table td:nth-child(n)`, 0,2,1 — outranked here at 0,2,3). A
+       stacked card has no column to align against; right-aligned, the label
+       (drawn by ::before, which inherits this) sat on the right while its value
+       sat on the left. Everything in a stacked card reads from the start. */
+    text-align: start;
   }
 
   /* THE FIX: label on its own line, then each value on its own line. */
   .responsive-table td {
     display: flex;
     flex-direction: column;
-    align-items: stretch;
+    /* flex-start, not stretch: a badge or a pill hugs its label instead of
+       becoming a full-width bar that reads as an input field. Text still wraps —
+       every child is capped at max-width: 100% below. */
+    align-items: flex-start;
     justify-content: flex-start;
     gap: 4px;
     min-width: 0;
@@ -434,15 +460,6 @@ img, svg, video, canvas {
   }
 }
 
-/* Slightly larger phones still need the stack — 430px iPhone Pro Max. */
-@media (max-width: 480px) {
-  .responsive-table tr,
-  .cand-card,
-  .rq-card,
-  .ticket-card {
-    padding-right: 58px;
-  }
-}
 
 /* =============================================================================
    TALENT POOL COMPOSITION

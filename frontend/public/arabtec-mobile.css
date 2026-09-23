@@ -310,25 +310,255 @@ body:has(.modal-overlay) .mtabbar,
 body:has(.intake-modal-backdrop) .mtabbar,
 body:has(.mdrawer-scrim) .mtabbar { display: none; }
 
-/* ------------------------------------------------------- page furniture */
-/* The page header stacks on a phone: title, then its actions full width. */
+/* =========================================================================
+   THE PHONE PAGE TEMPLATE
+   -------------------------------------------------------------------------
+   One template for every page's phone view, instead of each page being its
+   own desktop layout squeezed down a different way. It works because UI
+   Coherence Phase 1 gave every page the same vocabulary — measured 23 Sep:
+
+     page header  (.page-head, .page-title, .breadcrumb, .page-sub)   8 pages
+     action row   (.page-head-actions)                               6 pages
+     filter bar   (.filter-toolbar)                                  4 pages
+     view toggle  (.view-toggle)  ·  stage tabs (.seg-tabs)  ·  Ask bar
+
+   Five patterns, keyed on those shared classes, so each rule below lands on
+   every page that uses the pattern and a new page inherits it for free. The
+   visual reference is Preline's mobile page pattern: title, one tight action
+   row, one-line filters, tabs that scroll rather than wrap.
+
+   Why it mattered: on the Talent Pool the chrome stacked to ~730px, so the
+   first candidate started at y=799, behind the tab bar at y=782. A recruiter
+   opening the main screen on a phone saw no candidates at all.
+   ========================================================================= */
+
+/* ---- 1. Page header: the title, and nothing the app bar already says ---- */
 .shell-phone .page-head,
 .shell-phone .dash-head {
   display: block;
+  margin-bottom: 12px;
 }
+/* The app bar already names the page, and every subtitle is orientation copy
+   for a desktop visitor — checked on all eight pages, none carries live data
+   or a control. On a phone both cost a screen's worth of scrolling. */
+.shell-phone .page-head .breadcrumb,
+.shell-phone .page-head .page-sub,
+.shell-phone .dash-head .breadcrumb,
+.shell-phone .dash-head .page-sub {
+  display: none;
+}
+.shell-phone .page-title {
+  font-size: 20px;
+  line-height: 1.25;
+  margin: 0;
+}
+
+/* ---- 2. Action row: a two-column grid, never a ragged wrap -------------- */
 .shell-phone .page-head-actions,
 .shell-phone .dash-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 12px;
+  align-items: stretch;
 }
+/* Things that are not buttons take their own full row and keep their natural
+   width — a scope chip ("Read-only list", "Org-wide") or the view switcher. */
+.shell-phone .page-head-actions > .badge,
+.shell-phone .page-head-actions > .status-chip {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+/* The view switcher spans the row with equal segments, the phone convention. */
+.shell-phone .page-head-actions > .view-toggle {
+  grid-column: 1 / -1;
+  display: flex;
+}
+.shell-phone .page-head-actions > .view-toggle > * {
+  flex: 1 1 0;
+  min-height: 44px;
+}
+/* A page with a single action gives it the whole row rather than half of it
+   (Requests: Create Request; Reports: Export CSV). */
+.shell-phone .page-head-actions > .btn:only-of-type,
+.shell-phone .dash-actions > .btn:only-of-type {
+  grid-column: 1 / -1;
+}
+/* 44px — the touch floor the app bar, tab bar and drawer rows already hold.
+   These page actions were the 40px exception. */
 .shell-phone .page-head-actions > .btn,
-.shell-phone .dash-actions > .btn {
-  flex: 1 1 auto;
-  min-height: 40px;
+.shell-phone .dash-actions > .btn,
+.shell-phone .page-head-actions > .upload-cta,
+.shell-phone .page-head-actions > .upload-cta > .btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
 }
-/* Filter bars and toolbars wrap instead of scrolling sideways. */
+.shell-phone .page-head-actions > .upload-cta {
+  display: block;
+}
+/* "Max 20 MB per file · PDF, DOC…" is desktop upload guidance; the file picker
+   itself enforces it on a phone. */
+.shell-phone .upload-cta-hint {
+  display: none;
+}
+
+/* ---- 3. Filter bar: search and Filters share one line ------------------ */
+.shell-phone .filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.shell-phone .filter-toolbar > .toolbar-search {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.shell-phone .filter-toolbar > .filter-toggle {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+.shell-phone .filter-toolbar > .toolbar-count {
+  flex: 1 0 100%;
+}
+
+/* ---- 4. Stage tabs: one row that scrolls, never two that wrap ---------- */
+.shell-phone .seg-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.shell-phone .seg-tabs::-webkit-scrollbar { display: none; }
+.shell-phone .seg-tabs > .seg-tab {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+/* ---- 5. Ask bar: the question and its button on one line --------------- */
+/* `.toolbar.ask-bar`, not `.ask-bar`: the Ask bar is also a `.toolbar`, and the
+   generic phone toolbar rule below sets flex-wrap: wrap at the same specificity
+   and later in the file — it would silently put the button back underneath. */
+.shell-phone .toolbar.ask-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+}
+.shell-phone .ask-bar > .ask-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.shell-phone .ask-bar > .btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 64px;
+  min-height: 44px;
+}
+.shell-phone .ask-input::placeholder {
+  text-overflow: ellipsis;
+}
+
+/* ---- 6. List card: say what is known, keep the action clear ----------- */
+/* Empty education and a missing graduation year are absence, not information.
+   On a phone they took two rows of every auto-ingested card to say so. The
+   desktop grid keeps them — there they hold card heights level. */
+.shell-phone .cand-card .cc-uni.is-empty,
+.shell-phone .cand-card .cc-grad.missing {
+  display: none;
+}
+/* The floating help button sits over the bottom-right of whichever card
+   scrolls beneath it — which is exactly where a card keeps its Actions menu.
+   Reserve that corner in the footer only, so the menu is never covered while
+   the rest of the card keeps its full width. (Removing the lane from the whole
+   card on 23 Sep fixed the dead strip but uncovered this.) */
+.shell-phone .cand-card .cc-foot {
+  padding-right: calc(var(--ats-fab-size, 52px) - 4px);
+}
+
+/* 7. Stacked table row — a table that reflows into cards (Talent Pool
+   "Table"). Selection is a corner control, not a row of its own; every field
+   starts on the same edge; an empty trailing cell is not drawn; the request
+   control reads at body size. */
+.shell-phone .responsive-table > tbody > tr { position: relative; }
+.shell-phone .responsive-table > tbody > tr > td.th-sel {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 0;
+  border: 0;
+  width: auto;
+}
+.shell-phone .responsive-table td.th-sel + td { padding-right: 48px; }
+.shell-phone .sel-hit {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+.shell-phone .sel-hit input { width: 20px; height: 20px; margin: 0; }
+.shell-phone .responsive-table > tbody > tr > td,
+.shell-phone .responsive-table > tbody > tr > td[data-priority="secondary"] {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.shell-phone .responsive-table td.cell-actions:has(> .muted:only-child) { display: none; }
+/* A standalone link (not one inside a sentence) is a control, and gets a
+   control's height. */
+.shell-phone .email-settings-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+/* Dividers separate fields; the card's own edge closes the last one. */
+.shell-phone .responsive-table > tbody > tr > td:last-child,
+.shell-phone .responsive-table > tbody > tr > td:has(+ td.cell-actions:last-child > .muted:only-child) {
+  border-bottom: 0;
+}
+.shell-phone .rq-link-btn,
+.shell-phone .rq-link-chip {
+  font-size: 13px;
+  min-height: 44px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.shell-phone .rq-link-sub { font-size: 12px; max-width: 100%; }
+.shell-phone .rq-link-btn.rq-link-btn-icon { min-width: 44px; justify-content: center; }
+.shell-phone .idcell-av { font-size: 12px; }
+
+/* ---- small print that has to stay readable on a phone -------------------
+   Ticket codes (RQ-26-002, OFR-2026-00002), count pills and tab counts were
+   10.5px: fine on a 1440px desktop at arm's length, too small to read on a
+   phone held in one hand. 12px is the smallest size used anywhere else in the
+   phone shell. Size only — colour, weight and shape stay as designed. */
+.shell-phone .fine-key,
+.shell-phone .kan-count,
+.shell-phone .pipe-count em,
+.shell-phone .pcard-facts,
+.shell-phone .pcard-facts .fact,
+.shell-phone .pcard-match,
+.shell-phone .pcard-request,
+.shell-phone .pcard-residual,
+.shell-phone .code-pill,
+.shell-phone .count-pill,
+.shell-phone .count-pill em,
+.shell-phone .seg-tab .seg-count {
+  font-size: 12px;
+}
+/* Field labels on the request cards (Dept, Project / Site, Headcount,
+   Pipeline) were 10–10.5px. They are uppercase with tracking, which reads at a
+   slightly smaller size than body text — 11.5px, not 12. */
+.shell-phone .funnel-mini .fm-leg,
+.shell-phone .fine-label,
+.shell-phone .cvi-status-k,
+.shell-phone .content dt,
+.shell-phone .fm-label {
+  font-size: 11.5px;
+}
+/* Any other toolbar wraps instead of scrolling sideways. */
 .shell-phone .toolbar,
 .shell-phone .filters,
 .shell-phone .filter-row {

@@ -46,7 +46,12 @@ check('all deployed UI assets share one cache version',
 check('viewport includes viewport-fit=cover for iPhone safe areas',
   html.includes('viewport-fit=cover'));
 
-const mobile = between(responsive, '@media (max-width: 640px)', '@media (max-width: 480px)');
+// Ends at the section heading that follows the phone block. It used to end at
+// the next `@media (max-width: 480px)`, which existed only to widen a lane for
+// the help launcher; that block was removed on 23 Sep 2026 and took this slice
+// down with it — every check below silently read an empty string. Anchor on
+// something that exists for its own sake.
+const mobile = between(responsive, '@media (max-width: 640px)', 'TALENT POOL COMPOSITION');
 check('stacked table cells reflow as columns, not squeezed rows',
   mobile.includes('flex-direction: column') && mobile.includes('.responsive-table td'));
 check('stacked table labels no longer reserve 40% of a phone row',
@@ -134,6 +139,63 @@ check('opening the drawer restores it to the keyboard immediately',
   /visibility:\s*visible/.test(drawerOpen) && /visibility\s+0s\s+linear\s+0s/.test(drawerOpen));
 check('drawer rows meet the 44px phone touch floor the rest of the UI holds',
   /\.sidebar \.nav-item \{[^}]*min-height:\s*44px/.test(drawer));
+
+
+/* --------------------------------------------------------------------------
+   The phone stylesheet may never reach a desktop page.
+
+   arabtec-mobile.css holds the phone page template (header, action row,
+   filter bar, stage tabs, Ask bar, list card). It is safe to extend ONLY
+   because every rule in it is keyed to something that exists solely in the
+   phone presentation — `Shell` renders .shell-phone / .mtopbar / .mtabbar /
+   .mdrawer instead of the desktop chrome, never alongside it. One unscoped
+   selector (`.page-sub { display:none }`) would silently strip desktop pages.
+   -------------------------------------------------------------------------- */
+{
+  const mobileCss = fs.readFileSync(new URL('../frontend/public/arabtec-mobile.css', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const PHONE_ONLY = /^(:root|\.shell-phone\b|\.mtopbar\b|\.mtabbar\b|\.mtab\b|\.mdrawer|body:has\([^)]*\)\s+\.mtabbar|@keyframes|from|to|\d+%)/;
+  const leaks = [];
+  for (const m of mobileCss.matchAll(/([^{}]+)\{/g)) {
+    const head = m[1].trim();
+    if (!head || head.startsWith('@media') || head.startsWith('@supports')) continue;
+    for (const sel of head.split(',').map((x) => x.trim()).filter(Boolean)) {
+      if (!PHONE_ONLY.test(sel)) leaks.push(sel);
+    }
+  }
+  check('every rule in the phone stylesheet is scoped to the phone presentation',
+    leaks.length === 0, leaks.slice(0, 5).join(' | '));
+}
+
+
+/* --------------------------------------------------------------------------
+   No text is hard-coded below the phone floor in an inline style.
+
+   An inline `style={{ fontSize: 10.5 }}` beats every stylesheet, so the phone
+   template cannot lift it — which is how 26 labels on Control Center, Roles,
+   Microsoft and the request detail header stayed at 10.5–11px after the
+   template shipped. Small print uses the named `.fine-label` / `.fine-key`
+   classes instead. Avatar initials (a fixed-size circle) are the exception.
+   -------------------------------------------------------------------------- */
+{
+  const dir = new URL('../frontend/public/', import.meta.url);
+  const offenders = [];
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.jsx'))) {
+    fs.readFileSync(new URL(f, dir), 'utf8').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/fontSize:\s*'?(\d+(?:\.\d+)?)(?:px)?'?\s*[,}]/g)) {
+        if (Number(m[1]) >= 11.5) continue;
+        if (/avatar|borderRadius:\s*'50%'/.test(line)) continue;
+        offenders.push(`${f}:${i + 1} (${m[1]}px)`);
+      }
+    });
+  }
+  check('no text is hard-coded below 11.5px in an inline style (use .fine-label / .fine-key)',
+    offenders.length === 0, offenders.slice(0, 6).join(', '));
+
+  const mobileCss = fs.readFileSync(new URL('../frontend/public/arabtec-mobile.css', import.meta.url), 'utf8');
+  check('the phone stylesheet lifts both named small-print classes',
+    /\.shell-phone \.fine-key\b/.test(mobileCss) && /\.shell-phone \.fine-label\b/.test(mobileCss));
+}
 
 console.log(`\n=== UI RESPONSIVE: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);

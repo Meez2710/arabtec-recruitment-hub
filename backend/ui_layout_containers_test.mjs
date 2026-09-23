@@ -325,6 +325,100 @@ check('the two-line clamp outranks every display rule that competes with it', ()
   }
 });
 
+/* ---------------------------------------------------------------------------
+   Stacked phone cards: a cell must grow with its content.
+
+   Measured on 23 Sep 2026 at 390px with realistic data: every stacked cell was
+   locked to exactly 40px. claude-system.css fixes desktop rows with
+   `table.table tbody td { height: var(--cl-row-h) }` (0,1,3), and the phone
+   reflow turned each cell into a label-over-value column without resetting it —
+   its own `.responsive-table td` scores only (0,1,1) and lost. The value spilled
+   8px below its cell, exactly where the next cell's border sits, so every
+   divider struck through a value and each label sat against the wrong field.
+   That is most of what made the phone lists look broken.
+
+   Resolved, not grepped: which rule wins `height` for a stacked cell AT PHONE
+   WIDTH, counting rules outside any @media plus max-width blocks that apply at
+   390px.
+   ------------------------------------------------------------------------ */
+function mediaAt(css, index) {
+  for (let at = css.indexOf('@media'); at !== -1; at = css.indexOf('@media', at + 1)) {
+    const open = css.indexOf('{', at);
+    if (open > index) break;
+    let depth = 0, end = at;
+    for (let i = open; i < css.length; i++) {
+      if (css[i] === '{') depth++;
+      else if (css[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (index > open && index < end) return css.slice(at, open);
+  }
+  return null;
+}
+const appliesAtPhone = (cond) => {
+  if (cond === null) return true;
+  if (/min-width/.test(cond) || /print/.test(cond) || /prefers-/.test(cond)) return false;
+  const mx = cond.match(/max-width:\s*(\d+)px/);
+  return !!mx && Number(mx[1]) >= 390;
+};
+function phoneWinner(prop, isTarget) {
+  const spec = (sel) => {
+    const s = sel.trim();
+    return [(s.match(/#[\w-]+/g) || []).length,
+      (s.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) || []).length,
+      (s.replace(/\.[\w-]+|\[[^\]]+\]|:{1,2}[\w-]+|#[\w-]+/g, ' ').match(/\b[a-zA-Z][\w-]*\b/g) || []).length];
+  };
+  const cmp = (a, b) => (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]);
+  const competing = [];
+  sheets.forEach(({ name, css }, sheetIndex) => {
+    const clean = css.replace(/\/\*[\s\S]*?\*\//g, (c) => ' '.repeat(c.length));
+    for (const m of clean.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
+      if (!appliesAtPhone(mediaAt(clean, m.index))) continue;
+      const decl = m[2].match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`));
+      if (!decl) continue;
+      for (const sel of m[1].split(',')) {
+        if (!isTarget(sel.trim())) continue;
+        competing.push({ name, sheetIndex, at: m.index, sel: sel.trim(), value: decl[1].trim(), spec: spec(sel) });
+      }
+    }
+  });
+  if (!competing.length) return null;
+  return competing.reduce((best, r) => {
+    const c = cmp(r.spec, best.spec);
+    if (c > 0) return r; if (c < 0) return best;
+    if (r.sheetIndex !== best.sheetIndex) return r.sheetIndex > best.sheetIndex ? r : best;
+    return r.at > best.at ? r : best;
+  });
+}
+// A selector that reaches a plain body cell of a stacked table.
+const ANCESTOR = /^(table|tbody|tr|\.table|\.responsive-table|table\.table|table\.responsive-table|\.table\.responsive-table|table\.table\.responsive-table)$/;
+const reachesStackedCell = (sel) => {
+  const parts = sel.split(/\s+/);
+  return parts[parts.length - 1] === 'td' && parts.slice(0, -1).every((p) => ANCESTOR.test(p))
+    && parts.some((p) => /responsive-table|^table$|^\.table$|table\.table/.test(p));
+};
+const reachesStackedRow = (sel) => {
+  const parts = sel.split(/\s+/);
+  return parts[parts.length - 1] === 'tr' && parts.some((p) => /responsive-table/.test(p))
+    && parts.slice(0, -1).every((p) => ANCESTOR.test(p));
+};
+
+check('a stacked phone cell grows with its content instead of keeping the 40px desktop row', () => {
+  const w = phoneWinner('height', reachesStackedCell);
+  assert.ok(w, 'fixture sanity: some rule sets a height on a table body cell');
+  assert.ok(!/^\d/.test(w.value) && !/var\(--cl-row-h\)/.test(w.value),
+    `at phone width "${w.sel}" from ${w.name} wins height with "${w.value}" — a fixed height makes `
+    + 'the value spill into the next cell, and its border strikes through the text');
+});
+
+check('a stacked phone card uses its full width — no dead lane down the right edge', () => {
+  const w = phoneWinner('padding-right', reachesStackedRow);
+  assert.ok(w, 'fixture sanity: some rule sets padding-right on a stacked row');
+  const px = Number((w.value.match(/^(\d+)px/) || [])[1] || 0);
+  assert.ok(px <= 20,
+    `"${w.sel}" from ${w.name} leaves ${w.value} empty on the right of every card — dividers stop `
+    + 'short and the content is pushed off-centre');
+});
+
 // And the clamp has to be applied where the row-height measurements were taken.
 check('the three list tables actually use the clamp on their free-text cells', () => {
   const app = read('app.jsx');
