@@ -478,11 +478,70 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
   padding-right: calc(var(--ats-fab-size, 52px) - 4px);
 }
 
+/* 7. Stacked table row — a table that reflows into cards (Talent Pool
+   "Table"). Selection is a corner control, not a row of its own; every field
+   starts on the same edge; an empty trailing cell is not drawn; the request
+   control reads at body size. */
+.shell-phone .responsive-table > tbody > tr { position: relative; }
+.shell-phone .responsive-table > tbody > tr > td.th-sel {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 0;
+  border: 0;
+  width: auto;
+}
+.shell-phone .responsive-table td.th-sel + td { padding-right: 48px; }
+.shell-phone .sel-hit {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+.shell-phone .sel-hit input { width: 20px; height: 20px; margin: 0; }
+.shell-phone .responsive-table > tbody > tr > td,
+.shell-phone .responsive-table > tbody > tr > td[data-priority="secondary"] {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.shell-phone .responsive-table td.cell-actions:has(> .muted:only-child) { display: none; }
+/* A standalone link (not one inside a sentence) is a control, and gets a
+   control's height. */
+.shell-phone .email-settings-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+/* Dividers separate fields; the card's own edge closes the last one. */
+.shell-phone .responsive-table > tbody > tr > td:last-child,
+.shell-phone .responsive-table > tbody > tr > td:has(+ td.cell-actions:last-child > .muted:only-child) {
+  border-bottom: 0;
+}
+.shell-phone .rq-link-btn,
+.shell-phone .rq-link-chip {
+  font-size: 13px;
+  min-height: 44px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.shell-phone .rq-link-sub { font-size: 12px; max-width: 100%; }
+.shell-phone .rq-link-btn.rq-link-btn-icon { min-width: 44px; justify-content: center; }
+.shell-phone .idcell-av { font-size: 12px; }
+
 /* ---- small print that has to stay readable on a phone -------------------
    Ticket codes (RQ-26-002, OFR-2026-00002), count pills and tab counts were
    10.5px: fine on a 1440px desktop at arm's length, too small to read on a
    phone held in one hand. 12px is the smallest size used anywhere else in the
    phone shell. Size only — colour, weight and shape stay as designed. */
+.shell-phone .fine-key,
+.shell-phone .kan-count,
+.shell-phone .pipe-count em,
+.shell-phone .pcard-facts,
+.shell-phone .pcard-facts .fact,
+.shell-phone .pcard-match,
+.shell-phone .pcard-request,
+.shell-phone .pcard-residual,
 .shell-phone .code-pill,
 .shell-phone .count-pill,
 .shell-phone .count-pill em,
@@ -492,6 +551,9 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
 /* Field labels on the request cards (Dept, Project / Site, Headcount,
    Pipeline) were 10–10.5px. They are uppercase with tracking, which reads at a
    slightly smaller size than body text — 11.5px, not 12. */
+.shell-phone .funnel-mini .fm-leg,
+.shell-phone .fine-label,
+.shell-phone .cvi-status-k,
 .shell-phone .content dt,
 .shell-phone .fm-label {
   font-size: 11.5px;

@@ -1135,6 +1135,9 @@ function useIsPhone(query = '(max-width: 900px)') {
   }, [query]);
   return isPhone;
 }
+// Modules loaded as separate scripts (org-structure.jsx) switch layout on the
+// same breakpoint as the shell, so they read this hook rather than a copy.
+window.ArabtecUseIsPhone = useIsPhone;
 
 /* The drawer owns focus while it is open: Escape closes it, focus moves in on
    open and returns to the trigger on close, and nothing behind it is
@@ -3283,7 +3286,7 @@ function RolesPage({ user }) {
           <div className="card-pad permissions-panel">
             {Object.entries(groups).map(([res, perms]) => (
               <div key={res} style={{ marginBottom: 16 }}>
-                <div className="muted" style={{ textTransform: 'uppercase', fontWeight: 700, fontSize: 11, marginBottom: 8 }}>{res}</div>
+                <div className="muted fine-label" style={{ fontWeight: 700, marginBottom: 8 }}>{res}</div>
                 {perms.map((p) => (
                   <label key={p.code} className="switch permission-toggle">
                     <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> <span>{p.description}<code className="permission-code">{p.code}</code></span>
@@ -3545,7 +3548,7 @@ function ButtonsPanel({ user }) {
       <table><thead><tr><th>Button</th><th>Screen</th><th>Label</th><th>Visible</th><th>Enabled</th><th>Confirm</th><th>Reason</th></tr></thead>
         <tbody>{filtered.map((b) => (
           <tr key={b.buttonKey}>
-            <td><strong>{b.label}</strong><div className="muted" style={{ fontSize: 11 }}>{b.buttonKey}</div></td>
+            <td><strong>{b.label}</strong><div className="muted fine-key">{b.buttonKey}</div></td>
             <td><span className="chip">{b.screen}</span></td>
             <td><input value={b.label} onChange={(e) => edit(b.buttonKey, { label: e.target.value })} style={{ width: 130, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
             {['visible', 'enabled', 'confirmRequired', 'reasonRequired'].map((flag) => (
@@ -3792,7 +3795,7 @@ function BuiltinFieldsPanel({ user }) {
         <table><thead><tr><th>Field</th><th>Visible</th><th>Required</th><th>Custom Label</th></tr></thead>
           <tbody>{fields.map((fl) => (
             <tr key={fl.fieldKey}>
-              <td><strong>{fl.defaultLabel}</strong><div className="muted" style={{ fontSize: 11 }}>{fl.fieldKey}</div></td>
+              <td><strong>{fl.defaultLabel}</strong><div className="muted fine-key">{fl.fieldKey}</div></td>
               <td><input type="checkbox" checked={fl.visible} onChange={(e) => edit(fl.fieldKey, { visible: e.target.checked })} /></td>
               <td><input type="checkbox" checked={fl.required} onChange={(e) => edit(fl.fieldKey, { required: e.target.checked })} /></td>
               <td><input value={fl.label || ''} placeholder={fl.defaultLabel} onChange={(e) => edit(fl.fieldKey, { label: e.target.value })} style={{ width: 150, padding: 4, border: '1px solid var(--border)', borderRadius: 5 }} /></td>
@@ -3856,7 +3859,7 @@ function CustomFieldsPanel({ user }) {
           <tbody>{fields.map((cf) => (
             <tr key={cf.fieldKey}>
               <td><strong>{cf.label}</strong></td>
-              <td className="muted" style={{ fontSize: 11 }}>{cf.fieldKey}</td>
+              <td className="muted fine-key">{cf.fieldKey}</td>
               <td><span className="chip">{cf.fieldType}</span></td>
               <td><input type="checkbox" checked={cf.required} onChange={(e) => toggle(cf.fieldKey, { required: e.target.checked })} /></td>
               <td><input type="checkbox" checked={cf.visible} onChange={(e) => toggle(cf.fieldKey, { visible: e.target.checked })} /></td>
@@ -5193,9 +5196,9 @@ function ThreadPost({ post, user, onView, replyOpen, onReply, replyText, onReply
             ? <span className="avatar" style={{ width: 26, height: 26, fontSize: 11 }}>{initials(post.author?.name)}</span>
             : <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--surface-2,#f1f3f5)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', fontSize: 11, color: 'var(--muted)', flex: '0 0 auto' }}>•</span>}
           <strong style={{ fontSize: 13 }}>{post.author?.name || 'System'}</strong>
-          {post.author?.role && <span className="muted" style={{ fontSize: 11 }}>{ROLE_NAMES[post.author.role] || post.author.role}</span>}
-          {m.label && <span className="chip" style={{ fontSize: 10.5 }}>{m.label}</span>}
-          <span className="muted" style={{ fontSize: 11, marginLeft: 'auto' }} title={fmtDate(post.createdAt)}>{timeAgo(post.createdAt)}{post.edited ? ' · edited' : ''}</span>
+          {post.author?.role && <span className="muted fine-key">{ROLE_NAMES[post.author.role] || post.author.role}</span>}
+          {m.label && <span className="chip fine-key">{m.label}</span>}
+          <span className="muted fine-key" style={{ marginLeft: 'auto' }} title={fmtDate(post.createdAt)}>{timeAgo(post.createdAt)}{post.edited ? ' · edited' : ''}</span>
         </div>
         {post.type === 'cv' && post.payload && (
           <div style={{ fontSize: 13, marginBottom: 4 }}><strong>{post.payload.candidateName}</strong>{post.payload.currentPosition ? ` — ${post.payload.currentPosition}` : ''}{post.payload.employer ? ` @ ${post.payload.employer}` : ''}</div>
@@ -5236,7 +5239,7 @@ function ThreadPost({ post, user, onView, replyOpen, onReply, replyText, onReply
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span className="avatar" style={{ width: 22, height: 22, fontSize: 10 }}>{initials(r.author?.name)}</span>
                   <strong style={{ fontSize: 12.5 }}>{r.author?.name}</strong>
-                  <span className="muted" style={{ fontSize: 11, marginLeft: 'auto' }} title={fmtDate(r.createdAt)}>{timeAgo(r.createdAt)}</span>
+                  <span className="muted fine-key" style={{ marginLeft: 'auto' }} title={fmtDate(r.createdAt)}>{timeAgo(r.createdAt)}</span>
                 </div>
                 {r.body && <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', marginTop: 2, marginLeft: 30 }}>{r.body}</div>}
                 {r.hasFile && <div style={{ marginLeft: 30, marginTop: 4 }}><button className="btn btn-sm btn-secondary" onClick={() => onView(r.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileGlyph /> {r.fileName}</button></div>}
@@ -5293,13 +5296,13 @@ function CvComposer({ req, onPosted }) {
   );
 }
 
-function Info({ label, children }) { return <div style={{ marginBottom: 14 }}><div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.4px' }}>{label}</div><div style={{ fontWeight: 500 }}>{children ?? '—'}</div></div>; }
+function Info({ label, children }) { return <div style={{ marginBottom: 14 }}><div className="muted fine-label">{label}</div><div style={{ fontWeight: 500 }}>{children ?? '—'}</div></div>; }
 
 // Arabtec ticket-styled field "chip": a soft pink-tinted label/value cell (per mockup).
 function FieldChip({ label, children, full }) {
   return (
     <div style={{ gridColumn: full ? '1 / -1' : 'auto', background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 8, padding: '9px 12px' }}>
-      <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--green-700)', fontWeight: 700 }}>{label}</div>
+      <div className="fine-label" style={{ color: 'var(--green-700)', fontWeight: 700 }}>{label}</div>
       <div style={{ fontWeight: 500, marginTop: 3, color: 'var(--text-dark)', whiteSpace: full ? 'pre-wrap' : 'normal', lineHeight: 1.5 }}>{children ?? '—'}</div>
     </div>
   );
@@ -5376,15 +5379,15 @@ function LifecycleStrip({ req }) {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
         {items.map(([label, val]) => (
           <div key={label} style={{ minWidth: 90 }}>
-            <div className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.4px' }}>{label}</div>
+            <div className="muted fine-label">{label}</div>
             <div style={{ fontSize: 12.5, fontWeight: 600, color: val ? 'var(--text-dark)' : 'var(--text-gray)' }}>{val ? fmtDateShort(val) : '—'}</div>
           </div>
         ))}
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 16 }}>
-          <div style={{ textAlign: 'right' }}><div className="muted" style={{ fontSize: 10.5 }}>DAYS OPEN</div><div style={{ fontWeight: 700, fontSize: 16, color: 'var(--primary)' }}>{lc.daysOpen ?? '—'}</div></div>
-          <div style={{ textAlign: 'right' }}><div className="muted" style={{ fontSize: 10.5 }}>SINCE APPROVAL</div><div style={{ fontWeight: 700, fontSize: 16, color: 'var(--primary)' }}>{lc.daysSinceApproval ?? '—'}</div></div>
-          <div style={{ textAlign: 'right' }}><div className="muted" style={{ fontSize: 10.5 }}>TO TARGET JOIN</div><div style={{ fontWeight: 700, fontSize: 16, color: dToTarget != null && dToTarget < 0 ? 'var(--critical)' : 'var(--primary)' }}>{dToTarget == null ? '—' : (dToTarget < 0 ? `${dToTarget}d` : `${dToTarget}d`)}</div></div>
+          <div style={{ textAlign: 'right' }}><div className="muted fine-label">Days open</div><div style={{ fontWeight: 700, fontSize: 16, color: 'var(--primary)' }}>{lc.daysOpen ?? '—'}</div></div>
+          <div style={{ textAlign: 'right' }}><div className="muted fine-label">Since approval</div><div style={{ fontWeight: 700, fontSize: 16, color: 'var(--primary)' }}>{lc.daysSinceApproval ?? '—'}</div></div>
+          <div style={{ textAlign: 'right' }}><div className="muted fine-label">To target join</div><div style={{ fontWeight: 700, fontSize: 16, color: dToTarget != null && dToTarget < 0 ? 'var(--critical)' : 'var(--primary)' }}>{dToTarget == null ? '—' : (dToTarget < 0 ? `${dToTarget}d` : `${dToTarget}d`)}</div></div>
         </div>
       </div>
     </div>
@@ -6158,7 +6161,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
             <>
               <div style={{ background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--green-700)', fontWeight: 700 }}>Resume</div>
+                  <div className="fine-label" style={{ color: 'var(--green-700)', fontWeight: 700 }}>Resume</div>
                   <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? (cand.resumeName || 'Attached résumé') : <span className="muted">No résumé attached</span>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -6242,7 +6245,7 @@ function ScoreRow({ label, hint, value, onChange, readOnly }) {
   const opts = ['', '1', '2', '3', '4', '5', 'na'];
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-      <div><div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>{hint && <div className="muted" style={{ fontSize: 11, lineHeight: 1.4 }}>{hint}</div>}</div>
+      <div><div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>{hint && <div className="muted fine-key" style={{ lineHeight: 1.4 }}>{hint}</div>}</div>
       <select value={value ?? ''} disabled={readOnly} onChange={(e) => onChange(e.target.value)} style={{ padding: '5px 8px', border: '1px solid var(--border)', borderRadius: 6, minWidth: 70 }}>
         {opts.map((o) => <option key={o} value={o}>{o === '' ? '—' : o === 'na' ? 'N/A' : o}</option>)}
       </select>
@@ -7555,8 +7558,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <tr key={c.id} className={'row-link' + (selected.has(c.id) ? ' row-selected' : '')}
                 onClick={() => openProfile(c.id)}>
                 <td className="th-sel" onClick={(e) => e.stopPropagation()}>
-                  <input type="checkbox" aria-label={`Select ${c.fullName}`}
-                    checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
+                  {/* The label is the hit area: a bare checkbox is 17px on a phone. */}
+                  <label className="sel-hit">
+                    <input type="checkbox" aria-label={`Select ${c.fullName}`}
+                      checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
+                  </label>
                 </td>
                 <td data-label="Candidate">
                   <div className="idcell">
@@ -8229,7 +8235,7 @@ function ParseCvModal({ onClose, onSaved, onBackground, job }) {
       </div>
       {busy && <ParsingStatusLine />}
       {busy && (
-        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+        <div className="muted fine-key" style={{ marginTop: 8 }}>
           You don't have to wait here — "Continue in background" keeps this reading and lets you get back to work; you'll see it ready in Talent Pool.
         </div>
       )}
@@ -8996,7 +9002,7 @@ function InterviewDetail({ id, user, onBack }) {
               <div className="row-between"><strong>{f.interviewerName}</strong>{f.recommendation && <Badge variant={['strong_yes', 'yes'].includes(f.recommendation) ? 'success' : 'critical'}>{REC_LABEL[f.recommendation]}</Badge>}</div>
               {f.overallScore != null && <div className="muted">Score: {f.overallScore}/5</div>}
               {f.comments && <div style={{ marginTop: 4 }}>{f.comments}</div>}
-              <div className="muted" style={{ fontSize: 11 }}>{fmtDate(f.submittedAt)}</div>
+              <div className="muted fine-key">{fmtDate(f.submittedAt)}</div>
             </div>
           ))}
           <div className="section-title">Activity</div>
@@ -9263,7 +9269,7 @@ class ErrorBoundary extends React.Component {
           <p style={{ margin: '0 0 16px', color: 'var(--muted, #6F6A64)' }}>The page hit an unexpected error. Reloading usually clears it. If it keeps happening, tell your administrator.</p>
           <button className="btn" onClick={() => window.location.reload()}>Reload the app</button>
           <details style={{ marginTop: 16, textAlign: 'left' }}><summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--muted, #6F6A64)' }}>Technical detail</summary>
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, marginTop: 8, color: 'var(--muted, #6F6A64)' }}>{msg}</pre></details>
+            <pre className="fine-key" style={{ whiteSpace: 'pre-wrap', marginTop: 8, color: 'var(--muted, #6F6A64)' }}>{msg}</pre></details>
         </div>
       </div>
     );

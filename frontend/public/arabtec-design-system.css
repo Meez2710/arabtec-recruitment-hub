@@ -1295,3 +1295,12 @@ button.pcard-name { color: var(--ink); background: transparent; }
    palette; only the row they sit in is defined here. A candidate carrying one is
    a full member of the pool — the badge says what the CV left uncertain. */
 .cc-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+/* ---- fine print ---------------------------------------------------------
+   Two named sizes for text that was set inline at 11px in a dozen places.
+   fine-label: an uppercase field label above a value (Info, permission
+   groups, status keys). fine-key: secondary text beside or under a value
+   (technical keys, timestamps, hints). Naming them is what lets the phone
+   stylesheet lift both together — an inline style can't be overridden. */
+.fine-label { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.fine-key { font-size: 11px; }

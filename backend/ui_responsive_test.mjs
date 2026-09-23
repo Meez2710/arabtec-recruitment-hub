@@ -167,5 +167,35 @@ check('drawer rows meet the 44px phone touch floor the rest of the UI holds',
     leaks.length === 0, leaks.slice(0, 5).join(' | '));
 }
 
+
+/* --------------------------------------------------------------------------
+   No text is hard-coded below the phone floor in an inline style.
+
+   An inline `style={{ fontSize: 10.5 }}` beats every stylesheet, so the phone
+   template cannot lift it — which is how 26 labels on Control Center, Roles,
+   Microsoft and the request detail header stayed at 10.5–11px after the
+   template shipped. Small print uses the named `.fine-label` / `.fine-key`
+   classes instead. Avatar initials (a fixed-size circle) are the exception.
+   -------------------------------------------------------------------------- */
+{
+  const dir = new URL('../frontend/public/', import.meta.url);
+  const offenders = [];
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.jsx'))) {
+    fs.readFileSync(new URL(f, dir), 'utf8').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/fontSize:\s*'?(\d+(?:\.\d+)?)(?:px)?'?\s*[,}]/g)) {
+        if (Number(m[1]) >= 11.5) continue;
+        if (/avatar|borderRadius:\s*'50%'/.test(line)) continue;
+        offenders.push(`${f}:${i + 1} (${m[1]}px)`);
+      }
+    });
+  }
+  check('no text is hard-coded below 11.5px in an inline style (use .fine-label / .fine-key)',
+    offenders.length === 0, offenders.slice(0, 6).join(', '));
+
+  const mobileCss = fs.readFileSync(new URL('../frontend/public/arabtec-mobile.css', import.meta.url), 'utf8');
+  check('the phone stylesheet lifts both named small-print classes',
+    /\.shell-phone \.fine-key\b/.test(mobileCss) && /\.shell-phone \.fine-label\b/.test(mobileCss));
+}
+
 console.log(`\n=== UI RESPONSIVE: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
