@@ -326,7 +326,22 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
 .shell-phone .page-head-actions > .btn,
 .shell-phone .dash-actions > .btn {
   flex: 1 1 auto;
-  min-height: 40px;
+  /* 44px, the touch floor the rest of the phone shell already holds — the app
+     bar buttons, tab bar and drawer rows are all 44px or more, and these page
+     actions (Create Request, Upload CV, Export CSV) were the 40px exception. */
+  min-height: 44px;
+}
+
+/* ---- small print that has to stay readable on a phone -------------------
+   Ticket codes (RQ-26-002, OFR-2026-00002), count pills and tab counts were
+   10.5px: fine on a 1440px desktop at arm's length, too small to read on a
+   phone held in one hand. 12px is the smallest size used anywhere else in the
+   phone shell. Size only — colour, weight and shape stay as designed. */
+.shell-phone .code-pill,
+.shell-phone .count-pill,
+.shell-phone .count-pill em,
+.shell-phone .seg-tab .seg-count {
+  font-size: 12px;
 }
 /* Filter bars and toolbars wrap instead of scrolling sideways. */
 .shell-phone .toolbar,

@@ -46,7 +46,12 @@ check('all deployed UI assets share one cache version',
 check('viewport includes viewport-fit=cover for iPhone safe areas',
   html.includes('viewport-fit=cover'));
 
-const mobile = between(responsive, '@media (max-width: 640px)', '@media (max-width: 480px)');
+// Ends at the section heading that follows the phone block. It used to end at
+// the next `@media (max-width: 480px)`, which existed only to widen a lane for
+// the help launcher; that block was removed on 23 Sep 2026 and took this slice
+// down with it — every check below silently read an empty string. Anchor on
+// something that exists for its own sake.
+const mobile = between(responsive, '@media (max-width: 640px)', 'TALENT POOL COMPOSITION');
 check('stacked table cells reflow as columns, not squeezed rows',
   mobile.includes('flex-direction: column') && mobile.includes('.responsive-table td'));
 check('stacked table labels no longer reserve 40% of a phone row',
