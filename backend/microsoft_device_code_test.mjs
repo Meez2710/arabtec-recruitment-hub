@@ -341,7 +341,7 @@ const fakeParse = async (filePath) => {
 };
 
 const candidatesBefore = db.get('SELECT COUNT(*) n FROM candidate').n;
-const scan = await runMailboxSync({ parse: fakeParse });
+const scan = await runMailboxSync({ discoverOnly: false, parse: fakeParse });
 
 c('the scan succeeded', scan.ok === true, JSON.stringify({ imported: scan.imported, skipped: scan.skipped }));
 c('exactly one attachment was imported', scan.imported === 1, String(scan.imported));
@@ -372,7 +372,7 @@ c('NO candidate was created by an email arriving',
 console.log('\n- De-duplication -');
 
 const intakesAfterFirst = db.get('SELECT COUNT(*) n FROM candidate_intake').n;
-const second = await runMailboxSync({ parse: fakeParse });
+const second = await runMailboxSync({ discoverOnly: false, parse: fakeParse });
 c('the second scan of the same mailbox imports nothing', second.imported === 0, String(second.imported));
 c('and creates no second intake',
   db.get('SELECT COUNT(*) n FROM candidate_intake').n === intakesAfterFirst,
@@ -410,6 +410,76 @@ c('a shared-mode read really goes to /users/<mailbox>',
 process.env.MS_MAILBOX_ACCESS = 'own';
 
 /* --------------------------------- done ----------------------------------- */
+/* ---------------------------------------------------------------------------
+   The connect ROUTE must honour device-code mode.
+
+   The library had `acquireByDeviceCode` from the start, but the route called
+   `buildAuthCodeUrl()` unconditionally — it never consulted MS_AUTH_MODE. So a
+   host correctly configured for device code still sent Entra its redirect URI
+   and got AADSTS50011, and on a plain-HTTP private address (http://10.20.0.9:4001)
+   there is no redirect URI that could ever be registered to fix it: Entra
+   permits http only for localhost. The mode has to branch in the route.
+   ------------------------------------------------------------------------ */
+{
+  const route = fs.readFileSync(new URL('./src/routes/integrations-microsoft.js', import.meta.url), 'utf8');
+  const connectFn = route.slice(route.indexOf('async function connect('), route.indexOf('router.get(\'/callback\''));
+
+  c('connect() branches on device-code before building an authorize URL',
+    /if \(isDeviceCodeMode\(\)\)/.test(connectFn)
+    && connectFn.indexOf('isDeviceCodeMode()') < connectFn.indexOf('buildAuthCodeUrl'),
+    'device-code is checked first');
+
+  c('connect() never builds a redirect URL in device-code mode',
+    /return res\.json\(\{\s*mode: 'device-code'/.test(connectFn),
+    'device-code returns a code, not an authUrl');
+
+  c('the device flow applies the same identity checks as the callback',
+    /assertMailbox\(signedInAs\)/.test(route)
+    && (route.match(/assertMailbox\(signedInAs\)/g) || []).length >= 2,
+    'both the callback and the device flow assert the mailbox');
+
+  c('the device flow persists through saveConnection, not its own path',
+    (route.match(/saveConnection\(\{/g) || []).length >= 2,
+    'one persistence contract for both flows');
+
+  c('status reports an in-flight device code so the panel can show it',
+    /deviceCode: deviceFlowPublic\(\)/.test(route), 'status exposes the pending code');
+
+  c('a failed device sign-in logs the provider message classify() would hide',
+    /providerMessage:/.test(route), 'the underlying error is recoverable from the log');
+}
+
+/* ---------------------------------------------------------------------------
+   MSAL's `cancel` is a BOOLEAN on the request it polls.
+
+   acquireByDeviceCode used to spread the caller's mutable { cancel: false }
+   holder straight into the MSAL request. Every object is truthy, so MSAL read
+   `request.cancel` as "cancel now" and abandoned polling on its first tick —
+   a few hundred milliseconds after the operator had, in fact, signed in
+   successfully. It surfaced as ClientAuthError device_code_polling_cancelled
+   and, because classify() folded it into a generic message, as nothing at all
+   in the log. Two live sign-ins were lost to it.
+   ------------------------------------------------------------------------ */
+{
+  const src = fs.readFileSync(new URL('./src/lib/microsoft/msal-client.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export async function acquireByDeviceCode'),
+    src.indexOf('export async function acquireGraphToken'));
+
+  c('the device-code request sends cancel as a boolean',
+    /cancel:\s*false\s*,/.test(fn), 'request.cancel starts false');
+
+  c('the caller holder is never spread into the MSAL request',
+    !/\.\.\.\(cancel \? \{ cancel \} : \{\}\)/.test(fn),
+    'no object is passed as cancel');
+
+  c('the holder is mirrored onto the request MSAL polls',
+    /cancel\.cancel/.test(fn) && /request\.cancel = true/.test(fn),
+    'flipping the holder still cancels');
+
+  c('the mirror is cleared when the flow ends',
+    /clearInterval\(mirror\)/.test(fn), 'no interval is left running');
+}
+
 console.log(`\n=== MICROSOFT DEVICE CODE: ${passed} passed, ${failed} failed ===`);
 for (const f of [DBF, DBF + '-journal', DBF + '-wal', DBF + '-shm']) {
   try { fs.rmSync(f); } catch { /* already gone */ }

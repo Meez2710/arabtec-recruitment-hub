@@ -4,6 +4,7 @@
 // Side-effect import placed first is the only ordering that is safe.
 import 'dotenv/config';
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'node:path';
@@ -233,6 +234,8 @@ app.use((req, res, next) => {
   if (/\.html(?:\/|$)/i.test(canonical) && canonical !== '/index.html') return res.status(404).end();
   next();
 });
+// Compress public assets even when staff connect directly to port 4001.
+app.use(compression());
 app.use(express.static(frontendDir, {
   etag: true,
   lastModified: true,

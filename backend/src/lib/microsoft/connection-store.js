@@ -333,6 +333,24 @@ export function claimAttachment(record) {
   const at = nowISO();
   const existing = get('SELECT * FROM mailbox_ingestion WHERE dedup_key=?', [key]);
   if (existing) {
+    // Re-listing old mail must fill the metadata introduced by CV Inbox without
+    // downloading or parsing an already handled attachment again. Do not change
+    // updated_at here: it also serves as the PROCESSING lease timestamp.
+    run(`UPDATE mailbox_ingestion SET
+      subject=COALESCE(NULLIF(subject,''), ?),
+      sender=COALESCE(NULLIF(sender,''), ?),
+      category=COALESCE(NULLIF(category,''), ?)
+      WHERE dedup_key=?`, [record.subject ?? null, record.sender ?? null, record.category ?? null, key]);
+    // Only discovery opts into retrying files rejected by the old allow-list.
+    // The caller has already validated the current file type and size. Genuine
+    // duplicates and all other terminal outcomes remain terminal.
+    if (record.retryUnsupported && existing.status === 'SKIPPED'
+      && /^unsupported file type \./.test(existing.reason || '')) {
+      const changed = run("UPDATE mailbox_ingestion SET status='PROCESSING', reason=NULL, updated_at=? WHERE dedup_key=? AND status='SKIPPED' AND reason=?",
+        [at, key, existing.reason]);
+      if (!changed.changes) return { claimed: false, key, reason: 'already-processed' };
+      return { claimed: true, key, retried: true };
+    }
     if (existing.status !== 'PROCESSING') {
       return { claimed: false, key, reason: 'already-processed', row: existing };
     }
@@ -345,13 +363,18 @@ export function claimAttachment(record) {
     return { claimed: true, key, retried: true };
   }
   try {
+    // subject / sender / category are what make selection-by-job-title possible:
+    // the panel groups WAITING attachments by category so a recruiter can parse
+    // "Civil Engineer" and leave the rest. They were never written, so every
+    // row grouped as uncategorised and the whole selection model was inert.
     run(`INSERT INTO mailbox_ingestion
           (provider, mailbox, dedup_key, message_id, internet_message_id, attachment_id,
-           attachment_name, received_at, status, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+           attachment_name, received_at, status, subject, sender, category, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [MICROSOFT_PROVIDER, String(record.mailbox).toLowerCase(), key, record.messageId ?? null,
       record.internetMessageId ?? null, record.attachmentId ?? null, record.attachmentName ?? null,
-      record.receivedAt ?? null, 'PROCESSING', at, at]);
+      record.receivedAt ?? null, record.status || 'PROCESSING',
+      record.subject ?? null, record.sender ?? null, record.category ?? null, at, at]);
     return { claimed: true, key };
   } catch (e) {
     // Lost the race to a concurrent claim — the constraint did its job.
@@ -379,4 +402,81 @@ export function recentIngestions(limit = 20) {
   const n = Math.max(1, Math.min(Number(limit) || 20, 100));
   return all(`SELECT dedup_key, attachment_name, status, reason, intake_id, received_at, created_at
                 FROM mailbox_ingestion ORDER BY id DESC LIMIT ${n}`);
+}
+
+/**
+ * What the recruiter's CV Inbox shows: one row per attachment the mailbox
+ * delivered, carrying what became of it.
+ *
+ * The join to `candidate_intake` is what turns "we ingested a file" into the
+ * state a recruiter actually cares about — still to review, already added to
+ * the Talent Pool, or set aside. An ingestion row on its own cannot say that:
+ * IMPORTED means the CV reached the review queue, not that anyone acted on it.
+ *
+ * `state` collapses both tables into the four the page is organised by:
+ *   inbox   — arrived and parsed, waiting for a person
+ *   review  — same rows; the page routes them to the review surface
+ *   failed  — the attachment could not be fetched, read or parsed
+ *   history — resolved: became a candidate, or was skipped as a duplicate
+ */
+export function inboxRows({ state = 'inbox', limit = 100, offset = 0 } = {}) {
+  const n = Math.max(1, Math.min(Number(limit) || 100, 200));
+  const off = Math.max(0, Number(offset) || 0);
+
+  // A left join, not an inner one: a FAILED ingestion never produced an intake
+  // and must still be listed, which is the whole point of the Failed section.
+  const base = `
+    SELECT mi.id, mi.attachment_name, mi.status AS ingest_status, mi.reason,
+           mi.received_at, mi.created_at, mi.intake_id, mi.content_hash,
+           ci.status AS intake_status, ci.candidate_id, ci.file_name
+      FROM mailbox_ingestion mi
+      LEFT JOIN candidate_intake ci ON ci.id = mi.intake_id`;
+
+  const where = {
+    // Waiting on a person: ingested cleanly and the intake is still PENDING.
+    inbox: `WHERE mi.status = 'IMPORTED' AND ci.status = 'PENDING'`,
+    failed: `WHERE mi.status = 'FAILED'`,
+    // Everything that reached an end state, including duplicates the pipeline
+    // skipped before an intake ever existed.
+    history: `WHERE mi.status = 'SKIPPED'
+                 OR (mi.status = 'IMPORTED' AND ci.status IS NOT NULL AND ci.status <> 'PENDING')`,
+  }[state] || `WHERE mi.status = 'IMPORTED' AND ci.status = 'PENDING'`;
+
+  return all(`${base} ${where} ORDER BY mi.id DESC LIMIT ${n} OFFSET ${off}`);
+}
+
+/**
+ * WAITING attachments grouped by the job title read from the mail subject.
+ *
+ * This is the number a recruiter is deciding to spend: "Civil Engineer — 412
+ * CVs waiting". Uncategorised subjects group under their own label rather than
+ * being hidden, because they are the ones most likely to be worth a look.
+ */
+export function waitingByCategory() {
+  return all(`SELECT COALESCE(NULLIF(category,''), 'Unclassified') AS category,
+                     COUNT(*) AS count,
+                     MIN(received_at) AS oldest,
+                     MAX(received_at) AS newest
+                FROM mailbox_ingestion
+               WHERE status = 'WAITING'
+            GROUP BY COALESCE(NULLIF(category,''), 'Unclassified')
+            ORDER BY COUNT(*) DESC`) || [];
+}
+
+/** How many sit in each section, so the page can label its tabs honestly. */
+export function inboxCounts() {
+  const row = get(`
+    SELECT
+      SUM(CASE WHEN mi.status='IMPORTED' AND ci.status='PENDING' THEN 1 ELSE 0 END) AS inbox,
+      SUM(CASE WHEN mi.status='FAILED' THEN 1 ELSE 0 END) AS failed,
+      SUM(CASE WHEN mi.status='SKIPPED'
+                 OR (mi.status='IMPORTED' AND ci.status IS NOT NULL AND ci.status<>'PENDING')
+               THEN 1 ELSE 0 END) AS history
+    FROM mailbox_ingestion mi
+    LEFT JOIN candidate_intake ci ON ci.id = mi.intake_id`) || {};
+  return {
+    inbox: Number(row.inbox || 0),
+    failed: Number(row.failed || 0),
+    history: Number(row.history || 0),
+  };
 }

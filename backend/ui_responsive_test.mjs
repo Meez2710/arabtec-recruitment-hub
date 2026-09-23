@@ -80,13 +80,16 @@ check('reflow layer does not paper over bugs with !important',
 // from product history — but the last sheet must not repeat it.
 check('design-system still documents the stacked-table transform',
   design.includes('.responsive-table td::before') && design.includes('flex: 0 0 40%'));
-check('stylesheet link order is styles \u2192 approved \u2192 design-system \u2192 claude \u2192 reflow',
+check('stylesheet link order is styles \u2192 approved \u2192 design-system \u2192 claude \u2192 reflow \u2192 phone',
   links.map((l) => l.href).join(' ') === [
     '/styles.css',
     '/arabtec-approved-ui.css',
     '/arabtec-design-system.css',
     '/claude-system.css',
     '/arabtec-responsive.css',
+    // The phone presentation loads last because it must win over the reflow
+    // layer's chrome rules for the shell it replaces.
+    '/arabtec-mobile.css',
   ].join(' '));
 
 /* --------------------------------------------------------------------------

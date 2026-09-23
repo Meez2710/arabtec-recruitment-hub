@@ -153,9 +153,13 @@ const { storeFile } = await import('./src/lib/upload.js');
 const manager = await makeUser(`mgr.${RID}@arabtec.com`, 'recruitment_manager');
 const outsider = await makeUser(`out.${RID}@arabtec.com`, 'recruitment_manager');
 const waiting = seedWaiting(40);
+const defaultAccess = await call('/api/cv-intake/summary', { token: manager.token });
+c('Recruitment Manager default grants open the inbox', defaultAccess.status === 200);
+// Exercise administrator revocation and incremental personal grants below.
+db.run("DELETE FROM role_permission WHERE role_id=(SELECT id FROM role WHERE code='recruitment_manager') AND permission_id IN (SELECT id FROM permission WHERE code LIKE 'cv_intake.%')");
 
-/* ------------------- 1. no access by default, for anyone ----------------- */
-console.log('\n- Default: a Recruitment Manager has NO intake access -');
+/* ------------------- 1. revoked access stays denied ----------------- */
+console.log('\n- After administrator revocation: no intake access -');
 
 const ROUTES = [
   ['GET', '/api/cv-intake/summary'],
@@ -172,7 +176,7 @@ const anon = await call('/api/cv-intake/summary');
 c('an unauthenticated caller is refused', anon.status === 401, String(anon.status));
 
 const mgrDefault = await call('/api/cv-intake/summary', { token: manager.token });
-c('a Recruitment Manager gets NO access from their role alone', mgrDefault.status === 403, String(mgrDefault.status));
+c('a Recruitment Manager with revoked grants is denied', mgrDefault.status === 403, String(mgrDefault.status));
 
 const adminSummary = await call('/api/cv-intake/summary', { token: admin });
 c('the System Admin can read the summary', adminSummary.status === 200, String(adminSummary.status));

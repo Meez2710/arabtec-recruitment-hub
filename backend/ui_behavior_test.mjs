@@ -280,4 +280,173 @@ await check('organization empty and failed loads show actionable content without
   });
 }
 
+/* ---------------------------------------------------------------------------
+   Phone presentation: ONE shell, not two.
+
+   `Shell` renders the phone chrome INSTEAD of the desktop chrome. These guards
+   run the real component through the real hook driver, so they fail if anyone
+   later "fixes" the breakpoint by hiding one presentation with CSS — which is
+   the failure mode that matters: a hidden desktop shell leaves a second full
+   set of buttons in the DOM, focusable by keyboard, with duplicate ids.
+   ------------------------------------------------------------------------ */
+{
+  const PERMS = ['dashboard.view', 'candidate.view', 'request.view', 'interview.view',
+    'offer.view', 'cv_intake.view', 'report.view'];
+  const USER = { id: 7, fullName: 'Test Recruiter', roles: ['recruiter'], permissions: PERMS };
+  const BRANDING = { app_name: 'Arabtec', company_name: 'Arabtec Construction' };
+
+  // Count every API call the shell makes, so "crossing the breakpoint costs no
+  // request" is measured, not assumed.
+  const api = window.ARABTEC_API;
+  const realGet = api.get;
+  let apiCalls = [];
+  api.get = (path) => { apiCalls.push(path); return Promise.resolve({}); };
+
+  // A real matchMedia that actually notifies, so flipping the breakpoint on a
+  // MOUNTED shell exercises the same path a browser takes when the window is
+  // resized — not just a fresh mount at the other width.
+  let phone = false;
+  let listeners = [];
+  window.matchMedia = (query) => ({
+    media: query,
+    get matches() { return phone; },
+    addEventListener(_type, fn) { listeners.push(fn); },
+    removeEventListener(_type, fn) { listeners = listeners.filter((l) => l !== fn); },
+    addListener(fn) { listeners.push(fn); },
+    removeListener(fn) { listeners = listeners.filter((l) => l !== fn); },
+  });
+  const setPhone = (value) => { phone = value; listeners.forEach((fn) => fn({ matches: value })); };
+
+  const Shell = get('Shell');
+  const MobileAppBar = get('MobileAppBar');
+  const MobileDrawer = get('MobileDrawer');
+  const MobileTabBar = get('MobileTabBar');
+  const cls = (n) => String(n.props?.className || '');
+  const has = (tree, pred) => nodes(tree).some(pred);
+  const desktopChrome = (tree) => nodes(tree).filter((n) =>
+    n.type === 'aside' || cls(n).split(/\s+/).includes('sidebar')
+    || cls(n).split(/\s+/).includes('topbar') || cls(n).split(/\s+/).includes('mobile-nav')
+    || cls(n).split(/\s+/).includes('more-sheet'));
+  const phoneChrome = (tree) => nodes(tree).filter((n) =>
+    n.type === MobileAppBar || n.type === MobileDrawer || n.type === MobileTabBar);
+
+  await check('below the breakpoint the desktop chrome is not rendered at all — not merely hidden', () => {
+    setPhone(true);
+    const shell = mount(Shell, { user: USER, branding: BRANDING, onLogout() {}, refreshBranding() {} });
+    const tree = shell.render();
+    assert.deepEqual(desktopChrome(tree).map(cls), [],
+      'the phone shell must not emit the sidebar, topbar, bottom nav or More sheet — a hidden copy is still focusable');
+    assert.equal(phoneChrome(tree).length, 3, 'expected exactly the app bar, the drawer and the tab bar');
+    assert.ok(has(tree, (n) => cls(n).split(/\s+/).includes('shell-phone')));
+    shell.dispose();
+  });
+
+  await check('above the breakpoint the phone chrome is not rendered at all, and the desktop shell is untouched', () => {
+    setPhone(false);
+    const shell = mount(Shell, { user: USER, branding: BRANDING, onLogout() {}, refreshBranding() {} });
+    const tree = shell.render();
+    assert.deepEqual(phoneChrome(tree), [], 'no phone component may exist in a desktop DOM');
+    const chrome = desktopChrome(tree).map(cls);
+    assert.ok(chrome.some((c) => c.split(/\s+/).includes('sidebar')), 'desktop still renders its sidebar');
+    assert.ok(chrome.some((c) => c.split(/\s+/).includes('topbar')), 'desktop still renders its topbar');
+    // The old bottom bar and More sheet are gone from BOTH presentations: above
+    // 900px they were display:none, below it the desktop branch never rendered.
+    assert.ok(!chrome.some((c) => c.split(/\s+/).includes('mobile-nav') || c.split(/\s+/).includes('more-sheet')),
+      'the retired mobile chrome must not come back — it is a second nav nobody can reach');
+    shell.dispose();
+  });
+
+  await check('exactly one primary navigation exists in either presentation', () => {
+    for (const isPhone of [true, false]) {
+      setPhone(isPhone);
+      const shell = mount(Shell, { user: USER, branding: BRANDING, onLogout() {}, refreshBranding() {} });
+      const tree = shell.render();
+      // `nodes()` does not expand a component, so count both forms: the desktop
+      // path emits its sidebar <nav> directly, the phone path emits
+      // <MobileTabBar>, which (asserted below) is itself exactly one <nav>.
+      const navs = nodes(tree).filter((n) => n.type === 'nav' || n.type === MobileTabBar);
+      assert.equal(navs.length, 1,
+        `expected one navigation landmark at ${isPhone ? 'phone' : 'desktop'}, found ${navs.length} — a second one is a list that can disagree with the first`);
+      shell.dispose();
+    }
+    const bar = mount(MobileTabBar, { items: get('NAV').filter((n) => n.key === 'dashboard'), route: 'dashboard', counts: {}, onGo() {}, onMore() {}, moreOpen: false });
+    const rendered = bar.render();
+    assert.equal(nodes(rendered).filter((n) => n.props?.['aria-label'] === 'Primary').length, 1,
+      'the tab bar is itself exactly one primary navigation region');
+    bar.dispose();
+  });
+
+  await check('the phone chrome is driven by the same permission-filtered nav, the same counts and the same user', () => {
+    setPhone(true);
+    const shell = mount(Shell, { user: USER, branding: BRANDING, onLogout() {}, refreshBranding() {} });
+    const tree = shell.render();
+    const drawer = nodes(tree).find((n) => n.type === MobileDrawer);
+    const expected = get('NAV').filter((n) => n.section
+      || (n.anyPerm ? n.anyPerm.some((p) => PERMS.includes(p)) : (!n.perm || PERMS.includes(n.perm))));
+    assert.deepEqual(drawer.props.nav.map((n) => n.key || n.section), expected.map((n) => n.key || n.section),
+      'the drawer must show the same list the desktop sidebar computes — not its own');
+    assert.ok(!drawer.props.nav.some((n) => n.perm && !PERMS.includes(n.perm)),
+      'a section this user cannot reach must never appear in the phone drawer');
+    assert.equal(drawer.props.user, USER);
+    const tabs = nodes(tree).find((n) => n.type === MobileTabBar);
+    assert.ok(tabs.props.counts, 'the tab bar reads the same work counts, not a second fetch');
+    assert.equal(tabs.props.counts, drawer.props.counts);
+    shell.dispose();
+  });
+
+  await check('the phone chrome adds no request of its own and keeps the same route on the same page component', () => {
+    setPhone(false);
+    const shell = mount(Shell, { user: USER, branding: BRANDING, onLogout() {}, refreshBranding() {} });
+    const desktop = shell.render();
+    assert.equal(phoneChrome(desktop).length, 0, 'fixture sanity: the shell really did mount as desktop');
+    const before = apiCalls.length;
+    setPhone(true);
+    const onPhone = shell.render();
+    assert.equal(phoneChrome(onPhone).length, 3,
+      'fixture sanity: the MOUNTED shell must actually switch to the phone presentation on a resize, not only on a fresh mount');
+    // The SHELL's own data (work counts) must survive the switch untouched. The
+    // page subtree does remount — the two chromes are different element trees —
+    // which is measured in the browser, not here; what this guard pins is that
+    // the chrome swap itself introduces no fetch.
+    assert.equal(apiCalls.length, before,
+      `the phone chrome must not refetch the shell's data; ${apiCalls.length - before} extra call(s) were made`);
+    const mainOf = (tree) => nodes(tree).find((n) => n.props?.id === 'main-content');
+    const pageOf = (tree) => nodes(mainOf(tree)).find((n) => n.props?.page === true).props.children;
+    assert.equal(pageOf(onPhone).type, pageOf(desktop).type,
+      'the same route must render the same page component in both presentations');
+    shell.dispose();
+  });
+
+  await check('a phone tab navigates through the shell\'s own guarded go(), and the drawer opens only on request', () => {
+    setPhone(true);
+    const shell = mount(Shell, { user: USER, branding: BRANDING, onLogout() {}, refreshBranding() {} });
+    let tree = shell.render();
+    assert.equal(nodes(tree).find((n) => n.type === MobileDrawer).props.open, false,
+      'the drawer starts closed, and MobileDrawer renders null while closed');
+    const tabs = nodes(tree).find((n) => n.type === MobileTabBar);
+    const target = tabs.props.items.find((n) => n.key !== 'dashboard');
+    tabs.props.onGo(target.key);
+    tree = shell.render();
+    const main = nodes(tree).find((n) => n.props?.id === 'main-content');
+    assert.ok(main, 'the page region survives navigation');
+    assert.equal(nodes(tree).find((n) => n.type === MobileAppBar).props.title,
+      get('NAV').find((n) => n.key === target.key).label,
+      'the app bar title follows the real route');
+    nodes(tree).find((n) => n.type === MobileTabBar).props.onMore();
+    tree = shell.render();
+    assert.equal(nodes(tree).find((n) => n.type === MobileDrawer).props.open, true,
+      '"More" opens the one drawer rather than a second menu');
+    shell.dispose();
+  });
+
+  await check('the closed drawer renders nothing, so nothing behind it is focusable', () => {
+    const closed = mount(MobileDrawer, { open: false, onClose() {}, nav: [], route: 'dashboard', counts: {}, onGo() {}, user: USER, roleCode: 'recruiter', branding: BRANDING, onLogout() {}, onChangePassword() {} });
+    assert.equal(closed.render(), null);
+    closed.dispose();
+  });
+
+  api.get = realGet;
+  delete window.matchMedia;
+}
+
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);

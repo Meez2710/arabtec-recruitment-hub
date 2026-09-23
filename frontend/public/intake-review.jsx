@@ -441,7 +441,7 @@
         h('div', { className: 'page-head-main' },
           h('div', { className: 'breadcrumb' }, 'Recruitment / Candidate Review'),
           h('h1', { className: 'page-title' }, 'Candidate Intake Review'),
-          h('p', { className: 'page-sub' }, 'Human approval gate between CV parsing and candidate creation.')),
+          h('p', { className: 'page-sub' }, 'CVs that need a person. A clean CV goes straight to the Talent Pool.')),
         h('div', { className: 'page-head-actions' },
           h('span', { className: 'status-chip pending' }, `${items.length} pending`),
           h('input', {
@@ -455,7 +455,7 @@
           h('button', { className: 'btn btn-success', disabled: uploading, onClick: load }, 'Refresh'))),
 
       h(Banner, { tone: 'info', title: 'Workflow control' },
-        'Upload creates a pending intake only. The candidate and any application are created after a complete human review.'),
+        'A readable CV with a usable identity becomes a Talent Pool candidate on its own. What lands here could not be resolved safely — each row says why. Applications are never created automatically.'),
 
       notice ? h(Banner, { tone: notice.tone, title: notice.title }, notice.text) : null,
       error ? h(window.ARABTEC_UI.LoadError, { title: 'Unable to load intakes', text: error, onRetry: load }) : null,
@@ -471,19 +471,22 @@
 
       h('div', { className: 'card intake-queue' },
         h('div', { className: 'card-head' },
-          h('h3', null, 'Pending CVs'),
-          h('span', { className: 'muted' }, 'No automatic persistence')),
+          h('h3', null, 'Needs a person'),
+          h('span', { className: 'muted' }, 'Exceptions only')),
         loading
           ? h(window.ARABTEC_UI.Skeleton, { shape: 'list' })
           : error ? null : !items.length
-            ? h(window.ARABTEC_UI.Empty, { art: 'all-clear', title: 'No pending reviews', text: 'New CV uploads appear here before a candidate is created.' })
+            ? h(window.ARABTEC_UI.Empty, { art: 'all-clear', title: 'Nothing needs you', text: 'Every CV received so far went to the Talent Pool on its own. Anything that cannot be resolved safely will appear here with the reason.' })
             : h('div', { className: 'intake-list' }, items.map((x) => h('button', {
               key: x.id, className: 'intake-list-row', onClick: () => setActive(x.id),
             },
             h('span', { className: 'intake-avatar' }, initials(intakeName(x))),
             h('span', { className: 'intake-list-copy' },
               h('strong', null, intakeName(x)),
-              h('small', null, `${x.requestId ? `Request #${x.requestId}` : 'Talent pool'} · ${x.fields.length} field${x.fields.length === 1 ? '' : 's'} · ${when(x.createdAt)}`)),
+              h('small', null, `${x.requestId ? `Request #${x.requestId}` : 'Talent pool'} · ${x.fields.length} field${x.fields.length === 1 ? '' : 's'} · ${when(x.createdAt)}`),
+              // Recorded by the unattended pass. Older intakes have none, so the
+              // line is omitted rather than showing an empty reason.
+              x.reason ? h('small', { className: 'intake-why' }, x.reason) : null),
             h('span', { className: 'intake-state' }, x.status))))));
   }
 

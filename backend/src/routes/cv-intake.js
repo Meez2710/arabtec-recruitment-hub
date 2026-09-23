@@ -29,6 +29,10 @@ import {
   createBatch, batchById, listBatches, controlBatch, markItemImported,
   classifySubject,
 } from '../lib/cv-intake/panel-store.js';
+// The mailbox pipeline's own tables — what the CV Inbox reports on.
+import { inboxRows, inboxCounts, connectionStatus, waitingByCategory } from '../lib/microsoft/connection-store.js';
+import { runMailboxSync, parseWaiting } from '../lib/microsoft/mailbox-sync.js';
+import { configuredMailbox } from '../lib/microsoft/config.js';
 
 const router = Router();
 
@@ -44,6 +48,114 @@ function isoOrNull(value) {
 }
 
 /* -------------------------------- reading --------------------------------- */
+
+/**
+ * Discover what is sitting in the mailbox, without parsing any of it.
+ *
+ * Costs a Graph listing and nothing else — no attachment bytes, no model call.
+ * Rows land WAITING, grouped by the job title classified from the subject, so
+ * a recruiter can then choose what is worth reading. This is the control the
+ * batch panel always implied and could never deliver, because the sync parsed
+ * everything the moment it saw it.
+ */
+const DATE_PRESETS = Object.freeze({ 1: 'Last 24 hours', 7: 'Last 7 days', 30: 'Last 30 days' });
+
+router.post('/discover', requirePermission('cv_intake.approve_batch'), async (req, res) => {
+  // A preset in days, or an explicit from/to. `from` wins when both are given,
+  // so a custom range is never silently overridden by a stale preset.
+  const days = Math.max(1, Math.min(Number.parseInt(req.body?.days, 10) || 7, 400));
+  const fromRaw = req.body?.from ? String(req.body.from) : null;
+  const from = fromRaw && !Number.isNaN(Date.parse(fromRaw)) ? new Date(fromRaw).toISOString() : null;
+  try {
+    const since = from || new Date(Date.now() - days * 86400000).toISOString();
+    const summary = await runMailboxSync({ actor: req.user, req, discoverOnly: true, since });
+    writeAudit(req, {
+      action: 'cv_intake.discovered', entityType: 'mailbox', entityId: 'microsoft',
+      newValue: { days, found: summary.waiting || 0, messages: summary.messages },
+    });
+    res.json({ ...summary, days });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Could not read the mailbox.' });
+    console.error(JSON.stringify({ level: 'error', msg: 'cv_intake.discover_failed', error: e.message }));
+  }
+});
+
+/**
+ * Parse a CHOSEN slice of what is waiting.
+ *
+ * Discovery leaves rows WAITING, and `claimAttachment` reports a WAITING row as
+ * already-processed — so a normal scan will never pick them up again. That is
+ * deliberate (a backlog must not drain itself), but it means this route is the
+ * only way those CVs are ever read. Without it, discovery would strand them.
+ *
+ * `category` and `limit` are the whole point: parse 50 of "Civil Engineer" and
+ * leave the other nine thousand alone.
+ */
+router.post('/parse-waiting', requirePermission('cv_intake.approve_batch'), async (req, res) => {
+  // Groups, not one group: a recruiter ticks several job titles and presses
+  // Parse Selected once. A bare `category` is still accepted so nothing that
+  // called this with a single group breaks.
+  const many = Array.isArray(req.body?.categories) ? req.body.categories.map(String) : null;
+  const categories = many && many.length ? many
+    : (req.body?.category ? [String(req.body.category)] : null);
+  const limit = Math.max(1, Math.min(Number.parseInt(req.body?.limit, 10) || 25, 200));
+  try {
+    const summary = await parseWaiting({ categories, limit, actor: req.user, req });
+    writeAudit(req, {
+      action: 'cv_intake.parsed_selection', entityType: 'mailbox', entityId: 'microsoft',
+      newValue: { categories, limit, parsed: summary.parsed, failed: summary.failed },
+    });
+    res.json(summary);
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Could not parse the selection.' });
+    console.error(JSON.stringify({ level: 'error', msg: 'cv_intake.parse_waiting_failed', error: e.message }));
+  }
+});
+
+/**
+ * What is waiting, grouped by job title, so the count beside each title is the
+ * number a recruiter is deciding whether to spend.
+ */
+router.get('/waiting', requirePermission('cv_intake.view'), (req, res) => {
+  try {
+    const rows = waitingByCategory();
+    res.json({ groups: rows, total: rows.reduce((n, r) => n + Number(r.count || 0), 0) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not read what is waiting.' });
+    console.error(JSON.stringify({ level: 'error', msg: 'cv_intake.waiting_failed', error: e.message }));
+  }
+});
+
+/**
+ * The recruiter's CV Inbox.
+ *
+ * Reads the mailbox pipeline's own tables rather than the batch queue. The two
+ * describe different products: the batch panel was built around a recruiter
+ * approving CVs for parsing in tens, while the mailbox pipeline already
+ * validates, de-duplicates and parses on arrival. This endpoint reports what
+ * that pipeline actually did, which is what the page needs to show.
+ *
+ * Nothing here creates or converts anything — it is a read.
+ */
+router.get('/inbox', requirePermission('cv_intake.view'), (req, res) => {
+  try {
+    const state = String(req.query.state || 'inbox');
+    res.json({
+      state,
+      counts: inboxCounts(),
+      rows: inboxRows({
+        state,
+        limit: Number.parseInt(req.query.limit, 10) || 100,
+        offset: Number.parseInt(req.query.offset, 10) || 0,
+      }),
+      mailbox: configuredMailbox(),
+      connection: connectionStatus(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not read the CV inbox.' });
+    console.error(JSON.stringify({ level: 'error', msg: 'cv_intake.inbox_failed', error: e.message }));
+  }
+});
 
 router.get('/summary', requirePermission('cv_intake.view'), (req, res) => {
   try {

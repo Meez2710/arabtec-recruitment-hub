@@ -124,6 +124,24 @@ function persistentCachePlugin() {
  * means the wrong account's tokens never touch disk at all: the blob is only
  * persisted after the account has been verified.
  */
+/**
+ * What Microsoft actually said. `classify()` deliberately returns operator-
+ * facing messages, which means the provider's own error code and description
+ * are discarded — fine once a connection works, useless while one is being
+ * established for the first time.
+ */
+function logProviderFailure(stage, e) {
+  try {
+    console.error(JSON.stringify({
+      level: 'error', msg: 'microsoft.provider_error', stage,
+      name: e?.name || null,
+      errorCode: e?.errorCode || null,
+      subError: e?.subError || null,
+      errorMessage: String(e?.errorMessage || e?.message || e || '').slice(0, 400),
+    }));
+  } catch { /* diagnostics must never mask the real failure */ }
+}
+
 function stagingCachePlugin(holder) {
   return {
     async beforeCacheAccess() { /* always starts empty */ },
@@ -236,9 +254,15 @@ export async function exchangeCodeForAccount({ code, state }) {
  * The caller checks who signed in first; a person who reached the prompt by
  * mistake never has a refresh token written to the ATS database.
  *
- * `cancel` is a mutable { cancel: boolean } MSAL polls, so a caller can abandon
- * a sign-in nobody is going to complete instead of holding the process open for
+ * `cancel` is a mutable { cancel: boolean } the CALLER flips to abandon a
+ * sign-in nobody is going to complete, instead of holding the process open for
  * the full 15-minute code lifetime.
+ *
+ * It must not be handed to MSAL directly. MSAL reads `request.cancel` as a
+ * BOOLEAN on each poll tick, and any object is truthy — passing the holder made
+ * MSAL abandon polling on its first tick, every time, and report
+ * `device_code_polling_cancelled` a moment after the operator had signed in
+ * successfully. The holder is mirrored onto the request instead.
  */
 export async function acquireByDeviceCode({ onCode, cancel } = {}) {
   const cfg = requireConfigured();
@@ -252,17 +276,33 @@ export async function acquireByDeviceCode({ onCode, cancel } = {}) {
   const holder = { serialized: null };
   const client = newClient(cfg, stagingCachePlugin(holder));
 
+  const request = {
+    scopes: [...authScopes()],
+    // MSAL's own `message` is the one Microsoft wants shown verbatim; the
+    // fields are passed through as well so a caller can format its own.
+    deviceCodeCallback: (response) => { try { onCode?.(response); } catch { /* display only */ } },
+    // A boolean, because that is what MSAL reads. See the note above.
+    cancel: false,
+  };
+  // Mirror the caller's holder onto the request MSAL actually polls. Cheap and
+  // bounded: it only runs while a sign-in is outstanding.
+  const mirror = cancel
+    ? setInterval(() => { if (cancel.cancel) request.cancel = true; }, 500)
+    : null;
+
   let result;
   try {
-    result = await client.acquireTokenByDeviceCode({
-      scopes: [...authScopes()],
-      // MSAL's own `message` is the one Microsoft wants shown verbatim; the
-      // fields are passed through as well so a caller can format its own.
-      deviceCodeCallback: (response) => { try { onCode?.(response); } catch { /* display only */ } },
-      ...(cancel ? { cancel } : {}),
-    });
+    result = await client.acquireTokenByDeviceCode(request);
   } catch (e) {
+    // Log the provider's own fields BEFORE classify() folds anything it does
+    // not recognise into a generic "the request failed". Without this a
+    // first-time connection failure is undiagnosable: the thrown error carries
+    // our message and the original is gone. Cost is one log line on a path
+    // that only runs when a sign-in has already failed.
+    logProviderFailure('device_code', e);
     throw classify(e);
+  } finally {
+    if (mirror) clearInterval(mirror);
   }
 
   if (!result || !result.account) {

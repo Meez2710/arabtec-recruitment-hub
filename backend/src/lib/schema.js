@@ -1,7 +1,7 @@
 // DDL for Phase 1. Mirrors prisma/schema.prisma. Kept ANSI-friendly so the same
 // structure ports to PostgreSQL (swap AUTOINCREMENT→SERIAL/IDENTITY, DATETIME→TIMESTAMPTZ,
 // INTEGER booleans→BOOLEAN). See docs/SCHEMA.sql for the Postgres variant.
-import { exec, all, run, get, driverKind } from './db.js';
+import { exec, all, run, get, tx, driverKind } from './db.js';
 import { PERMISSIONS, ROLE_PERMISSIONS } from './permissions.js';
 import { NOTIFICATION_EVENTS } from './notification-catalog.js';
 import {
@@ -679,6 +679,32 @@ export function ensureSchema() {
   addColumnIfMissing('candidate', 'parse_confidence', 'REAL');
   addColumnIfMissing('candidate', 'parsed_at', 'TEXT');
 
+  // Broad professional grouping, for SEARCH ONLY. Never a hiring-request match
+  // and never grounds for rejection: an accountant is a real hire for a
+  // construction company. Nullable, because every candidate created before this
+  // column existed is still a perfectly good candidate.
+  // See lib/cv-intake/auto-ingest.js for the buckets and how they are derived.
+  addColumnIfMissing('candidate', 'discipline_class', 'TEXT');
+
+  // DATA-QUALITY LABELS, not a workflow gate. A CV with a thin profile, a
+  // missing phone number or a namesake already in the pool still belongs in the
+  // Talent Pool — a recruiter needs to SEE the person and be told what is
+  // uncertain, not be prevented from finding them until someone does paperwork.
+  //
+  // `quality_flags` is a JSON array of codes, filtered with the same LIKE
+  // pattern the existing `tags` column already uses, so this needs no new index
+  // and no new query machinery. `quality_note` is the plain-language reason a
+  // recruiter reads. Both nullable: a clean CV carries neither, and every
+  // candidate created before these columns existed is simply unflagged.
+  addColumnIfMissing('candidate', 'quality_flags', 'TEXT');
+  addColumnIfMissing('candidate', 'quality_note', 'TEXT');
+
+  // Why an intake did NOT become a candidate on its own. Read by Candidate
+  // Review so a recruiter is told what needs their judgement instead of having
+  // to work it out from the document.
+  addColumnIfMissing('candidate_intake', 'auto_code', 'TEXT');
+  addColumnIfMissing('candidate_intake', 'classification', 'TEXT');
+
   // Indexes supporting server-side pagination, sorting and filtering on the
   // Talent Pool. Created idempotently; harmless if they already exist.
   for (const stmt of [
@@ -1033,6 +1059,7 @@ export function ensureSchema() {
   migrateWorkflowStages();
   migrateLegacyActionColor();
   syncCatalogAdditions();
+  backfillCvInboxGrants();
   ensureOneJoinedPerCandidate();
 }
 
@@ -1044,6 +1071,57 @@ function migrateLegacyActionColor() {
     run('UPDATE branding_setting SET value=? WHERE key=? AND lower(value)=?',
       ['#008064', 'button_color', '#d2232a']);
   } catch { /* first boot may not have reached this table yet */ }
+}
+
+/* ------------------------- CV Inbox access backfill ------------------------ */
+
+/** Existing databases need these grants once; catalog sync only grants NEW
+ * permission codes. Commit the grants and marker together, and preserve every
+ * later administrator revocation. Fresh installs are seeded after schema boot.
+ */
+const CV_INBOX_BACKFILL_KEY = 'schema.backfill.cv_inbox_roles';
+const CV_INBOX_CODES = [
+  'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch',
+  'cv_intake.import', 'cv_intake.control',
+];
+// The whole feature, for the whole HR function — product owner, 14 Sep 2026.
+// Deliberately NOT the line managers: hiring_manager and project_manager raise
+// requests and interview, they do not work the careers mailbox.
+const CV_INBOX_BACKFILL = {
+  recruiter:           CV_INBOX_CODES,
+  recruitment_manager: CV_INBOX_CODES,
+  hr_manager:          CV_INBOX_CODES,
+  hr_director:         CV_INBOX_CODES,
+};
+
+function backfillCvInboxGrants() {
+  try {
+    const granted = tx(() => {
+      if (get('SELECT id FROM system_setting WHERE key = ?', [CV_INBOX_BACKFILL_KEY])) return null;
+      const permId = Object.fromEntries(all('SELECT id, code FROM permission').map((p) => [p.code, p.id]));
+      const roleId = Object.fromEntries(all('SELECT id, code FROM role').map((r) => [r.code, r.id]));
+      // Do not mark an empty or incomplete catalog as migrated before seeding.
+      if (Object.entries(CV_INBOX_BACKFILL).some(([role, codes]) =>
+        !roleId[role] || codes.some((code) => !permId[code]))) return null;
+      let count = 0;
+      for (const [role, codes] of Object.entries(CV_INBOX_BACKFILL)) {
+        for (const code of codes) {
+          if (get('SELECT 1 AS x FROM role_permission WHERE role_id=? AND permission_id=?',
+            [roleId[role], permId[code]])) continue;
+          run('INSERT INTO role_permission (role_id,permission_id) VALUES (?,?) ON CONFLICT DO NOTHING RETURNING role_id',
+            [roleId[role], permId[code]]);
+          count++;
+        }
+      }
+      const stamp = new Date().toISOString();
+      run('INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)',
+        [CV_INBOX_BACKFILL_KEY, stamp, stamp]);
+      return count;
+    });
+    if (granted !== null) console.log(JSON.stringify({ level: 'info', msg: 'schema.cv_inbox_backfill', grants: granted }));
+  } catch (e) {
+    console.error('  ! CV Inbox grant backfill failed (continuing):', e.message);
+  }
 }
 
 /**
@@ -1075,6 +1153,7 @@ function migrateLegacyActionColor() {
  * defaults in memory, so this is about the console showing real rows rather than
  * about whether mail sends.
  */
+
 function syncCatalogAdditions() {
   try {
     const existing = new Set(all('SELECT code FROM permission').map((p) => p.code));
