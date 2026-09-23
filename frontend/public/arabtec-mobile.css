@@ -310,26 +310,172 @@ body:has(.modal-overlay) .mtabbar,
 body:has(.intake-modal-backdrop) .mtabbar,
 body:has(.mdrawer-scrim) .mtabbar { display: none; }
 
-/* ------------------------------------------------------- page furniture */
-/* The page header stacks on a phone: title, then its actions full width. */
+/* =========================================================================
+   THE PHONE PAGE TEMPLATE
+   -------------------------------------------------------------------------
+   One template for every page's phone view, instead of each page being its
+   own desktop layout squeezed down a different way. It works because UI
+   Coherence Phase 1 gave every page the same vocabulary — measured 23 Sep:
+
+     page header  (.page-head, .page-title, .breadcrumb, .page-sub)   8 pages
+     action row   (.page-head-actions)                               6 pages
+     filter bar   (.filter-toolbar)                                  4 pages
+     view toggle  (.view-toggle)  ·  stage tabs (.seg-tabs)  ·  Ask bar
+
+   Five patterns, keyed on those shared classes, so each rule below lands on
+   every page that uses the pattern and a new page inherits it for free. The
+   visual reference is Preline's mobile page pattern: title, one tight action
+   row, one-line filters, tabs that scroll rather than wrap.
+
+   Why it mattered: on the Talent Pool the chrome stacked to ~730px, so the
+   first candidate started at y=799, behind the tab bar at y=782. A recruiter
+   opening the main screen on a phone saw no candidates at all.
+   ========================================================================= */
+
+/* ---- 1. Page header: the title, and nothing the app bar already says ---- */
 .shell-phone .page-head,
 .shell-phone .dash-head {
   display: block;
+  margin-bottom: 12px;
 }
+/* The app bar already names the page, and every subtitle is orientation copy
+   for a desktop visitor — checked on all eight pages, none carries live data
+   or a control. On a phone both cost a screen's worth of scrolling. */
+.shell-phone .page-head .breadcrumb,
+.shell-phone .page-head .page-sub,
+.shell-phone .dash-head .breadcrumb,
+.shell-phone .dash-head .page-sub {
+  display: none;
+}
+.shell-phone .page-title {
+  font-size: 20px;
+  line-height: 1.25;
+  margin: 0;
+}
+
+/* ---- 2. Action row: a two-column grid, never a ragged wrap -------------- */
 .shell-phone .page-head-actions,
 .shell-phone .dash-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 12px;
+  align-items: stretch;
 }
-.shell-phone .page-head-actions > .btn,
-.shell-phone .dash-actions > .btn {
-  flex: 1 1 auto;
-  /* 44px, the touch floor the rest of the phone shell already holds — the app
-     bar buttons, tab bar and drawer rows are all 44px or more, and these page
-     actions (Create Request, Upload CV, Export CSV) were the 40px exception. */
+/* Things that are not buttons take their own full row and keep their natural
+   width — a scope chip ("Read-only list", "Org-wide") or the view switcher. */
+.shell-phone .page-head-actions > .badge,
+.shell-phone .page-head-actions > .status-chip {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+/* The view switcher spans the row with equal segments, the phone convention. */
+.shell-phone .page-head-actions > .view-toggle {
+  grid-column: 1 / -1;
+  display: flex;
+}
+.shell-phone .page-head-actions > .view-toggle > * {
+  flex: 1 1 0;
   min-height: 44px;
+}
+/* A page with a single action gives it the whole row rather than half of it
+   (Requests: Create Request; Reports: Export CSV). */
+.shell-phone .page-head-actions > .btn:only-of-type,
+.shell-phone .dash-actions > .btn:only-of-type {
+  grid-column: 1 / -1;
+}
+/* 44px — the touch floor the app bar, tab bar and drawer rows already hold.
+   These page actions were the 40px exception. */
+.shell-phone .page-head-actions > .btn,
+.shell-phone .dash-actions > .btn,
+.shell-phone .page-head-actions > .upload-cta,
+.shell-phone .page-head-actions > .upload-cta > .btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+.shell-phone .page-head-actions > .upload-cta {
+  display: block;
+}
+/* "Max 20 MB per file · PDF, DOC…" is desktop upload guidance; the file picker
+   itself enforces it on a phone. */
+.shell-phone .upload-cta-hint {
+  display: none;
+}
+
+/* ---- 3. Filter bar: search and Filters share one line ------------------ */
+.shell-phone .filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.shell-phone .filter-toolbar > .toolbar-search {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.shell-phone .filter-toolbar > .filter-toggle {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+.shell-phone .filter-toolbar > .toolbar-count {
+  flex: 1 0 100%;
+}
+
+/* ---- 4. Stage tabs: one row that scrolls, never two that wrap ---------- */
+.shell-phone .seg-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.shell-phone .seg-tabs::-webkit-scrollbar { display: none; }
+.shell-phone .seg-tabs > .seg-tab {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+/* ---- 5. Ask bar: the question and its button on one line --------------- */
+/* `.toolbar.ask-bar`, not `.ask-bar`: the Ask bar is also a `.toolbar`, and the
+   generic phone toolbar rule below sets flex-wrap: wrap at the same specificity
+   and later in the file — it would silently put the button back underneath. */
+.shell-phone .toolbar.ask-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+}
+.shell-phone .ask-bar > .ask-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.shell-phone .ask-bar > .btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 64px;
+  min-height: 44px;
+}
+.shell-phone .ask-input::placeholder {
+  text-overflow: ellipsis;
+}
+
+/* ---- 6. List card: say what is known, keep the action clear ----------- */
+/* Empty education and a missing graduation year are absence, not information.
+   On a phone they took two rows of every auto-ingested card to say so. The
+   desktop grid keeps them — there they hold card heights level. */
+.shell-phone .cand-card .cc-uni.is-empty,
+.shell-phone .cand-card .cc-grad.missing {
+  display: none;
+}
+/* The floating help button sits over the bottom-right of whichever card
+   scrolls beneath it — which is exactly where a card keeps its Actions menu.
+   Reserve that corner in the footer only, so the menu is never covered while
+   the rest of the card keeps its full width. (Removing the lane from the whole
+   card on 23 Sep fixed the dead strip but uncovered this.) */
+.shell-phone .cand-card .cc-foot {
+  padding-right: calc(var(--ats-fab-size, 52px) - 4px);
 }
 
 /* ---- small print that has to stay readable on a phone -------------------
@@ -343,7 +489,14 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
 .shell-phone .seg-tab .seg-count {
   font-size: 12px;
 }
-/* Filter bars and toolbars wrap instead of scrolling sideways. */
+/* Field labels on the request cards (Dept, Project / Site, Headcount,
+   Pipeline) were 10–10.5px. They are uppercase with tracking, which reads at a
+   slightly smaller size than body text — 11.5px, not 12. */
+.shell-phone .content dt,
+.shell-phone .fm-label {
+  font-size: 11.5px;
+}
+/* Any other toolbar wraps instead of scrolling sideways. */
 .shell-phone .toolbar,
 .shell-phone .filters,
 .shell-phone .filter-row {

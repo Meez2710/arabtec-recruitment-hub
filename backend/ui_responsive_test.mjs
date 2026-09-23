@@ -140,5 +140,32 @@ check('opening the drawer restores it to the keyboard immediately',
 check('drawer rows meet the 44px phone touch floor the rest of the UI holds',
   /\.sidebar \.nav-item \{[^}]*min-height:\s*44px/.test(drawer));
 
+
+/* --------------------------------------------------------------------------
+   The phone stylesheet may never reach a desktop page.
+
+   arabtec-mobile.css holds the phone page template (header, action row,
+   filter bar, stage tabs, Ask bar, list card). It is safe to extend ONLY
+   because every rule in it is keyed to something that exists solely in the
+   phone presentation — `Shell` renders .shell-phone / .mtopbar / .mtabbar /
+   .mdrawer instead of the desktop chrome, never alongside it. One unscoped
+   selector (`.page-sub { display:none }`) would silently strip desktop pages.
+   -------------------------------------------------------------------------- */
+{
+  const mobileCss = fs.readFileSync(new URL('../frontend/public/arabtec-mobile.css', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const PHONE_ONLY = /^(:root|\.shell-phone\b|\.mtopbar\b|\.mtabbar\b|\.mtab\b|\.mdrawer|body:has\([^)]*\)\s+\.mtabbar|@keyframes|from|to|\d+%)/;
+  const leaks = [];
+  for (const m of mobileCss.matchAll(/([^{}]+)\{/g)) {
+    const head = m[1].trim();
+    if (!head || head.startsWith('@media') || head.startsWith('@supports')) continue;
+    for (const sel of head.split(',').map((x) => x.trim()).filter(Boolean)) {
+      if (!PHONE_ONLY.test(sel)) leaks.push(sel);
+    }
+  }
+  check('every rule in the phone stylesheet is scoped to the phone presentation',
+    leaks.length === 0, leaks.slice(0, 5).join(' | '));
+}
+
 console.log(`\n=== UI RESPONSIVE: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);

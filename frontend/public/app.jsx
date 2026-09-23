@@ -7629,7 +7629,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <div className="cc-headline">{c.currentPosition || '—'}</div>
                   <QualityBadges flags={c.qualityFlags} note={c.qualityNote} />
                 </div>
-                <div className="cc-uni">
+                {/* `is-empty` lets the phone template drop a block that would only
+                    say "— / —". Auto-ingested CVs rarely state a university, so
+                    most cards would otherwise lead with missing data. The desktop
+                    grid keeps the dashes, which hold card heights level. */}
+                <div className={'cc-uni' + (!c.university && !c.major ? ' is-empty' : '')}>
                   <div className="cc-uni-name" title={c.university || ''}>{c.university || '—'}</div>
                   <div className="cc-uni-major" title={c.major || ''}>{c.major || '—'}</div>
                 </div>
