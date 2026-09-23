@@ -726,6 +726,33 @@ c('every paged message was imported, not just the first page',
   `intakes ${intakesBeforePaging} -> ${countIntakes()}`);
 cloud.pageSize = 0;
 
+// F2b — "Scan inbox now" calls runMailboxSync with no options, so it takes the
+// discover-first default. That path never saved its progress: every press
+// re-read the same window from the last successful sync, and once more than
+// one batch of mail had arrived it could never get past the first batch —
+// production sat re-reading 14–16 Sep for days. Only an EXPLICIT-window sweep
+// (CV Inbox "Refresh from mailbox") may leave the watermark where it was.
+cloud.messages.length = 0; cloud.attachments.clear(); cloud.bytes.clear();
+const beforeButton = store.connectionRow().last_successful_sync_at;
+const buttonBase = (beforeButton ? new Date(beforeButton).getTime() : Date.now()) + 120_000;
+for (let i = 1; i <= 3; i++) {
+  seedMessage({
+    id: `btn-${i}`, internetMessageId: `<btn${i}@example.test>`,
+    receivedDateTime: new Date(buttonBase + i * 1000).toISOString(),
+    attachments: [{ id: `btn-att-${i}`, name: `Button Candidate ${i}.pdf`,
+      bytes: Buffer.from(`%PDF-1.4\n% button cv ${i}\n%%EOF\n`) }],
+  });
+}
+const buttonScan = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Button Person')) });
+const afterButton = store.connectionRow().last_successful_sync_at;
+c('the default (button) scan saves its progress',
+  buttonScan.ok === true && !!afterButton && (!beforeButton || Date.parse(afterButton) > Date.parse(beforeButton)),
+  JSON.stringify({ before: beforeButton, after: afterButton, ok: buttonScan.ok }));
+const sweep = await runMailboxSync({ parse: fakeParse(NAME_FIELD('Sweep Person')), since: '2026-01-01T00:00:00Z' });
+c('an explicit-window sweep leaves the saved progress alone',
+  sweep.ok === true && store.connectionRow().last_successful_sync_at === afterButton,
+  `${afterButton} -> ${store.connectionRow().last_successful_sync_at}`);
+
 // F3 — reconnecting must not stamp a new baseline over the outage window.
 const baselineBeforeReconnect = store.connectionRow().baseline_at;
 await connectAs();
