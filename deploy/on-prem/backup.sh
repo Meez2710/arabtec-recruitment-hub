@@ -6,7 +6,7 @@
 # of the data, so this is not optional. It writes:
 #   /var/backups/arabtec-ats/db-<stamp>.dump      pg_dump --format=custom
 #   /var/backups/arabtec-ats/uploads-<stamp>.tgz  the UPLOAD_DIR tree
-# and keeps 14 dailies + 8 weeklies (Sunday).
+# and keeps 30 dailies + 8 weeklies (Sunday).
 #
 # Restore:
 #   systemctl stop arabtec-ats
@@ -17,10 +17,16 @@
 set -euo pipefail
 
 # shellcheck disable=SC1091
-set -a; . /etc/arabtec-ats/ats.env; set +a
+# systemd supplies the root-readable EnvironmentFile before switching user.
+# A manual invocation may source it when those variables are not already set.
+if [ -z "${DATABASE_URL:-}" ] || [ -z "${UPLOAD_DIR:-}" ]; then
+  set -a; . /etc/arabtec-ats/ats.env; set +a
+fi
 : "${DATABASE_URL:?}" "${UPLOAD_DIR:?}"
 
 DEST=/var/backups/arabtec-ats
+umask 077
+mkdir -p "$DEST"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DOW="$(date +%u)"   # 7 = Sunday
 
@@ -44,8 +50,8 @@ prune_archives() {
   mapfile -t sorted < <(printf '%s\n' "$@" | LC_ALL=C sort -r)
   rm -f -- "${sorted[@]:keep}"
 }
-prune_archives 14 "$DEST"/db-*.dump
-prune_archives 14 "$DEST"/uploads-*.tgz
+prune_archives 30 "$DEST"/db-*.dump
+prune_archives 30 "$DEST"/uploads-*.tgz
 prune_archives 8 "$DEST"/weekly-db-*.dump
 prune_archives 8 "$DEST"/weekly-uploads-*.tgz
 

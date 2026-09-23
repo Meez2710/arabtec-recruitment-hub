@@ -18,6 +18,7 @@ import { createJob, completeJob, failJob, getJob } from '../lib/parsing/jobs.js'
 import {
   checkRequest, createIntake, intakeById, pendingIntakes, reviewIntake, rejectIntake,
 } from '../lib/intake-store.js';
+import { ingestIntake } from '../lib/cv-intake/auto-ingest.js';
 import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
@@ -63,6 +64,16 @@ function serialize(c, user, { withDetail = false } = {}) {
     skills: decodeList(c.skills), languages: decodeList(c.languages),
     certifications: decodeList(c.certifications),
     parseStatus: c.parse_status || null, parseConfidence: c.parse_confidence ?? null,
+    // Broad professional grouping, for filtering the pool. Never a hiring
+    // decision and never a reason a candidate is hidden.
+    disciplineClass: c.discipline_class || null,
+    // Data-quality labels. Shown as badges; never a reason a candidate is
+    // hidden from an unfiltered Talent Pool.
+    qualityFlags: (() => {
+      try { const v = JSON.parse(c.quality_flags || '[]'); return Array.isArray(v) ? v : []; }
+      catch { return []; }
+    })(),
+    qualityNote: c.quality_note || null,
     parsedAt: c.parsed_at || null,
     screeningStatus: c.screening_status || 'new',
     // GDPR/PDPL status (shown on the candidate profile)
@@ -174,6 +185,8 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
     noticePeriod: q.noticePeriod, ownerRecruiterId: q.ownerRecruiterId,
     minExp: q.minExp, maxExp: q.maxExp, tag: q.tag,
     screeningStatus: q.screeningStatus, parseStatus: q.parseStatus,
+    disciplineClass: q.disciplineClass,
+    qualityFlag: q.qualityFlag, flagged: q.flagged,
     sort: q.sort, dir: q.dir,
   };
   const total = Candidates.count(filters);
@@ -407,17 +420,33 @@ router.post('/parse-cv', requirePermission('candidate.add'), multipart, async (r
       createdBy: req.user.id,
     });
 
+    // A CV uploaded with no vacancy named is the same "collect for later" case
+    // the mailbox handles, so it follows the same rule. One that DOES name a
+    // requisition is refused by ingestIntake itself — putting a person forward
+    // is a recruiter's decision, never an automatic one.
+    const auto = await ingestIntake(intake, req.user);
+    const settled = intakeById(intake.id) || intake;
+
     writeAudit(req, {
       action: 'candidate.intake_created', entityType: 'candidate_intake',
       entityId: intake.id,
       newValue: {
         fileName: req.uploadedFile.originalName, fields: intake.fields.length, requestId,
+        outcome: auto.outcome, candidateId: auto.candidateId ?? null,
+        classification: auto.classification ?? null,
       },
     });
 
     res.json({
-      // PENDING. No candidate exists yet and nothing has been written.
-      intake,
+      // CONVERTED when it went straight to the Talent Pool, DUPLICATE when the
+      // person was already there, PENDING when a recruiter is genuinely needed.
+      intake: settled,
+      autoIngest: {
+        outcome: auto.outcome,
+        candidateId: auto.candidateId ?? null,
+        classification: auto.classification ?? null,
+        reason: auto.reason ?? null,
+      },
       file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
       // How the text a reviewer is about to judge was actually obtained. Text
       // recovered by OCR is a recognition, not a reading, so a reviewer must be
@@ -496,14 +525,29 @@ router.post('/parse-cv-async', requirePermission('candidate.add'), multipart, (r
         createdBy: req.user.id,
       });
 
+      // Same rule as the synchronous route, so the async option is a timing
+      // choice and never a behaviour change.
+      const auto = await ingestIntake(intake, req.user);
+      const settled = intakeById(intake.id) || intake;
+
       writeAudit(req, {
         action: 'candidate.intake_created', entityType: 'candidate_intake',
         entityId: intake.id,
-        newValue: { fileName: req.uploadedFile.originalName, fields: intake.fields.length, requestId },
+        newValue: {
+          fileName: req.uploadedFile.originalName, fields: intake.fields.length, requestId,
+          outcome: auto.outcome, candidateId: auto.candidateId ?? null,
+          classification: auto.classification ?? null,
+        },
       });
 
       completeJob(jobId, {
-        intake,
+        intake: settled,
+        autoIngest: {
+          outcome: auto.outcome,
+          candidateId: auto.candidateId ?? null,
+          classification: auto.classification ?? null,
+          reason: auto.reason ?? null,
+        },
         file: { originalName: req.uploadedFile.originalName, size: req.uploadedFile.size },
         document: documentProvenance(parsed),
         preview: parsed.preview ?? [],

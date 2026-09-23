@@ -19,9 +19,13 @@ import crypto from 'node:crypto';
 import { storeFile, uploadPath, MAX_BYTES } from '../upload.js';
 import { parseDocument } from '../parsing/pipeline-provider.js';
 import { createIntake } from '../intake-store.js';
+// Job-title classification from the mail subject — the same function the
+// intake panel groups by, so discovery and selection agree on the label.
+import { classifySubject } from '../cv-intake/panel-store.js';
+import { ingestIntake } from '../cv-intake/auto-ingest.js';
 import { writeAudit } from '../audit.js';
 import fs from 'node:fs';
-import { get, run as dbRun } from '../db.js';
+import { get, all, run as dbRun } from '../db.js';
 import { CV_EXTENSIONS, configuredMailbox, overlapMinutes, syncBatchSize } from './config.js';
 import { acquireGraphToken, classify, CODES, MicrosoftAuthError } from './msal-client.js';
 import { listInboxMessages, listAttachments, downloadAttachment } from './graph.js';
@@ -115,7 +119,26 @@ function pendingIntakeForHash(hash) {
  * @param {{ actor?: {id:number, fullName?:string}|null, req?: object|null,
  *           parse?: (filePath: string) => Promise<object> }} options
  */
-export async function runMailboxSync({ actor = null, req = null, parse = parseDocument } = {}) {
+/**
+ * A mailbox scan DISCOVERS; it does not read.
+ *
+ * `discoverOnly` defaults to true because that is the approved workflow: the
+ * scan fetches, validates and de-duplicates each attachment and records what it
+ * is — subject, sender, filename, and a job title classified from the subject —
+ * then leaves it WAITING. No attachment bytes are downloaded and no model call
+ * is made, so sweeping a mailbox of ten thousand CVs costs a Graph listing and
+ * nothing else.
+ *
+ * Parsing is a separate, chosen act: see `parseWaiting`. A recruiter picks a
+ * date range and the job-title groups worth reading, and only those CVs reach
+ * Anthropic. Parsing everything on arrival spent real money on six months of
+ * applications to roles that closed months ago, and buried live applications
+ * under them.
+ *
+ * Passing `discoverOnly: false` restores read-on-arrival for a caller that
+ * genuinely wants it; nothing in the product does today.
+ */
+export async function runMailboxSync({ actor = null, req = null, parse = parseDocument, discoverOnly = true, since: sinceOverride = null } = {}) {
   if (running) {
     return { ok: false, code: 'already-running', error: 'A mailbox scan is already in progress.' };
   }
@@ -145,7 +168,9 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
   running = true;
   const mailbox = row.mailbox || configuredMailbox();
   const startedAt = new Date();
-  const since = syncWindowStart(row);
+  // A discovery sweep names its own window — it is looking deliberately into
+  // history, which is exactly what the baseline exists to prevent by default.
+  const since = sinceOverride || syncWindowStart(row);
   const summary = {
     mailbox, since, messages: 0, attachments: 0, imported: 0, skipped: 0, failed: 0,
     retryable: 0, intakeIds: [], startedAt: startedAt.toISOString(),
@@ -180,7 +205,7 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
       // abandoned and starts a second scan alongside this one.
       try { renewSyncLease(leaseOwner); } catch { /* the lease still has headroom */ }
       try {
-        await ingestMessage({ message, mailbox, tokenRef, actor, req, summary, parse });
+        await ingestMessage({ message, mailbox, tokenRef, actor, req, summary, discoverOnly, parse });
       } catch (e) {
         const error = classify(e);
         // A connection-level failure mid-batch stops the pass; anything else is
@@ -232,7 +257,10 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     }
     summary.watermark = watermark;
     delete summary.unfinished;   // an internal working set, not a result
-    markSyncSuccess(summary, watermark, scanGeneration);
+    // A discovery sweep deliberately reads history, so its endpoint says
+    // nothing about how far the NORMAL scan has got. Moving the watermark here
+    // would skip live mail that arrived while we were reading the backlog.
+    if (!discoverOnly) markSyncSuccess(summary, watermark, scanGeneration);
     log({ msg: 'microsoft.sync.complete', ...summary, imported: summary.imported });
     // ALWAYS audited. This used to be gated on `req || actor`, which meant the
     // 08:00 timer — the authoritative ingestion path, and the only one that
@@ -266,10 +294,122 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
   }
 }
 
+/**
+ * Read a chosen slice of the WAITING backlog.
+ *
+ * Discovery records attachments without spending anything; this is where the
+ * spending happens, and it happens only for rows somebody picked. Selection is
+ * by job title and count, because that is the decision a recruiter actually
+ * makes: "read fifty Civil Engineer CVs", not "read the mailbox".
+ *
+ * This is NOT a second ingestion path. It downloads, stores, parses and calls
+ * createIntake exactly as the arrival path does, against rows that path already
+ * claimed — it just does it later, and only when asked.
+ */
+export async function parseWaiting({ categories = null, limit = 25, actor = null, req = null, parse = parseDocument } = {}) {
+  const n = Math.max(1, Math.min(Number(limit) || 25, 200));
+  const groups = Array.isArray(categories) && categories.length ? categories : null;
+  // The cap is the safety rail: a recruiter ticking five groups worth four
+  // thousand CVs gets the first `limit`, not a four-thousand-CV model bill.
+  const rows = groups
+    ? all(`SELECT * FROM mailbox_ingestion WHERE status='WAITING'
+             AND COALESCE(NULLIF(category,''),'Unclassified') IN (${groups.map(() => '?').join(',')})
+           ORDER BY received_at DESC LIMIT ${n}`, groups)
+    : all(`SELECT * FROM mailbox_ingestion WHERE status='WAITING' ORDER BY received_at DESC LIMIT ${n}`);
+
+  const summary = { requested: n, categories: groups, selected: rows.length, parsed: 0, skipped: 0, failed: 0, intakeIds: [] };
+  if (!rows.length) return summary;
+
+  const { accessToken } = await acquireGraphToken();
+  const tokenRef = { value: accessToken };
+
+  for (const row of rows) {
+    try {
+      const bytes = await downloadAttachment(row.message_id, row.attachment_id, { tokenRef });
+      const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+
+      const alreadyPending = pendingIntakeForHash(hash);
+      if (alreadyPending) {
+        completeAttachment(row.dedup_key, {
+          status: 'SKIPPED', reason: `an identical CV is already awaiting review (intake ${alreadyPending.id})`,
+          intakeId: alreadyPending.id, contentHash: hash,
+        });
+        summary.skipped += 1;
+        continue;
+      }
+
+      const stored = storeFile(row.attachment_name, bytes);
+      const parsed = await parse(uploadPath(stored.storedName));
+
+      if (!parsed.ok || parsed.fields.length === 0) {
+        // Same rule the arrival path follows: only an explicit permanent:true
+        // closes an attachment. Anything else goes back to WAITING so it can be
+        // chosen again once the reader is healthy — it must not silently vanish
+        // from the backlog it was selected from.
+        discardStoredFile(stored.storedName);
+        completeAttachment(row.dedup_key, {
+          status: parsed.permanent === true ? 'FAILED' : 'WAITING',
+          reason: parsed.error || 'the CV reader returned nothing',
+        });
+        summary.failed += 1;
+        continue;
+      }
+
+      const intake = createIntake({
+        storedName: stored.storedName,
+        fileName: row.attachment_name,
+        mimeType: null,
+        fileHash: hash,
+        origin: 'mailbox.microsoft',
+        modelId: parsed.generation?.modelId ?? '',
+        documentId: parsed.documentId,
+        generation: parsed.generation,
+        fields: parsed.fields,
+        createdBy: actor?.id ?? null,
+      });
+      completeAttachment(row.dedup_key, {
+        status: 'IMPORTED', intakeId: intake.id, storedName: stored.storedName, contentHash: hash,
+      });
+      summary.parsed += 1;
+      summary.intakeIds.push(intake.id);
+
+      // A clean CV goes straight to the Talent Pool. Arabtec collects CVs long
+      // before a vacancy exists, so holding a good parse for a review click is
+      // what left 41 parsed CVs sitting behind a queue and zero candidates in
+      // the pool. `ingestIntake` never throws: anything it cannot resolve stays
+      // PENDING with a reason, which is exactly what Candidate Review is for.
+      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null });
+      summary.autoIngested = (summary.autoIngested || 0) + (outcome.outcome === 'CONVERTED' ? 1 : 0);
+      summary.duplicates = (summary.duplicates || 0) + (outcome.outcome === 'DUPLICATE' ? 1 : 0);
+      summary.needsReview = (summary.needsReview || 0) + (outcome.outcome === 'NEEDS_REVIEW' ? 1 : 0);
+      if (outcome.candidateId) summary.candidateIds = [...(summary.candidateIds || []), outcome.candidateId];
+
+      try {
+        writeAudit(req || { user: actor, ip: null, headers: {} }, {
+          action: 'candidate.intake_created', entityType: 'candidate_intake', entityId: intake.id,
+          newValue: {
+            origin: 'mailbox.microsoft', via: 'selection', category: row.category || null,
+            // What actually happened to it, so the audit answers "did this CV
+            // reach the pool?" without joining to another table.
+            outcome: outcome.outcome, candidateId: outcome.candidateId ?? null,
+            classification: outcome.classification ?? null, reason: outcome.reason ?? null,
+          },
+        });
+      } catch { /* the intake still stands */ }
+    } catch (e) {
+      const error = classify(e);
+      completeAttachment(row.dedup_key, { status: 'WAITING', reason: error.message });
+      summary.failed += 1;
+    }
+  }
+  console.log(JSON.stringify({ level: 'info', msg: 'microsoft.parse_waiting.complete', ...summary }));
+  return summary;
+}
+
 /** Stable-ish label for the lease owner; the clock is only used for display. */
 function startedAtLabel() { return new Date().toISOString(); }
 
-async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, parse }) {
+async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, parse, discoverOnly = false }) {
   const attachments = await listAttachments(message.id, { tokenRef });
   // A capped attachment walk means CVs on later pages were never seen. The
   // message is NOT complete, so the watermark must not move past it.
@@ -288,6 +428,10 @@ async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, 
       attachmentId: attachment.id ?? null,
       attachmentName: attachment.name ?? null,
       receivedAt: message.receivedDateTime ?? null,
+      subject: message.subject ?? null,
+      sender: message.from?.emailAddress?.address ?? null,
+      category: classifySubject(message.subject ?? ''),
+      retryUnsupported: discoverOnly && verdict.accept,
     });
 
     // Seen before — by an earlier scan, by the overlap window, or by a restart.
@@ -302,6 +446,15 @@ async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, 
     if (!verdict.accept) {
       completeAttachment(claim.key, { status: 'SKIPPED', reason: verdict.reason });
       summary.skipped += 1;
+      continue;
+    }
+
+    // Discovery ends here: the attachment is recorded and left WAITING. No
+    // bytes are fetched and no model call is made, so a whole-mailbox sweep
+    // costs nothing but Graph listings.
+    if (discoverOnly) {
+      completeAttachment(claim.key, { status: 'WAITING', reason: null });
+      summary.waiting = (summary.waiting || 0) + 1;
       continue;
     }
 
@@ -394,12 +547,22 @@ async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, 
       summary.imported += 1;
       summary.intakeIds.push(intake.id);
 
+      // Same rule as the selection path: a clean parse belongs in the Talent
+      // Pool, not in a queue. No requisition is involved here either.
+      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null });
+      summary.autoIngested = (summary.autoIngested || 0) + (outcome.outcome === 'CONVERTED' ? 1 : 0);
+      summary.duplicates = (summary.duplicates || 0) + (outcome.outcome === 'DUPLICATE' ? 1 : 0);
+      summary.needsReview = (summary.needsReview || 0) + (outcome.outcome === 'NEEDS_REVIEW' ? 1 : 0);
+      if (outcome.candidateId) summary.candidateIds = [...(summary.candidateIds || []), outcome.candidateId];
+
       try {
         writeAudit(req ?? { user: actor, headers: {} }, {
           action: 'candidate.intake_created', entityType: 'candidate_intake', entityId: intake.id,
           newValue: {
             fileName: attachment.name, fields: intake.fields.length,
             source: 'microsoft-mailbox', mailbox,
+            outcome: outcome.outcome, candidateId: outcome.candidateId ?? null,
+            classification: outcome.classification ?? null,
           },
         });
       } catch { /* an audit failure must not lose the intake */ }

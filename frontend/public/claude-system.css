@@ -930,6 +930,29 @@ table.candidates-table {
 .user-actions > button { margin: 2px 0; }
 .user-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 
+/* CV Inbox status header: four facts on one line, wrapping to a column on a
+   phone. A grid, not a table — these are labelled values, not rows. */
+.cvi-status { display: flex; flex-wrap: wrap; gap: var(--cl-6); align-items: flex-start; }
+.cvi-status-item { display: flex; flex-direction: column; gap: var(--cl-1); min-width: 0; }
+.cvi-status-k {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.cvi-status-actions { margin-inline-start: auto; align-self: center; }
+.cvi-tabs { margin-bottom: var(--cl-5); }
+/* The count rides inside its tab so selecting one cannot change the tab's
+   width and shove the row along — the same rule the screen tabs follow. */
+.seg-count {
+  margin-inline-start: var(--cl-2); font-variant-numeric: tabular-nums;
+  font-weight: 600; color: var(--muted);
+}
+.seg-tab.active .seg-count { color: inherit; }
+@media (max-width: 640px) {
+  .cvi-status { flex-direction: column; gap: var(--cl-4); }
+  .cvi-status-actions { margin-inline-start: 0; align-self: stretch; }
+  .cvi-status-actions .btn { width: 100%; }
+}
+
 /* One opt-in clamp for every table cell whose value is free text of unbounded
    length. Rows in Hiring Requests, Interviews and Offers were each as tall as
    their longest string happened to wrap: measured at 1440, request rows ran

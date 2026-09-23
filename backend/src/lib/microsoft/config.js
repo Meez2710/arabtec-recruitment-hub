@@ -260,4 +260,4 @@ export function syncBatchSize() {
 }
 
 /** CV attachment types the existing intake flow accepts. */
-export const CV_EXTENSIONS = Object.freeze(['.pdf', '.docx', '.doc']);
+export const CV_EXTENSIONS = Object.freeze(['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png']);

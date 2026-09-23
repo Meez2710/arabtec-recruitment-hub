@@ -61,6 +61,9 @@ async function main(opts = {}) {
     }
   }
   log('role→permission mappings');
+  // Finish one-time role migrations before an administrator can revoke a grant.
+  // Otherwise a fresh install would re-grant that permission on its first restart.
+  ensureSchema();
 
   // 4. Admin user
   // SECURITY (Phase 1, C1.1): no hardcoded default password. The bootstrap admin

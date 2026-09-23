@@ -64,6 +64,14 @@ export const PERMISSIONS = [
   ['cv_intake.view', 'cv_intake', 'view', 'View CV intake summaries and the intake queue'],
   ['cv_intake.preview', 'cv_intake', 'preview', 'Preview email details and CV attachments'],
   ['cv_intake.approve_batch', 'cv_intake', 'approve_batch', 'Select CVs and approve a parsing batch'],
+  // All five belong to the HR function, by decision of the product owner on
+  // 14 Sep 2026: before that only system_admin held them, so one account out of
+  // forty-five could open the feature the product is built around, and the two
+  // recruiters could not. `control` is the one with a cost attached — it sets
+  // how many CVs may be sent to the parser — so if that should sit higher than
+  // the recruiter's desk, revoke it in Roles & Permissions rather than here:
+  // a runtime revocation is respected on every later deploy (see
+  // backfillCvInboxGrants in schema.js), an edit here is not.
   ['cv_intake.control', 'cv_intake', 'control', 'Pause, resume or cancel pending CV processing'],
   ['cv_intake.import', 'cv_intake', 'import', 'Review parsed results and approve import into the ATS'],
   // Reports
@@ -104,6 +112,7 @@ export const ROLE_PERMISSIONS = {
   system_admin: PERMISSIONS.map((p) => p[0]), // all permissions
   hr_director: [
     'dashboard.view', 'request.view_all', 'request.approve', 'request.reject',
+    'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
     'request.budget_approve', 'request.cancel', 'request.close',
     // Widened: a director can now assign/reassign a recruiter and put a
     // request on hold/resume it directly, not just approve it — the same
@@ -116,6 +125,7 @@ export const ROLE_PERMISSIONS = {
   ],
   hr_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
+    'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
     'request.submit', 'request.approve', 'request.reject', 'request.assign_recruiter',
     'request.budget_approve', 'request.hold', 'request.cancel', 'request.close', 'request.reopen',
     'candidate.view', 'candidate.add', 'candidate.edit', 'candidate.link', 'candidate.move_stage',
@@ -128,6 +138,7 @@ export const ROLE_PERMISSIONS = {
   ],
   recruitment_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
+    'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
     'request.submit', 'request.assign_recruiter', 'request.hold', 'request.close', 'request.reopen',
     'candidate.view', 'candidate.add',
     'candidate.edit', 'candidate.link', 'candidate.move_stage', 'candidate.merge', 'candidate.note',
@@ -139,6 +150,7 @@ export const ROLE_PERMISSIONS = {
   ],
   recruiter: [
     'dashboard.view', 'request.view_own', 'request.create', 'request.edit', 'request.submit',
+    'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
     'candidate.view', 'candidate.add', 'candidate.edit', 'candidate.link', 'candidate.move_stage',
     'candidate.note', 'application.bulk_action',
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',

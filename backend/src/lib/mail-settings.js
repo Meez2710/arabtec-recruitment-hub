@@ -52,6 +52,9 @@ export function effectiveMailSettings(draft, { includePassword = true } = {}) {
   if (!['auto','graph','smtp'].includes(value.provider)) throw new Error('Choose Automatic, Microsoft 365, or SMTP.');
   if (!Number.isInteger(value.port) || value.port < 1 || value.port > 65535) throw new Error('SMTP port must be between 1 and 65535.');
   if (!['starttls','tls','none'].includes(value.encryption)) throw new Error('Choose STARTTLS, TLS, or None.');
+  if (value.provider !== 'graph' && value.port === 587 && value.encryption === 'tls') {
+    throw new Error('Port 587 uses STARTTLS. Choose STARTTLS, or port 465 for implicit SSL / TLS.');
+  }
   if (typeof value.host !== 'string' || !value.host || value.host.length > 253 || !/^[a-zA-Z0-9.-]+$/.test(value.host)) throw new Error('Enter an SMTP hostname without a URL or path.');
   for (const key of ['user','from','fromName','replyTo']) {
     if (typeof value[key] !== 'string' || value[key].length > 254 || /[\r\n\u0000]/.test(value[key])) throw new Error(`Invalid ${key}.`);

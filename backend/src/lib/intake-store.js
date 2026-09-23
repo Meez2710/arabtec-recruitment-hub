@@ -55,6 +55,12 @@ function toIntake(row) {
     proposalId: row.proposal_id ?? null,
     applicationId: row.application_id ?? null,
     reason: row.reason ?? null,
+    // Why the unattended path did not resolve this on its own, so Candidate
+    // Review can say what a recruiter is actually needed FOR instead of making
+    // them work it out from the document. Null on anything ingested before
+    // auto-ingest existed, and on anything a human created.
+    autoCode: row.auto_code ?? null,
+    classification: row.classification ?? null,
     createdBy: row.created_by ?? null,
     reviewedBy: row.reviewed_by ?? null,
     reviewedAt: row.reviewed_at ?? null,
@@ -410,6 +416,52 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
 }
 
 /** Reject an intake outright. Creates no candidate, keeps the record. */
+/* --------------------------------------------------------------------------
+   Resolutions written by the unattended path.
+
+   The status column has always been free text (PENDING|CONVERTED|REJECTED|
+   SUPERSEDED, no CHECK constraint), so these are additive: an existing row is
+   never rewritten and an older build reading a DUPLICATE row simply sees a
+   status it does not act on.
+
+   PENDING keeps its meaning and gains precision — it now means "a person is
+   genuinely needed", which is what Candidate Review is for.
+   -------------------------------------------------------------------------- */
+
+/** An exact duplicate: the person is already in the pool. No second candidate. */
+export function markIntakeDuplicate(intakeId, candidateId, reason, actor = null) {
+  return tx(() => {
+    const row = get('SELECT * FROM candidate_intake WHERE id=?', [intakeId]);
+    if (!row || row.status !== 'PENDING') return null;
+    run(`UPDATE candidate_intake SET status='DUPLICATE', candidate_id=?, reason=?,
+         auto_code='duplicate', reviewed_by=?, reviewed_at=?, version=? WHERE id=?`,
+    [candidateId ?? null, reason ?? null, actor?.id ?? null,
+      new Date().toISOString(), Number(row.version || 0) + 1, intakeId]);
+    return toIntake(get('SELECT * FROM candidate_intake WHERE id=?', [intakeId]));
+  });
+}
+
+/**
+ * Left for a human, with the reason recorded.
+ *
+ * Deliberately stays PENDING: the CV is not lost, not rejected and not hidden —
+ * it is exactly what Candidate Review should contain, now carrying why.
+ */
+export function markIntakeNeedsReview(intakeId, { code, reason, classification } = {}) {
+  return tx(() => {
+    const row = get('SELECT * FROM candidate_intake WHERE id=?', [intakeId]);
+    if (!row || row.status !== 'PENDING') return null;
+    run(`UPDATE candidate_intake SET auto_code=?, reason=?, classification=? WHERE id=?`,
+      [code ?? null, reason ?? null, classification ?? null, intakeId]);
+    return toIntake(get('SELECT * FROM candidate_intake WHERE id=?', [intakeId]));
+  });
+}
+
+/** Record the bucket on an intake that did convert, for the audit trail. */
+export function stampIntakeClassification(intakeId, classification) {
+  run('UPDATE candidate_intake SET classification=? WHERE id=?', [classification ?? null, intakeId]);
+}
+
 export function rejectIntake(intakeId, actor, reason) {
   return tx(() => {
     const row = get('SELECT * FROM candidate_intake WHERE id=?', [intakeId]);

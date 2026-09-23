@@ -9,7 +9,7 @@ on:
     # `stabilize/**` added so the stabilization branch runs the SAME required
     # checks before it is ever proposed for merge. Required checks on main are
     # unchanged.
-    branches: [main, 'stabilize/**']
+    branches: [main, 'stabilize/**', 'prod/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -137,7 +137,7 @@ jobs:
         run: npm ci
 
       - name: Run the required PostgreSQL transaction gate
-        run: npm run test:pg:required
+        run: npm run test:pg:required && node pg_cluster_test.mjs
         env:
           # Disposable CI database. Never a production DSN.
           PG_TEST_URL: postgres://txtest:txtest@127.0.0.1:5432/arabtec_test?sslmode=disable

@@ -25,7 +25,7 @@ import {
 } from '../lib/microsoft/connection-store.js';
 import { consumeState, issueState } from '../lib/microsoft/oauth-state.js';
 import {
-  buildAuthCodeUrl, exchangeCodeForAccount, acquireGraphToken, classify,
+  buildAuthCodeUrl, exchangeCodeForAccount, acquireByDeviceCode, acquireGraphToken, classify,
   MicrosoftAuthError, CODES, RECONNECT_MESSAGE,
 } from '../lib/microsoft/msal-client.js';
 import { inboxProbe } from '../lib/microsoft/graph.js';
@@ -75,6 +75,9 @@ router.get('/status', ...adminOnly, (req, res) => {
     // the administrator is expected to sign in as.
     mailbox: connection.mailbox || config.mailbox,
     syncRunning: isSyncRunning(),
+    // So the panel can show a live device code, and the outcome of one that has
+    // just finished, without the administrator refreshing anything.
+    deviceCode: deviceFlowPublic(),
     recentIngestions: recentIngestions(10),
   });
 });
@@ -89,6 +92,90 @@ router.get('/status', ...adminOnly, (req, res) => {
  * unauthenticated. The client assigns `authUrl` to window.location, which is
  * the top-level navigation Microsoft needs.
  */
+/**
+ * The device-code sign-in in progress, if any.
+ *
+ * Device code is not a redirect: there is no callback to land on. Microsoft
+ * issues a short code, the administrator types it on microsoft.com, and MSAL
+ * polls until they finish — up to fifteen minutes. An HTTP handler cannot hold
+ * a request open that long, so `connect` starts the flow, returns the code
+ * immediately, and the poll continues here. `/status` reports the outcome.
+ *
+ * One flow at a time: a second Connect click while a code is still live returns
+ * the SAME code rather than stranding the administrator with a code that is no
+ * longer being polled.
+ */
+let deviceFlow = null;
+
+function deviceFlowPublic() {
+  if (!deviceFlow) return null;
+  const { userCode, verificationUri, message, expiresAt, state, error } = deviceFlow;
+  return { userCode, verificationUri, message, expiresAt, state, error: error || null };
+}
+
+function startDeviceFlow(actorId) {
+  const cancel = { cancel: false };
+  deviceFlow = {
+    userCode: null, verificationUri: null, message: null,
+    expiresAt: null, state: 'starting', error: null, cancel,
+  };
+  const mine = deviceFlow;
+
+  acquireByDeviceCode({
+    cancel,
+    onCode: (r) => {
+      mine.userCode = r.userCode;
+      mine.verificationUri = r.verificationUri;
+      mine.message = r.message;
+      mine.expiresAt = new Date(Date.now() + (Number(r.expiresIn || 900) * 1000)).toISOString();
+      mine.state = 'pending';
+    },
+  }).then(({ account, serializedCache }) => {
+    // The SAME checks the redirect callback makes, in the same order. A sign-in
+    // by the wrong account is discarded without ever being written.
+    const cfg = microsoftConfig();
+    const signedInAs = String(account.username || '').toLowerCase();
+    const tenantMatches = !cfg.tenantId || !account.tenantId
+      || String(account.tenantId).toLowerCase() === String(cfg.tenantId).toLowerCase();
+    if (!tenantMatches) { mine.state = 'failed'; mine.error = CODES.WRONG_TENANT; return; }
+    if (!assertMailbox(signedInAs)) {
+      mine.state = 'failed';
+      mine.error = CODES.WRONG_ACCOUNT;
+      console.warn(JSON.stringify({ level: 'warn', msg: 'microsoft.device_code.rejected', code: CODES.WRONG_ACCOUNT }));
+      return;
+    }
+    if (!serializedCache) { mine.state = 'failed'; mine.error = CODES.TOKEN_CACHE_MISSING; return; }
+
+    saveConnection({
+      mailbox: signedInAs,
+      tenantId: account.tenantId || cfg.tenantId,
+      homeAccountId: account.homeAccountId,
+      serializedCache,
+      actorId,
+    });
+    try {
+      writeAudit({ user: { id: actorId }, ip: null, headers: {} }, {
+        action: 'microsoft.connected', entityType: 'integration', entityId: 'microsoft',
+        newValue: { mailbox: signedInAs, tenantId: account.tenantId || cfg.tenantId, via: 'device-code' },
+      });
+    } catch { /* the connection still stands */ }
+    mine.state = 'connected';
+    console.log(JSON.stringify({ level: 'info', msg: 'microsoft.connected', mailbox: signedInAs, via: 'device-code' }));
+  }).catch((e) => {
+    const error = classify(e);
+    mine.state = 'failed';
+    mine.error = error.code || CODES.UNEXPECTED;
+    // The underlying provider message, which classify() otherwise folds into a
+    // generic one — without it a first-time connection failure is undiagnosable.
+    console.error(JSON.stringify({
+      level: 'error', msg: 'microsoft.device_code.failed', code: error.code,
+      error: error.message, providerCode: e?.errorCode || null, providerMessage: e?.errorMessage || e?.message || null,
+    }));
+  });
+
+  return deviceFlow;
+}
+
 async function connect(req, res) {
   const config = configState();
   if (!config.configured) {
@@ -97,6 +184,39 @@ async function connect(req, res) {
       code: CODES.NOT_CONFIGURED, missing: config.missing,
     });
   }
+
+  // Device code has no redirect URI, so it must not be sent down the authorize
+  // path. This branch was missing: `connect` always built an auth-code URL, so a
+  // host configured for device code still sent Entra its callback address and
+  // got AADSTS50011 — and on a plain-HTTP private address there is no redirect
+  // URI that could ever be registered to fix it.
+  if (isDeviceCodeMode()) {
+    const live = deviceFlow
+      && (deviceFlow.state === 'starting' || deviceFlow.state === 'pending')
+      && (!deviceFlow.expiresAt || Date.parse(deviceFlow.expiresAt) > Date.now());
+    if (!live) {
+      if (deviceFlow?.cancel) deviceFlow.cancel.cancel = true;
+      startDeviceFlow(req.user.id);
+      writeAudit(req, {
+        action: 'microsoft.connect_started', entityType: 'integration', entityId: 'microsoft',
+        newValue: { mailbox: config.mailbox, mode: 'device-code' },
+      });
+    }
+    // Give the code a moment to arrive so the first response already carries it.
+    for (let i = 0; i < 40 && deviceFlow && deviceFlow.state === 'starting'; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (deviceFlow && deviceFlow.state === 'failed') {
+      return res.status(502).json({ error: 'Could not start the Microsoft sign-in.', code: deviceFlow.error });
+    }
+    return res.json({
+      mode: 'device-code',
+      deviceCode: deviceFlowPublic(),
+      mailbox: config.mailbox,
+      scopes: config.scopes,
+    });
+  }
+
   try {
     const state = issueState({
       userId: req.user.id,
@@ -108,7 +228,7 @@ async function connect(req, res) {
       action: 'microsoft.connect_started', entityType: 'integration', entityId: 'microsoft',
       newValue: { mailbox: config.mailbox },
     });
-    res.json({ authUrl, mailbox: config.mailbox, scopes: config.scopes });
+    res.json({ mode: 'auth-code', authUrl, mailbox: config.mailbox, scopes: config.scopes });
   } catch (e) {
     const error = classify(e);
     console.error(JSON.stringify({ level: 'error', msg: 'microsoft.connect.failed', code: error.code, error: error.message }));

@@ -27,12 +27,15 @@
 // ============================================================================
 import path from 'node:path';
 import process from 'node:process';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 // The installed app root. 04-app.sh checks the repo out at /opt/arabtec-ats.
 const APP_ROOT = process.env.ATS_APP_ROOT || '/opt/arabtec-ats';
 const BACKEND = path.join(APP_ROOT, 'backend');
 const mod = (rel) => pathToFileURL(path.join(BACKEND, rel)).href;
+// Match server.js: service environment wins, then load the backend .env.
+createRequire(path.join(BACKEND, 'package.json'))('dotenv').config({path:path.join(BACKEND, '.env')});
 
 const log = (fields) => console.log(JSON.stringify({ t: new Date().toISOString(), ...fields }));
 
@@ -88,7 +91,7 @@ if (status.status === 'ERROR') {
   log({ level: 'info', msg: 'microsoft.retry_after_error', lastError: status.lastError || null });
 }
 
-const result = await sync.runMailboxSync();
+const result = await sync.runMailboxSync({ discoverOnly: true });
 
 log({ msg: 'microsoft.sync.result', ...result });
 
