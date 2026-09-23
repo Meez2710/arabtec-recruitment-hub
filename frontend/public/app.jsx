@@ -536,6 +536,9 @@ function Login({ branding, onLogin }) {
         <p>End-to-end recruitment tracking. Create requests, manage candidates, and move them through your hiring pipeline.</p>
       </div>
       <div className="login-form-side">
+        {/* Phone only: the artwork that carries the brand on desktop is dropped
+            there (it crops badly), so the mark sits above the card instead. */}
+        <div className="login-phone-mark" aria-hidden="true"><Logo size={56} withText textColor="rgba(255,255,255,.72)" /></div>
         <form className="login-card" onSubmit={submit}>
           <h2>Sign in</h2>
           <p className="sub">Use your {name} account.</p>

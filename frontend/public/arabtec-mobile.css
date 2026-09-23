@@ -535,6 +535,9 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
    phone held in one hand. 12px is the smallest size used anywhere else in the
    phone shell. Size only — colour, weight and shape stay as designed. */
 .shell-phone .fine-key,
+.shell-phone .intake-state,
+.shell-phone .preview-status-badge,
+.shell-phone .intake-list-copy small,
 .shell-phone .kan-count,
 .shell-phone .pipe-count em,
 .shell-phone .pcard-facts,

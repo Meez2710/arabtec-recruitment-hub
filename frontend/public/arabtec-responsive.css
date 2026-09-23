@@ -713,3 +713,30 @@ img, svg, video, canvas {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
 }
+
+.login-phone-mark { display: none; }
+
+/* ---- sign-in on a phone ------------------------------------------------
+   The sign-in artwork (/bgats.png, 2821x1366) is a wide landscape picture with
+   the logo and a "© All Rights Reserved" line painted into it. Cropped to a
+   portrait phone it showed a sliver of the logo at the right edge and a
+   copyright line cut off mid-word — the first screen every user sees. Below
+   the breakpoint where the brand column is already dropped (860px, styles.css),
+   the page is the plain brand dark behind the card instead. The sign-in page is
+   outside the app shell, so this can't live in the .shell-phone stylesheet. */
+@media (max-width: 860px) {
+  .login-wrap {
+    background-image: none;
+    background-color: #1A1A1A;
+  }
+  .login-form-side {
+    padding: 32px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+  }
+  .login-form-side > .login-card { width: 100%; }
+  .login-phone-mark { display: block; }
+}

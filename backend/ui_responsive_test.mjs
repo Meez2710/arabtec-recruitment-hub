@@ -197,5 +197,16 @@ check('drawer rows meet the 44px phone touch floor the rest of the UI holds',
     /\.shell-phone \.fine-key\b/.test(mobileCss) && /\.shell-phone \.fine-label\b/.test(mobileCss));
 }
 
+
+/* The sign-in artwork has a logo and a copyright line painted into it; cropped
+   to a portrait phone both were sliced at the edges. Below the breakpoint that
+   already drops the brand column, the phone gets the plain brand dark. */
+{
+  const resp = fs.readFileSync(new URL('../frontend/public/arabtec-responsive.css', import.meta.url), 'utf8');
+  const block = [...resp.matchAll(/@media \(max-width: 860px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]).join('\n');
+  check('the phone sign-in page does not crop the landscape artwork',
+    /\.login-wrap\s*\{[^}]*background-image:\s*none/.test(block));
+}
+
 console.log(`\n=== UI RESPONSIVE: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
