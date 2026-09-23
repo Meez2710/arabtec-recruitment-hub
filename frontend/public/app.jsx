@@ -1818,12 +1818,24 @@ const DISCIPLINE_CLASSES = [
 /* What the parse could not establish, shown ON the candidate rather than used
    to withhold them. The full sentence is the tooltip: the badge is for
    scanning a grid, the sentence is for deciding what to do about it. */
+/* Two tiers, on the canonical palette. Deliberately never `critical`: that red
+   means Rejected or Failed everywhere else in the product, and a candidate with
+   a missing phone number has not been turned down. Amber asks for a look; grey
+   records something the parse could not establish. */
+const QUALITY_VARIANT = {
+  'needs-review': 'warning',
+  'possible-duplicate': 'warning',
+  'contact-missing': 'warning',
+  'incomplete-profile': 'soft',
+  'low-confidence': 'soft',
+  'unclassified': 'soft',
+};
 function QualityBadges({ flags, note }) {
   if (!flags || flags.length === 0) return null;
   return (
     <div className="cc-flags" title={note || undefined}>
       {flags.map((code) => (
-        <span key={code} className={'cc-flag cc-flag-' + code}>{QUALITY_LABEL[code] || code}</span>
+        <Badge key={code} variant={QUALITY_VARIANT[code] || 'soft'}>{QUALITY_LABEL[code] || code}</Badge>
       ))}
     </div>
   );

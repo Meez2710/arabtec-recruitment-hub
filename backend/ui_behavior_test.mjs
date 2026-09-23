@@ -449,4 +449,25 @@ await check('organization empty and failed loads show actionable content without
   delete window.matchMedia;
 }
 
+/* Data-quality labels go through the canonical <Badge>, and never in the red
+   the product uses for Rejected: a candidate with a missing phone number has
+   not been turned down. (Pattern audit: docs/audits/status-badges.md.) */
+await check('quality labels render through the canonical Badge, never in the rejection red', () => {
+  const QualityBadges = get('QualityBadges');
+  const Badge = get('Badge');
+  const all = ['needs-review', 'possible-duplicate', 'contact-missing',
+    'incomplete-profile', 'low-confidence', 'unclassified'];
+  const tree = mount(QualityBadges, { flags: all, note: 'n' }).render();
+  const badges = nodes(tree).filter((n) => n.type === Badge);
+  assert.equal(badges.length, all.length, 'every label is a canonical <Badge>, not a hand-rolled span');
+  const variants = Object.fromEntries(badges.map((b) => [text(b), b.props.variant]));
+  for (const [label, variant] of Object.entries(variants)) {
+    assert.notEqual(variant, 'critical', `"${label}" must not use the red reserved for Rejected/Failed`);
+  }
+  assert.equal(variants['Contact Missing'], 'warning', 'actionable labels are amber');
+  assert.equal(variants['Needs Review'], 'warning');
+  assert.equal(variants['Unclassified'], 'soft', 'informational labels are grey');
+  assert.equal(mount(QualityBadges, { flags: [] }).render(), null, 'no labels, no markup');
+});
+
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);
