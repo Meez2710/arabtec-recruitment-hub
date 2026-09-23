@@ -21,6 +21,39 @@
     return (NODE_TYPES.find((x) => x.id === t) || {}).label || t;
   }
 
+  /* One reading of a node for every view. A unit, department or project has
+     no employee by definition — it is not a vacancy, and calling it one put
+     "Vacant" on the company itself. */
+  function isUnit(node) {
+    return node.nodeType === 'organizational_unit' || node.nodeType === 'project' || node.nodeType === 'department';
+  }
+  function isVacant(node) {
+    if (isUnit(node)) return false;
+    return node.status === 'vacant' || node.nodeType === 'vacant_position' || !node.employeeName;
+  }
+  function nodeName(node) {
+    if (isUnit(node) || isVacant(node)) return node.positionTitle || node.employeeName || typeLabel(node.nodeType);
+    return node.employeeName;
+  }
+  function nodeTitle(node) {
+    if (isUnit(node)) return typeLabel(node.nodeType);
+    return isVacant(node) ? 'Vacant' : (node.positionTitle || typeLabel(node.nodeType));
+  }
+  function nodeMeta(node) {
+    // Department and location are often the same words ("Head Office").
+    const parts = [node.department, node.projectOrLocation].filter(Boolean)
+      .filter((v, i, a) => a.findIndex((x) => x.trim().toLowerCase() === v.trim().toLowerCase()) === i);
+    return parts.join(' · ');
+  }
+  function avatarText(node) {
+    if (isVacant(node)) return 'V';
+    return initials(isUnit(node) ? node.positionTitle : node.employeeName);
+  }
+  function avatarClass(node) {
+    return 'org-av' + (isVacant(node) ? ' vacant' : '') + (isUnit(node) ? ' unit' : '');
+  }
+  window.ORG_CHART_NODE = { isUnit, isVacant, nodeName, nodeTitle, nodeMeta, avatarText };
+
   function injectStyles() {
     if (document.getElementById('org-structure-css')) return;
     const el = document.createElement('style');
@@ -69,6 +102,7 @@
         display:grid; place-items:center; font-size:10px; font-weight:700;
         background:var(--at-action, #008064); color:#fff;
       }
+      .org-av.unit { border-radius:8px; background:var(--at-action-tint, rgba(0,128,100,.08)); color:var(--at-action, #008064); }
       .org-av.vacant { background:transparent; color:var(--text-gray); border:1px dashed var(--border); }
       .org-name { font-size:13px; font-weight:700; color:var(--text-dark); line-height:1.25; }
       .org-title { font-size:12px; color:var(--text-gray); line-height:1.3; }
@@ -84,6 +118,35 @@
       }
       .org-drop { outline:2px dashed var(--at-action, #008064); }
       .org-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--text-gray); }
+      /* Phone: a drill-down list, one position at a time. */
+      .org-trail { display:flex; gap:4px; overflow-x:auto; scrollbar-width:none; margin:0 0 10px; padding-bottom:2px; }
+      .org-trail::-webkit-scrollbar { display:none; }
+      .org-trail button {
+        flex:0 0 auto; min-height:36px; padding:0 12px; border-radius:999px; font-size:13px;
+        border:1px solid var(--border); background:var(--surface, #fff); color:var(--text-gray); cursor:pointer;
+      }
+      .org-trail button[aria-current="true"] { color:var(--text-dark); font-weight:700; border-color:var(--at-action, #008064); }
+      .org-focus { padding:16px; margin-bottom:12px; }
+      .org-focus .org-av { width:44px; height:44px; font-size:15px; }
+      .org-focus .org-name { font-size:17px; }
+      .org-focus .org-title, .org-focus .org-meta { font-size:13px; }
+      .org-focus-actions { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:14px; }
+      .org-focus-actions .btn { min-height:44px; width:100%; }
+      .org-list { padding:0; overflow:hidden; }
+      .org-list-head { padding:12px 16px; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-gray); border-bottom:1px solid var(--border); }
+      .org-row {
+        display:flex; gap:12px; align-items:center; width:100%; min-height:64px; padding:10px 16px;
+        border:0; border-bottom:1px solid var(--border); background:transparent; text-align:start; cursor:pointer; font:inherit;
+      }
+      .org-row:last-child { border-bottom:0; }
+      .org-row:active { background:var(--at-action-tint, rgba(0,128,100,.08)); }
+      .org-row .org-av { width:36px; height:36px; font-size:13px; }
+      .org-row-body { flex:1 1 auto; min-width:0; }
+      .org-row .org-name { font-size:15px; }
+      .org-row .org-title, .org-row .org-meta { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .org-row .org-meta { margin-top:2px; }
+      .org-row-count { flex:none; font-size:13px; color:var(--text-gray); white-space:nowrap; }
+      .org-row-empty { padding:20px 16px; color:var(--text-gray); font-size:14px; }
       .org-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:middle; border:1px solid var(--border); }
     `;
     document.head.appendChild(el);
@@ -222,8 +285,8 @@
   }
 
   function OrgCard({ node, active, match, canManage, collapsed, childCount, onToggle, onSelect, onDragStart, onDrop }) {
-    const vacant = node.status === 'vacant' || node.nodeType === 'vacant_position' || !node.employeeName;
-    const unitish = node.nodeType === 'organizational_unit' || node.nodeType === 'project' || node.nodeType === 'department';
+    const vacant = isVacant(node);
+    const unitish = isUnit(node);
     const cls = 'org-card'
       + (active ? ' is-active' : '')
       + (vacant ? ' is-vacant' : '')
@@ -237,15 +300,13 @@
         onDrop={canManage ? (e) => { e.preventDefault(); e.currentTarget.classList.remove('org-drop'); onDrop(node); } : undefined}>
         <div className={cls} draggable={canManage} onDragStart={(e) => onDragStart(e, node)} onClick={() => onSelect(node)}>
           <div className="org-card-top">
-            <span className={'org-av' + (vacant ? ' vacant' : '')}>{vacant ? 'V' : initials(node.employeeName)}</span>
+            <span className={avatarClass(node)}>{avatarText(node)}</span>
             <div>
-              <div className="org-name">{vacant ? (node.positionTitle || 'Vacant') : node.employeeName}</div>
-              <div className="org-title">{vacant ? 'Vacant' : (node.positionTitle || typeLabel(node.nodeType))}</div>
+              <div className="org-name">{nodeName(node)}</div>
+              <div className="org-title">{nodeTitle(node)}</div>
             </div>
           </div>
-          <div className="org-meta">
-            {[node.department, node.projectOrLocation].filter(Boolean).join(' · ') || typeLabel(node.nodeType)}
-          </div>
+          {nodeMeta(node) && <div className="org-meta">{nodeMeta(node)}</div>}
         </div>
         {childCount > 0 && (
           <button type="button" className="org-toggle" onClick={(e) => { e.stopPropagation(); onToggle(node.id); }}>
@@ -288,6 +349,89 @@
     return <div className="org-tree">{renderList(roots)}</div>;
   }
 
+
+  /* The phone view of the chart. A 113-position tree lays out ~19,500px wide;
+     no zoom level makes that readable in 390px, and one finger cannot both
+     scroll the page and pan a canvas. So the phone walks the same tree one
+     position at a time: who this is, the path above them, and their direct
+     reports as rows you tap to go down. Same `visible` filter and `matches`
+     search as the canvas — only the presentation differs. */
+  // Only reached if app.jsx failed to load, in which case nothing renders anyway.
+  function useNoPhone() { return false; }
+
+  function OrgDrill({ nodes, kids, roots, matches, searching, focusId, onFocus, manage, onAdd, onEdit, onDelete }) {
+    const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+    // A chart with one top position (the company) opens on it, not on a list of one.
+    const current = focusId != null && byId.has(focusId) ? byId.get(focusId)
+      : (roots.length === 1 ? roots[0] : null);
+    const trail = [];
+    for (let n = current; n; n = n.parentId != null ? byId.get(n.parentId) : null) trail.unshift(n);
+    const rows = searching ? nodes.filter((n) => matches.has(n.id)) : (current ? kids(current.id) : roots);
+
+    // A plain render function, not a nested component: a component declared
+    // inside OrgDrill would be a new type every render and remount every row.
+    function renderRow(node) {
+      const count = kids(node.id).length;
+      const meta = nodeMeta(node);
+      return (
+        <button key={node.id} type="button" className="org-row" onClick={() => onFocus(node.id)}>
+          <span className={avatarClass(node)} aria-hidden="true">{avatarText(node)}</span>
+          <span className="org-row-body">
+            <span className="org-name" style={{ display: 'block' }}>{nodeName(node)}</span>
+            <span className="org-title" style={{ display: 'block' }}>{nodeTitle(node)}</span>
+            {meta && <span className="org-meta" style={{ display: 'block' }}>{meta}</span>}
+          </span>
+          {count > 0 && <span className="org-row-count">{count} ›</span>}
+        </button>
+      );
+    }
+
+    return (
+      <div className="org-drill">
+        {!searching && trail.length > 1 && (
+          <nav className="org-trail" aria-label="Reporting line">
+            {roots.length > 1 && <button type="button" onClick={() => onFocus(null)}>Top</button>}
+            {trail.map((n, i) => (
+              <button key={n.id} type="button" aria-current={i === trail.length - 1 ? 'true' : undefined}
+                onClick={() => onFocus(n.id)}>{nodeName(n)}</button>
+            ))}
+          </nav>
+        )}
+        {!searching && current && (
+          <div className="card org-focus">
+            <div className="org-card-top" style={{ gap: 12 }}>
+              <span className={avatarClass(current)} aria-hidden="true">{avatarText(current)}</span>
+              <div style={{ minWidth: 0 }}>
+                <div className="org-name">{nodeName(current)}</div>
+                <div className="org-title">{nodeTitle(current)}</div>
+                {nodeMeta(current) && <div className="org-meta">{nodeMeta(current)}</div>}
+              </div>
+            </div>
+            {current.notes && <p style={{ margin: '12px 0 0', fontSize: 14 }}>{current.notes}</p>}
+            {manage && (
+              <div className="org-focus-actions">
+                <button className="btn" type="button" onClick={() => onAdd(current.id)}>Add report</button>
+                <button className="btn btn-secondary" type="button" onClick={() => onEdit(current)}>Edit</button>
+                <button className="btn btn-danger" type="button" onClick={() => onDelete(current)}>Delete</button>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="card org-list">
+          <div className="org-list-head">
+            {searching ? `${rows.length} matching`
+              : !current ? `Top positions · ${rows.length}`
+              : isUnit(current) ? `In ${nodeName(current)} · ${rows.length}`
+              : `Direct reports · ${rows.length}`}
+          </div>
+          {rows.length
+            ? rows.map(renderRow)
+            : <div className="org-row-empty">{searching ? 'No position matches that search.' : 'No one reports to this position yet.'}</div>}
+        </div>
+      </div>
+    );
+  }
+
   function OrgStructurePage({ user }) {
     injectStyles();
     const manage = canManageChart(user);
@@ -299,6 +443,8 @@
     const [selected, setSelected] = useState(null);
     const [form, setForm] = useState(null);
     const [confirmDel, setConfirmDel] = useState(null);
+    const isPhone = (window.ArabtecUseIsPhone || useNoPhone)();
+    const [focusId, setFocusId] = useState(null);
     const [toast, setToast] = useState(null);
     const [scale, setScale] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -418,7 +564,7 @@
       const ro = new ResizeObserver(reframe);
       ro.observe(canvas);
       return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-    }, [hasTree, centerOn]);
+    }, [hasTree, centerOn, isPhone]);
 
     /* Searching only added a highlight ring. On a canvas this wide the match is
        almost always off-screen, so typing a name looked like it found nothing.
@@ -548,7 +694,7 @@
             }</p>
           </div>
           <div className="page-head-actions">
-            {manage && <button className="btn" type="button" onClick={() => setForm({ node: null, parentId: selected || null })}>Add position</button>}
+            {manage && <button className="btn" type="button" onClick={() => setForm({ node: null, parentId: (isPhone ? focusId : selected) || null })}>Add position</button>}
           </div>
         </div>
 
@@ -560,24 +706,40 @@
             <option value="Projects">Projects</option>
             {projects.map((p) => <option key={p.id} value={p.positionTitle}>{p.positionTitle}</option>)}
           </select>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={expandAll}>Expand</button>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={collapseAll}>Collapse</button>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={() => setScale((s) => Math.min(1.8, s + 0.1))}>Zoom in</button>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={() => setScale((s) => Math.max(0.45, s - 0.1))}>Zoom out</button>
-          <button className="btn btn-sm btn-ghost" type="button" onClick={fit}>Fit</button>
+          {!isPhone && <>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={expandAll}>Expand</button>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={collapseAll}>Collapse</button>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setScale((s) => Math.min(1.8, s + 0.1))}>Zoom in</button>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setScale((s) => Math.max(0.45, s - 0.1))}>Zoom out</button>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={fit}>Fit</button>
+          </>}
           <div className="spacer" />
           <span className="muted">{nodes ? nodes.length + ' positions' : 'Loading…'}</span>
         </div>
 
-        <div className="org-legend" style={{ margin: '0 0 10px' }}>
+        {!isPhone && <div className="org-legend" style={{ margin: '0 0 10px' }}>
           <span><i style={{ background: 'var(--surface, #fff)' }} />Employee</span>
           <span><i style={{ background: '#fff', borderStyle: 'dashed' }} />Vacant</span>
           <span><i style={{ background: 'var(--at-action-tint, rgba(0,128,100,.08))' }} />Unit / project</span>
-        </div>
+        </div>}
 
         {err && <div className="error-banner" role="alert">{err} <button className="btn btn-sm" type="button" onClick={load}>Retry</button></div>}
         {!nodes && err ? null : !nodes ? <div className="card card-pad">Loading organization structure…</div> : !visible.length ? (
           <div className="card"><div className="empty"><h3>{nodes.length ? "No matching positions" : "Work in progress"}</h3><p>{nodes.length ? "Try another project or Head Office filter." : "Your organization chart is being prepared. Positions will appear here when your administrator adds them."}</p></div></div>
+        ) : isPhone ? (
+          <OrgDrill
+            nodes={visible}
+            kids={tree.kids}
+            roots={tree.roots}
+            matches={matches}
+            searching={!!q.trim()}
+            focusId={focusId}
+            onFocus={(id) => { setFocusId(id); setQ(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            manage={manage}
+            onAdd={(parentId) => setForm({ node: null, parentId })}
+            onEdit={(node) => setForm({ node })}
+            onDelete={(node) => setConfirmDel({ node, reassignTo: '' })}
+          />
         ) : (
           <div className="org-canvas-wrap" ref={wrapRef}
             onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
@@ -600,13 +762,14 @@
           </div>
         )}
 
-        {selectedNode && (
+        {!isPhone && selectedNode && (
           <div className="card card-pad" style={{ marginTop: 12 }}>
             <div className="row-between">
               <div>
-                <strong>{selectedNode.employeeName || selectedNode.positionTitle}</strong>
-                <div className="muted">{selectedNode.positionTitle} · {selectedNode.status === 'vacant' ? 'Vacant' : 'Filled'}</div>
-                <div className="muted">{[selectedNode.department, selectedNode.projectOrLocation].filter(Boolean).join(' · ')}</div>
+                <strong>{nodeName(selectedNode)}</strong>
+                <div className="muted">{isUnit(selectedNode) ? nodeTitle(selectedNode)
+                  : [selectedNode.employeeName && selectedNode.positionTitle, isVacant(selectedNode) ? 'Vacant' : 'Filled'].filter(Boolean).join(' · ')}</div>
+                {nodeMeta(selectedNode) && <div className="muted">{nodeMeta(selectedNode)}</div>}
               </div>
               {manage && <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-sm" type="button" onClick={() => setForm({ node: null, parentId: selectedNode.id })}>Add report</button>
@@ -639,7 +802,7 @@
         )}
 
         {toast && (
-          <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 200,
+          <div role="status" style={{ position: 'fixed', bottom: isPhone ? 96 : 24, right: isPhone ? 16 : 24, left: isPhone ? 16 : 'auto', zIndex: 200,
             background: toast.type === 'error' ? 'var(--critical)' : 'var(--success)',
             color: '#fff', padding: '12px 18px', borderRadius: 8, fontSize: 13.5, fontWeight: 600 }}>
             {toast.msg}

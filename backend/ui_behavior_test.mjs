@@ -223,6 +223,40 @@ await check('organization empty and failed loads show actionable content without
     page.dispose();
   }
 });
+/* One reading of an org node for the canvas, the selected card and the phone
+   drill-down. Shapes are the ones /api/org/chart returns for the seeded chart:
+   units and projects arrive with status "filled" and no employee name, which
+   the old inline test read as a vacancy — so the company itself said "Vacant". */
+{
+  const { isVacant, nodeName, nodeTitle, nodeMeta, avatarText } = get('window.ORG_CHART_NODE');
+  const company = { nodeType: 'organizational_unit', status: 'filled', employeeName: '', positionTitle: 'Arabtec Egypt', department: 'Head Office', projectOrLocation: 'Head Office' };
+  const project = { nodeType: 'project', status: 'filled', employeeName: '', positionTitle: 'Aliva', department: 'Projects', projectOrLocation: 'Aliva' };
+  const seat = { nodeType: 'vacant_position', status: 'vacant', employeeName: '', positionTitle: 'Site Engineer', department: 'Projects', projectOrLocation: 'Aliva' };
+  const person = { nodeType: 'employee_position', status: 'filled', employeeName: 'Ahmed Abuzeid', positionTitle: 'Project Manager', department: 'Projects', projectOrLocation: 'Aliva' };
+
+  await check('an org unit or project is never labelled a vacancy', () => {
+    for (const n of [company, project]) {
+      assert.equal(isVacant(n), false, n.positionTitle);
+      assert.notEqual(nodeTitle(n), 'Vacant', n.positionTitle);
+      assert.notEqual(avatarText(n), 'V', n.positionTitle);
+    }
+    assert.equal(nodeName(company), 'Arabtec Egypt');
+    assert.equal(nodeTitle(project), 'Project');
+  });
+  await check('an empty seat is still a vacancy, and a filled one shows the person', () => {
+    assert.equal(isVacant(seat), true);
+    assert.equal(nodeTitle(seat), 'Vacant');
+    assert.equal(nodeName(seat), 'Site Engineer');
+    assert.equal(nodeName(person), 'Ahmed Abuzeid');
+    assert.equal(nodeTitle(person), 'Project Manager');
+    assert.equal(avatarText(person), 'AA');
+  });
+  await check('the location line never repeats itself', () => {
+    assert.equal(nodeMeta(company), 'Head Office', 'not "Head Office · Head Office"');
+    assert.equal(nodeMeta(person), 'Projects · Aliva');
+    assert.equal(nodeMeta({ nodeType: 'employee_position', department: '', projectOrLocation: '' }), '');
+  });
+}
 /* Org chart framing, asserted on the real measured geometry rather than on the
    shape of the source. The regex guards in org_chart_test.mjs proved a
    `centerOn` formula existed; they could not prove the root ends up on screen,
