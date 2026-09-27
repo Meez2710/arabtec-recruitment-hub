@@ -502,6 +502,27 @@ function Skeleton({ rows = 6, shape = 'detail' }) {
 }
 window.ARABTEC_UI = { Empty, LoadError, Skeleton, Icon };
 
+/* One short, attributed line at the foot of every page — a fact or a piece of
+   thinking from leadership, psychology, science or building, drawn from the
+   curated list in knowledge-lines.js. Re-drawn on every route change, never
+   inside the working area, never louder than the page. Renders nothing when
+   the list is absent, so a missing script can never break a page. */
+function pickKnowledgeLine(seed) {
+  const lines = window.ARABTEC_KNOWLEDGE_LINES;
+  if (!Array.isArray(lines) || !lines.length) return null;
+  const n = seed == null ? Math.floor(Math.random() * lines.length) : Math.abs(seed) % lines.length;
+  return lines[n] || null;
+}
+function KnowledgeLine({ seed }) {
+  const line = useMemo(() => pickKnowledgeLine(seed), [seed]);
+  if (!line) return null;
+  return <footer className="knowledge-line" aria-label="A line worth keeping">
+    <span className="kl-dash" aria-hidden="true" />
+    <span className="kl-quote">{line.q}</span>
+    <span className="kl-by">{line.by}</span>
+  </footer>;
+}
+
 /* ----------------------------- Login ----------------------------- */
 function Login({ branding, onLogin }) {
   const [email, setEmail] = useState('');
@@ -1483,6 +1504,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
 
         <main id="main-content" className={'content content-phone density-' + density} tabIndex="-1">
           <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
+          <KnowledgeLine key={route} />
         </main>
 
         <MobileTabBar
@@ -1582,6 +1604,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
         </header>
         <main id="main-content" className={'content has-dock density-' + density} tabIndex="-1">
           <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
+          <KnowledgeLine key={route} />
         </main>
 
       </div>

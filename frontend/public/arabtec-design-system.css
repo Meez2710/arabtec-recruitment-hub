@@ -465,6 +465,12 @@ tr.row-selected > td { background: var(--green-50); }
 .bulk-actions select { min-width: max-content; }
 /* The system administrator's dashboard view switcher sits under the title. */
 .dash-view-tabs { margin: -4px 0 18px; }
+/* The knowledge line: a hairline, a short red dash, one quiet sentence and
+   its author. Sits under the page content, never in the way of it. */
+.knowledge-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); }
+.knowledge-line .kl-dash { flex: 0 0 auto; width: 18px; height: 2px; background: var(--brand); align-self: center; }
+.knowledge-line .kl-quote { flex: 1 1 320px; min-width: 0; max-width: 68ch; }
+.knowledge-line .kl-by { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .dash-kpi-top .dash-ico { display: none; }
 .dash-grid-2 { gap: 16px; }
 .dash-bar-fill { border-radius: 999px; }
