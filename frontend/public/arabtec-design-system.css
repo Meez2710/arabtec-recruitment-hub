@@ -436,6 +436,13 @@ tr.row-selected > td { background: var(--green-50); }
   font-weight: 400; color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .dash-kpi-hint { font-size: 12.5px; color: var(--muted); }
+/* A tile whose source did not load shows a muted dash, never a zero: a zero
+   reads as "nothing to do", which a failed read cannot claim. */
+.dash-kpi-unavailable .dash-kpi-val { color: var(--muted); }
+/* One muted line under rows that did load, when another source for the same
+   list failed. The page-level notice carries the reason and the retry. */
+.section-caveat { display: flex; align-items: center; gap: 8px; padding: 10px 20px 14px; font-size: 12.5px; color: var(--muted); }
+.section-caveat > svg { color: var(--warning-ink); }
 .dash-kpi-top .dash-ico { display: none; }
 .dash-grid-2 { gap: 16px; }
 .dash-bar-fill { border-radius: 999px; }

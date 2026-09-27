@@ -488,7 +488,7 @@ function RefetchError({ text, onRetry }) {
   return <div className="refetch-error" role="status">
     <Icon name="alert" size={16} />
     <span>{text || 'Could not refresh. Showing the last loaded results.'}</span>
-    <button className="btn btn-ghost btn-sm" onClick={onRetry}>Retry</button>
+    {onRetry && <button className="btn btn-ghost btn-sm" onClick={onRetry}>Retry</button>}
   </div>;
 }
 function Skeleton({ rows = 6, shape = 'detail' }) {
@@ -1873,12 +1873,16 @@ const ROLE_SCOPE = {
 // cards use. Absent, it renders exactly as before: a plain div, no pointer
 // cursor. A card that looks clickable and isn't is worse than one that looks
 // inert, so the two states are never allowed to look alike.
-function KpiCard({ label, value, meta, tone, onClick }) {
-  const cls = 'dash-kpi' + (tone ? ' ' + tone : '') + (onClick ? ' dash-kpi-link' : '');
+// `unavailable` names the source that did not load ("Hiring requests"). The
+// tile then shows no number at all: a zero the page cannot vouch for reads as
+// "nothing to do", which is the one thing a failed read must never say. The
+// tile keeps its link — the full list has its own loader and retry.
+function KpiCard({ label, value, meta, tone, onClick, unavailable }) {
+  const cls = 'dash-kpi' + (tone && !unavailable ? ' ' + tone : '') + (onClick ? ' dash-kpi-link' : '') + (unavailable ? ' dash-kpi-unavailable' : '');
   const body = <>
     <span className="dash-kpi-label">{label}</span>
-    <div className="dash-kpi-val">{value}</div>
-    <div className="dash-kpi-hint">{meta}</div>
+    <div className="dash-kpi-val">{unavailable ? '—' : value}</div>
+    <div className="dash-kpi-hint">{unavailable ? `${unavailable} not loaded` : meta}</div>
   </>;
   if (!onClick) return <div className={cls}>{body}</div>;
   return <button type="button" className={cls} onClick={onClick}>{body}</button>;
@@ -1950,14 +1954,31 @@ function fmtWhen(iso) {
 
 /* Fetch exactly what a persona renders — nothing more. `/dashboard` is the one
    call every persona shares; requests and interviews are pulled only by the
-   compositions that show them. */
+   compositions that show them.
+
+   Each work list settles on its own. A list that fails is reported in
+   `sectionErrors` and is never turned into an empty array: an empty list is a
+   real answer ("nothing pending") and a failed read is not. On a reload, the
+   lists that succeed replace their rows and the ones that fail keep whatever
+   they last loaded (`loaded` says whether there is anything to keep), so a
+   retry can never discard rows the recruiter is already looking at. A late
+   response from a superseded reload is dropped. */
+const DASH_SOURCES = ['requests', 'interviews'];
+const DASH_SOURCE_LABEL = { requests: 'hiring requests', interviews: 'interviews' };
 function useDashboardData(user, persona, sharedDash) {
-  const [state, setState] = useState({ loading: true, err: null, d: null, requests: [], interviews: [] });
+  const [state, setState] = useState({
+    loading: true, err: null, d: null, dashStale: false, requests: [], interviews: [],
+    wanted: { requests: false, interviews: false },
+    loaded: { requests: false, interviews: false },
+    sectionErrors: { requests: null, interviews: null },
+  });
+  // Only the newest reload may write state; anything older resolves into nothing.
+  const gen = useRef(0);
   // Exposed as `reload` so a persona composition that mutates something the
   // dashboard shows (Assign, Pause…) can pull the fresh numbers back in,
   // rather than leaving the KPIs and tables stale until the next full visit.
   const reload = useCallback(() => {
-    let cancelled = false;
+    const mine = ++gen.current;
     // `sharedDash` is the /dashboard payload the Shell already fetched for the
     // sidebar counts. Reusing it is the difference between one call and two.
     const wantsDashboard = !sharedDash && can(user, 'dashboard.view') && persona !== 'interviewer';
@@ -1965,23 +1986,73 @@ function useDashboardData(user, persona, sharedDash) {
       && (can(user, 'request.view_all') || can(user, 'request.view_own'));
     const wantsInterviews = (persona === 'recruiter' || persona === 'interviewer')
       && (can(user, 'interview.view_all') || can(user, 'interview.view_assigned'));
+    const settle = (p) => p.then((value) => ({ ok: true, value }), (e) => ({ ok: false, error: e.message || 'Request failed' }));
 
     Promise.all([
-      wantsDashboard ? api.get('/dashboard').catch((e) => ({ __err: e.message })) : null,
-      wantsRequests ? api.get('/requests?pageSize=100').catch(() => null) : null,
-      wantsInterviews ? api.get('/interviews').catch(() => null) : null,
+      wantsDashboard ? settle(api.get('/dashboard')) : null,
+      wantsRequests ? settle(api.get('/requests?pageSize=100')) : null,
+      wantsInterviews ? settle(api.get('/interviews')) : null,
     ]).then(([d, rq, iv]) => {
-      if (cancelled) return;
-      if (d && d.__err) { setState({ loading: false, err: d.__err, d: null, requests: [], interviews: [] }); return; }
-      setState({
-        loading: false, err: null, d: d || sharedDash || null,
-        requests: (rq && rq.requests) || [], interviews: (iv && iv.interviews) || [],
+      if (mine !== gen.current) return;
+      setState((prev) => {
+        // The shared payload is the page: without it there is nothing to
+        // compose. A refresh that loses it keeps the last one instead.
+        if (d && !d.ok && !prev.d) return { ...prev, loading: false, err: d.error };
+        const list = (key, res) => {
+          if (!res) return { rows: [], error: null, loaded: false };
+          if (res.ok) return { rows: (res.value && res.value[key]) || [], error: null, loaded: true };
+          return { rows: prev.loaded[key] ? prev[key] : [], error: res.error, loaded: prev.loaded[key] };
+        };
+        const requests = list('requests', rq), interviews = list('interviews', iv);
+        return {
+          loading: false, err: null,
+          d: d ? (d.ok ? d.value : prev.d) : (sharedDash || null),
+          dashStale: !!(d && !d.ok),
+          requests: requests.rows, interviews: interviews.rows,
+          wanted: { requests: !!rq, interviews: !!iv },
+          loaded: { requests: requests.loaded, interviews: interviews.loaded },
+          sectionErrors: { requests: requests.error, interviews: interviews.error },
+        };
       });
     });
-    return () => { cancelled = true; };
   }, [user.id, persona, !!sharedDash]);
-  useEffect(reload, [reload]);
-  return { ...state, reload };
+  useEffect(() => { reload(); return () => { gen.current++; }; }, [reload]);
+  // A list is unavailable when its latest read failed and nothing older can
+  // stand in for it. A failed refresh over rows already loaded is "stale",
+  // not unavailable: the rows stay and the page says they may not be current.
+  const unavailable = {
+    requests: !!(state.sectionErrors.requests && !state.loaded.requests),
+    interviews: !!(state.sectionErrors.interviews && !state.loaded.interviews),
+  };
+  return { ...state, unavailable, reload };
+}
+
+// "Hiring requests", "Interviews" or "Hiring requests and interviews" — the
+// label a KPI tile shows for the source(s) it could not count; null when all loaded.
+function unavailableLabel(unavailable, keys) {
+  const failed = keys.filter((k) => unavailable[k]).map((k) => DASH_SOURCE_LABEL[k]);
+  if (!failed.length) return null;
+  const s = failed.join(' and ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+/* In-place state for a dashboard section whose source did not load. It sits
+   inside the section's own card so the rest of the page stays usable, and it
+   never resolves to the "all clear" empty state: "nothing is waiting on you"
+   is a conclusion the page cannot draw from a failed read.
+
+   Deliberately quiet. The page-level notice (see Dashboard) already carries
+   the server's reason and the primary Retry, so a section only marks itself:
+   a neutral "did not load" state with a light retry when it has nothing to
+   show, or one muted line under rows that another source did fill
+   (`partial`). Three red cards for one failed read would shout the same thing
+   three times. Renders nothing when every source it is asked about loaded. */
+function SectionUnavailable({ sources, data, partial }) {
+  const failed = sources.filter((k) => data.unavailable[k]);
+  if (!failed.length) return null;
+  const what = failed.map((k) => DASH_SOURCE_LABEL[k]).join(' and ');
+  if (partial) return <div className="section-caveat" role="status"><Icon name="alert" size={14} /><span>{`${what.charAt(0).toUpperCase() + what.slice(1)} did not load, so this list may be incomplete.`}</span></div>;
+  return <Empty art="failed" title={`${what.charAt(0).toUpperCase() + what.slice(1)} did not load`} text="Nothing here can be counted until they do."
+    action={<button className="btn btn-ghost btn-sm" onClick={data.reload}>Retry</button>} />;
 }
 
 function DashboardSkeleton() {
@@ -2000,8 +2071,9 @@ function DashboardSkeleton() {
 }
 
 /* --------------------------------- RECRUITER ------------------------------ */
-function RecruiterDashboard({ user, data, onNavigate }) {
-  const { d, requests, interviews } = data;
+function RecruiterDashboard({ user, data, onNavigate, notice }) {
+  const { d, requests, interviews, unavailable } = data;
+  const missing = (...keys) => keys.some((k) => unavailable[k]);
   // `ownerId == null` used to be included here, which put every unassigned
   // request in the ORG under "My roles" for every recruiter — unassigned work
   // is the manager's queue to route, not something already on a recruiter's
@@ -2066,16 +2138,20 @@ function RecruiterDashboard({ user, data, onNavigate }) {
           <button className="btn btn-secondary" onClick={() => onNavigate('requests')}>Open my roles</button>
           {can(user, 'candidate.add') && <button className="btn" onClick={() => onNavigate('candidates')}>Add candidate</button>}
         </>} />
+      {notice}
 
       <div className="dash-kpi-row kpi-4">
         <KpiCard label="Overdue actions" value={overdue} tone={overdue ? 'kpi-risk' : ''}
           meta={stalled.length ? `Oldest role open ${Math.max(...stalled.map((r) => (r.health || {}).daysOpen || 0))} days` : 'Nothing overdue'}
+          unavailable={unavailableLabel(unavailable, ['requests', 'interviews'])}
           onClick={() => onNavigate('interviews', { status: 'completed' })} />
         <KpiCard label="Interviews this week" value={thisWeek.length}
           meta={thisWeek.length ? `Next: ${fmtWhen(thisWeek[0].scheduledAt)}` : 'None scheduled'}
+          unavailable={unavailableLabel(unavailable, ['interviews'])}
           onClick={() => onNavigate('interviews', { thisWeek: true })} />
         <KpiCard label="Assigned open roles" value={owned.length}
           meta={`${owned.filter((r) => r.priority === 'critical').length} critical · ${attention.length} need attention`}
+          unavailable={unavailableLabel(unavailable, ['requests'])}
           onClick={() => onNavigate('requests', { owner: String(user.id) })} />
         <KpiCard label="Offers to issue" value={offersToIssue}
           meta={d?.myWork.myPendingOfferApprovals ? `${d.myWork.myPendingOfferApprovals} more waiting on an approver` : 'None waiting on an approver'}
@@ -2085,8 +2161,13 @@ function RecruiterDashboard({ user, data, onNavigate }) {
       <div className="dash-grid-2">
         <section className="card">
           <div className="card-head"><div><h3>Waiting on you</h3></div><span className="dash-headnote">Sorted by what blocks others first</span></div>
+          {/* "All clear" is only claimed when both lists this queue is built
+              from actually loaded; a queue that is empty because a read failed
+              says so instead. */}
           {actions.length === 0
-            ? <Empty art="all-clear" title="Nothing is waiting on you" text="No overdue feedback, no stalled roles, no unsourced requests in your scope." />
+            ? (missing('requests', 'interviews')
+              ? <SectionUnavailable sources={['requests', 'interviews']} data={data} />
+              : <Empty art="all-clear" title="Nothing is waiting on you" text="No overdue feedback, no stalled roles, no unsourced requests in your scope." />)
             : <>
               <div className="action-list">
                 {actions.slice(0, 6).map((a, i) => (
@@ -2094,6 +2175,7 @@ function RecruiterDashboard({ user, data, onNavigate }) {
                     cta={a.cta} onCta={a.onCta} />
                 ))}
               </div>
+              <SectionUnavailable sources={['requests', 'interviews']} data={data} partial />
               {healthy > 0 && <div className="reassurance">{healthy} of {owned.length} of your roles are progressing normally.</div>}
             </>}
         </section>
@@ -2102,7 +2184,9 @@ function RecruiterDashboard({ user, data, onNavigate }) {
           <div className="card-head"><div><h3>Today</h3></div><span className="dash-headnote">Owned appointments</span></div>
           <div className="event-list">
             {todays.length === 0 && stalled.length === 0
-              ? <Empty art="none-yet" text="Nothing is scheduled for today." />
+              ? (missing('requests', 'interviews')
+                ? <SectionUnavailable sources={['requests', 'interviews']} data={data} />
+                : <Empty art="none-yet" text="Nothing is scheduled for today." />)
               : <>
                 {todays.map((i) => (
                   <EventCard key={i.id} tone="good"
@@ -2116,14 +2200,17 @@ function RecruiterDashboard({ user, data, onNavigate }) {
                 ))}
               </>}
           </div>
+          {(todays.length > 0 || stalled.length > 0) && <SectionUnavailable sources={['requests', 'interviews']} data={data} partial />}
         </aside>
       </div>
 
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>My roles</h3></div><span className="dash-headnote">Current status and how long each has been open</span></div>
-        {mine.length === 0
-          ? <Empty art="none-yet" text="No open hiring requests are assigned to you." />
-          : <div className="role-health">{mine.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
+        {unavailable.requests
+          ? <SectionUnavailable sources={['requests']} data={data} />
+          : mine.length === 0
+            ? <Empty art="none-yet" text="No open hiring requests are assigned to you." />
+            : <div className="role-health">{mine.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
       </section>
     </div>
   );
@@ -2176,7 +2263,7 @@ function withinPastDays(iso, days) {
   return !isNaN(age) && age >= 0 && age <= days * DAY_MS;
 }
 
-function ManagerDashboard({ user, data, onNavigate }) {
+function ManagerDashboard({ user, data, onNavigate, notice }) {
   const { d, requests } = data;
   const open = requests.filter(isOpenReq);
   const unassigned = open.filter((r) => !r.ownerId);
@@ -2242,6 +2329,7 @@ function ManagerDashboard({ user, data, onNavigate }) {
           <button className="btn btn-secondary" onClick={() => onNavigate('requests')}>All hiring requests</button>
           <button className="btn" onClick={() => onNavigate('reports')}>Reports</button>
         </>} />
+      {notice}
 
       <div className="dash-kpi-row">
         <KpiCard label="Critical roles" value={critical.length} tone={critical.length ? 'kpi-risk' : ''}
@@ -2392,7 +2480,7 @@ function PlanTable({ rows, unit }) {
 }
 
 /* --------------------------------- HR DIRECTOR ---------------------------- */
-function DirectorDashboard({ user, data, onNavigate }) {
+function DirectorDashboard({ user, data, onNavigate, notice }) {
   const { d, requests } = data;
   const k = (d && d.kpis) || {};
   const open = requests.filter(isOpenReq);
@@ -2408,6 +2496,7 @@ function DirectorDashboard({ user, data, onNavigate }) {
           <button className="btn btn-secondary" onClick={() => onNavigate('reports')}>Reports</button>
           {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers')}>Offer approvals</button>}
         </>} />
+      {notice}
 
       <div className="dash-kpi-row">
         <KpiCard label="Planned seats" value={k.headcountTotal ?? '—'} meta="Across every hiring request in scope" />
@@ -2468,7 +2557,7 @@ function DirectorDashboard({ user, data, onNavigate }) {
 /* ------------------------------ COO / EXECUTIVE --------------------------- */
 /* Aggregate only. No candidate identity appears on this composition — the
    executive view answers "are we hiring to plan", not "who is in the pipeline". */
-function ExecutiveDashboard({ user, data, onNavigate }) {
+function ExecutiveDashboard({ user, data, onNavigate, notice }) {
   const { d, requests } = data;
   const k = (d && d.kpis) || {};
   const remaining = Math.max((k.headcountTotal || 0) - (k.headcountFilled || 0), 0);
@@ -2479,6 +2568,7 @@ function ExecutiveDashboard({ user, data, onNavigate }) {
       <PageHead crumb="Executive workforce overview" title="Hiring progress against the approved plan"
         sub="Delivery against plan. Aggregate figures only — no candidate names in this view."
         actions={can(user, 'report.export') ? <button className="btn" onClick={() => onNavigate('reports')}>Reports</button> : null} />
+      {notice}
 
       <div className="dash-kpi-row">
         <KpiCard label="Planned" value={k.headcountTotal ?? '—'} meta="Approved workforce plan" />
@@ -2531,7 +2621,7 @@ function ExecutiveDashboard({ user, data, onNavigate }) {
 }
 
 /* --------------------------- TECHNICAL INTERVIEWER ------------------------ */
-function InterviewerDashboard({ user, data, onNavigate }) {
+function InterviewerDashboard({ user, data, onNavigate, notice }) {
   const { interviews } = data;
   const scheduled = interviews.filter((i) => i.status === 'scheduled');
   const upcoming = scheduled.filter((i) => { const n = daysUntil(i.scheduledAt); return n == null || n >= 0; })
@@ -2544,6 +2634,7 @@ function InterviewerDashboard({ user, data, onNavigate }) {
       <PageHead crumb="Interview panel" title="Your interviews"
         sub="Only interviews you are on the panel for. Salary and offer terms are not part of this view."
         actions={<button className="btn" onClick={() => onNavigate('interviews')}>All my interviews</button>} />
+      {notice}
 
       <div className="dash-kpi-row">
         <KpiCard label="Scheduled" value={upcoming.length} meta={upcoming.length ? `Next: ${fmtWhen(upcoming[0].scheduledAt)}` : 'Nothing scheduled'} />
@@ -2595,10 +2686,30 @@ function Dashboard({ user, onNavigate, dash }) {
       <Skeleton shape="dashboard" />
     </div>);
   }
-  if (data.err) return <div><PageHead crumb="Recruitment workspace" title="Dashboard" />
-    <LoadError title="Could not load the dashboard" text={data.err} onRetry={data.reload} /></div>;
+  // The page is taken over by an error only when there is nothing to compose:
+  // the shared payload never arrived, or every work list this persona reads
+  // failed with nothing older to fall back on. One list out of two failing is
+  // handled inside the composition, section by section.
+  const wantedLists = DASH_SOURCES.filter((k) => data.wanted[k]);
+  const nothingUsable = wantedLists.length > 0 && wantedLists.every((k) => data.unavailable[k]);
+  if (data.err || nothingUsable) return <div><PageHead crumb="Recruitment workspace" title="Dashboard" />
+    <LoadError title="Could not load the dashboard" text={data.err || data.sectionErrors[wantedLists[0]]} onRetry={data.reload} /></div>;
 
-  const props = { user, data, onNavigate };
+  // One notice under the page title carries the failure and the primary
+  // Retry, the way every list page reports a failed refresh. A list that
+  // never loaded is named with the server's reason; a refresh that failed
+  // after a successful load keeps the last results on screen and says so.
+  const join = (xs) => xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1] : xs[0];
+  const missing = DASH_SOURCES.filter((k) => data.unavailable[k]);
+  const stale = DASH_SOURCES.filter((k) => data.sectionErrors[k] && data.loaded[k]).map((k) => DASH_SOURCE_LABEL[k]);
+  if (data.dashStale) stale.unshift('the dashboard figures');
+  const notice = <>
+    {missing.length > 0 && <RefetchError onRetry={data.reload}
+      text={`Could not load ${join(missing.map((k) => DASH_SOURCE_LABEL[k]))} (${data.sectionErrors[missing[0]]}). Figures and lists that depend on them are marked below.`} />}
+    {stale.length > 0 && <RefetchError onRetry={data.reload} text={`Could not refresh ${join(stale)}. Showing the last loaded results.`} />}
+  </>;
+
+  const props = { user, data, onNavigate, notice };
   if (persona === 'manager') return <ManagerDashboard {...props} />;
   if (persona === 'director') return <DirectorDashboard {...props} />;
   if (persona === 'executive') return <ExecutiveDashboard {...props} />;
@@ -6205,19 +6316,46 @@ function AssessmentPanel({ app, canFeedback }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
   const [bundle, setBundle] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [evalType, setEvalType] = useState('hr'); // hr | technical
 
+  // The form needs both reads: the approved criteria/weights (`meta`, the same
+  // for every application, so fetched once and kept) and this application's
+  // bundle. Each read settles on its own — a metadata failure is reported,
+  // never swallowed into an endless skeleton, and a bundle that fails on a
+  // refresh keeps the last one on screen with a visible caveat. A response
+  // for an application the panel no longer shows is dropped.
+  const metaRef = useRef(null);
+  const gen = useRef(0);
   const load = useCallback(async () => {
-    try { setBundle((await api.get('/assessments/application/' + app.id)).assessment); } catch (e) { toast(e.message, 'error'); }
+    const mine = ++gen.current;
+    const [m, b] = await Promise.allSettled([
+      metaRef.current ? Promise.resolve(metaRef.current) : api.get('/assessments/meta'),
+      api.get('/assessments/application/' + app.id),
+    ]);
+    if (mine !== gen.current) return;
+    if (m.status === 'fulfilled' && m.value) { metaRef.current = m.value; setMeta(m.value); }
+    const loadedBundle = b.status === 'fulfilled' && b.value && b.value.assessment;
+    if (loadedBundle) setBundle(loadedBundle);
+    const failure = b.status === 'rejected' ? b.reason
+      : !loadedBundle ? new Error('The server returned no assessment for this application.')
+        : m.status === 'rejected' ? m.reason : null;
+    setLoadError(failure ? (failure.message || 'Request failed') : null);
   }, [app.id]);
-  useEffect(() => { api.get('/assessments/meta').then(setMeta).catch(() => {}); load(); }, [load]);
+  useEffect(() => { setBundle(null); setLoadError(null); load(); return () => { gen.current++; }; }, [load]);
 
-  if (!meta || !bundle) return <Skeleton rows={6} />;
+  if (!bundle) return loadError
+    ? <LoadError title="Could not load the assessment" text={loadError} onRetry={load} />
+    : <Skeleton rows={6} />;
   if (!bundle.unlocked) return <Empty art="none-yet" text="Interview assessment unlocks once this candidate is moved to an interview stage in the pipeline." />;
+  if (!meta) return loadError
+    ? <LoadError title="Could not load the assessment form" text={loadError} onRetry={load} />
+    : <Skeleton rows={6} />;
 
   const existing = bundle[evalType];
   return (
     <div>
+      {loadError && <RefetchError text={`Could not refresh this assessment: ${loadError}. Showing the last loaded evaluation.`} onRetry={load} />}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
         {[['hr', 'HR / Behavioral'], ['technical', 'Technical']].map(([k, label]) => (
           <button key={k} className={'tag-toggle' + (evalType === k ? ' on' : '')} onClick={() => setEvalType(k)}>
@@ -8619,17 +8757,48 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
   useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   const [editing, setEditing] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
-  const load = useCallback(async () => { setC((await api.get('/candidates/' + id)).candidate); }, [id]);
-  useEffect(() => { load(); }, [id]);
-  if (!c) return <Skeleton rows={8} />;
+  // Every read is stamped with the id it was made for. A response for a
+  // candidate the user has since navigated away from is dropped, never
+  // rendered — opening A then B must show B, whichever answer lands last.
+  const gen = useRef(0);
+  const load = useCallback(async () => {
+    const mine = ++gen.current;
+    try {
+      const r = await api.get('/candidates/' + id);
+      if (mine !== gen.current) return;
+      if (!r || !r.candidate) throw new Error('The server returned no candidate record.');
+      setC(r.candidate); setLoadError(null);
+    } catch (e) {
+      if (mine !== gen.current) return;
+      setLoadError(e.message || 'Request failed');
+    }
+  }, [id]);
+  useEffect(() => {
+    // A new id is a new record: clear the previous candidate at once so A's
+    // name is never shown over B's tabs while B loads, and close any dialog
+    // that was open for A.
+    setC(null); setLoadError(null); setEditing(false); setNoteOpen(false);
+    load();
+    return () => { gen.current++; };
+  }, [load]);
+
+  const crumb = <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Talent Pool</a></div>;
+  if (!c) return <div>{crumb}{loadError
+    ? <LoadError title="Could not load this candidate" text={loadError} onRetry={load} />
+    : <Skeleton rows={8} />}</div>;
 
   const canPrivacy = can(user, 'candidate.privacy');
   const TABS = [['overview', 'Overview'], ['cv', 'CV & Attachments'], ['applications', `Applications (${c.applications?.length || 0})`], ['interviews', 'Interviews'], ['offers', 'Offers'], ['activity', 'Activity log']];
   if (canPrivacy) TABS.push(['privacy', 'Data & Privacy']);
   return (
     <div>
-      <div className="breadcrumb"><a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>← Talent Pool</a></div>
+      {crumb}
+      {/* A refresh (after an edit, note or upload) that fails keeps the profile
+          on screen and says it may not be current; only a first load with
+          nothing to show takes the page. */}
+      {loadError && <RefetchError text={`Could not refresh this profile: ${loadError}. Showing the last loaded details.`} onRetry={load} />}
 
       {/* Workable-style structured profile header over the existing record */}
       <div className="card" style={{ marginBottom: 16, padding: 0 }}>
