@@ -80,6 +80,29 @@ rule('R12 the sidebar is charcoal with one red bar on the active item; buttons a
   assert.match(ds, /\.badge, \.status-chip \{ border-radius: 6px;/);
   assert.equal(/border-width|min-height|padding: 0/.test(ds.slice(ds.indexOf('/* Buttons'), ds.indexOf('/* Badges'))), false, 'button colour rules never touch the box');
 });
+rule('R13 headers, toolbars and tabs never stack as bordered surfaces above the working content (three rectangles before the table)', () => {
+  const cl = css['claude-system.css']; const sec = cl.slice(cl.indexOf('18b. COMPACT COMPOSITION'), cl.indexOf('19. COMPACT STATE COMPONENTS'));
+  assert.match(sec, /\.toolbar \{[^}]*padding: 0;[^}]*border-width: 0;/s, 'the toolbar has no surface of its own');
+  assert.match(sec, /\.seg-tabs \{[^}]*border-width: 0 0 1px;/s, 'tabs are an underline row');
+  assert.match(sec, /\.ticket-header-card \{[^}]*border-width: 0 0 1px;/s, 'the request head sits on the canvas');
+  assert.match(sec, /\.card\.profile-shell \{[^}]*border-width: 0 0 1px;/s, 'the candidate head sits on the canvas');
+  assert.match(sec, /\.dash-kpi, \.kpi \{[^}]*min-height: 0;/s, 'stat tiles do not reserve height');
+  const ds = css['arabtec-design-system.css'].slice(css['arabtec-design-system.css'].indexOf('12b. Compact composition'));
+  assert.match(ds, /\.toolbar, \.toolbar\.ask-bar \{ background: transparent; border-color: transparent; \}/);
+  assert.match(jsx, /className="card profile-shell"/); assert.match(jsx, /className="card card-pad profile-overview"/);
+});
+rule('R14 the phone shell has its own composition: one scrolling action row, no count chip in the filter bar, one board stage per screen', () => {
+  const mb = css['arabtec-mobile.css'].slice(css['arabtec-mobile.css'].indexOf('PHONE COMPOSITION SYSTEM'));
+  assert.match(mb, /\.shell-phone \.page-head-actions, \.shell-phone \.dash-actions \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/s);
+  assert.match(mb, /\.shell-phone \.filter-toolbar > \.toolbar-count \{ display: none; \}/);
+  assert.match(mb, /\.shell-phone \.kanban \{[^}]*scroll-snap-type: x mandatory;/s);
+  assert.match(mb, /\.shell-phone \.kan-col \{[^}]*flex: 0 0 84%;[^}]*scroll-snap-align: start;/s);
+  assert.match(mb, /padding-top: calc\(var\(--ats-mtop-h\) \+ 12px\)/, 'the content still clears the fixed top bar');
+});
+rule('R15 a conditional render never prints a bare zero (`x && y.length` rendered "0" above the board)', () => {
+  const hits = jsx.match(/\(\w+ && \w+\.length\)\) &&/g) || [];
+  assert.deepEqual(hits, [], `found ${hits.join(', ')}`);
+});
 rule('R9 an in-card error state is the shared Empty/LoadError, never a hand-rolled red box', () => {
   assert.equal((jsx.match(/style=\{\{[^}]*background: ?'#FFF8F8'/g) || []).length, 0, 'inline error surfaces');
 });

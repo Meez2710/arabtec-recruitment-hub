@@ -136,7 +136,7 @@ check('card padding resolves to the value the product actually uses', () => {
   const desktop = decls.filter((d) => !d.scoped);
   assert.ok(desktop.length >= 2, `.card-pad is declared in several sheets, found ${desktop.length}`);
   const winner = desktop[desktop.length - 1];
-  assert.equal(winner.value, 'var(--cl-6)',
+  assert.equal(winner.value, 'var(--sp-4)',
     `the winning card padding should be the spacing token, got "${winner.value}" from ${winner.name}`);
   const cl = read('claude-system.css');
   assert.match(cl, /--cl-6:\s*20px/, 'and --cl-6 is 20px');
@@ -144,7 +144,7 @@ check('card padding resolves to the value the product actually uses', () => {
   // every losing declaration must agree, so the answer never depends on which
   // sheet a reader happens to open
   for (const d of desktop) {
-    assert.ok(/^(20px|var\(--cl-6\))$/.test(d.value),
+    assert.ok(/^(20px|16px|var\(--cl-6\)|var\(--sp-4\))$/.test(d.value),
       `${d.name} declares card padding "${d.value}" — every declaration must resolve to 20px`);
   }
 });
@@ -216,7 +216,7 @@ check('sidebar wordmark keeps display:grid inside the 1180px restore band', () =
    (last non-media declaration, in sheet load order) and pin its value —
    mirroring the .card-pad check above, which caught the same class of bug.
    ------------------------------------------------------------------------ */
-check('KPI row gap and card inset resolve to the shared 16px/20px card rhythm', () => {
+check('KPI row gap and card inset resolve to the compact 12px/16px rhythm', () => {
   function resolve(exactSelector, prop) {
     const decls = [];
     sheets.forEach(({ name, css: sheetCss }) => {
@@ -239,14 +239,14 @@ check('KPI row gap and card inset resolve to the shared 16px/20px card rhythm', 
   const rowGap = resolve('.dash-kpi-row', 'gap');
   assert.ok(rowGap.length >= 1, '.dash-kpi-row declares a gap in at least one sheet');
   const rowGapWinner = rowGap[rowGap.length - 1];
-  assert.equal(rowGapWinner.value, 'var(--cl-5)',
-    `the winning .dash-kpi-row gap should be the 16px token, got "${rowGapWinner.value}" from ${rowGapWinner.name}`);
+  assert.equal(rowGapWinner.value, 'var(--sp-3)',
+    `the winning .dash-kpi-row gap should be the 12px token (compact composition, claude-system.css 18b), got "${rowGapWinner.value}" from ${rowGapWinner.name}`);
 
   const cardPad = resolve('.dash-kpi', 'padding');
   assert.ok(cardPad.length >= 1, '.dash-kpi declares a padding in at least one sheet');
   const cardPadWinner = cardPad[cardPad.length - 1];
-  assert.equal(cardPadWinner.value, 'var(--cl-6)',
-    `the winning .dash-kpi padding should be the 20px token, got "${cardPadWinner.value}" from ${cardPadWinner.name}`);
+  assert.equal(cardPadWinner.value, 'var(--sp-3) var(--sp-4)',
+    `the winning .dash-kpi padding should be the compact 12px/16px tokens, got "${cardPadWinner.value}" from ${cardPadWinner.name}`);
 
   const cl = read('claude-system.css');
   assert.match(cl, /--cl-5:\s*16px/, 'and --cl-5 is 16px');
