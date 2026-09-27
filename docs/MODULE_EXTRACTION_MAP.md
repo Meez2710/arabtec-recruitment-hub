@@ -1,0 +1,30 @@
+# Module extraction map
+
+Baseline: `5576d7aef3e54966c5be01e9df87a3656eec90ff`. This map documents current boundaries and future work. It does not claim these modules are already standalone SaaS products.
+
+Production currently combines the legacy Express routes and browser JSX with selected adapters into the TypeScript layer. `backend/src/api/main.ts` is a separate API entry point. Keep this distinction when estimating extraction: a clean TypeScript facade does not remove the legacy runtime dependencies.
+
+| Module | Current ownership and entry points | Dependencies / public seam | Branding and company-specific exclusions | Extraction difficulty / later work |
+|---|---|---|---|---|
+| Hiring requests | `backend/src/routes/requests.js`; `RequestDetail`/`RequestsPage`; TS `modules/hiring` | Org/project references, users, scoped auth, headcount, applications. TS facade `modules/hiring/index.ts`; services and repositories behind it. | Arabtec request IDs, approval roles, project hierarchy, SLA/headcount policies need explicit customer policy decisions. Never copy live records or company setup. | High: separate customer policy from reusable lifecycle and choose one runtime path before packaging. |
+| Candidate CRM | `routes/candidates.js`; `CandidateProfile`/`CandidatesPage`; TS `modules/talent` | Auth, candidate files, dedupe, applications, interview/offer summaries, audit/privacy. Existing candidate DTO is a UI seam. | Candidate PII, CVs, private notes, actual salary, recruiter identities and consent history cannot be template data. Brand labels/logo remain configuration. | Medium–high: isolate repository/files and permission contracts; preserve a person versus application distinction. |
+| Pipeline | `routes/applications.js`; `RequestPipeline`/`TalentPipeline`; TS hiring module | Requires request, candidate, headcount/offer behavior; current legacy helpers guard UI, server validates. TS `PipelineGateway.applySystemTransition` is an existing modular seam. | Stage policy, required reasons, one-active-request and hire/join rules are company policy, not generic labels to casually replace. | High standalone; best extracted with hiring core initially. Do not write other module tables directly. |
+| Interview and assessment | `routes/interviews.js`, `routes/assessments.js`; `AssessmentPanel`/`EvaluationForm`; TS `modules/interview` | Application/candidate/request context, panel identity, scoped feedback, approved assessment metadata. TS `modules/interview/index.ts` exists. | Approved questions, Big Five/technical rubric, flags, weights and recommendations require explicit policy ownership; exclude actual assessments. | Medium–high: portable forms need policy adapters and independent authorization; no scoring redesign in this sprint. |
+| Offers | `routes/offers.js`; `OffersPage`/`OfferDetail`; TS `modules/offer` | Hiring/application state, salary access, approvals, documents and joining/headcount effects; existing offer facade. | Company letter wording, signatures, compensation packages, benefits and approval limits are excluded from generic product templates. | High: separate document renderer from company wording and preserve lifecycle invariants. Not a rebranding-only product. |
+| CV intake and parsing | `routes/cv-intake.js`, candidate intake routes; `cv-intake.jsx`, `intake-review.jsx`; `lib/parsing/pipeline-provider.js` | Storage, queues, review/proposal contracts, candidate mapping, provider runtime. Existing adapter maps compiled pipeline outcomes to legacy route expectations. | Mailbox addresses, OAuth credentials/tokens, provider keys, CV files, prompts containing company data and production settings must not be copied. | Medium: strongest candidate for an early independent product once storage/auth/provider configuration are isolated and human review preserved. |
+| Org structure | `routes/org.js`, `routes/org-chart-routes.js`; `org-structure.jsx` | Users, projects, reporting lines and vacancy/seat semantics. Consume route DTOs rather than reaching into hiring internals. | Actual organization, names, reporting lines, locations and staffing data excluded. Logo/naming configurable. | Medium: reusable chart presentation; business entities/seat policy need adapters. |
+| Dashboard/reporting | `routes/dashboard.js`; role-specific dashboard components | Read aggregation of scoped hiring, interview and offer data; existing navigation callback. | Actual KPIs/staffing data and company SLA definitions excluded. Metric meaning must remain explicit. | Medium–high: an embedded reporting module first, not independently useful without source contracts. |
+| AI assistance/matching | `routes/ai.js`, `AnyhelpDock`; TS `modules/matching`, `infrastructure/ai` | Provider, tool permissions, domain services, audit; explicit human confirmation for consequential actions. | API keys, private prompts/context, candidate data and Arabtec policy excluded. | High: provider/auth/audit isolation and product-specific action policies; no autonomous hiring decisions. |
+
+## Shared platform requirements, deferred
+
+Authentication/authorization, audit, document storage, notifications, persistence and configuration are shared dependencies. A later standalone product must deliberately select these contracts; tenancy, billing, compliance and deployment are separate productization projects. None is silently added by this sprint.
+
+## Small seams worth improving now
+
+1. Candidate/application context can be one presentational helper with data and navigation callbacks. It should not query databases or import company policy.
+2. Shared load/error/retry semantics can reuse existing UI primitives without creating a new framework.
+3. Pipeline selection presentation can consume existing eligibility functions while leaving transitions authoritative on the server.
+4. Maintain the existing branding surface (`applyBranding` and server branding settings); do not scatter Sahm conditionals through Arabtec components.
+
+Initial status: boundaries documented, no module extracted and no reusable package released. Each implementation milestone must update this status with actual changes.
