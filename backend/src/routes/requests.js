@@ -237,6 +237,17 @@ function approvalRequired() {
   const row = Workflows.byKey('approval_chain');
   return !row || row.is_active !== 0;
 }
+// One approver. The step names the hr_director role, and only a holder of
+// that role (or the system administrator) may decide it, whatever other
+// permissions the user holds — an HR Manager with request.approve is still
+// not the HR Director. Mirrors offers, where the director step needs the
+// director-only permission.
+function mayDecideRequest(user, step) {
+  if (!step || !step.role_code) return true;
+  const roles = user.roles || [];
+  return roles.includes(step.role_code) || roles.includes('system_admin');
+}
+const NOT_THE_APPROVER = 'Only the HR Director can approve or reject a hiring request.';
 
 router.post('/', requirePermission('request.create'), (req, res) => {
   const d = req.body || {};
@@ -429,6 +440,7 @@ router.post('/:id/approve', requirePermission('request.approve'), (req, res) => 
   if (Approvals.forRequest(r.id).length === 0) Approvals.createChain(r.id, defaultApprovalChain(r));
   const pending = Approvals.currentPending(r.id);
   if (!pending) return res.status(409).json({ error: 'No pending approval step.' });
+  if (!mayDecideRequest(req.user, pending)) return res.status(403).json({ error: NOT_THE_APPROVER });
   Approvals.decide(pending.id, { decision: 'approved', approverId: req.user.id, comment: (req.body || {}).comment });
   RequestActivity.add(r.id, req.user, 'approved', { note: `Approved: ${pending.name}` });
   writeAudit(req, { action: 'request.approval_decision', entityType: 'recruitment_request', entityId: r.id, newValue: { level: pending.level, decision: 'approved' } });
@@ -452,7 +464,9 @@ router.post('/:id/reject', requirePermission('request.reject'), (req, res) => {
   const reason = (req.body || {}).reason;
   if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required to reject.' });
   if (r.status !== STATUS.PENDING) return res.status(409).json({ error: 'Request is not in an approvable state.' });
+  if (Approvals.forRequest(r.id).length === 0) Approvals.createChain(r.id, defaultApprovalChain(r));
   const pending = Approvals.currentPending(r.id);
+  if (pending && !mayDecideRequest(req.user, pending)) return res.status(403).json({ error: NOT_THE_APPROVER });
   if (pending) Approvals.decide(pending.id, { decision: 'rejected', approverId: req.user.id, comment: reason });
   Requests.setStatus(r.id, STATUS.REJECTED, { closed_at: new Date().toISOString(), close_reason: 'rejected' });
   RequestActivity.add(r.id, req.user, 'rejected', { fromStatus: r.status, toStatus: STATUS.REJECTED, note: reason });

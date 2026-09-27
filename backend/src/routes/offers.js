@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   Offers, OfferApprovals, OfferActivity,
-  Applications, Candidates, Requests, Projects, Users, StageHistory, CandidateActivity,
+  Applications, Candidates, Requests, Projects, Users, SystemSettings, StageHistory, CandidateActivity,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
@@ -64,6 +64,13 @@ function serialize(o, user, { detail = false } = {}) {
 // is no longer read.)
 function buildChain() {
   return [{ level: 1, name: 'HR Director', roleCode: 'offer.approve_director' }];
+}
+// The offer approval step can be switched off from Workflow Settings (the
+// offer_approval_required system setting, system.manage, audited). Off means
+// a submitted offer is approved at once — recorded as auto-approved, never
+// silently. A missing setting means the step is required.
+function offerApprovalRequired() {
+  return SystemSettings.all().offer_approval_required !== 'false';
 }
 // Whether the user may decide the pending step. Kept next to the chain so the
 // approve and reject routes cannot drift apart.
@@ -156,8 +163,9 @@ router.put('/:id', requirePermission('offer.edit'), (req, res) => {
   OfferActivity.add(o.id, req.user, 'edited');
   if (salaryChanged) {
     writeAudit(req, { action: 'offer.salary_changed', entityType: 'offer', entityId: o.id, oldValue: { salary: before.salary }, newValue: { salary: updated.salary_offered } });
-    // Salary change after approval/submission forces re-approval.
-    if (['pending_approval', 'approved'].includes(o.status)) {
+    // Salary change after approval/submission forces re-approval — unless the
+    // approval step is switched off, in which case there is nobody to re-approve.
+    if (['pending_approval', 'approved'].includes(o.status) && offerApprovalRequired()) {
       OfferApprovals.clear(o.id);
       OfferApprovals.createChain(o.id, buildChain());
       Offers.setStatus(o.id, 'pending_approval', { approved_by: null });
@@ -173,6 +181,18 @@ router.post('/:id/submit', requirePermission('offer.create'), (req, res) => {
   const o = Offers.byId(Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Offer not found.' });
   if (o.status !== 'draft') return res.status(409).json({ error: 'Only draft offers can be submitted.' });
+  if (!offerApprovalRequired()) {
+    OfferApprovals.clear(o.id);
+    Offers.setStatus(o.id, 'approved');
+    OfferActivity.add(o.id, req.user, 'auto_approved', { fromStatus: 'draft', toStatus: 'approved', note: 'Approved automatically — the offer approval step is switched off' });
+    writeAudit(req, { action: 'offer.auto_approved', entityType: 'offer', entityId: o.id });
+    notifyEvent('offer.approved', {
+      ...offerNotifyCtx(o, req.user, { approverName: 'Approval step off' }),
+      title: `Offer ready to send: ${o.offer_no}`,
+      body: 'The offer approval step is switched off, so this offer can be sent.',
+    });
+    return res.json({ offer: serialize(Offers.byId(o.id), req.user, { detail: true }) });
+  }
   OfferApprovals.clear(o.id);
   OfferApprovals.createChain(o.id, buildChain());
   Offers.setStatus(o.id, 'pending_approval');

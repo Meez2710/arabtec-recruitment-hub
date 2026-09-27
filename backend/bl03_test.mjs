@@ -51,6 +51,7 @@ const login = async (e, p = 'Arabtec@123') => {
 (async () => {
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
   const admin = await login('admin@arabtec.com', 'Admin@12345');
 
@@ -65,7 +66,7 @@ const login = async (e, p = 'Arabtec@123') => {
   });
   const reqId = cr.json.request.id;
   await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} });
   const recId = meta.json.recruiters[0].id;
   await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
 

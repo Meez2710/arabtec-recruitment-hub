@@ -50,8 +50,12 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   const submit = await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hm });
   c('submit moves to pending_approval', submit.json?.request?.status === 'pending_approval', submit.json?.request?.status);
   c('single-step approval chain (HR Director only)', submit.json?.request?.approvals?.length === 1, `got ${submit.json?.request?.approvals?.length}`);
-  const approved = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: { comment: 'ok' } });
-  c('single approval → sourcing', approved.json?.request?.status === 'sourcing', approved.json?.request?.status);
+  const mgrApprove = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: { comment: 'ok' } });
+  c('HR manager cannot approve a request (403) — the step is the HR Director\'s', mgrApprove.status === 403, `got ${mgrApprove.status}`);
+  const mgrReject = await api(`/api/requests/${reqId}/reject`, { method: 'POST', token: hrMgr, body: { reason: 'no' } });
+  c('HR manager cannot reject a request (403)', mgrReject.status === 403, `got ${mgrReject.status}`);
+  const approved = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: { comment: 'ok' } });
+  c('HR Director approval → sourcing', approved.json?.request?.status === 'sourcing', approved.json?.request?.status);
 
   console.log('\n— Recruiter assignment —');
   const recruiterUser = meta.json.recruiters.find((r) => r.name === 'Karim Adel');
@@ -76,9 +80,9 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   console.log('\n— Reject path (separate req) + RBAC —');
   const r2 = await api('/api/requests', { method: 'POST', token: hm, body: { title: 'Site Engineer', projectId: projId, departmentId: deptId, headcount: 2, priority: 'medium' } });
   await api(`/api/requests/${r2.json.request.id}/submit`, { method: 'POST', token: hm });
-  const rejNoReason = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrMgr, body: {} });
+  const rejNoReason = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrDir, body: {} });
   c('reject without reason rejected (400)', rejNoReason.status === 400, `got ${rejNoReason.status}`);
-  const rej = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrMgr, body: { reason: 'Headcount not approved this quarter' } });
+  const rej = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrDir, body: { reason: 'Headcount not approved this quarter' } });
   c('reject with reason → rejected', rej.json?.request?.status === 'rejected', rej.json?.request?.status);
   const viewerCreate = await api('/api/requests', { method: 'POST', token: viewer, body: { title: 'Z', projectId: projId, departmentId: deptId, headcount: 1 } });
   c('viewer blocked from creating (403)', viewerCreate.status === 403, `got ${viewerCreate.status}`);

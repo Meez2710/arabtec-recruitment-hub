@@ -80,6 +80,7 @@ try {
   console.log('\n— the formatted number of all five entity types —');
   const recruiter = await cluster.login('recruiter@arabtec.com');
   const hrMgr = await cluster.login('hr.manager@arabtec.com');
+const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await cluster.login('rec.manager@arabtec.com');
   const meta = await api(0, '/api/requests/meta/form', { token: hrMgr });
 
@@ -89,7 +90,7 @@ try {
       body: { title, projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount: 4, priority: 'high' },
     });
     await api(0, `/api/requests/${r.json.request.id}/submit`, { method: 'POST', token: hrMgr });
-    await api(0, `/api/requests/${r.json.request.id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(0, `/api/requests/${r.json.request.id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(0, `/api/requests/${r.json.request.id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: meta.json.recruiters[0].id } });
     return r.json.request;
   };

@@ -13,10 +13,10 @@
 //
 // An event that is switched off sends nothing and says so in its return value,
 // so a caller can log "suppressed by settings" rather than "sent".
-import { Notifications, Users, NotificationConfig } from './models.js';
+import { Notifications, Users, NotificationConfig, UserRoles } from './models.js';
 import { sendMail } from './mailer.js';
 import * as templates from './email_templates.js';
-import { EVENT_BY_KEY, APPROVER_PERMISSION, EXTERNAL_RECIPIENTS } from './notification-catalog.js';
+import { EVENT_BY_KEY, APPROVER_PERMISSION, APPROVER_ROLE, EXTERNAL_RECIPIENTS } from './notification-catalog.js';
 
 const BRAND = '#D01827', INK = '#1A1A1A', MUT = '#6F6A64', CANVAS = '#F4F5F7', LINE = '#E4E4E4';
 
@@ -103,6 +103,13 @@ function resolveRecipients(tokens, ctx, eventKey) {
         if (!perm) break;
         let holders = [];
         try { holders = Users.withPermission(perm); } catch { holders = []; }
+        const role = APPROVER_ROLE[eventKey];
+        if (role) {
+          holders = holders.filter((u) => {
+            try { const codes = UserRoles.forUser(u.id).map((x) => x.code); return codes.includes(role) || codes.includes('system_admin'); }
+            catch { return false; }
+          });
+        }
         for (const u of holders) addStaff(u);
         break;
       }

@@ -28,6 +28,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   const admin = await login('admin@arabtec.com', 'Admin@12345');
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
   const interviewer = await login('interviewer@arabtec.com');
 
@@ -55,7 +56,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   console.log('\n— Single HR Director approval (no budget step) —');
   const sub = await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
   c('chain is exactly 1 level (HR Director)', sub.json.request.approvals.length === 1 && sub.json.request.approvals[0].role_code === 'hr_director');
-  const ap = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  const ap = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} });
   c('single approve → approved', ap.json.request.status === 'approved', ap.json.request.status);
   const budgetGone = await api(`/api/requests/${reqId}/budget`, { method: 'POST', token: hrMgr, body: { decision: 'validated' } });
   c('budget endpoint removed (404)', budgetGone.status === 404, `got ${budgetGone.status}`);

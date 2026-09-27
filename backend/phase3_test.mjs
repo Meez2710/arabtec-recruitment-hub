@@ -24,6 +24,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   const admin = await adminToken(B);
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
   const hm = await login('hiring.manager@arabtec.com');
   const interviewer = await login('interviewer@arabtec.com');
@@ -34,7 +35,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   const cr = await api('/api/requests', { method: 'POST', token: hrMgr, body: { title: 'Site Engineer', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount: 2, priority: 'high' } });
   const reqId = cr.json.request.id;
   await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} }); // single HR Director approval
+  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} }); // single HR Director approval
   const recId = meta.json.recruiters.find((r) => r.name === 'Karim Adel').id;
   await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
 

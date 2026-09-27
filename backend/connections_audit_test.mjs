@@ -34,6 +34,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
 (async () => {
   const admin = await adminToken(B);
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
   const recruiter = await login('recruiter@arabtec.com');
   const interviewer = await login('interviewer@arabtec.com');
@@ -52,7 +53,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   console.log('\n— ACTION: Submit → approve → assign (workflow path) —');
   await api(`/api/requests/${rid}/submit`, { method: 'POST', token: hrMgr });
   c('→ status pending_approval', (await api(`/api/requests/${rid}`, { token: hrMgr })).json.request.status === 'pending_approval');
-  await api(`/api/requests/${rid}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  await api(`/api/requests/${rid}/approve`, { method: 'POST', token: hrDir, body: {} });
   c('→ status sourcing (approval flows into sourcing)', (await api(`/api/requests/${rid}`, { token: hrMgr })).json.request.status === 'sourcing');
   c('→ audited request.approval_decision', (await auditActions()).has('request.approval_decision'));
   await api(`/api/requests/${rid}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });

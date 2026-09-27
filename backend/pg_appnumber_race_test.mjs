@@ -27,6 +27,7 @@ try {
 
   const recruiter = await cluster.login('recruiter@arabtec.com');
   const hrMgr = await cluster.login('hr.manager@arabtec.com');
+const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await cluster.login('rec.manager@arabtec.com');
   c('logged in through the cluster', !!recruiter && !!hrMgr && !!recMgr);
 
@@ -40,7 +41,7 @@ try {
   });
   const reqId = mk.json.request.id;
   await api(0, `/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-  await api(0, `/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  await api(0, `/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} });
   await api(0, `/api/requests/${reqId}/assign`, {
     method: 'POST', token: recMgr, body: { ownerId: meta.json.recruiters[0].id },
   });

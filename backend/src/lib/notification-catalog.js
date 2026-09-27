@@ -172,6 +172,11 @@ export const NOTIFICATION_EVENTS = [
 export const EVENT_BY_KEY = Object.fromEntries(NOTIFICATION_EVENTS.map((e) => [e.key, e]));
 
 /** Which permission stands in for "approvers" on a given event. */
+// Where the approver is one role rather than a permission's holders: the
+// request step is the HR Director's alone, so nobody else is asked.
+export const APPROVER_ROLE = {
+  'request.submitted': 'hr_director',
+};
 export const APPROVER_PERMISSION = {
   'request.submitted': 'request.approve',
   // One approval layer: only the HR Director decides offers, so only holders

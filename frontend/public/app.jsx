@@ -4141,9 +4141,25 @@ function WorkflowPage({ user }) {
   const [loadError, setLoadError] = useState(null);
   const [confirmOff, setConfirmOff] = useState(false);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(() => { setLoadError(null); api.get('/settings/workflows').then((r) => setRows(r.workflows)).catch((e) => setLoadError(e.message)); }, []);
+  const [offerRequired, setOfferRequired] = useState(true);
+  const [confirmOfferOff, setConfirmOfferOff] = useState(false);
+  const load = useCallback(() => {
+    setLoadError(null);
+    Promise.all([api.get('/settings/workflows'), api.get('/settings/system')])
+      .then(([w, sys]) => { setRows(w.workflows); setOfferRequired((sys.settings || {}).offer_approval_required !== 'false'); })
+      .catch((e) => setLoadError(e.message));
+  }, []);
   useEffect(() => { load(); }, [load]);
   const canManage = can(user, 'workflow.manage');
+  const canManageOffers = can(user, 'system.manage');
+  async function setOfferApproval(required) {
+    setBusy(true);
+    try {
+      const r = await api.put('/settings/system', { settings: { offer_approval_required: required ? 'true' : 'false' } });
+      setOfferRequired((r.settings || {}).offer_approval_required !== 'false');
+      toast(required ? 'HR Director approval of offers is required again' : 'Offer approval step switched off');
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); setConfirmOfferOff(false); }
+  }
   // The approval step is the `approval_chain` row's active flag. Switching it
   // off is confirmed first, because from then on every submitted request goes
   // straight to sourcing; the server audits the change and marks each request
@@ -4178,6 +4194,22 @@ function WorkflowPage({ user }) {
           </div>
         </div>
       )}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head"><div><h3>Offer approval</h3></div><Badge variant={offerRequired ? 'success' : 'warning'}>{offerRequired ? 'Required' : 'Off'}</Badge></div>
+        <div className="card-pad">
+          <p style={{ margin: '0 0 14px', maxWidth: 640 }}>{offerRequired
+            ? 'A submitted offer waits for the HR Director\u2019s decision before it can be sent. One step, one approver, whatever the salary.'
+            : 'A submitted offer is approved at once and can be sent. Each offer that skips the step is marked as auto-approved in its activity and in the audit log.'}</p>
+          {canManageOffers
+            ? (offerRequired
+              ? <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirmOfferOff(true)}>Switch offer approval off</button>
+              : <button className="btn" disabled={busy} onClick={() => setOfferApproval(true)}>Require HR Director approval</button>)
+            : <p className="muted" style={{ margin: 0 }}>Only a system administrator can change this.</p>}
+        </div>
+      </div>
+      {confirmOfferOff && <Confirm title="Switch offer approval off?" confirmLabel="Switch off" danger
+        message="From now on, every submitted offer is approved at once and can be sent without the HR Director's decision. Offers already waiting for approval are not changed. This change is recorded in the audit log."
+        onConfirm={() => setOfferApproval(false)} onClose={() => setConfirmOfferOff(false)} />}
       {confirmOff && <Confirm title="Switch approval off?" confirmLabel="Switch off" danger
         message="From now on, every submitted or resubmitted hiring request goes straight to sourcing without the HR Director's decision. Requests already waiting for approval are not changed. This change is recorded in the audit log."
         onConfirm={() => setApproval(false)} onClose={() => setConfirmOff(false)} />}
@@ -5185,6 +5217,9 @@ function RequestDetail({ id, user, btns, onBack }) {
   const PAUSABLE_STATUSES = ['pending_approval', 'sourcing', 'in_progress', 'partially_filled', 'reopened'];
   const canAssignNow = canAssignStatus(s);
   const assignLabel = req.ownerId ? 'Reassign' : 'Assign recruiter';
+  // The one approver: the server accepts a decision only from the HR Director
+  // (or the system administrator), so nobody else is offered the buttons.
+  const isRequestApprover = (user.roles || []).some((r) => r === 'hr_director' || r === 'system_admin');
 
   return (
     <div>
@@ -5197,8 +5232,8 @@ function RequestDetail({ id, user, btns, onBack }) {
           {btns.submit_request?.visible && ((s === 'pending_approval' && !(req.approvals || []).length) || s === 'reopened') && (
             <button className="btn" onClick={() => doAction('submit', {}, req.approvalRequired === false ? 'Submitted — sourcing can begin' : 'Submitted for HR Director approval')}>
               {req.approvalRequired === false ? 'Submit' : 'Submit for approval'}</button>)}
-          {btns.approve_request?.visible && s === 'pending_approval' && <button className="btn" onClick={() => doAction('approve', {}, 'Request approved — sourcing can begin')}>Approve</button>}
-          {btns.reject_request?.visible && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => reasonAction('reject', 'Reject Request', 'Request rejected', true)}>Reject</button>}
+          {btns.approve_request?.visible && isRequestApprover && s === 'pending_approval' && <button className="btn" onClick={() => doAction('approve', {}, 'Request approved — sourcing can begin')}>Approve</button>}
+          {btns.reject_request?.visible && isRequestApprover && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => reasonAction('reject', 'Reject Request', 'Request rejected', true)}>Reject</button>}
           {btns.assign_recruiter?.visible && !TERMINAL_STATUSES.includes(s) && (
             canAssignNow
               ? <button className="btn btn-secondary" onClick={() => setAssigning(true)}>{assignLabel}</button>

@@ -21,12 +21,14 @@ async function api(p, { method = 'GET', token, body } = {}) {
 }
 const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { method: 'POST', body: { email: e, password: p } })).json.token;
 
+let hrDirToken = null; // set once the director signs in below
 async function approvedRequest(token, recMgr, headcount = 1) {
   const meta = await api('/api/requests/meta/form', { token });
   const cr = await api('/api/requests', { method: 'POST', token, body: { title: 'Offer Role', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount, priority: 'high' } });
   const id = cr.json.request.id;
   await api(`/api/requests/${id}/submit`, { method: 'POST', token });
-  for (let i = 0; i < 3; i++) await api(`/api/requests/${id}/approve`, { method: 'POST', token, body: {} });
+  // Only the HR Director decides a request; the caller's token still creates and submits it.
+  for (let i = 0; i < 3; i++) await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrDirToken, body: {} });
   const recId = meta.json.recruiters.find((r) => r.name === 'Karim Adel').id;
   await api(`/api/requests/${id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
   return id;
@@ -55,6 +57,7 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   const hrMgr = await login('hr.manager@arabtec.com');
   const recMgr = await login('rec.manager@arabtec.com');
   const hrDir = await login('hr.director@arabtec.com');
+  hrDirToken = hrDir;
   const hm = await login('hiring.manager@arabtec.com');
   const interviewer = await login('interviewer@arabtec.com');
   const viewer = await login('viewer@arabtec.com');
@@ -116,6 +119,19 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   c('HR manager cannot reject an offer approval (403)', mgrReject.status === 403, `got ${mgrReject.status}`);
   const rej = await api(`/api/offers/${o4.offerId}/reject-approval`, { method: 'POST', token: hrDir, body: { reason: 'over budget' } });
   c('reject approval with reason → rejected_by_approver', rej.json.offer.status === 'rejected_by_approver');
+
+  console.log('\n— Offer approval step switched off —');
+  const offOffer = await api('/api/settings/system', { method: 'PUT', token: admin, body: { settings: { offer_approval_required: 'false' } } });
+  c('admin switches the offer approval step off', offOffer.status === 200 && offOffer.json?.settings?.offer_approval_required === 'false', JSON.stringify(offOffer.json).slice(0, 120));
+  const o5 = await fullOffer(recruiter, recMgr, hrMgr, 22000);
+  const subOff = await api(`/api/offers/${o5.offerId}/submit`, { method: 'POST', token: recruiter });
+  c('submit with the step off → approved at once', subOff.json?.offer?.status === 'approved', subOff.json?.offer?.status || subOff.json?.error);
+  c('the offer is marked auto-approved in its activity', (subOff.json?.offer?.activity || []).some((a) => a.type === 'auto_approved'));
+  const onOffer = await api('/api/settings/system', { method: 'PUT', token: admin, body: { settings: { offer_approval_required: 'true' } } });
+  c('admin switches the offer approval step back on', onOffer.json?.settings?.offer_approval_required === 'true');
+  const o6 = await fullOffer(recruiter, recMgr, hrMgr, 22000);
+  const subOn = await api(`/api/offers/${o6.offerId}/submit`, { method: 'POST', token: recruiter });
+  c('submit with the step on waits for the HR Director again', subOn.json?.offer?.status === 'pending_approval', subOn.json?.offer?.status);
 
   console.log('\n— Send + result tracking —');
   // recruiter cannot send (no offer.send); HR Manager sends.

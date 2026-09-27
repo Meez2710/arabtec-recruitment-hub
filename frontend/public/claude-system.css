@@ -448,7 +448,14 @@ table.table tbody td, .table tbody td, table tbody td {
    spending width on the floor costs nothing this table did not already
    accept — it just moves more of the board into view per scroll instead of
    less. */
-.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 24px; }
+/* Five columns fit inside the content column from 1440 up (5 × 208 + 4 gaps
+   = 1088px, inside the 1098px the card leaves at 1440, measured); below that
+   the board scrolls sideways, and the scrollbar is always drawn so a column
+   cut at the right edge reads as "more this way", not as a cropped page. */
+.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(208px, 1fr); gap: 12px; align-items: start; overflow-x: auto; scrollbar-width: thin; scrollbar-gutter: stable; padding-bottom: 16px; }
+.kanban::-webkit-scrollbar { height: 8px; }
+.kanban::-webkit-scrollbar-track { background: transparent; }
+.kanban::-webkit-scrollbar-thumb { background: #C9CDD6; border-radius: 8px; }
 .kan-col { width: auto; min-width: 0; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr); }
 .kan-body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px; overflow: visible; min-height: 92px; }
 .kan-head { min-width: 0; }

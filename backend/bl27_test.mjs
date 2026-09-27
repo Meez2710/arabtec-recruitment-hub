@@ -100,7 +100,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
     });
     const id = r.json.request.id;
     await api(`/api/requests/${id}/submit`, { method: 'POST', token: hrMgr });
-    await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(`/api/requests/${id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: meta.json.recruiters[0].id } });
     return id;
   };

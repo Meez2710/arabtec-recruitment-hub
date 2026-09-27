@@ -33,7 +33,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
     const cr = await api('/api/requests', { method: 'POST', token: hrMgr, body: { title: 'Dash Role', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount, priority: 'high' } });
     const reqId = cr.json.request.id;
     await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-    await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} }); // single HR Director approval
+    await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} }); // single HR Director approval
     await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
     return reqId;
   }
