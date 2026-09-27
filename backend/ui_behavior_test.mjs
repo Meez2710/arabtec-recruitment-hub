@@ -697,4 +697,51 @@ await check('quality labels render through the canonical Badge, never in the rej
   api.get = realGet;
 }
 
+
+/* Approval surfaces: the HR Director's queue opens the record that needs the
+   decision, the interviewer's queue opens the interview, and the offer page
+   offers Approve/Reject only to a user who holds the director permission. */
+{
+  const api = window.ARABTEC_API; const realGet = api.get;
+  const ActionItem = get('ActionItem');
+  await check('director and interviewer dashboards deep-link to the record needing a decision', () => {
+    const calls = [];
+    const director = { id: 2, roles: ['hr_director'], permissions: ['dashboard.view', 'request.view_all', 'request.approve', 'offer.approve'] };
+    const data = { d: { kpis: {}, aging: {}, offersByStatus: [{ status: 'pending_approval', count: 1 }] }, requests: [{ id: 44, ticketNo: 'REQ-2026-0044', title: 'Site Engineer', status: 'pending_approval', headcount: 1 }], interviews: [], unavailable: {}, sectionErrors: {}, loaded: {}, reload() {} };
+    const tree = get('DirectorDashboard')({ user: director, data, onNavigate: (...a) => calls.push(a) });
+    const items = nodes(tree).filter((n) => n.type === ActionItem);
+    items.find((n) => n.props.cta === 'Open request').props.onCta();
+    assert.equal(window.__atsPendingRequestId, 44, 'the request awaiting approval is opened by id');
+    items.find((n) => n.props.cta === 'Open offers').props.onCta();
+    // Objects born inside the vm realm have a different prototype, so compare by shape.
+    assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['offers', { status: 'pending_approval' }]), 'the offers queue is filtered to those held for a decision');
+    const iv = get('InterviewerDashboard')({ user: { id: 9, roles: ['interviewer'], permissions: [] }, data: { interviews: [{ id: 77, interviewNo: 'INT-77', status: 'completed', overallOutcome: null, scheduledAt: new Date().toISOString(), candidate: { fullName: 'C' }, request: { title: 'R' } }], unavailable: {} }, onNavigate: (...a) => calls.push(a) });
+    nodes(iv).find((n) => n.type === ActionItem && n.props.cta === 'Open interview').props.onCta();
+    assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['interviews', { openId: 77 }]), 'the interview needing feedback is opened by id');
+  });
+
+  await check('offer page: one approval layer — submit on draft, approve/reject only for the director, send only once approved', async () => {
+    const buttons = ['submit_offer', 'approve_offer', 'reject_offer_approval', 'send_offer'].map((buttonKey) => ({ buttonKey, visible: true }));
+    const offerOf = (status, extra = {}) => ({ offer: { id: 3, offerNo: 'OFR-3', status, candidate: { fullName: 'Cand' }, request: {}, approvals: [{ level: 1, name: 'HR Director', role_code: 'offer.approve_director', decision: status === 'pending_approval' ? 'pending' : 'approved' }], ...extra } });
+    const director = { id: 2, permissions: ['offer.view', 'offer.approve', 'offer.approve_director'] };
+    const manager = { id: 3, permissions: ['offer.view', 'offer.approve', 'offer.send'] };
+    const render = async (status, user) => {
+      api.get = async (path) => path.endsWith('/resolved') ? { buttons } : offerOf(status);
+      const page = mount(get('OfferDetail'), { id: 3, user, onBack() {} }); page.render(); await flush(); const tree = page.render(); page.dispose(); return tree;
+    };
+    // The page's controls live in PageHead's `actions` prop, not in its children.
+    const actionBtn = (tree, label) => { const ph = nodes(tree).find((n) => n.type === get('PageHead')); return ph && button(ph.props.actions, label); };
+    let tree = await render('draft', manager);
+    assert.ok(actionBtn(tree, 'Submit for approval'), 'a draft is submitted from the page');
+    assert.equal(actionBtn(tree, 'Send Offer'), undefined, 'a draft cannot be sent: the server would refuse it');
+    tree = await render('pending_approval', director);
+    assert.ok(actionBtn(tree, 'Approve') && actionBtn(tree, 'Reject'), 'the director decides');
+    tree = await render('pending_approval', manager);
+    assert.equal(actionBtn(tree, 'Approve'), undefined, 'an HR Manager holding offer.approve but not the director permission is not offered a button that would 403');
+    assert.ok(nodes(tree).flatMap((n) => Object.values(n.props || {}).filter((v) => typeof v === 'string')).join('\n').includes('Waiting on HR Director approval'), 'the page says whose decision it waits on');
+    tree = await render('approved', manager);
+    assert.ok(actionBtn(tree, 'Send Offer'), 'an approved offer can be sent');
+  });
+  api.get = realGet;
+}
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);

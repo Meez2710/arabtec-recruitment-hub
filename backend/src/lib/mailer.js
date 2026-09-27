@@ -151,7 +151,9 @@ export async function verifyConnection() {
 
 // Send an email. Never throws — returns a result object the caller can log/audit.
 // { to, subject, html, text?, replyTo? }
-export async function sendMail({ to, subject, html, text, replyTo }) {
+// `attachments`: [{ filename, contentType, content }] — content is a string or
+// Buffer. Carried through unchanged to whichever provider sends.
+export async function sendMail({ to, subject, html, text, replyTo, attachments }) {
   let c;
   try { c = cfg(false); } catch (e) { return {ok:false,error:safeMailError(e)}; }
   const provider = activeProvider();
@@ -185,7 +187,7 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
     }
     if (accessToken) {
       try {
-        await sendMailAs({ to, subject, html, text, replyTo: replyTo || c.replyTo || undefined, accessToken });
+        await sendMailAs({ to, subject, html, text, replyTo: replyTo || c.replyTo || undefined, attachments, accessToken });
         console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: 'graph', to, subject }));
         recordMailDelivery();
         return { ok: true, provider: 'graph' };
@@ -224,6 +226,7 @@ export async function sendMail({ to, subject, html, text, replyTo }) {
       to, subject, html,
       text: text || html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
       replyTo: replyTo || c.replyTo || c.from,
+      ...(attachments?.length ? { attachments: attachments.map((a) => ({ filename: a.filename, contentType: a.contentType, content: a.content })) } : {}),
     });
     console.log(JSON.stringify({ level: 'info', msg: 'email.sent', provider: jsonMode() ? 'dry-run' : 'smtp', to, subject, messageId: info.messageId }));
     if (!jsonMode()) recordMailDelivery();

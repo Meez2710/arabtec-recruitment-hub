@@ -153,6 +153,8 @@ export function notifyEvent(eventKey, ctx = {}) {
   const { staff, external } = resolveRecipients(cfg.recipients, ctx, eventKey);
   const vars = { ...(ctx.vars || {}), title: ctx.title, body: ctx.body };
   const { subject, html } = render(cfg.event, vars);
+  // Optional files (an interview's calendar entry) ride on every email copy.
+  const attachments = Array.isArray(ctx.attachments) && ctx.attachments.length ? ctx.attachments : undefined;
 
   let inApp = 0, emails = 0;
   for (const u of staff) {
@@ -167,12 +169,12 @@ export function notifyEvent(eventKey, ctx = {}) {
         inApp += 1;
       } catch { /* an alert must never break the action that caused it */ }
     }
-    if (cfg.email && u.email) { sendMail({ to: u.email, subject, html }).catch(() => {}); emails += 1; }
+    if (cfg.email && u.email) { sendMail({ to: u.email, subject, html, attachments }).catch(() => {}); emails += 1; }
   }
 
   // External addressees are mail-only, and only when the email channel is on.
   if (cfg.email) {
-    for (const r of external) { sendMail({ to: r.email, subject, html }).catch(() => {}); emails += 1; }
+    for (const r of external) { sendMail({ to: r.email, subject, html, attachments }).catch(() => {}); emails += 1; }
   }
 
   return { sent: inApp > 0 || emails > 0, inApp, emails };

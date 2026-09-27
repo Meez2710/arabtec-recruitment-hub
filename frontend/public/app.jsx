@@ -2535,7 +2535,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
             {awaitingApproval.slice(0, 6).map((r) => (
               <ActionItem key={r.id} tone="warn" title={`Approve ${shortReqCode(r.ticketNo)} — ${r.title}`}
                 meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}`}
-                why="Sourcing cannot start until this is approved" cta="Open request" onCta={() => onNavigate('requests')} />
+                why="Sourcing cannot start until this is approved" cta="Open request" onCta={() => openRequest(r.id, onNavigate)} />
             ))}
             {pendingOffers > 0 && (
               <ActionItem tone="warn" title={`${pendingOffers} offer${pendingOffers === 1 ? '' : 's'} awaiting approval`}
@@ -2651,7 +2651,7 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
             {feedbackDue.map((i) => (
               <ActionItem key={i.id} tone="risk" title={`Submit feedback — ${(i.candidate || {}).fullName || 'Candidate'}`}
                 meta={`${(i.request || {}).title || 'Role'} · ${i.interviewNo} · ${fmtWhen(i.scheduledAt)}`}
-                why="Blocks the hiring decision" cta="Open interview" onCta={() => onNavigate('interviews')} />
+                why="Blocks the hiring decision" cta="Open interview" onCta={() => onNavigate('interviews', { openId: i.id })} />
             ))}
           </div>}
       </section>
@@ -3592,7 +3592,7 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 /* ============================ SUPER-ADMIN CONTROL CENTER ============================ */
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
-  const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['branding', 'Branding & Logo'],
+  const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
     ['fields', 'Built-in Fields'], ['custom', 'Custom Fields']];
   return (
     <div>
@@ -3605,9 +3605,61 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
       </div>
       {tab === 'buttons' && <ButtonsPanel user={user} />}
       {tab === 'notifications' && <NotificationsPanel user={user} />}
+      {tab === 'features' && <FeaturesPanel user={user} />}
       {tab === 'branding' && <BrandingLogoPanel user={user} branding={branding} refreshBranding={refreshBranding} />}
       {tab === 'fields' && <BuiltinFieldsPanel user={user} />}
       {tab === 'custom' && <CustomFieldsPanel user={user} />}
+    </div>
+  );
+}
+
+// --- Features panel ---
+// Only a switch the server actually consults is offered as a control. The
+// rest are shown as reserved, so an administrator is never handed a toggle
+// that does nothing and left to wonder why.
+function FeaturesPanel({ user }) {
+  const toast = useToast();
+  const [flags, setFlags] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [busyKey, setBusyKey] = useState(null);
+  const load = useCallback(() => { setLoadError(null); api.get('/settings/features').then((r) => setFlags(r.features)).catch((e) => setLoadError(e.message)); }, []);
+  useEffect(() => { load(); }, [load]);
+  const canManage = can(user, 'system.manage');
+  async function toggle(flag) {
+    setBusyKey(flag.key);
+    try {
+      const r = await api.put(`/settings/features/${flag.key}`, { enabled: !flag.enabled });
+      setFlags((fs) => fs.map((f) => (f.key === flag.key ? { ...f, enabled: r.enabled } : f)));
+      toast(`${flag.label} ${r.enabled ? 'switched on' : 'switched off'}`);
+    } catch (e) { toast(e.message, 'error'); } finally { setBusyKey(null); }
+  }
+  if (loadError) return <LoadError title="Could not load features" text={loadError} onRetry={load} />;
+  if (!flags) return <Skeleton rows={5} />;
+  const live = flags.filter((f) => f.enforced), reserved = flags.filter((f) => !f.enforced);
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head"><div><h3>Switches in effect</h3></div><span className="dash-headnote">Changes are audited</span></div>
+        {live.length === 0 ? <Empty text="No switchable feature in this version." /> : live.map((f) => (
+          <div key={f.key} className="card-pad" style={{ display: 'flex', gap: 16, alignItems: 'flex-start', borderTop: '1px solid var(--border)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{f.label}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{f.description}</div></div>
+            <label className="switch" style={{ flexShrink: 0 }}>
+              <input type="checkbox" checked={f.enabled} disabled={!canManage || busyKey === f.key} onChange={() => toggle(f)} />
+              {f.enabled ? 'On' : 'Off'}
+            </label>
+          </div>
+        ))}
+      </div>
+      {reserved.length > 0 && (
+        <div className="card">
+          <div className="card-head"><div><h3>Reserved</h3></div><span className="dash-headnote">Listed for transparency; no switch has an effect yet</span></div>
+          {reserved.map((f) => (
+            <div key={f.key} className="card-pad" style={{ borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 600, color: 'var(--muted)' }}>{f.label}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{f.description}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -4069,13 +4121,52 @@ function ButtonsPage({ user }) {
 
 /* ----------------------------- Workflow ----------------------------- */
 function WorkflowPage({ user }) {
+  const toast = useToast();
   const [rows, setRows] = useState(null);
-  useEffect(() => { api.get('/settings/workflows').then((r) => setRows(r.workflows)); }, []);
-  if (!rows) return <Skeleton rows={6} />;
+  const [loadError, setLoadError] = useState(null);
+  const [confirmOff, setConfirmOff] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { setLoadError(null); api.get('/settings/workflows').then((r) => setRows(r.workflows)).catch((e) => setLoadError(e.message)); }, []);
+  useEffect(() => { load(); }, [load]);
+  const canManage = can(user, 'workflow.manage');
+  // The approval step is the `approval_chain` row's active flag. Switching it
+  // off is confirmed first, because from then on every submitted request goes
+  // straight to sourcing; the server audits the change and marks each request
+  // that skipped the step.
+  async function setApproval(isActive) {
+    setBusy(true);
+    try {
+      const r = await api.put('/settings/workflows/approval_chain', { isActive });
+      setRows((rs) => rs.map((w) => (w.key === 'approval_chain' ? r.workflow : w)));
+      toast(isActive ? 'HR Director approval is required again' : 'Approval step switched off');
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); setConfirmOff(false); }
+  }
+  const head = <PageHead crumb="Configuration / Workflow" title="Workflow Settings" sub="The one approval step that gates sourcing, and the state machines that drive requests and applications." />;
+  if (loadError) return <div>{head}<LoadError title="Could not load workflow settings" text={loadError} onRetry={load} /></div>;
+  if (!rows) return <div>{head}<Skeleton rows={6} /></div>;
+  const approval = rows.find((w) => w.key === 'approval_chain');
   return (
     <div>
-      <PageHead crumb="Configuration / Workflow" title="Workflow Settings" sub="The configurable state machines that drive Phase 2+ (requests, applications, approvals)." />
-      {rows.map((w) => (
+      {head}
+      {approval && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head"><div><h3>Hiring request approval</h3></div><Badge variant={approval.isActive ? 'success' : 'warning'}>{approval.isActive ? 'Required' : 'Off'}</Badge></div>
+          <div className="card-pad">
+            <p style={{ margin: '0 0 14px', maxWidth: 640 }}>{approval.isActive
+              ? 'A submitted request waits for the HR Director\u2019s decision before sourcing can begin. One step, one approver.'
+              : 'A submitted request is approved at once and sourcing can begin. Each request that skips the step is marked as auto-approved in its activity and in the audit log.'}</p>
+            {canManage
+              ? (approval.isActive
+                ? <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirmOff(true)}>Switch approval off</button>
+                : <button className="btn" disabled={busy} onClick={() => setApproval(true)}>Require HR Director approval</button>)
+              : <p className="muted" style={{ margin: 0 }}>Only a user with workflow management rights can change this.</p>}
+          </div>
+        </div>
+      )}
+      {confirmOff && <Confirm title="Switch approval off?" confirmLabel="Switch off" danger
+        message="From now on, every submitted or resubmitted hiring request goes straight to sourcing without the HR Director's decision. Requests already waiting for approval are not changed. This change is recorded in the audit log."
+        onConfirm={() => setApproval(false)} onClose={() => setConfirmOff(false)} />}
+      {rows.filter((w) => w.key !== 'approval_chain').map((w) => (
         <div className="card" key={w.key} style={{ marginBottom: 16 }}>
           <div className="card-head"><h3>{w.name}</h3><Badge variant={w.isActive ? 'success' : 'soft'}>{w.isActive ? 'active' : 'inactive'}</Badge></div>
           <div className="card-pad">
@@ -5084,6 +5175,15 @@ function RequestDetail({ id, user, btns, onBack }) {
     <div>
       <TicketHeader req={req} onBack={onBack}>
         <div className="page-head-actions">
+          {/* The approval step, surfaced: a draft is submitted here, and the
+              one approver decides here. With the step switched off in Workflow
+              Settings the same button reads "Submit" and sourcing begins at
+              once — the server decides, the label only tells the truth. */}
+          {btns.submit_request?.visible && ((s === 'pending_approval' && !(req.approvals || []).length) || s === 'reopened') && (
+            <button className="btn" onClick={() => doAction('submit', {}, req.approvalRequired === false ? 'Submitted — sourcing can begin' : 'Submitted for HR Director approval')}>
+              {req.approvalRequired === false ? 'Submit' : 'Submit for approval'}</button>)}
+          {btns.approve_request?.visible && s === 'pending_approval' && <button className="btn" onClick={() => doAction('approve', {}, 'Request approved — sourcing can begin')}>Approve</button>}
+          {btns.reject_request?.visible && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => reasonAction('reject', 'Reject Request', 'Request rejected', true)}>Reject</button>}
           {btns.assign_recruiter?.visible && !TERMINAL_STATUSES.includes(s) && (
             canAssignNow
               ? <button className="btn btn-secondary" onClick={() => setAssigning(true)}>{assignLabel}</button>
