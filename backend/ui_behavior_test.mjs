@@ -744,4 +744,65 @@ await check('quality labels render through the canonical Badge, never in the rej
   });
   api.get = realGet;
 }
+
+/* Polish pass: bulk move scope is honest, the candidate's current application
+   is one line under the header, and the system admin can switch dashboards. */
+{
+  await check('bulk move summary: hidden rows are counted, only reachable stages are offered, only eligible rows move', () => {
+    const summary = get('bulkSelectionSummary');
+    const apps = [{ id: 1, status: 'matched' }, { id: 2, status: 'joined' }, { id: 3, status: 'sourced' }];
+    const sum = summary({ selected: new Set([1, 2, 3]), apps, visibleApps: [apps[0], apps[2]], pending: new Set([3]), target: 'sourced' });
+    assert.equal(sum.hidden.length, 1, 'the joined row is selected but hidden by the filters');
+    assert.equal(sum.hidden[0].id, 2);
+    assert.equal(sum.targets.includes('sourced'), false, 'a stage nobody can move to is not offered');
+    const canMove = get('canPipelineMove');
+    assert.ok(sum.targets.length > 0 && sum.targets.every((t) => [apps[0], apps[2]].some((a) => canMove(a.status, t))), 'every offered stage is reachable by at least one selected row');
+    assert.equal(sum.target, sum.targets[0], 'an invalid destination falls back to the first reachable stage');
+    const forward = sum.targets.find((t) => canMove('matched', t) && canMove('sourced', t));
+    const later = summary({ selected: new Set([1, 2, 3]), apps, visibleApps: apps, pending: new Set([3]), target: forward });
+    assert.equal(later.target, forward, 'a valid destination is kept');
+    assert.equal(JSON.stringify(later.eligible.map((a) => a.id)), '[1]', 'the pending row and the locked row are excluded from the move');
+    const none = summary({ selected: new Set([2]), apps, visibleApps: apps, pending: new Set(), target: 'offer' });
+    assert.equal(none.targets.length, 0); assert.equal(none.target, ''); assert.equal(none.eligible.length, 0);
+  });
+
+  await check('candidate header names the current application, never a disqualified one, and shows no dead link', () => {
+    const ApplicationContext = get('ApplicationContext'), current = get('currentApplication');
+    const active = { id: 5, requestId: 9, ticketNo: 'REQ-2026-0009', position: 'Site Engineer', status: 'interviewing', recruiter: { name: 'Karim' }, lastActivityAt: '2026-09-01' };
+    const rejected = { id: 4, requestId: 8, ticketNo: 'REQ-2026-0008', position: 'Old role', status: 'rejected' };
+    assert.equal(current([rejected, active]).id, 5, 'history is never promoted to current');
+    assert.equal(current([rejected]), null);
+    const strings = (tree) => nodes(tree).flatMap((n) => Object.values(n.props || {}).filter((v) => typeof v === 'string')).join('\n') + text(tree);
+    let tree = ApplicationContext({ application: active, count: 2, onOpenRequest: () => {} });
+    assert.ok(strings(tree).includes('Site Engineer') && nodes(tree).some((n) => n.type === get('AppStatusBadge') && n.props.status === 'interviewing'));
+    assert.ok(button(tree, 'Open request'), 'the request link is offered when the caller authorised it');
+    tree = ApplicationContext({ application: active, count: 2, onOpenRequest: null });
+    assert.equal(button(tree, 'Open request'), undefined, 'no link without authorisation');
+    tree = ApplicationContext({ application: null, count: 1 });
+    assert.ok(text(tree).includes('No active application'));
+    tree = ApplicationContext({ application: null, count: 0 });
+    assert.ok(text(tree).includes('Not linked'));
+  });
+
+  await check('system admin: director view by default, with tabs into every role\'s dashboard', async () => {
+    const api = window.ARABTEC_API; const realGet = api.get;
+    api.get = async (path) => path.startsWith('/requests') ? { requests: [] } : path.startsWith('/interviews') ? { interviews: [] } : { kpis: {}, aging: {}, offersByStatus: [], myWork: {} };
+    const admin = { id: 1, roles: ['system_admin'], permissions: ['dashboard.view', 'request.view_all', 'interview.view_all'] };
+    const page = mount(get('Dashboard'), { user: admin, onNavigate() {}, dash: { kpis: {}, aging: {}, offersByStatus: [], myWork: {} } });
+    page.render(); await flush(); let tree = page.render();
+    assert.equal(tree.type, get('DirectorDashboard'), 'the big picture is the default');
+    const tabs = nodes(tree.props.notice).filter((n) => n.props?.role === 'tab');
+    assert.deepEqual(tabs.map((t) => text(t)), ['Director', 'Executive', 'Recruitment manager', 'Recruiter', 'Interviewer']);
+    tabs.find((t) => text(t) === 'Recruiter').props.onClick(); page.render(); await flush(); tree = page.render();
+    assert.equal(tree.type, get('RecruiterDashboard'), 'the tab switches the composition');
+    tabs.find((t) => text(t) === 'Interviewer').props.onClick(); page.render(); await flush(); tree = page.render();
+    assert.equal(tree.type, get('InterviewerDashboard'));
+    page.dispose();
+    const recruiter = mount(get('Dashboard'), { user: { id: 7, roles: ['recruiter'], permissions: ['dashboard.view', 'request.view_own', 'interview.view_assigned'] }, onNavigate() {}, dash: { myWork: {}, offersByStatus: [] } });
+    recruiter.render(); await flush(); tree = recruiter.render();
+    assert.equal(nodes(tree.props.notice || []).some((n) => n.props?.role === 'tab'), false, 'a recruiter gets no view switcher');
+    recruiter.dispose(); api.get = realGet;
+  });
+}
+
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);

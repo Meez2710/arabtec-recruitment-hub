@@ -445,12 +445,34 @@ img, svg, video, canvas {
   .role-row {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Phone: avatar and identity share the first row, the actions take a full
+     row beneath. As a single flex row the identity column was squeezed to a
+     sliver between the avatar and the (non-shrinking) buttons, wrapping the
+     name letter by letter and stacking every chip. */
   .profile-header {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px 14px;
+  }
+  .profile-header > :last-child {
+    grid-column: 1 / -1;
+  }
+  .profile-header > :last-child .btn {
+    flex: 1 1 auto;
+    min-height: 44px;
   }
   .profile-header .ph-name,
   .profile-header .ph-headline {
     overflow-wrap: anywhere;
+  }
+  /* A card title never wraps under its own subtitle: on a phone the subtitle
+     drops to its own line. */
+  .card-head {
+    flex-wrap: wrap;
+    gap: 2px 12px;
+  }
+  .card-head > .dash-headnote {
+    flex-basis: 100%;
   }
   .tabbar,
   .profile-tabs,

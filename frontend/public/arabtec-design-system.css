@@ -443,6 +443,29 @@ tr.row-selected > td { background: var(--green-50); }
    list failed. The page-level notice carries the reason and the retry. */
 .section-caveat { display: flex; align-items: center; gap: 8px; padding: 10px 20px 14px; font-size: 12.5px; color: var(--muted); }
 .section-caveat > svg { color: var(--warning-ink); }
+/* The candidate's current application, one line under the identity header. */
+.app-context { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; }
+.app-context > .btn { margin-left: auto; }
+/* Bulk move bar: the scope on the left, the action on the right, both wrap. */
+/* The pipeline's bulk bar is the Talent Pool's bulk bar (brand background,
+   white text, defined in styles.css); these rules only let it wrap and keep
+   its two halves apart, and give the scope caveat legible ink on that field. */
+.bulk-bar { flex-wrap: wrap; justify-content: space-between; gap: 10px 16px; margin-bottom: 12px; }
+.bulk-bar .muted { color: rgba(255, 255, 255, .82); }
+/* Buttons on the brand field: the primary action is white with brand ink, the
+   ghost is outlined in white. Later layers paint .btn brand-on-brand and
+   .btn-ghost white-on-white here, which hid both labels. */
+.bulk-bar .btn { background: #fff; color: var(--green-700); border-color: #fff; }
+.bulk-bar .btn:hover:not(:disabled) { background: #F4F5F7; color: var(--green-700); }
+.bulk-bar .btn:disabled { opacity: .55; }
+.bulk-bar .btn-ghost { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .6); }
+.bulk-bar .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .14); color: #fff; }
+.bulk-bar select { color: #fff; }
+.bulk-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bulk-actions select { min-width: max-content; }
+/* The system administrator's dashboard view switcher sits under the title. */
+.dash-view-tabs { margin: -4px 0 18px; }
 .dash-kpi-top .dash-ico { display: none; }
 .dash-grid-2 { gap: 16px; }
 .dash-bar-fill { border-radius: 999px; }

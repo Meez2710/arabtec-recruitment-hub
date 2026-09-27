@@ -1084,6 +1084,9 @@ table tbody td .cell-strong.clamp-2 {
 @media (min-width: 641px) {
   .toolbar-secondary > input,
   .toolbar-secondary > select { max-width: 280px; }
+  /* A select never clips its own labels ("All statu", "All priori" at 1440):
+     it may not shrink below its widest option; the group wraps instead. */
+  .toolbar-secondary > select { min-width: max-content; }
 }
 
 /* (6) THE SORT SELECT TRUNCATED ITS OWN SELECTED LABEL. Every control in the

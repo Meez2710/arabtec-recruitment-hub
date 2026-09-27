@@ -2673,9 +2673,21 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
 }
 
 /* Dispatcher. The real authenticated role picks the composition. */
+// The system administrator's dashboard: the director view (the big picture)
+// by default, with a switch into every role's own composition so an admin can
+// check what each role sees without borrowing an account. Every view is
+// rendered with the admin's own scope.
+const DASH_VIEWS = [['director', 'Director'], ['executive', 'Executive'], ['manager', 'Recruitment manager'], ['recruiter', 'Recruiter'], ['interviewer', 'Interviewer']];
+const DASH_VIEW_KEY = 'arabtec_dash_view';
 function Dashboard({ user, onNavigate, dash }) {
-  const persona = personaFor(user);
+  const isAdmin = (user.roles || []).includes('system_admin');
+  const [view, setView] = useState(() => { try { const v = localStorage.getItem(DASH_VIEW_KEY); return DASH_VIEWS.some(([k]) => k === v) ? v : 'director'; } catch { return 'director'; } });
+  const persona = isAdmin ? view : personaFor(user);
   const data = useDashboardData(user, persona, dash);
+  const choose = (k) => { setView(k); try { localStorage.setItem(DASH_VIEW_KEY, k); } catch { /* per-device convenience only */ } };
+  const viewTabs = isAdmin ? <div className="control-tabs dash-view-tabs" role="tablist" aria-label="Dashboard view">
+    {DASH_VIEWS.map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={persona === k} className={'control-tab' + (persona === k ? ' active' : '')} onClick={() => choose(k)}>{label}</button>)}
+  </div> : null;
 
   if (!can(user, 'dashboard.view') && persona !== 'interviewer') {
     return <Forbidden what="Dashboard" need="dashboard.view" />;
@@ -2683,6 +2695,7 @@ function Dashboard({ user, onNavigate, dash }) {
   if (data.loading) {
     return (<div>
       <PageHead crumb="Recruitment workspace" title="Dashboard" sub="Your scoped recruitment overview." />
+      {viewTabs}
       <Skeleton shape="dashboard" />
     </div>);
   }
@@ -2693,6 +2706,7 @@ function Dashboard({ user, onNavigate, dash }) {
   const wantedLists = DASH_SOURCES.filter((k) => data.wanted[k]);
   const nothingUsable = wantedLists.length > 0 && wantedLists.every((k) => data.unavailable[k]);
   if (data.err || nothingUsable) return <div><PageHead crumb="Recruitment workspace" title="Dashboard" />
+    {viewTabs}
     <LoadError title="Could not load the dashboard" text={data.err || data.sectionErrors[wantedLists[0]]} onRetry={data.reload} /></div>;
 
   // One notice under the page title carries the failure and the primary
@@ -2704,6 +2718,7 @@ function Dashboard({ user, onNavigate, dash }) {
   const stale = DASH_SOURCES.filter((k) => data.sectionErrors[k] && data.loaded[k]).map((k) => DASH_SOURCE_LABEL[k]);
   if (data.dashStale) stale.unshift('the dashboard figures');
   const notice = <>
+    {viewTabs}
     {missing.length > 0 && <RefetchError onRetry={data.reload}
       text={`Could not load ${join(missing.map((k) => DASH_SOURCE_LABEL[k]))} (${data.sectionErrors[missing[0]]}). Figures and lists that depend on them are marked below.`} />}
     {stale.length > 0 && <RefetchError onRetry={data.reload} text={`Could not refresh ${join(stale)}. Showing the last loaded results.`} />}
@@ -5834,6 +5849,22 @@ function SourceChip({ source }) {
 // Group an application/candidate stage into qualified vs disqualified (Workable split).
 const DISQUALIFIED_STAGES = ['rejected', 'offer_declined', 'on_hold'];
 function isDisqualified(status) { return DISQUALIFIED_STAGES.includes(status); }
+/* What a bulk move can honestly claim for the current selection. Pure, so the
+   bar can state its scope before anything is sent: which selected rows are
+   hidden by the filters, which forward stages at least one of them can reach,
+   and exactly which rows would move to the chosen one. The server remains
+   authoritative; this only stops the UI from promising more or less. */
+function bulkSelectionSummary({ selected, apps, visibleApps, pending, target }) {
+  const byId = new Map((apps || []).map((a) => [a.id, a]));
+  const chosen = [...selected].map((id) => byId.get(id)).filter(Boolean);
+  const visible = new Set((visibleApps || []).map((a) => a.id));
+  const hidden = chosen.filter((a) => !visible.has(a.id));
+  const movable = (a, s) => !pending.has(a.id) && canPipelineMove(a.status, s);
+  const targets = APP_ORDER.filter((s) => chosen.some((a) => movable(a, s)));
+  const to = targets.includes(target) ? target : (targets[0] || '');
+  const eligible = to ? chosen.filter((a) => movable(a, to)) : [];
+  return { chosen, hidden, targets, target: to, eligible };
+}
 function MatchScore({ score }) {
   if (score == null) return <span className="muted">—</span>;
   const color = score >= 80 ? 'var(--success)' : score >= 50 ? 'var(--warning)' : 'var(--critical)';
@@ -5860,6 +5891,8 @@ function RequestPipeline({ request, user, btns }) {
   const [noteApp, setNoteApp] = useState(null); // application to set next-action on
   const [pending, setPending] = useState(new Set()); // application ids with an in-flight move
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkTarget, setBulkTarget] = useState(''); // controlled destination; validated against the selection each render
+  const [bulkConfirm, setBulkConfirm] = useState(null); // { go, sum } when hidden rows are part of the move
 
   const load = useCallback(async () => { setLoadError(null); try { setApps((await api.get('/applications/request/' + request.id)).applications); } catch (e) { setLoadError(e.message); } }, [request.id]);
   useEffect(() => { load(); }, [load]);
@@ -5934,6 +5967,16 @@ function RequestPipeline({ request, user, btns }) {
   if (!apps) return <Skeleton rows={6} />;
 
   const cols = APP_ORDER;
+  const bulk = canBulk && selected.size > 0 ? bulkSelectionSummary({ selected, apps, visibleApps, pending, target: bulkTarget }) : null;
+  const startBulk = () => {
+    if (!bulk || !bulk.eligible.length) return;
+    const go = () => {
+      if (REASON_STATUSES.includes(bulk.target)) setMoveModal({ appIds: bulk.eligible.map((a) => a.id), toStatus: bulk.target, reason: true, bulk: true });
+      else bulkMove(bulk.target);
+    };
+    // Rows the filters hide are still selected. Never move them silently.
+    if (bulk.hidden.length) setBulkConfirm({ go, sum: bulk }); else go();
+  };
   const activeApps = visibleApps.filter((a) => !isDisqualified(a.status));
   const disqualifiedCount = visibleApps.filter((a) => isDisqualified(a.status)).length;
   return (
@@ -5960,15 +6003,29 @@ function RequestPipeline({ request, user, btns }) {
         {canLink && <button className="btn btn-sm" onClick={() => setLinkOpen(true)}>{btns.link_candidate.label === 'Link to Request' ? 'Add Candidate' : btns.link_candidate.label}</button>}
       </div>
 
-      {canBulk && selected.size > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
-          <strong>{selected.size} selected</strong>
-          <select id="bulkStatus" className="" style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6 }}>
-            {cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
-          <button className="btn btn-sm" disabled={bulkBusy} onClick={() => { const st = document.getElementById('bulkStatus').value; if (REASON_STATUSES.includes(st)) setMoveModal({ appIds: [...selected], toStatus: st, reason: true, bulk: true }); else bulkMove(st); }}>{bulkBusy ? 'Moving…' : 'Apply Bulk Move'}</button>
-          <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => setSelected(new Set())}>Clear</button>
+      {bulk && (
+        <div className="bulk-bar" role="region" aria-label="Bulk move">
+          <div className="bulk-scope">
+            <strong>{bulk.chosen.length} selected</strong>
+            {bulk.hidden.length > 0 && <span className="muted">· {bulk.hidden.length} hidden by the current filters</span>}
+            {bulk.target
+              ? <span className="muted">· {bulk.eligible.length} of {bulk.chosen.length} can move to {APP_STATUS[bulk.target].label}</span>
+              : <span className="muted">· none of the selected candidates can move forward</span>}
+          </div>
+          <div className="bulk-actions">
+            <select aria-label="Move to stage" value={bulk.target} disabled={!bulk.targets.length} onChange={(e) => setBulkTarget(e.target.value)}>
+              {bulk.targets.length
+                ? bulk.targets.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)
+                : <option value="">No forward stage</option>}
+            </select>
+            <button className="btn btn-sm" disabled={bulkBusy || !bulk.eligible.length} onClick={startBulk}>{bulkBusy ? 'Moving…' : bulk.eligible.length ? `Move ${bulk.eligible.length}` : 'Move'}</button>
+            <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => setSelected(new Set())}>Clear</button>
+          </div>
         </div>
       )}
+      {bulkConfirm && <Confirm title="Include hidden candidates?" confirmLabel={`Move ${bulkConfirm.sum.eligible.length}`}
+        message={`${bulkConfirm.sum.chosen.length} candidates are selected and ${bulkConfirm.sum.hidden.length} of them are hidden by the current filters. ${bulkConfirm.sum.eligible.length} eligible will move to ${APP_STATUS[bulkConfirm.sum.target].label}; the rest stay where they are.`}
+        onConfirm={() => { const c = bulkConfirm; setBulkConfirm(null); c.go(); }} onClose={() => setBulkConfirm(null)} />}
 
       {apps.length === 0 ? <div className="card"><Empty art="none-yet" text="No candidates linked yet. Use 'Add Candidate' to add candidates." />
           {canImport && <div style={{ textAlign: 'center', paddingBottom: 18 }}><button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button></div>}</div>
@@ -8849,6 +8906,28 @@ function ActivityLog({ c, user, onNavigate, focusPrior }) {
   );
 }
 
+/* The candidate's current application, in one line under the identity header:
+   which request, what stage, who is recruiting, when it last moved. Purely
+   presentational: it reads the DTO the candidate route already returns and
+   navigates only through the caller's callback, so it can move with the module.
+   History stays in the Applications tab; only a non-disqualified application
+   counts as current, the same rule the pipeline uses for its Active count. */
+function currentApplication(applications) {
+  return (applications || []).find((a) => !isDisqualified(a.status)) || null;
+}
+function ApplicationContext({ application, count, onOpenRequest }) {
+  if (!application) return <div className="app-context"><span className="muted">{count ? 'No active application. Earlier ones are under Applications.' : 'Not linked to a hiring request yet.'}</span></div>;
+  return <div className="app-context">
+    <span className="fine-label">Current application</span>
+    <strong title={application.ticketNo}>{shortReqCode(application.ticketNo)}</strong>
+    <span>{application.position || '—'}</span>
+    <AppStatusBadge status={application.status} />
+    <span className="muted">Recruiter: {application.recruiter?.name || '—'}</span>
+    <span className="muted">Updated {fmtDateShort(application.lastActivityAt)}</span>
+    {onOpenRequest && <button type="button" className="btn btn-ghost btn-sm" onClick={onOpenRequest}>Open request</button>}
+  </div>;
+}
+
 /* ----------------------------- Candidate Profile (6 tabs) ----------------------------- */
 function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focusPrior }) {
   const toast = useToast();
@@ -8890,6 +8969,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
     : <Skeleton rows={8} />}</div>;
 
   const canPrivacy = can(user, 'candidate.privacy');
+  const current = currentApplication(c.applications);
   const TABS = [['overview', 'Overview'], ['cv', 'CV & Attachments'], ['applications', `Applications (${c.applications?.length || 0})`], ['interviews', 'Interviews'], ['offers', 'Offers'], ['activity', 'Activity log']];
   if (canPrivacy) TABS.push(['privacy', 'Data & Privacy']);
   return (
@@ -8921,6 +9001,8 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
             {btns.add_note?.visible && <button className="btn btn-secondary" onClick={() => setNoteOpen(true)}>Add Note</button>}
           </div>
         </div>
+        <ApplicationContext application={current} count={(c.applications || []).length}
+          onOpenRequest={current?.requestId && onNavigate && (can(user, 'request.view_all') || can(user, 'request.view_own')) ? () => openRequest(current.requestId, onNavigate) : null} />
         <div className="profile-tabs">
           {TABS.map(([k, label]) => <button key={k} onClick={() => setTab(k)} className={'profile-tab' + (tab === k ? ' active' : '')}>{label}</button>)}
         </div>
