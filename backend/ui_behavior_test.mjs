@@ -805,4 +805,33 @@ await check('quality labels render through the canonical Badge, never in the rej
   });
 }
 
+await check('standalone interview/offer: a typed candidate is created first, a picked one is used as is',async()=>{
+  const ready=get('standaloneLinkReady'), resolve=get('resolveStandaloneLink'), EMPTY=get('EMPTY_LINK');
+  assert.equal(ready(EMPTY),false);
+  assert.equal(ready({...EMPTY,candidate:{id:7}}),true);
+  assert.equal(ready({...EMPTY,mode:'new',newName:'  '}),false);
+  assert.equal(ready({...EMPTY,mode:'new',newName:'Rana'}),true);
+  const api=window.ARABTEC_API; const realPost=api.post; const calls=[];
+  api.post=async(path,body)=>{calls.push({path,body});return {candidate:{id:42}};};
+  try {
+    assert.deepEqual({...await resolve({...EMPTY,candidate:{id:7},requestId:'3'})},{candidateId:7,requestId:3});
+    assert.equal(calls.length,0,'a picked candidate creates nothing');
+    assert.deepEqual({...await resolve({...EMPTY,mode:'new',newName:' Rana Aziz ',newEmail:'rana@example.com'})},{candidateId:42,requestId:undefined});
+    assert.equal(calls[0].path,'/candidates'); assert.equal(calls[0].body.fullName,'Rana Aziz');
+  } finally { api.post=realPost; }
+});
+await check('Interviews and Offers offer a create button only with the create permission',()=>{
+  const src=fs.readFileSync(publicDir+'app.jsx','utf8');
+  assert.match(src,/can\(user, 'interview\.schedule'\) && <button className="btn" onClick=\{\(\) => setCreating\(true\)\}>Schedule interview<\/button>/);
+  assert.match(src,/can\(user, 'offer\.create'\) \? <button className="btn" onClick=\{\(\) => setCreating\(true\)\}>Create offer<\/button>/);
+});
+await check('knowledge lines: the owner list is parsed, and it wins over the bundled list when non-empty',()=>{
+  const parse=get('parseKnowledgeText'), apply=get('applyOwnKnowledgeLines'), pick=get('pickKnowledgeLine');
+  const r=parse('Measure twice, cut once. — Proverb — engineering\nno author');
+  assert.equal(r.lines.length,1); assert.equal(r.lines[0].t,'engineering'); assert.match(r.errors[0],/author/);
+  window.ARABTEC_KNOWLEDGE_LINES=[{q:'Bundled line here.',by:'A'}];
+  apply('Own line here. — B'); assert.equal(pick(0).q,'Own line here.');
+  apply(''); assert.equal(pick(0).q,'Bundled line here.');
+});
+
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);

@@ -384,9 +384,12 @@ img, svg, video, canvas {
     flex-wrap: wrap;
     gap: 8px;
   }
+  /* Content width, never stretched (R17): a zoomed desktop page reaches this
+     block too, and a row of buttons each widened to fill it read as a grid of
+     bars. The row wraps instead. */
   .page-head-actions > .btn,
   .page-head-actions > .view-toggle {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
   }
   .view-toggle {
     display: inline-flex;
@@ -458,8 +461,7 @@ img, svg, video, canvas {
     grid-column: 1 / -1;
   }
   .profile-header > :last-child .btn {
-    flex: 1 1 auto;
-    min-height: 44px;
+    flex: 0 0 auto;
   }
   .profile-header .ph-name,
   .profile-header .ph-headline {
@@ -514,7 +516,7 @@ img, svg, video, canvas {
 .page-head:has(+ .ask-bar) .page-head-actions,
 .tp-page .page-head-actions {
   padding-top: 16px;
-  gap: 8px 20px;
+  gap: 8px;
   align-items: center;
   width: 100%;
 }
@@ -527,63 +529,36 @@ img, svg, video, canvas {
   flex-wrap: wrap;
   gap: 8px;
 }
-/* Pull the helper text out of the Bulk Upload control box. */
-.page-head:has(+ .ask-bar) .upload-cta {
-  display: contents;
-}
-.page-head:has(+ .ask-bar) .upload-cta-hint,
-.tp-upload-hint {
-  flex: 1 1 100%;
-  order: 5;
-  margin: 0;
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.4;
-  white-space: normal;
-  text-align: left;
-}
+/* R17 — ONE BUTTON SPEC. The head row is one primary (Parse CV) and equal
+   secondaries, every one of them the product's own .btn box from
+   claude-system.css (40px, padding from tokens), sized by its label and never
+   stretched: `flex: 0 0 auto` at every width, so a zoomed page wraps the row
+   instead of widening its buttons. This block used to redeclare the button
+   height, padding and a 32px compact size for this page alone, and pulled the
+   Bulk Upload hint out of its box with `display: contents`; both are gone. */
 .page-head:has(+ .ask-bar) .page-head-actions > .btn,
-.page-head:has(+ .ask-bar) .upload-cta .btn,
-.tp-page .tp-actions .btn,
-.page-head:has(+ .ask-bar) + .ask-bar .btn,
-.tp-page .ask-bar .btn {
-  /* Was a hard 36px at EVERY width from 641 up, which is why "one control
-     height above the phone floor" was not actually true product-wide: the
-     Talent Pool ask bar sat at 36px against a 40px filter row directly beneath
-     it. Takes the token now, like every other button. The scoped horizontal
-     padding below is a real density choice for this page and stays. */
-  min-height: var(--cl-ctl-lg);
-  height: auto;
-  padding: 0 14px;
-  width: auto;
+.tp-page .tp-actions .btn {
   flex: 0 0 auto;
+  width: auto;
 }
-/* A ghost button is the same PURPOSE as the secondary and primary buttons
-   beside it — an action in the same row — so it takes the same type. This
-   block used to shrink it to 13.5px, which put "Add manually" visibly below
-   "Bulk Upload CVs" and "Parse CV" at 14px, in the one layout that has an ask
-   bar. Emphasis is carried by fill and border; it is not carried by making one
-   label smaller, and a fixed px here drifted further from its neighbours under
-   browser zoom. */
+/* The view switch sits in the same row, so its outer box is the button height:
+   3px track + 34px segment + 3px track = 40px. */
 .page-head:has(+ .ask-bar) .view-toggle-btn,
 .tp-page .view-toggle-btn {
-  min-height: 32px;
-  height: 32px;
-  padding: 0 12px;
+  min-height: 34px;
 }
-.page-head:has(+ .ask-bar) ~ * .btn-sm,
-.tp-page .btn-sm {
-  min-height: 32px;
-  height: 32px;
-  padding: 0 10px;
-}
+/* The Ask bar is a secondary, borderless row: an input with no box of its
+   own, over a hairline, and a secondary Ask button. It no longer stacks a
+   second bordered rectangle between the head and the filter row. */
 .page-head:has(+ .ask-bar) + .ask-bar,
 .tp-page .ask-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  margin-bottom: 16px;
+  padding: 0 0 8px;
+  margin-bottom: 12px;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
 }
 .page-head:has(+ .ask-bar) + .ask-bar .ask-input,
 .tp-page .ask-input {
@@ -650,22 +625,8 @@ img, svg, video, canvas {
   .page-head:has(+ .ask-bar) .page-head-actions {
     width: 100%;
   }
-  .page-head:has(+ .ask-bar) .page-head-actions > .btn,
-  .page-head:has(+ .ask-bar) .upload-cta .btn,
-  .tp-page .tp-actions .btn,
-  .page-head:has(+ .ask-bar) + .ask-bar .btn,
-  .tp-page .ask-bar .btn {
-    height: auto;
-    min-height: 44px;
-    flex: 1 1 auto;
-  }
-  .page-head:has(+ .ask-bar) .view-toggle-btn,
-  .tp-page .view-toggle-btn,
-  .page-head:has(+ .ask-bar) ~ * .btn-sm,
-  .tp-page .btn-sm {
-    height: auto;
-    min-height: 44px;
-  }
+  /* No stretch here either: the 44px touch floor comes from claude-system.css
+     for every button, and the width stays the label's. */
   .page-head:has(+ .ask-bar) + .ask-bar,
   .tp-page .ask-bar {
     flex-wrap: wrap;

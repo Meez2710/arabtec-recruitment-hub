@@ -107,5 +107,36 @@ rule('R9 an in-card error state is the shared Empty/LoadError, never a hand-roll
   assert.equal((jsx.match(/style=\{\{[^}]*background: ?'#FFF8F8'/g) || []).length, 0, 'inline error surfaces');
 });
 
+const { offScale, SHEETS } = await import('./test-support/spacing-scan.mjs');
+rule('R16 no new margin, padding or gap off the 4/8/12/16/24/32 scale; the legacy list only shrinks', () => {
+  const legacy = JSON.parse(fs.readFileSync(new URL('../docs/audits/spacing-legacy.json', import.meta.url), 'utf8')).declarations;
+  const now = offScale();
+  const left = [...legacy];
+  const added = [];
+  for (const d of now) { const k = left.indexOf(d); if (k === -1) added.push(d); else left.splice(k, 1); }
+  assert.equal(SHEETS.length, 6, 'the scan reads the six product sheets');
+  assert.deepEqual(added, [], 'off-scale spacing added (use --sp-1..--sp-6 or 4/8/12/16/24/32px):\n        ' + added.join('\n        '));
+  assert.deepEqual(left, [], 'these legacy declarations were fixed; delete them from docs/audits/spacing-legacy.json:\n        ' + left.join('\n        '));
+});
+rule('R17 one button spec: no page-scoped .btn height or padding outside claude-system.css, and no stretched head buttons', () => {
+  const sheets = ['styles.css', 'arabtec-approved-ui.css', 'arabtec-design-system.css', 'arabtec-responsive.css'];
+  // Bare component selectors are the base layers claude-system.css overrides;
+  // anything with an ancestor or page scope is a per-page override.
+  const base = /^\.btn(-sm|-block|\.small)?$/;
+  const bad = [];
+  for (const f of sheets) {
+    const src = fs.readFileSync(pub + f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of src.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const parts = m[1].trim().split(',').map((p) => p.trim()).filter((p) => /\.btn\b/.test(p) && !base.test(p));
+      if (parts.length && /(^|;)\s*(min-height|height|padding(-left|-right|-inline)?)\s*:/.test(m[2])) bad.push(`${f}: ${parts.join(', ')}`);
+    }
+  }
+  assert.deepEqual(bad, [], 'page-scoped .btn box overrides');
+  const resp = css['arabtec-responsive.css'];
+  assert.doesNotMatch(resp, /\.upload-cta\s*\{\s*display:\s*contents/, 'no display: contents trick in the Talent Pool head');
+  assert.doesNotMatch(resp.replace(/\/\*[\s\S]*?\*\//g, ''), /page-head-actions > \.btn[^{]*\{[^}]*flex:\s*1 1/, 'head buttons never grow');
+  assert.match(jsx, /<button className="btn btn-secondary" onClick=\{\(\) => setCreating\(true\)\} title="Enter a candidate by hand/, 'Add manually is a secondary, not a ghost');
+  assert.doesNotMatch(jsx, /className="upload-cta"/, 'no wrapper box around Bulk Upload');
+});
 console.log(`\n=== UI LAYOUT RULES: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);

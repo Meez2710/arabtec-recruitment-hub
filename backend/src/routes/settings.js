@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { KNOWLEDGE_LINES_KEY, parseKnowledgeLines } from '../lib/knowledge-lines.js';
 import {
   Branding, Buttons, Workflows, SystemSettings, NotificationConfig } from '../lib/models.js';
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
@@ -167,6 +168,10 @@ router.get('/system', requireAuth, (req, res) => res.json({ settings: safeSystem
 router.put('/system', requireAuth, requirePermission('system.manage'), (req, res) => {
   const updates = req.body?.settings || {};
   if (Object.keys(updates).some(key => key.startsWith('email_'))) return res.status(400).json({error:'Use Email & Mailbox to change mail settings.'});
+  if (Object.hasOwn(updates, KNOWLEDGE_LINES_KEY)) {
+    const { errors } = parseKnowledgeLines(updates[KNOWLEDGE_LINES_KEY]);
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+  }
   const before = safeSystemSettings();
   for (const [key, value] of Object.entries(updates)) SystemSettings.upsert(key, value);
   const after = safeSystemSettings();
