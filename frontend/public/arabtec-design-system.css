@@ -457,7 +457,6 @@ tr.row-selected > td { background: var(--green-50); }
    .btn-ghost white-on-white here, which hid both labels. */
 .bulk-bar .btn { background: #fff; color: var(--green-700); border-color: #fff; }
 .bulk-bar .btn:hover:not(:disabled) { background: #F4F5F7; color: var(--green-700); }
-.bulk-bar .btn:disabled { opacity: .55; }
 .bulk-bar .btn-ghost { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .6); }
 .bulk-bar .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .14); color: #fff; }
 .bulk-bar select { color: #fff; }
