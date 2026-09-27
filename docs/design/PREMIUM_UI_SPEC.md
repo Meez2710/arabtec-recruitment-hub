@@ -74,5 +74,13 @@ Desktop: 256px charcoal sidebar, 64px white top bar with hairline, content on ca
 2. `PageHead` renders the eyebrow; `KpiCard` adopts the stat tile; `Empty` adopts the new empty-state metrics. Small JSX, no behaviour change.
 3. Screen-by-screen review against the Figma frames at 1280, 1440 and 390, each guarded by the layout-rules test.
 
+## Visuals and emoji (owner: "premium visuals, emojis and quotes")
+- **Visuals**: the real logo vector on the charcoal sidebar; 32px display numbers on stat tiles; line-art empty states; progress bars in one green; initials avatars on green tint; the red dash as the only ornament.
+- **Emoji**: allowed, bounded. One leading emoji on a Hint (💡 fact, 🎯 focus, 🔏 approval, 📅 calendar, ✅ check) and one topic emoji on the knowledge line (🧭 leadership, 🤝 teams, 🧠 psychology, 🔬 science, 🏗️ engineering, 🌿 wisdom). Never in buttons, titles, badges, tables or notifications (rule R10).
+- **Quotes**: the knowledge line, one per page, 125 attributed lines (shipped).
+
+## Shipped in code (same PR)
+Section 12 of `arabtec-design-system.css` (colour, face, sidebar, buttons, badges, hint, knowledge-line emoji), type and radius in `claude-system.css` (10px cards and controls, 28/800 titles, tracked eyebrows, 32/800 stat numbers, uppercase table headers), `Hint` and `EMOJI` in app.jsx, one Hint on every persona dashboard, the non-blocking Inter Tight / Inter link with Arial fallback.
+
 ## Not in scope
 Logo or favicon changes, new colours, animation beyond 150ms state transitions, illustrations, and any change to HR rules or workflow.

@@ -57,6 +57,29 @@ rule('R8 a disabled control uses the product\'s one opacity, never a local value
     assert.equal(local.length, 0, `${file} declares disabled opacity ${local.join(', ')}`);
   }
 });
+rule('R10 emoji reach the screen only through the EMOJI map, in a Hint or the knowledge line (never a button, title, badge or cell)', () => {
+  // Pictographic emoji only: ✓ and ○ are typographic marks and stay allowed.
+  const emoji = /[\u{1F300}-\u{1FAFF}]|✅/u;
+  const offenders = jsx.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => emoji.test(l) && !/^\s*(hint|leadership): '/.test(l));
+  assert.deepEqual(offenders.map(([n]) => n), [], `emoji outside the EMOJI map on lines ${offenders.map(([n]) => n).join(', ')}`);
+  assert.match(jsx, /function Hint\(\{ emoji = 'hint', children, action \}\)/);
+  assert.match(jsx, /EMOJI\[line\.t\] && <span className="kl-emoji"/);
+});
+rule('R11 every page title carries its eyebrow with the brand dash, tracked and muted (the crumb is the eyebrow)', () => {
+  const b = block('arabtec-design-system.css', '.page-head .breadcrumb::before, .dash-eyebrow::before {');
+  assert.match(b, /width: 18px; height: 2px/); assert.match(b, /background: var\(--brand\)/);
+  const t = block('claude-system.css', '.breadcrumb, .page-head .breadcrumb, .dash-eyebrow {');
+  assert.match(t, /text-transform: uppercase/); assert.match(t, /letter-spacing: \.18em/);
+});
+rule('R12 the sidebar is charcoal with one red bar on the active item; buttons are one solid green action, badges never pills', () => {
+  const ds = css['arabtec-design-system.css'].slice(css['arabtec-design-system.css'].indexOf('12. WORKFORCE'));
+  assert.match(ds, /\.sidebar \{ background: var\(--sidebar-bg\); color: #fff;/);
+  assert.match(ds, /--sidebar-bg: #1A1A1A/);
+  assert.match(ds, /\.nav-item\.active::before \{[^}]*background: var\(--brand\)/s);
+  assert.match(ds, /\.btn \{ background: var\(--green-700\); color: #fff;/);
+  assert.match(ds, /\.badge, \.status-chip \{ border-radius: 6px;/);
+  assert.equal(/border-width|min-height|padding: 0/.test(ds.slice(ds.indexOf('/* Buttons'), ds.indexOf('/* Badges'))), false, 'button colour rules never touch the box');
+});
 rule('R9 an in-card error state is the shared Empty/LoadError, never a hand-rolled red box', () => {
   assert.equal((jsx.match(/style=\{\{[^}]*background: ?'#FFF8F8'/g) || []).length, 0, 'inline error surfaces');
 });

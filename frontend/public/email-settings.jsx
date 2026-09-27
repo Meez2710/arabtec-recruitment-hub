@@ -4,6 +4,43 @@
   const {useState, useEffect, useCallback} = React;
   const fields = ['provider','host','port','encryption','user','from','fromName','replyTo'];
   const editable = (s) => Object.fromEntries(fields.map(k => [k,s[k]]));
+  /* Phone & WhatsApp: the identity the ATS will SEND from (SMS, WhatsApp, and
+     later automated calls). These are sender details only — the recipient is
+     always the candidate's own number on their profile. Provider credentials
+     (API keys, tokens) never enter this form: they live in the server
+     environment, like the mail password. Saved under system settings, which
+     needs system.manage, and audited like every other setting. */
+  const MSG_KEYS = ['messaging_provider','messaging_display_name','sms_sender_number','whatsapp_sender_number'];
+  const phoneOk = (v) => !v || /^\+[1-9]\d{6,14}$/.test(v);
+  function MessagingSenderCard({api}) {
+    const [saved,setSaved] = useState(null);
+    const [form,setForm] = useState(null);
+    const [busy,setBusy] = useState(false);
+    const [msg,setMsg] = useState('');
+    const [err,setErr] = useState('');
+    const pick = (all) => Object.fromEntries(MSG_KEYS.map(k => [k, all?.[k] ?? (k==='messaging_provider'?'off':'')]));
+    useEffect(()=>{ (async()=>{ try { const r=await api.get('/settings/system'); const p=pick(r.settings); setSaved(p); setForm(p); } catch(e){ setErr(e.message); } })(); },[]);
+    if (!form) return <section className="card card-pad"><h3>Phone & WhatsApp</h3><p className="muted">{err||'Loading…'}</p></section>;
+    const dirty = JSON.stringify(form)!==JSON.stringify(saved);
+    const invalid = !phoneOk(form.sms_sender_number) || !phoneOk(form.whatsapp_sender_number);
+    const set = (k,v)=>{setForm(f=>({...f,[k]:v}));setMsg('');setErr('');};
+    async function save(e){ e.preventDefault(); setBusy(true); setErr(''); setMsg('');
+      try { const r=await api.put('/settings/system',{settings:form}); const p=pick(r.settings); setSaved(p); setForm(p); setMsg('Sender details saved.'); }
+      catch(e){ setErr(e.message); } finally { setBusy(false); } }
+    return <section className="card"><div className="card-head"><h3>Phone & WhatsApp</h3></div>
+      <form className="card-pad msg-form" onSubmit={save}>
+        <div className="field"><label htmlFor="msg-provider">Provider</label>
+          <select id="msg-provider" value={form.messaging_provider} onChange={e=>set('messaging_provider',e.target.value)}>
+            <option value="off">Off (no messages are sent)</option><option value="twilio">Twilio (SMS, WhatsApp, calls)</option><option value="meta">Meta WhatsApp Cloud API</option></select></div>
+        <div className="field"><label htmlFor="msg-name">Display name</label><input id="msg-name" maxLength="60" value={form.messaging_display_name} onChange={e=>set('messaging_display_name',e.target.value)} placeholder="Arabtec Recruitment"/></div>
+        <div className="field"><label htmlFor="msg-sms">SMS sender number</label><input id="msg-sms" inputMode="tel" value={form.sms_sender_number} onChange={e=>set('sms_sender_number',e.target.value)} placeholder="+9715XXXXXXXX"/></div>
+        <div className="field"><label htmlFor="msg-wa">WhatsApp sender number</label><input id="msg-wa" inputMode="tel" value={form.whatsapp_sender_number} onChange={e=>set('whatsapp_sender_number',e.target.value)} placeholder="+9715XXXXXXXX"/></div>
+        {invalid&&<span className="muted" role="alert">Numbers use the international form: + country code, then the number, no spaces.</span>}
+        {err&&<span className="muted" role="alert">{err}</span>}{msg&&<span className="muted" role="status">{msg}</span>}
+        <p className="muted">This is the number the ATS sends <strong>from</strong>. Candidates are reached on the number in their own profile. Provider keys stay in the server environment (MESSAGING_API_KEY); nothing is sent until a provider is chosen and its key is configured.</p>
+        <div className="email-settings-actions"><span className="muted">{dirty?'Unsaved changes':'Up to date'}</span><button className="btn" type="submit" disabled={busy||!dirty||invalid}>{busy?'Saving…':'Save sender details'}</button></div>
+      </form></section>;
+  }
   window.ArabtecEmailSettingsPage = function EmailSettingsPage({PageHead, Empty, Skeleton, Icon}) {
     const api = window.ARABTEC_API;
     const [data,setData] = useState(null);
@@ -99,6 +136,7 @@
             <div className="email-test-actions"><button type="button" className="btn btn-secondary" disabled={!!busy||(replace&&!password)} onClick={()=>test(false)}>{busy==='verify'?'Testing…':'Test connection'}</button><button type="button" className="btn" disabled={!!busy||!to||(replace&&!password)} onClick={()=>test(true)}>{busy==='send'?'Sending…':'Send test email'}</button></div>
             {testResult&&<p className="muted">{testResult.provider==='dry-run'?'Dry-run passed':'Test passed'} · {new Date(testResult.verifiedAt).toLocaleTimeString()}</p>}
           </div></section>
+          <MessagingSenderCard api={api} />
           <a href="#notifications" className="email-settings-link">Manage notification rules</a>
         </aside>
       </div>

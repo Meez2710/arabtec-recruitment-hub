@@ -34,3 +34,12 @@ recovery behaviour, including honest loading, approvals and bulk scope).
    rendered at; every button on a coloured field must pass 4.5:1.
 4. If the fix is a CSS declaration, add a rule above and a check in
    `ui_layout_rules_test.mjs` that reads that declaration.
+
+## R10 Emoji policy
+Emoji appear only through the `EMOJI` map in app.jsx, and only in a `Hint` or the knowledge line, one per element, leading it. Never in a button, a page title, a badge, a table cell or a notification. Origin: the owner asked for premium visuals with emojis and quotes; unbounded emoji use reads as consumer chat, bounded use reads as a considered voice.
+
+## R11 The crumb is the eyebrow
+Every page title carries a tracked uppercase eyebrow led by the 18×2px brand-red dash. Origin: the premium spec; titles without an eyebrow read as orphaned.
+
+## R12 Chrome and controls
+Sidebar charcoal (`#1A1A1A`) with one 3px red bar on the active item; `.btn` is the one solid green action, `.btn-secondary` white, `.btn-ghost` transparent; badges 6px, never pills. Colour rules never touch a control's box (height, padding, border width), which stays in claude-system.css so the form-control tests keep holding.

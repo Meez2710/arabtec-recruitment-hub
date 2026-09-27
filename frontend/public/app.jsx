@@ -513,10 +513,27 @@ function pickKnowledgeLine(seed) {
   const n = seed == null ? Math.floor(Math.random() * lines.length) : Math.abs(seed) % lines.length;
   return lines[n] || null;
 }
+/* Emoji policy (docs/audits/ui-rules.md, R10): emoji appear only through this
+   map, and only in a Hint or the knowledge line — never in a button, a title,
+   a badge, a table cell or a notification. One per element, leading it. */
+const EMOJI = {
+  hint: '💡', focus: '🎯', lock: '🔏', clock: '⏱️', check: '✅', calendar: '📅', people: '👥', chart: '📊',
+  leadership: '🧭', teams: '🤝', psychology: '🧠', science: '🔬', engineering: '🏗️', wisdom: '🌿',
+};
+/* One fact the product can vouch for, beside or under the work: what a rule
+   does, where a switch lives, what a number means. Never an opinion. */
+function Hint({ emoji = 'hint', children, action }) {
+  return <aside className="hint" role="note">
+    <span className="hint-emoji" aria-hidden="true">{EMOJI[emoji] || EMOJI.hint}</span>
+    <span className="hint-text">{children}</span>
+    {action && <span className="hint-action">{action}</span>}
+  </aside>;
+}
 function KnowledgeLine({ seed }) {
   const line = useMemo(() => pickKnowledgeLine(seed), [seed]);
   if (!line) return null;
   return <footer className="knowledge-line" aria-label="A line worth keeping">
+    {EMOJI[line.t] && <span className="kl-emoji" aria-hidden="true">{EMOJI[line.t]}</span>}
     <span className="kl-dash" aria-hidden="true" />
     <span className="kl-quote">{line.q}</span>
     <span className="kl-by">{line.by}</span>
@@ -1728,7 +1745,7 @@ function DashKpi({ label, value, unit, hint, icon, tone }) {
   );
 }
 
-function DashBars({ rows, empty, icon = '📊' }) {
+function DashBars({ rows, empty, icon = EMOJI.chart }) {
   if (!rows || !rows.length) return <Empty art="none-yet" text={empty} />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return (
@@ -2162,6 +2179,7 @@ function RecruiterDashboard({ user, data, onNavigate, notice }) {
           {can(user, 'candidate.add') && <button className="btn" onClick={() => onNavigate('candidates')}>Add candidate</button>}
         </>} />
       {notice}
+      <Hint>Select several cards on a pipeline board to move them together. Selections hidden by the current filter ask you to confirm first.</Hint>
 
       <div className="dash-kpi-row kpi-4">
         <KpiCard label="Overdue actions" value={overdue} tone={overdue ? 'kpi-risk' : ''}
@@ -2353,6 +2371,7 @@ function ManagerDashboard({ user, data, onNavigate, notice }) {
           <button className="btn" onClick={() => onNavigate('reports')}>Reports</button>
         </>} />
       {notice}
+      <Hint emoji="lock">A request can be assigned to a recruiter once the HR Director has approved it. Changing budget or headcount sends it back for approval.</Hint>
 
       <div className="dash-kpi-row">
         <KpiCard label="Critical roles" value={critical.length} tone={critical.length ? 'kpi-risk' : ''}
@@ -2520,6 +2539,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
           {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers', { status: 'pending_approval' })}>Offer approvals</button>}
         </>} />
       {notice}
+      <Hint emoji="focus">Requests and offers wait here for your decision alone. Both approval steps can be switched off in Control center › Workflows; records approved that way are marked in their activity.</Hint>
 
       <div className="dash-kpi-row">
         <KpiCard label="Planned seats" value={k.headcountTotal ?? '—'} meta="Across every hiring request in scope" />
@@ -2592,6 +2612,7 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
         sub="Delivery against plan. Aggregate figures only — no candidate names in this view."
         actions={can(user, 'report.export') ? <button className="btn" onClick={() => onNavigate('reports')}>Reports</button> : null} />
       {notice}
+      <Hint emoji="check">Every number here settles from its own list. A tile shows a dash, never a zero, when its source did not load.</Hint>
 
       <div className="dash-kpi-row">
         <KpiCard label="Planned" value={k.headcountTotal ?? '—'} meta="Approved workforce plan" />
@@ -2658,6 +2679,7 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
         sub="Only interviews you are on the panel for. Salary and offer terms are not part of this view."
         actions={<button className="btn" onClick={() => onNavigate('interviews')}>All my interviews</button>} />
       {notice}
+      <Hint emoji="calendar">Every interview invite carries a calendar file. Open it to add the slot to Outlook; your scorecard opens from the interview itself.</Hint>
 
       <div className="dash-kpi-row">
         <KpiCard label="Scheduled" value={upcoming.length} meta={upcoming.length ? `Next: ${fmtWhen(upcoming[0].scheduledAt)}` : 'Nothing scheduled'} />
