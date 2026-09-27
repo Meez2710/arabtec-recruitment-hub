@@ -427,45 +427,63 @@ function Confirm({ title, message, requireReason, confirmLabel = 'Confirm', dang
     </Modal>
   );
 }
+/* Empty-state illustrations: 120px line drawings in the product's own
+   language (a document, a search, a drawing set, a checklist), drawn on the
+   faint blueprint grid that .empty paints. Neutral ink, one green accent,
+   nothing cartoonish. Inline SVG, so the on-prem build depends on no image host. */
 function EmptyArt({ name = 'none-yet' }) {
+  const ink = '#4A4641', faint = '#C7C4BF', green = '#008064', red = '#D01827';
+  const corners = <path d="M8 8h10M8 8v10M112 8h-10M112 8v10M8 112h10M8 112v-10M112 112h-10M112 112v-10" stroke={faint} strokeWidth="1.25" strokeLinecap="round" />;
   const marks = {
-    'none-yet': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
-              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#C7C4BF" strokeWidth="1.25" strokeLinecap="round" />
-              <rect x="20" y="14" width="32" height="42" rx="2" stroke="#5B6472" strokeWidth="1.25" />
-              <path d="M29 14v-3h14v3" stroke="#5B6472" strokeWidth="1.25" strokeLinejoin="round" />
-              <path d="M27 26h18M27 33h18M27 40h11" stroke="#5B6472" strokeWidth="1.25" strokeLinecap="round" />
-              <path d="M20 60h32" stroke="#C7C4BF" strokeWidth="1.25" strokeDasharray="3 4" strokeLinecap="round" />
-              <path d="M36 56v8" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" />
-              <path d="M32 60h8" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" />
-            </svg>,
-    'no-match': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
-              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#C7C4BF" strokeWidth="1.25" strokeLinecap="round" />
-              <path d="M16 20h40M16 30h40M16 40h40M16 50h40" stroke="#C7C4BF" strokeWidth="1.25" strokeDasharray="3 4" strokeLinecap="round" />
-              <circle cx="33" cy="33" r="13" stroke="#5B6472" strokeWidth="1.25" />
-              <path d="M42.5 42.5L54 54" stroke="#5B6472" strokeWidth="1.25" strokeLinecap="round" />
-              <path d="M27 33h12" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" />
-            </svg>,
-    'failed': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
-              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#E7B9BF" strokeWidth="1.25" strokeLinecap="round" />
-              <rect x="14" y="24" width="18" height="24" rx="2" stroke="#B01420" strokeWidth="1.25" />
-              <rect x="40" y="24" width="18" height="24" rx="2" stroke="#B01420" strokeWidth="1.25" />
-              <path d="M32 36h2.5M37.5 36H40" stroke="#B01420" strokeWidth="1.25" strokeLinecap="round" />
-              <path d="M36 30v3M36 39v3" stroke="#D01827" strokeWidth="1.25" strokeLinecap="round" />
-              <path d="M20 32h6M20 38h6M46 32h6M46 38h6" stroke="#E7B9BF" strokeWidth="1.25" strokeLinecap="round" />
-            </svg>,
-    'all-clear': <svg width="72" height="72" viewBox="0 0 72 72" fill="none" aria-hidden="true">
-              <path d="M6 6h8M6 6v8M66 6h-8M66 6v8M6 66h8M6 66v-8M66 66h-8M66 66v-8" stroke="#B7DCD3" strokeWidth="1.25" strokeLinecap="round" />
-              <rect x="18" y="18" width="36" height="36" rx="2" stroke="#00664F" strokeWidth="1.25" />
-              <path d="M27 36.5l6.5 6.5L46 30" stroke="#008064" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M18 60h36" stroke="#B7DCD3" strokeWidth="1.25" strokeDasharray="3 4" strokeLinecap="round" />
-            </svg>,
+    'none-yet': <svg width="120" height="120" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+      {corners}
+      <rect x="34" y="22" width="52" height="68" rx="3" stroke={ink} strokeWidth="1.5" />
+      <path d="M48 22v-5h24v5" stroke={ink} strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M46 40h28M46 50h28M46 60h16" stroke={ink} strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M30 100h60" stroke={faint} strokeWidth="1.25" strokeDasharray="3 5" strokeLinecap="round" />
+      <circle cx="86" cy="86" r="12" fill="#fff" stroke={green} strokeWidth="1.5" />
+      <path d="M86 80v12M80 86h12" stroke={green} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>,
+    'no-match': <svg width="120" height="120" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+      {corners}
+      <path d="M24 34h72M24 50h72M24 66h72M24 82h72" stroke={faint} strokeWidth="1.25" strokeDasharray="3 5" strokeLinecap="round" />
+      <circle cx="54" cy="54" r="22" fill="#fff" stroke={ink} strokeWidth="1.5" />
+      <path d="M70 70l20 20" stroke={ink} strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M44 54h20" stroke={green} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>,
+    'failed': <svg width="120" height="120" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+      <path d="M8 8h10M8 8v10M112 8h-10M112 8v10M8 112h10M8 112v-10M112 112h-10M112 112v-10" stroke="#E7B9BF" strokeWidth="1.25" strokeLinecap="round" />
+      <rect x="22" y="40" width="32" height="40" rx="3" stroke={red} strokeWidth="1.5" />
+      <rect x="66" y="40" width="32" height="40" rx="3" stroke={red} strokeWidth="1.5" />
+      <path d="M54 60h4M62 60h4" stroke={red} strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M60 50v5M60 65v5" stroke={red} strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M30 52h12M30 62h12M74 52h12M74 62h12" stroke="#E7B9BF" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>,
+    'all-clear': <svg width="120" height="120" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+      <path d="M8 8h10M8 8v10M112 8h-10M112 8v10M8 112h10M8 112v-10M112 112h-10M112 112v-10" stroke="#B7DCD3" strokeWidth="1.25" strokeLinecap="round" />
+      <rect x="30" y="30" width="60" height="60" rx="3" stroke="#00664F" strokeWidth="1.5" />
+      <path d="M44 60l11 11L78 48" stroke={green} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M30 100h60" stroke="#B7DCD3" strokeWidth="1.25" strokeDasharray="3 5" strokeLinecap="round" />
+    </svg>,
+    'drawing': <svg width="120" height="120" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+      {corners}
+      <path d="M26 92V44l34-20 34 20v48" stroke={ink} strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M26 92h68M42 92V64h36v28" stroke={ink} strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M60 24v20M26 44h68" stroke={faint} strokeWidth="1.25" strokeDasharray="3 5" />
+      <path d="M52 92V76h16v16" stroke={green} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>,
   };
   return marks[name] || marks['none-yet'];
 }
+/* The one word that says what kind of nothing this is, with its emoji — the
+   secondary line the emoji policy allows. Shown only with a titled state. */
+const EMPTY_KICKER = { 'none-yet': ['inbox', 'Nothing here yet'], 'no-match': ['search', 'No matches'], 'failed': ['attention', 'Needs attention'], 'all-clear': ['check', 'All clear'], 'drawing': ['build', 'Nothing planned yet'] };
 function Empty({ art, text, title, action, tone = 'neutral' }) {
   const mark = tone === 'error' ? 'failed' : (art || 'none-yet');
+  const kicker = EMPTY_KICKER[mark] || EMPTY_KICKER['none-yet'];
   return <div className={'empty empty-' + tone} role={tone === 'error' ? 'alert' : undefined}>
     <div className="ico" aria-hidden="true"><EmptyArt name={mark} /></div>
+    {title && <div className="empty-kicker"><span aria-hidden="true">{EMOJI[kicker[0]]}</span> {kicker[1]}</div>}
     {title && <h4 className="empty-title">{title}</h4>}<p>{text}</p>
     {action && <div className="empty-action">{action}</div>}
   </div>;
@@ -517,7 +535,7 @@ function pickKnowledgeLine(seed) {
    map, and only in a Hint or the knowledge line — never in a button, a title,
    a badge, a table cell or a notification. One per element, leading it. */
 const EMOJI = {
-  hint: '💡', focus: '🎯', lock: '🔏', clock: '⏱️', check: '✅', calendar: '📅', people: '👥', chart: '📊',
+  hint: '💡', focus: '🎯', lock: '🔏', clock: '⏱️', check: '✅', calendar: '📅', people: '👥', chart: '📊', inbox: '📭', search: '🔍', attention: '📌', build: '🏗️',
   leadership: '🧭', teams: '🤝', psychology: '🧠', science: '🔬', engineering: '🏗️', wisdom: '🌿',
 };
 /* One fact the product can vouch for, beside or under the work: what a rule
@@ -2179,7 +2197,6 @@ function RecruiterDashboard({ user, data, onNavigate, notice }) {
           {can(user, 'candidate.add') && <button className="btn" onClick={() => onNavigate('candidates')}>Add candidate</button>}
         </>} />
       {notice}
-      <Hint>Select several cards on a pipeline board to move them together. Selections hidden by the current filter ask you to confirm first.</Hint>
 
       <div className="dash-kpi-row kpi-4">
         <KpiCard label="Overdue actions" value={overdue} tone={overdue ? 'kpi-risk' : ''}
@@ -2253,6 +2270,7 @@ function RecruiterDashboard({ user, data, onNavigate, notice }) {
             ? <Empty art="none-yet" text="No open hiring requests are assigned to you." />
             : <div className="role-health">{mine.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
       </section>
+            <Hint>Select several cards on a pipeline board to move them together. Selections hidden by the current filter ask you to confirm first.</Hint>
     </div>
   );
 }
@@ -2371,7 +2389,6 @@ function ManagerDashboard({ user, data, onNavigate, notice }) {
           <button className="btn" onClick={() => onNavigate('reports')}>Reports</button>
         </>} />
       {notice}
-      <Hint emoji="lock">A request can be assigned to a recruiter once the HR Director has approved it. Changing budget or headcount sends it back for approval.</Hint>
 
       <div className="dash-kpi-row">
         <KpiCard label="Critical roles" value={critical.length} tone={critical.length ? 'kpi-risk' : ''}
@@ -2473,6 +2490,7 @@ function ManagerDashboard({ user, data, onNavigate, notice }) {
       </section>
 
       {assigning && <AssignModal recruiters={recruiters} onClose={() => setAssigning(null)} onAssign={doAssign} />}
+            <Hint emoji="lock">A request can be assigned to a recruiter once the HR Director has approved it. Changing budget or headcount sends it back for approval.</Hint>
     </div>
   );
 }
@@ -2539,37 +2557,17 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
           {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers', { status: 'pending_approval' })}>Offer approvals</button>}
         </>} />
       {notice}
-      <Hint emoji="focus">Requests and offers wait here for your decision alone. Both approval steps can be switched off in Control center › Workflows; records approved that way are marked in their activity.</Hint>
 
-      <div className="dash-kpi-row">
-        <KpiCard label="Planned seats" value={k.headcountTotal ?? '—'} meta="Across every hiring request in scope" />
-        <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of the plan`} />
+      <div className="dash-kpi-row kpi-4">
         <KpiCard label="Waiting on a decision" value={awaitingApproval.length + pendingOffers}
           tone={(awaitingApproval.length + pendingOffers) ? 'kpi-attn' : ''}
           meta={`${awaitingApproval.length} request${awaitingApproval.length === 1 ? '' : 's'} · ${pendingOffers} offer${pendingOffers === 1 ? '' : 's'}`} />
+        <KpiCard label="Overdue roles" value={d ? overdue : '—'} tone={overdue ? 'kpi-risk' : ''} meta="Open longer than 60 days" />
+        <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of ${k.headcountTotal ?? 0} planned`} />
+        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.offerAcceptanceRate == null ? 'Offer acceptance not yet measured' : `Offer acceptance ${k.offerAcceptanceRate}%`} />
       </div>
 
-      <section className="card">
-        <div className="card-head"><div><h3>Hiring plan by project</h3></div><span className="dash-headnote">Planned versus filled</span></div>
-        <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
-      </section>
-
-      <div className="dash-grid-2" style={{ marginTop: 16 }}>
-        <section className="card">
-          <div className="card-head"><div><h3>Recruitment health</h3></div><span className="dash-headnote">Open requests by age</span></div>
-          <div className="card-pad">
-            {!d ? <Empty art="none-yet" text="No data." /> : (
-              <div className="dash-sla-rows">
-                <div className="dash-kv"><span><i style={{ background: 'var(--green)' }} />On track <em>0–30 days</em></span><strong>{d.aging['0-30'] || 0}</strong></div>
-                <div className="dash-kv"><span><i style={{ background: 'var(--warning)' }} />At risk <em>31–60 days</em></span><strong>{d.aging['31-60'] || 0}</strong></div>
-                <div className="dash-kv"><span><i style={{ background: 'var(--brand)' }} />Overdue <em>60+ days</em></span><strong>{overdue}</strong></div>
-                <div className="dash-kv" style={{ marginTop: 10 }}><span>Average time to fill</span><strong>{k.timeToFillDays == null ? '—' : k.timeToFillDays + ' days'}</strong></div>
-                <div className="dash-kv"><span>Offer acceptance</span><strong>{k.offerAcceptanceRate == null ? '—' : k.offerAcceptanceRate + '%'}</strong></div>
-              </div>
-            )}
-          </div>
-        </section>
-
+      <div className="dash-grid-2">
         <section className="card">
           <div className="card-head"><div><h3>Waiting on your decision</h3></div><span className="dash-headnote">Requests and offers held for approval</span></div>
         {!awaitingApproval.length && !pendingOffers
@@ -2586,13 +2584,48 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
             )}
           </div>}
         </section>
+
+        <section className="card">
+          <div className="card-head"><div><h3>Open roles by age</h3></div><span className="dash-headnote">Where time is being lost</span></div>
+          <div className="card-pad">
+            {!d ? <Empty art="none-yet" text="No data." /> : (
+              <DashBars empty="No open roles." rows={[
+                { label: 'On track · 0–30 days', count: d.aging['0-30'] || 0, color: 'var(--green)' },
+                { label: 'At risk · 31–60 days', count: d.aging['31-60'] || 0, color: 'var(--warning)' },
+                { label: 'Overdue · 61–90 days', count: d.aging['61-90'] || 0, color: 'var(--brand)' },
+                { label: 'Overdue · 90+ days', count: d.aging['90+'] || 0, color: 'var(--brand-dark)' },
+              ]} />
+            )}
+          </div>
+        </section>
       </div>
+
+      <div className="dash-grid-2" style={{ marginTop: 12 }}>
+        <section className="card">
+          <div className="card-head"><div><h3>Requests by status</h3></div><span className="dash-headnote">Every request in scope</span></div>
+          <div className="card-pad">
+            <DashBars empty="No hiring requests yet." rows={((d && d.requestsByStatus) || []).filter((r) => r.count > 0).map((r) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status.replace(/_/g, ' '), count: r.count, color: r.status === 'pending_approval' ? 'var(--warning)' : ['closed', 'cancelled', 'rejected'].includes(r.status) ? 'var(--muted)' : 'var(--green-700)' }))} />
+          </div>
+        </section>
+        <section className="card">
+          <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
+          <div className="card-pad">
+            <DashBars empty="No recruiter owns an open request yet." rows={((d && d.recruiterLoad) || []).map((r) => ({ label: r.name, count: r.c ?? r.count ?? 0, color: 'var(--green-700)' }))} />
+          </div>
+        </section>
+      </div>
+
+      <section className="card" style={{ marginTop: 12 }}>
+        <div className="card-head"><div><h3>Hiring plan by project</h3></div><span className="dash-headnote">Planned versus filled</span></div>
+        <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
+      </section>
 
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head"><div><h3>Open roles</h3></div><span className="dash-headnote">{open.length} in scope</span></div>
         {!open.length ? <Empty art="none-yet" text="No open hiring requests." />
           : <div className="role-health">{open.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
       </section>
+            <Hint emoji="focus">Requests and offers wait here for your decision alone. Both approval steps can be switched off in Control center › Workflows; records approved that way are marked in their activity.</Hint>
     </div>
   );
 }
@@ -2612,7 +2645,6 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
         sub="Delivery against plan. Aggregate figures only — no candidate names in this view."
         actions={can(user, 'report.export') ? <button className="btn" onClick={() => onNavigate('reports')}>Reports</button> : null} />
       {notice}
-      <Hint emoji="check">Every number here settles from its own list. A tile shows a dash, never a zero, when its source did not load.</Hint>
 
       <div className="dash-kpi-row">
         <KpiCard label="Planned" value={k.headcountTotal ?? '—'} meta="Approved workforce plan" />
@@ -2660,6 +2692,7 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
             <div className="dash-kpi-hint">{k.offerAcceptanceRate == null ? 'No decided offers yet' : 'Accepted of decided offers'}</div></div>
         </section>
       </div>
+            <Hint emoji="check">Every number here settles from its own list. A tile shows a dash, never a zero, when its source did not load.</Hint>
     </div>
   );
 }
@@ -2679,7 +2712,6 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
         sub="Only interviews you are on the panel for. Salary and offer terms are not part of this view."
         actions={<button className="btn" onClick={() => onNavigate('interviews')}>All my interviews</button>} />
       {notice}
-      <Hint emoji="calendar">Every interview invite carries a calendar file. Open it to add the slot to Outlook; your scorecard opens from the interview itself.</Hint>
 
       <div className="dash-kpi-row">
         <KpiCard label="Scheduled" value={upcoming.length} meta={upcoming.length ? `Next: ${fmtWhen(upcoming[0].scheduledAt)}` : 'Nothing scheduled'} />
@@ -2713,6 +2745,7 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
             ))}
           </div>}
       </section>
+            <Hint emoji="calendar">Every interview invite carries a calendar file. Open it to add the slot to Outlook; your scorecard opens from the interview itself.</Hint>
     </div>
   );
 }
@@ -6387,7 +6420,7 @@ function TalentPipeline({
           Showing the first {apps.length} of {total} applications. Narrow the filters to see the rest — nothing was dropped silently.
         </div>
       )}
-      {(unlinkedTotal > 0 || (unlinked && unlinked.length)) && (
+      {(unlinkedTotal > 0 || (unlinked && unlinked.length > 0)) && (
         <div className="notice notice-info" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span>{unlinkedTotal || unlinked.length} candidate{(unlinkedTotal || unlinked.length) === 1 ? '' : 's'} not on a request.
             {hasMoreUnlinked ? ' More are in the pool.' : ''}</span>
@@ -7797,7 +7830,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
           )}
           {btns.add_candidate?.visible && (
             <span className="upload-cta">
-              <button className="btn btn-secondary" onClick={() => setImportOpen(true)}>Bulk Upload CVs</button>
+              <button className="btn btn-secondary" title={UPLOAD_HINT} onClick={() => setImportOpen(true)}>Bulk Upload CVs</button>
               <small className="upload-cta-hint">{UPLOAD_HINT}</small>
             </span>
           )}
@@ -9061,7 +9094,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
       {loadError && <RefetchError text={`Could not refresh this profile: ${loadError}. Showing the last loaded details.`} onRetry={load} />}
 
       {/* Workable-style structured profile header over the existing record */}
-      <div className="card" style={{ marginBottom: 16, padding: 0 }}>
+      <div className="card profile-shell" style={{ padding: 0 }}>
         <div className="profile-header">
           <div className="ph-avatar">{initials(c.fullName)}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -9089,7 +9122,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
       </div>
 
       {tab === 'overview' && (
-        <div className="card card-pad"><div className="form-grid">
+        <div className="card card-pad profile-overview"><div className="form-grid">
           <Info label="Full Name">{c.fullName}</Info><Info label="Email">{c.email}</Info><Info label="Phone">{c.phone}</Info>
           <Info label="Nationality">{c.nationality}</Info><Info label="Location">{c.location}</Info>
           <Info label="LinkedIn">{c.linkedinUrl ? <a href={c.linkedinUrl} target="_blank" rel="noreferrer">Profile</a> : '—'}</Info>

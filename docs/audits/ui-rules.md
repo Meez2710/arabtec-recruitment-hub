@@ -43,3 +43,12 @@ Every page title carries a tracked uppercase eyebrow led by the 18×2px brand-re
 
 ## R12 Chrome and controls
 Sidebar charcoal (`#1A1A1A`) with one 3px red bar on the active item; `.btn` is the one solid green action, `.btn-secondary` white, `.btn-ghost` transparent; badges 6px, never pills. Colour rules never touch a control's box (height, padding, border width), which stays in claude-system.css so the form-control tests keep holding.
+
+## R13 One page, not stacked rectangles
+Headers, toolbars, tabs and detail heads never carry their own bordered white surface above the working content. The toolbar and the Ask bar sit on the canvas; tabs are an underline row; the request and candidate heads sit on the canvas over a hairline; stat tiles reserve no height. Origin: at 1440×900 the first table or board began at y=260–571 behind two to four full-width rectangles ("three rectangles before the table"). Measured after: dashboards at 161, lists at 220–268.
+
+## R14 The phone has its own composition
+One scrolling row of 40px actions under the title (never a grid of full-width buttons), search + Filters on one row with no count chip, underline tabs that scroll, two stat tiles per row, one board stage per screen with snap scrolling, and the content padding always clears the fixed top bar. Origin: the phone stacked the desktop head vertically (title, 2×3 buttons, Ask bar, two-row filter bar, pill tabs) and the first card began at y=346–556.
+
+## R15 No bare zero from a conditional render
+`{(a && b.length) && <X/>}` renders "0" when the list is empty. Use `b.length > 0`. Origin: a stray "0" above the Talent Pool board.

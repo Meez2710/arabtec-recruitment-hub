@@ -1145,6 +1145,84 @@ table tbody td .cell-strong.clamp-2 {
    rule shared with every other toolbar is outside this task. */
 
 
+/* ==========================================================================
+   18b. COMPACT COMPOSITION — one page, not a stack of rectangles
+   ----------------------------------------------------------------------------
+   Measured at 1440×900 before this section: the first working row (table,
+   board, KPI row) began at y=260–571 because every page opened with a tall
+   head (82–178px), then a bordered toolbar card (66–126px), then a pill tab
+   track, then a card head — each a full-width white rectangle. The remedy is
+   hierarchy instead of boxes: the head is shorter, the toolbar and the tabs sit
+   on the canvas with a hairline, KPI tiles are 88px, card heads and paddings
+   step down. Geometry only; colour lives in arabtec-design-system.css §12.
+   ========================================================================= */
+.content { padding: var(--sp-4) var(--sp-5) var(--sp-5); }
+.content.has-dock { padding-bottom: 96px; }
+.page-head, .dash-head { margin-bottom: var(--sp-4); gap: var(--sp-3) var(--sp-4); align-items: flex-end; }
+.page-title, .page-head .page-title, .dash-head .page-title { font-size: 24px; line-height: 1.15; }
+.page-sub { font-size: 13px; line-height: 1.45; margin-top: var(--sp-1); max-width: 72ch; }
+.breadcrumb, .page-head .breadcrumb, .dash-eyebrow { margin-bottom: var(--sp-1); }
+.page-head-main .detail-back { margin-bottom: var(--sp-1); }
+.page-head-actions { gap: var(--sp-2); align-items: center; }
+/* The upload call-to-action keeps its size note on the same line. */
+.upload-cta { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.upload-cta-hint { display: none; } /* the limit rides the button's tooltip */
+
+/* Toolbar and Ask bar: controls on the canvas, no surface of their own. */
+.toolbar { padding: 0; margin-bottom: var(--sp-3); border-radius: 0; border-width: 0; box-shadow: none; }
+.toolbar.ask-bar { padding: 0; margin-bottom: var(--sp-3); }
+
+/* Tabs: an underline row, never a second track of pills. */
+.seg-tabs { padding: 0; margin-bottom: var(--sp-4); gap: var(--sp-5); border-radius: 0; border-width: 0 0 1px; }
+.seg-tab { min-height: 36px; padding: 0 2px; border-radius: 0; border-width: 0 0 2px; border-style: solid; }
+.profile-tabs { padding: 0; gap: var(--sp-5); }
+.profile-tab { padding: 8px 2px 10px; }
+.tabbar, .tabs { padding: 0; margin-bottom: var(--sp-4); gap: var(--sp-5); border-radius: 0; border-width: 0 0 1px; }
+.tabbar-btn { min-height: 36px; padding: 0 2px; border-radius: 0; border-width: 0 0 2px; border-style: solid; margin-bottom: -1px; }
+.notice { padding: 8px 12px; }
+
+/* Stat tiles: 88px, the number leads. */
+.dash-kpi-row { gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.dash-kpi, .kpi { padding: var(--sp-3) var(--sp-4); min-height: 0; gap: 2px; }
+.dash-kpi-val, .kpi-value { font-size: 26px; line-height: 1.1; }
+.dash-kpi-hint { margin-top: 2px; }
+
+/* Cards: tighter heads and insets; grids on a 12px rhythm. */
+.card-head { min-height: 44px; padding: 10px 16px; gap: var(--sp-3); }
+.card-head h2, .card-head h3 { font-size: 15px; line-height: 1.3; }
+.card-pad, .card > .card-pad { padding: var(--sp-4); }
+.ats-card-grid, .dash-grid-2, .report-grid { gap: var(--sp-3); }
+.dash-bars { gap: 8px; }
+.dash-bar-l { width: 120px; flex-basis: 120px; }
+.dash-bar-track { height: 8px; }
+
+/* Detail heads live on the canvas: the record's title is the page title. */
+.ticket-header-card { padding: 0 0 var(--sp-3); margin-bottom: var(--sp-3); border-width: 0 0 1px; border-radius: 0; box-shadow: none; }
+.ticket-header-card::before { display: none; }
+.card.profile-shell { border-width: 0 0 1px; border-radius: 0; box-shadow: none; margin-bottom: var(--sp-4); }
+.profile-header { padding: 0 0 var(--sp-3); gap: var(--sp-4); }
+.ph-avatar { width: 48px; height: 48px; font-size: 16px; }
+.ph-name { font-size: 24px; line-height: 1.15; }
+.app-context { padding: 8px 0; }
+.profile-overview .form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-5); }
+.profile-overview .form-grid > .full { grid-column: 1 / -1; }
+
+/* Empty states: a 120px illustration, then the words, then one action. */
+.empty { padding: var(--sp-6) var(--sp-5); gap: var(--sp-2); }
+.empty .ico, .empty .ico svg { width: 120px; height: 120px; }
+.empty .ico { margin: 0 auto var(--sp-2); }
+.empty-kicker { font-size: 12px; line-height: 1.4; letter-spacing: .04em; }
+.empty-title { font-size: 16px; }
+.empty-action { margin-top: var(--sp-3); }
+
+/* CV Inbox: the mailbox status is a meta row under the title, not a card. */
+section.card:has(> .cvi-status) { border-width: 0 0 1px; border-radius: 0; box-shadow: none; margin-bottom: var(--sp-4); }
+section.card:has(> .cvi-status) > .cvi-status { padding: 0 0 var(--sp-3); gap: var(--sp-3) var(--sp-5); }
+
+@media (max-width: 1180px) {
+  .profile-overview .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ============================================================================
    19. COMPACT STATE COMPONENTS — badges, chips and tabs are ONE family
    ----------------------------------------------------------------------------
