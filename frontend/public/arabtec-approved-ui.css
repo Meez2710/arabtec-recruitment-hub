@@ -163,8 +163,6 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 /* Bulk CV upload call-to-action. The limit sits UNDER the button rather than in
    the modal alone: a recruiter picking fifty files should know the ceiling
    before the file dialog, not after a rejected upload. */
-.upload-cta{display:inline-grid;justify-items:stretch;gap:2px}
-.upload-cta-hint{font-size:9px;color:var(--muted);letter-spacing:.01em;white-space:nowrap;text-align:center}
 
 /* Bulk selection. The bar reuses the .bulk-bar styling that already existed in
    styles.css but had never been rendered by anything. */

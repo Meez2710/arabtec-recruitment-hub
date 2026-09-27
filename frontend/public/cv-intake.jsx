@@ -241,7 +241,7 @@
             h('option', { value: 30 }, 'Last 30 days'),
             h('option', { value: 90 }, 'Last 90 days')),
             h('button', {
-              className: 'btn btn-secondary btn-sm', onClick: discover,
+              className: 'btn btn-secondary', onClick: discover,
               disabled: busy || conn.status !== 'CONNECTED',
             }, busy ? 'Reading mailbox…' : 'Refresh from mailbox'))),
         h('div', { className: 'card-pad' },

@@ -950,6 +950,40 @@ table.candidates-table {
   text-transform: uppercase; color: var(--muted);
 }
 .cvi-status-actions { margin-inline-start: auto; align-self: center; }
+/* Waiting to parse: the Period / At most selects and their buttons sit in one
+   row on the spacing scale (R16). These classes had no rule at all, so the
+   select and "Refresh from mailbox" touched, and the count list ran inline. */
+.cvi-range, .cvi-parsebar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.cvi-range-label { margin-inline-end: var(--sp-1); }
+.cvi-range select, .cvi-parsebar select { width: auto; min-width: 0; }
+.cvi-groups {
+  list-style: none; margin: 0 0 var(--sp-4); padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-2) var(--sp-4);
+}
+.cvi-group { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--cl-ctl-sm); }
+.cvi-group-name { flex: 1 1 auto; min-width: 0; }
+.cvi-group-count { font-variant-numeric: tabular-nums; }
+.cvi-selected { margin-inline-end: auto; }
+/* A wrapping row of toggles inside a form field (user editor: roles,
+   projects, sites). The gap is the row's, so no toggle carries a margin. */
+.tag-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.tag-row > .tag-toggle { margin: 0; }
+.user-form-rest { margin-top: var(--sp-4); }
+.user-form-switch { display: flex; align-items: center; min-height: var(--cl-ctl-lg); }
+/* Standalone interview / offer: the picked candidate and the Talent Pool
+   search results (Interviews → Schedule interview, Offers → Create offer). */
+.standalone-link { margin-bottom: var(--sp-4); }
+.standalone-picked { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-height: var(--cl-ctl-lg); }
+.standalone-picked > .btn { margin-inline-start: auto; }
+.standalone-results {
+  list-style: none; margin: var(--sp-1) 0 0; padding: var(--sp-1) 0;
+  max-height: 240px; overflow-y: auto; border-width: 1px; border-style: solid; border-radius: var(--cl-r-md);
+}
+.standalone-results > li { padding: var(--sp-2) var(--sp-3); cursor: pointer; }
+.kl-editor textarea { width: 100%; min-height: 320px; font-variant-numeric: tabular-nums; }
+.kl-editor-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-3); }
+.kl-editor-count { margin-inline-end: auto; }
+.kl-editor-actions { display: inline-flex; flex-wrap: wrap; gap: var(--sp-2); }
 .cvi-tabs { margin-bottom: var(--cl-5); }
 /* The count rides inside its tab so selecting one cannot change the tab's
    width and shove the row along — the same rule the screen tabs follow. */

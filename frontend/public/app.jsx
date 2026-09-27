@@ -526,7 +526,10 @@ window.ARABTEC_UI = { Empty, LoadError, Skeleton, Icon };
    inside the working area, never louder than the page. Renders nothing when
    the list is absent, so a missing script can never break a page. */
 function pickKnowledgeLine(seed) {
-  const lines = window.ARABTEC_KNOWLEDGE_LINES;
+  // The owner's list (Control Center → Knowledge lines) wins when it is saved
+  // and non-empty; otherwise the bundled file.
+  const own = window.ARABTEC_KNOWLEDGE_LINES_OWN;
+  const lines = Array.isArray(own) && own.length ? own : window.ARABTEC_KNOWLEDGE_LINES;
   if (!Array.isArray(lines) || !lines.length) return null;
   const n = seed == null ? Math.floor(Math.random() * lines.length) : Math.abs(seed) % lines.length;
   return lines[n] || null;
@@ -546,6 +549,30 @@ function Hint({ emoji = 'hint', children, action }) {
     <span className="hint-text">{children}</span>
     {action && <span className="hint-action">{action}</span>}
   </aside>;
+}
+/* `Quote — Author` per line, optional `— topic`. Mirrors
+   backend/src/lib/knowledge-lines.js, which enforces the same rules on save. */
+function parseKnowledgeText(text) {
+  const lines = []; const errors = []; const seen = new Set();
+  String(text || '').split(/\r?\n/).forEach((raw, i) => {
+    const row = raw.trim();
+    if (!row) return;
+    const parts = row.split(/\s+[—–]\s+/);
+    const q = (parts[0] || '').trim(), by = (parts[1] || '').trim(), t = (parts[2] || '').trim().toLowerCase();
+    if (!by) { errors.push(`Line ${i + 1}: add the author after an em dash ( — ).`); return; }
+    if (q.length < 3) { errors.push(`Line ${i + 1}: the quote is empty.`); return; }
+    if (q.length > 160) { errors.push(`Line ${i + 1}: the quote is ${q.length} characters; keep it to 160.`); return; }
+    if (seen.has(q.toLowerCase())) { errors.push(`Line ${i + 1}: this quote is already on the list.`); return; }
+    seen.add(q.toLowerCase());
+    lines.push(t ? { q, by, t } : { q, by });
+  });
+  return { lines, errors };
+}
+function applyOwnKnowledgeLines(text) {
+  window.ARABTEC_KNOWLEDGE_LINES_OWN = parseKnowledgeText(text).lines;
+}
+function knowledgeLinesAsText(lines) {
+  return (lines || []).map((l) => `${l.q} — ${l.by}${l.t ? ' — ' + l.t : ''}`).join('\n');
 }
 function KnowledgeLine({ seed }) {
   const line = useMemo(() => pickKnowledgeLine(seed), [seed]);
@@ -3396,19 +3423,20 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
           <select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}>
             <option value="">— None —</option>{depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
       </div>
-      <div className="section-title">Roles</div>
-      <div>{roles.map((r) => <span key={r.code} className={'tag-toggle' + (f.roleCodes.includes(r.code) ? ' on' : '')} title={r.name} onClick={() => toggleArr('roleCodes', r.code)}>{r.name}</span>)}</div>
-      <div className="section-title">Access Scope</div>
-      <label className="switch" style={{ marginBottom: 10 }}><input type="checkbox" checked={f.globalScope} onChange={(e) => set('globalScope', e.target.checked)} /> Global access (all projects &amp; sites)</label>
-      {!f.globalScope && <>
-        <div className="muted" style={{ marginBottom: 6 }}>Projects</div>
-        <div style={{ marginBottom: 12 }}>{projects.map((p) => <span key={p.id} className={'tag-toggle' + (f.projectIds.includes(p.id) ? ' on' : '')} title={p.name} onClick={() => toggleArr('projectIds', p.id)}>{p.name}</span>)}</div>
-        <div className="muted" style={{ marginBottom: 6 }}>Sites</div>
-        <div>{sites.map((s) => <span key={s.id} className={'tag-toggle' + (f.siteIds.includes(s.id) ? ' on' : '')} title={s.name} onClick={() => toggleArr('siteIds', s.id)}>{s.name}</span>)}</div>
-      </>}
-      {isNew && <>
-        <div className="section-title">Initial password</div>
-        <div className="field" style={{ maxWidth: 440 }}>
+      {/* Every section sits on the same two-column form grid as the fields
+          above: one label style, one column edge, spacing from the scale (R16). */}
+      <div className="form-grid user-form-rest">
+        <div className="field full"><label>Roles</label>
+          <div className="tag-row">{roles.map((r) => <span key={r.code} className={'tag-toggle' + (f.roleCodes.includes(r.code) ? ' on' : '')} title={r.name} onClick={() => toggleArr('roleCodes', r.code)}>{r.name}</span>)}</div></div>
+        <div className="full user-form-switch">
+          <label className="switch"><input type="checkbox" checked={f.globalScope} onChange={(e) => set('globalScope', e.target.checked)} /> Global access (all projects &amp; sites)</label></div>
+        {!f.globalScope && <>
+          <div className="field full"><label>Projects</label>
+            <div className="tag-row">{projects.map((p) => <span key={p.id} className={'tag-toggle' + (f.projectIds.includes(p.id) ? ' on' : '')} title={p.name} onClick={() => toggleArr('projectIds', p.id)}>{p.name}</span>)}</div></div>
+          <div className="field full"><label>Sites</label>
+            <div className="tag-row">{sites.map((s) => <span key={s.id} className={'tag-toggle' + (f.siteIds.includes(s.id) ? ' on' : '')} title={s.name} onClick={() => toggleArr('siteIds', s.id)}>{s.name}</span>)}</div></div>
+        </>}
+        {isNew && <div className="field">
           <label>Initial password</label>
           <div className="pw-input">
             <input type={showPwd ? 'text' : 'password'} value={initialPassword} autoComplete="new-password"
@@ -3416,8 +3444,8 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowPwd((v) => !v)}>{showPwd ? 'Hide' : 'Show'}</button>
           </div>
           <p className="field-hint">Optional. Leave blank to generate a temporary password — it is shown once, immediately after the user is created. Either way the user must set their own password at first login.</p>
-        </div>
-      </>}
+        </div>}
+      </div>
     </Modal>
   );
 }
@@ -3686,7 +3714,7 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
   const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
-    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields']];
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Knowledge lines']] : [])];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
@@ -3702,6 +3730,61 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
       {tab === 'branding' && <BrandingLogoPanel user={user} branding={branding} refreshBranding={refreshBranding} />}
       {tab === 'fields' && <BuiltinFieldsPanel user={user} />}
       {tab === 'custom' && <CustomFieldsPanel user={user} />}
+      {tab === 'knowledge' && <KnowledgeLinesPanel />}
+    </div>
+  );
+}
+
+// --- Knowledge lines panel ---
+// The owner's own list for the line at the foot of every page. Saved as the
+// `knowledge_lines` system setting; empty means the bundled list is used.
+function KnowledgeLinesPanel() {
+  const toast = useToast();
+  const [text, setText] = useState(null);
+  const [saved, setSaved] = useState('');
+  const [shown, setShown] = useState('');   // what the box held when loaded or last saved
+  const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const load = useCallback(() => {
+    setLoadError(null);
+    api.get('/settings/system').then((r) => {
+      const own = r.settings?.knowledge_lines || '';
+      const initial = own || knowledgeLinesAsText(window.ARABTEC_KNOWLEDGE_LINES);
+      setSaved(own); setShown(initial); setText(initial);
+    }).catch((e) => setLoadError(e.message));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (loadError) return <LoadError title="Could not load knowledge lines" text={loadError} onRetry={load} />;
+  if (text == null) return <Skeleton rows={5} />;
+  const { lines, errors } = parseKnowledgeText(text);
+  const usingOwn = !!saved.trim();
+  async function persist(value, message) {
+    setBusy(true);
+    try {
+      await api.put('/settings/system', { settings: { knowledge_lines: value } });
+      const next = value || knowledgeLinesAsText(window.ARABTEC_KNOWLEDGE_LINES);
+      setSaved(value); applyOwnKnowledgeLines(value); setShown(next); setText(next);
+      toast(message);
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <div className="card kl-editor">
+      <div className="card-head">
+        <div><h3>Knowledge lines</h3><div className="muted">One line per entry: <code>Quote — Author</code>. An optional third field sets the topic (<code>— leadership</code>).</div></div>
+        <span className="dash-headnote">{usingOwn ? 'Your list is in use' : 'Built-in list in use'}</span>
+      </div>
+      <div className="card-pad">
+        <textarea aria-label="Knowledge lines, one per line" rows="16" value={text} onChange={(e) => setText(e.target.value)} spellCheck="true" />
+        <div className="kl-editor-foot">
+          <span className={errors.length ? 'kl-editor-count error' : 'kl-editor-count'} role="status">
+            {lines.length} {lines.length === 1 ? 'line' : 'lines'}{errors.length ? ` · ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}` : ''}
+          </span>
+          <span className="kl-editor-actions">
+            <button className="btn btn-ghost" disabled={busy || !usingOwn} onClick={() => persist('', 'Built-in list restored')}>Reset to the built-in list</button>
+            <button className="btn" disabled={busy || errors.length > 0 || !lines.length || text.trim() === shown.trim()} onClick={() => persist(text.trim(), 'Knowledge lines saved')}>{busy ? 'Saving…' : 'Save'}</button>
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -7823,16 +7906,15 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               this one to 11.5px made a single label visibly smaller than its
               neighbours, and the gap widened under browser zoom because a fixed
               px does not track the others' sizing. */}
+          {/* One primary (Parse CV); every other action is the same
+              secondary box (docs/audits/ui-rules.md, R17). */}
           {btns.add_candidate?.visible && (
-            <button className="btn btn-ghost" onClick={() => setCreating(true)} title="Enter a candidate by hand, no CV reading">
+            <button className="btn btn-secondary" onClick={() => setCreating(true)} title="Enter a candidate by hand, no CV reading">
               Add manually
             </button>
           )}
           {btns.add_candidate?.visible && (
-            <span className="upload-cta">
-              <button className="btn btn-secondary" title={UPLOAD_HINT} onClick={() => setImportOpen(true)}>Bulk Upload CVs</button>
-              <small className="upload-cta-hint">{UPLOAD_HINT}</small>
-            </span>
+            <button className="btn btn-secondary" title={UPLOAD_HINT} onClick={() => setImportOpen(true)}>Bulk Upload CVs</button>
           )}
           {btns.import_candidates?.visible && <button className="btn btn-secondary" onClick={async () => {
             const busy = toast;
@@ -7844,7 +7926,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
           value={ask} disabled={asking}
           onChange={(e) => setAsk(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') runAsk(); }} />
-        <button className="btn" onClick={runAsk} disabled={asking || !ask.trim()}>
+        <button className="btn btn-secondary" onClick={runAsk} disabled={asking || !ask.trim()}>
           {asking ? 'Searching…' : 'Ask'}
         </button>
       </div>
@@ -9259,10 +9341,97 @@ const IV_OUTCOME = { positive: { label: 'Positive', variant: 'success' }, negati
 const REC_LABEL = { strong_yes: 'Strong Yes', yes: 'Yes', no: 'No', strong_no: 'Strong No' };
 function IvStatusBadge({ status }) { const s = IV_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
 
-function ScheduleInterviewModal({ application, onClose, onScheduled }) {
+// Candidate + optional hiring request, for an interview or offer created
+// standalone (from the Interviews / Offers list, not from an application).
+// The candidate is picked from the Talent Pool, or typed in and created as a
+// Talent Pool record on save — the same POST /candidates path, so its duplicate
+// check still applies.
+function StandaloneLinkFields({ user, link, setLink }) {
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState([]);
+  const [requests, setRequests] = useState(null);
+  const canAdd = can(user, 'candidate.add');
+  const set = (k, v) => setLink((s) => ({ ...s, [k]: v }));
+  useEffect(() => {
+    api.get('/requests?pageSize=100').then((r) => setRequests(r.requests || [])).catch(() => setRequests([]));
+  }, []);
+  useEffect(() => {
+    const term = q.trim();
+    if (link.mode !== 'pick' || !term) { setRows([]); return; }
+    const t = setTimeout(() => {
+      api.get('/candidates?q=' + encodeURIComponent(term) + '&pageSize=8').then((r) => setRows(r.candidates || [])).catch(() => setRows([]));
+    }, 180);
+    return () => clearTimeout(t);
+  }, [q, link.mode]);
+  return (
+    <div className="form-grid standalone-link">
+      <div className="field full">
+        <label>Candidate *</label>
+        {canAdd && (
+          <div className="seg-tabs" role="tablist" aria-label="Candidate source">
+            <button type="button" role="tab" aria-selected={link.mode === 'pick'} className={'seg-tab' + (link.mode === 'pick' ? ' active' : '')} onClick={() => set('mode', 'pick')}>From Talent Pool</button>
+            <button type="button" role="tab" aria-selected={link.mode === 'new'} className={'seg-tab' + (link.mode === 'new' ? ' active' : '')} onClick={() => set('mode', 'new')}>New candidate</button>
+          </div>
+        )}
+      </div>
+      {link.mode === 'pick' ? (
+        <div className="field full">
+          {link.candidate ? (
+            <div className="standalone-picked">
+              <strong>{link.candidate.fullName}</strong>
+              <span className="muted">{link.candidate.candidateNo}{link.candidate.email ? ' · ' + link.candidate.email : ''}</span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => set('candidate', null)}>Change</button>
+            </div>
+          ) : (
+            <>
+              <input aria-label="Search the Talent Pool" placeholder="Search name, email, phone…" value={q} onChange={(e) => setQ(e.target.value)} />
+              {rows.length > 0 && (
+                <ul className="standalone-results" role="listbox">
+                  {rows.map((c) => (
+                    <li key={c.id} role="option" aria-selected="false" onClick={() => { set('candidate', c); setQ(''); }}>
+                      <strong>{c.fullName}</strong> <span className="muted">{c.candidateNo}{c.currentPosition ? ' · ' + c.currentPosition : ''}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="field"><label>Full name *</label><input value={link.newName} onChange={(e) => set('newName', e.target.value)} /></div>
+          <div className="field"><label>Email</label><input type="email" value={link.newEmail} onChange={(e) => set('newEmail', e.target.value)} /></div>
+        </>
+      )}
+      <div className="field full">
+        <label>Hiring request (optional)</label>
+        <select value={link.requestId} onChange={(e) => set('requestId', e.target.value)}>
+          <option value="">None — standalone</option>
+          {(requests || []).map((r) => <option key={r.id} value={r.id}>{r.ticketNo} — {r.title}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+const EMPTY_LINK = { mode: 'pick', candidate: null, newName: '', newEmail: '', requestId: '' };
+function standaloneLinkReady(link) {
+  return link.mode === 'pick' ? !!link.candidate : !!link.newName.trim();
+}
+// Resolve the picked or typed candidate to an id; a typed one is created first.
+async function resolveStandaloneLink(link) {
+  let candidateId = link.candidate?.id;
+  if (link.mode === 'new') {
+    const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, source: 'manual' });
+    candidateId = r.candidate.id;
+  }
+  return { candidateId, requestId: link.requestId ? Number(link.requestId) : undefined };
+}
+
+function ScheduleInterviewModal({ application, user, onClose, onScheduled }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
   const [f, setF] = useState({ interviewType: 'technical', mode: 'video', scheduledAt: '', durationMin: 60, round: 1, locationOrLink: '', panel: [] });
+  const [link, setLink] = useState(EMPTY_LINK);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { api.get('/interviews/meta/form').then(setMeta); }, []);
@@ -9271,8 +9440,9 @@ function ScheduleInterviewModal({ application, onClose, onScheduled }) {
   async function save() {
     setBusy(true);
     try {
+      const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
       await api.post('/interviews', {
-        applicationId: application.id, interviewType: f.interviewType, mode: f.mode,
+        ...target, interviewType: f.interviewType, mode: f.mode,
         scheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : null,
         durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink,
         panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
@@ -9282,9 +9452,11 @@ function ScheduleInterviewModal({ application, onClose, onScheduled }) {
   }
   if (!meta) return <Modal title="Schedule Interview" onClose={onClose}><Skeleton /></Modal>;
   return (
-    <Modal title={`Schedule Interview — ${application.candidate?.fullName || ''}`} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !f.scheduledAt || f.panel.length === 0}>{busy ? 'Scheduling…' : 'Schedule'}</button></>}>
-      <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Scheduling does <strong>not</strong> change the application's pipeline status.</p>
+    <Modal title={application ? `Schedule Interview — ${application.candidate?.fullName || ''}` : 'Schedule interview'} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !f.scheduledAt || f.panel.length === 0 || (!application && !standaloneLinkReady(link))}>{busy ? 'Scheduling…' : 'Schedule'}</button></>}>
+      {application
+        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Scheduling does <strong>not</strong> change the application's pipeline status.</p>
+        : <StandaloneLinkFields user={user} link={link} setLink={setLink} />}
       <div className="form-grid">
         <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
         <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
@@ -9318,6 +9490,7 @@ function InterviewsPage({ user, initialFilters }) {
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   const loadSeq = useRef(0);
 
   useEffect(() => {
@@ -9358,8 +9531,12 @@ function InterviewsPage({ user, initialFilters }) {
   return (
     <div>
       <PageHead crumb="Recruitment / Interviews" title={data?.scoped ? 'My Interviews' : 'Interviews'}
-        sub={data?.scoped ? 'Interviews where you are on the panel.' : 'Every interview links to an application, candidate and request. Interview status is tracked separately from application status.'}
-        actions={data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>} />
+        sub={data?.scoped ? 'Interviews where you are on the panel.' : 'Every interview links to a candidate, and to an application and request when scheduled from the pipeline. Interview status is tracked separately from application status.'}
+        actions={<>
+          {data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>}
+          {can(user, 'interview.schedule') && <button className="btn" onClick={() => setCreating(true)}>Schedule interview</button>}
+        </>} />
+      {creating && <ScheduleInterviewModal user={user} onClose={() => setCreating(false)} onScheduled={() => { setCreating(false); load(); }} />}
       <FilterToolbar activeCount={(filter.status ? 1 : 0) + (filter.thisWeek ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
         count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />}>
@@ -9447,8 +9624,8 @@ function InterviewDetail({ id, user, onBack }) {
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Links</div>
           <Info label="Candidate">{iv.candidate?.fullName} ({iv.candidate?.candidateNo})</Info>
-          <Info label="Request"><span title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span> — {iv.request?.title}</Info>
-          <Info label="Application">{iv.application?.applicationNo} · <strong>pipeline:</strong> {iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : '—'}</Info>
+          <Info label="Request">{iv.request ? <><span title={iv.request.ticketNo}>{shortReqCode(iv.request.ticketNo)}</span> — {iv.request.title}</> : <span className="muted">None — standalone</span>}</Info>
+          <Info label="Application">{iv.application ? <>{iv.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={iv.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <p className="muted">The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
           <div className="section-title">Details</div>
           <Info label="Type / Mode">{iv.interviewType} · {iv.mode}</Info>
@@ -9520,33 +9697,39 @@ function SalaryCell({ visible, value, currency }) {
   return <span>{value != null ? `${value} ${currency || ''}` : '—'}</span>;
 }
 
-function CreateOfferModal({ application, onClose, onCreated }) {
+function CreateOfferModal({ application, user, onClose, onCreated }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ positionTitle: application.position || '', salaryOffered: '', currency: 'EGP', benefits: '', joiningDate: '', notes: '' });
+  const [f, setF] = useState({ positionTitle: application?.position || '', salaryOffered: '', currency: 'EGP', benefits: '', joiningDate: '', expiryDate: '', notes: '' });
+  const [link, setLink] = useState(EMPTY_LINK);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { api.get('/offers/meta/form').then(setMeta).catch(() => {}); }, []);
   async function save() {
     setBusy(true);
     try {
-      const body = { applicationId: application.id, ...f };
+      const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
+      const body = { ...target, ...f };
       if (body.salaryOffered === '') body.salaryOffered = null;
       const r = await api.post('/offers', body);
       toast('Offer created: ' + r.offer.offerNo); onCreated();
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
   return (
-    <Modal title={`Generate Offer — ${application.candidate?.fullName || ''}`} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Creating…' : 'Create Offer'}</button></>}>
-      <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Offer Preparation</strong>.</p>
+    <Modal title={application ? `Generate Offer — ${application.candidate?.fullName || ''}` : 'Create offer'} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || (!application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim())))}>{busy ? 'Creating…' : 'Create Offer'}</button></>}>
+      {application
+        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Offer Preparation</strong>.</p>
+        : <><StandaloneLinkFields user={user} link={link} setLink={setLink} />
+          <p className="muted">A standalone offer is not tied to a pipeline: no application moves and no seat is filled. It still needs HR Director approval before it can be sent.</p></>}
       <div className="form-grid">
-        <div className="field full"><label>Position Title</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
+        <div className="field full"><label>Position Title{application ? '' : ' *'}</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
         {meta?.canEditSalary && <>
           <div className="field"><label>Salary Offered</label><input type="number" value={f.salaryOffered} onChange={(e) => set('salaryOffered', e.target.value)} /></div>
           <div className="field"><label>Currency</label><input value={f.currency} onChange={(e) => set('currency', e.target.value)} /></div>
         </>}
         <div className="field"><label>Joining Date</label><input type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></div>
+        <div className="field"><label>Offer expiry</label><input type="date" value={f.expiryDate} onChange={(e) => set('expiryDate', e.target.value)} /></div>
         <div className="field full"><label>Benefits</label><input value={f.benefits} onChange={(e) => set('benefits', e.target.value)} placeholder="Housing, transport, medical…" /></div>
         <div className="field full"><label>Notes</label><textarea rows="3" value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div>
       </div>
@@ -9563,6 +9746,7 @@ function OffersPage({ user, initialFilters }) {
   const [filter, setFilter] = useState({ status: '', q: '', joiningFrom: '', joiningTo: '', toIssue: false });
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   const loadSeq = useRef(0);
 
   useEffect(() => {
@@ -9599,7 +9783,8 @@ function OffersPage({ user, initialFilters }) {
     <div>
       <PageHead crumb="Recruitment / Offers" title="Offers"
         sub="Offer preparation, approval, result tracking and joining date. Compensation is not shown in this list."
-        actions={<Badge variant="info">Read-only list</Badge>} />
+        actions={can(user, 'offer.create') ? <button className="btn" onClick={() => setCreating(true)}>Create offer</button> : null} />
+      {creating && <CreateOfferModal user={user} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); load(); }} />}
       <FilterToolbar activeCount={(filter.status ? 1 : 0) + (filter.toIssue ? 1 : 0) + (filter.joiningFrom ? 1 : 0)}
         search={<input placeholder="Search offer no / position…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
         count={<CountPill n={offers ? shown.length : null} total={offers ? offers.length : null} noun="offer" />}>
@@ -9694,8 +9879,8 @@ function OfferDetail({ id, user, onBack }) {
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Offer</div>
           <Info label="Candidate">{o.candidate?.fullName} ({o.candidate?.candidateNo})</Info>
-          <Info label="Request"><span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span> — {o.request?.title}</Info>
-          <Info label="Application">{o.application?.applicationNo} · <strong>pipeline:</strong> {o.application?.status ? <AppStatusBadge status={o.application.status} /> : '—'}</Info>
+          <Info label="Request">{o.request ? <><span title={o.request.ticketNo}>{shortReqCode(o.request.ticketNo)}</span> — {o.request.title}</> : <span className="muted">None — standalone</span>}</Info>
+          <Info label="Application">{o.application ? <>{o.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={o.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <Info label="Position">{o.positionTitle}</Info>
           <Info label="Project">{o.project?.name}</Info>
           {o.salaryVisible
@@ -9703,6 +9888,7 @@ function OfferDetail({ id, user, onBack }) {
             : <Info label="Salary Offered"><span className="muted">Restricted</span></Info>}
           {o.salaryVisible && <Info label="Benefits">{o.benefits || '—'}</Info>}
           <Info label="Joining Date">{fmtDateShort(o.joiningDate)}</Info>
+          {o.expiryDate && <Info label="Offer expiry">{fmtDateShort(o.expiryDate)}</Info>}
           <Info label="Prepared By">{o.preparedBy?.name}</Info>
           {approval && <Info label="Approval">{approval}</Info>}
           {o.rejectionReason && <Info label="Rejection Reason">{o.rejectionReason}</Info>}
@@ -9798,11 +9984,14 @@ function App() {
     (async () => {
       await loadBranding();
       if (api.token) { try { const { user } = await api.get('/auth/me'); setUser(user); } catch { api.setToken(null); } }
+      // The owner's knowledge lines ride on the public system settings; a
+      // failure keeps the bundled list.
+      if (api.token) api.get('/settings/system').then((r) => applyOwnKnowledgeLines(r.settings?.knowledge_lines)).catch(() => {});
       setBooting(false);
     })();
   }, []);
 
-  async function onLogin(u) { setUser(u); await loadBranding(); }
+  async function onLogin(u) { setUser(u); api.get('/settings/system').then((r) => applyOwnKnowledgeLines(r.settings?.knowledge_lines)).catch(() => {}); await loadBranding(); }
   async function onLogout() { try { await api.post('/auth/logout', {}); } catch {} api.setToken(null); setUser(null); }
 
   if (booting) return <div className="boot-loading">Loading Arabtec Recruitment Hub…</div>;

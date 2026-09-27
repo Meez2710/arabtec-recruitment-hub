@@ -134,8 +134,24 @@ router.get('/:id', (req, res) => {
 /* ---------------- SCHEDULE ---------------- */
 router.post('/', requirePermission('interview.schedule'), (req, res) => {
   const d = req.body || {};
-  const app = Applications.byId(Number(d.applicationId));
-  if (!app) return res.status(404).json({ error: 'Application not found.' });
+  // Two ways in: from an application (the pipeline), or standalone — a
+  // candidate from the Talent Pool with an optional hiring request. A
+  // standalone interview has no application, so no application status moves.
+  let app = null;
+  let candidateId; let requestId = null;
+  if (d.applicationId) {
+    app = Applications.byId(Number(d.applicationId));
+    if (!app) return res.status(404).json({ error: 'Application not found.' });
+    candidateId = app.candidate_id; requestId = app.request_id;
+  } else {
+    if (!d.candidateId) return res.status(400).json({ error: 'A candidate is required.' });
+    if (!Candidates.byId(Number(d.candidateId))) return res.status(404).json({ error: 'Candidate not found.' });
+    candidateId = Number(d.candidateId);
+    if (d.requestId) {
+      if (!Requests.byId(Number(d.requestId))) return res.status(404).json({ error: 'Hiring request not found.' });
+      requestId = Number(d.requestId);
+    }
+  }
   // Validation
   if (d.interviewType && !IV_TYPES.includes(d.interviewType)) return res.status(400).json({ error: 'Invalid interview type.' });
   if (d.mode && !IV_MODES.includes(d.mode)) return res.status(400).json({ error: 'Invalid interview mode.' });
@@ -148,7 +164,7 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   // authorized user explicitly overrides (candidate.merge gate + reason), matching
   // the duplicate-override pattern used elsewhere.
   const TERMINAL_APP = ['rejected', 'withdrawn', 'joined', 'offer_rejected'];
-  if (TERMINAL_APP.includes(app.status)) {
+  if (app && TERMINAL_APP.includes(app.status)) {
     if (!d.overrideTerminal) {
       return res.status(409).json({ error: `Cannot schedule an interview for a ${app.status} application.`, applicationStatus: app.status });
     }
@@ -162,21 +178,21 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
 
   const interviewNo = Interviews.nextNo();
   const created = Interviews.create({
-    interviewNo, applicationId: app.id, candidateId: app.candidate_id, requestId: app.request_id,
+    interviewNo, applicationId: app ? app.id : null, candidateId, requestId,
     round: d.round || 1, interviewType: d.interviewType || 'technical', mode: d.mode || 'onsite',
     scheduledAt: d.scheduledAt, durationMin: d.durationMin || 60, locationOrLink: d.locationOrLink,
     organizerId: req.user.id, status: 'scheduled', createdBy: req.user.id,
   });
   InterviewPanel.set(created.id, panel.map((m) => ({ interviewerId: Number(m.interviewerId), isLead: !!m.isLead })));
   InterviewActivity.add(created.id, req.user, 'scheduled', `${created.interview_type} interview scheduled`);
-  CandidateActivity.add({ candidateId: app.candidate_id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'interview_scheduled', note: `${interviewNo} (${created.interview_type})` });
-  Requests.stampLifecycle(app.request_id, 'first_interview_at'); // lifecycle: first interview scheduled
-  writeAudit(req, { action: 'interview.scheduled', entityType: 'interview', entityId: created.id, newValue: { interviewNo, applicationId: app.id, candidateId: app.candidate_id, requestId: app.request_id, panel: panel.map((m) => m.interviewerId) }, comments: d.overrideTerminal ? `Terminal-app override: ${d.overrideReason}` : null });
+  CandidateActivity.add({ candidateId, applicationId: app ? app.id : null, actorId: req.user.id, actorName: req.user.fullName, type: 'interview_scheduled', note: `${interviewNo} (${created.interview_type})` });
+  if (requestId) Requests.stampLifecycle(requestId, 'first_interview_at'); // lifecycle: first interview scheduled
+  writeAudit(req, { action: 'interview.scheduled', entityType: 'interview', entityId: created.id, newValue: { interviewNo, applicationId: app ? app.id : null, candidateId, requestId, standalone: !app, panel: panel.map((m) => m.interviewerId) }, comments: d.overrideTerminal ? `Terminal-app override: ${d.overrideReason}` : null });
   // NOTE: scheduling an interview does NOT change application.status. They are independent.
   // Auto-email the candidate an invitation (best-effort; no-op until email configured).
   // Routed through the console: the invitation reaches the candidate AND the
   // panel, and an administrator controls both from one row.
-  const cand = Candidates.byId(app.candidate_id);
+  const cand = Candidates.byId(candidateId);
   const dateText = created.scheduled_at
     ? new Date(created.scheduled_at).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' }) : '';
   const panelUsers = panel.map((m) => { try { return Users.byId(Number(m.interviewerId)); } catch { return null; } }).filter(Boolean);
@@ -191,7 +207,7 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   });
   if (invited.sent && cand) {
     try {
-      CandidateActivity.add({ candidateId: cand.id, applicationId: app.id, actorId: req.user.id,
+      CandidateActivity.add({ candidateId: cand.id, applicationId: app ? app.id : null, actorId: req.user.id,
         actorName: 'System', type: 'email_sent', note: 'Interview invite sent' });
     } catch { /* the activity note must never fail scheduling */ }
   }

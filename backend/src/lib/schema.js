@@ -517,14 +517,15 @@ export function ensureSchema() {
   CREATE INDEX IF NOT EXISTS idx_ash_app ON application_stage_history(application_id);
 
   -- ===================== Phase 4: Interviews & Feedback =====================
-  -- An interview ALWAYS links to application + candidate + request.
+  -- An interview ALWAYS links to a candidate. The application and request are
+  -- optional: an interview may be scheduled standalone (see relaxStandaloneLinks).
   -- interview.status is a SEPARATE lifecycle and never replaces application.status.
   CREATE TABLE IF NOT EXISTS interview (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     interview_no TEXT UNIQUE NOT NULL,
-    application_id INTEGER NOT NULL REFERENCES application(id) ON DELETE CASCADE,
+    application_id INTEGER REFERENCES application(id) ON DELETE CASCADE,
     candidate_id INTEGER NOT NULL REFERENCES candidate(id) ON DELETE CASCADE,
-    request_id INTEGER NOT NULL REFERENCES recruitment_request(id) ON DELETE CASCADE,
+    request_id INTEGER REFERENCES recruitment_request(id) ON DELETE CASCADE,
     round INTEGER NOT NULL DEFAULT 1,
     interview_type TEXT NOT NULL DEFAULT 'technical', -- phone|technical|client|final|hr|reference
     mode TEXT NOT NULL DEFAULT 'onsite',              -- onsite|video|phone
@@ -576,14 +577,15 @@ export function ensureSchema() {
   CREATE INDEX IF NOT EXISTS idx_ivf_interview ON interview_feedback(interview_id);
 
   -- ===================== Phase 5: Offers & Joining =====================
-  -- An offer ALWAYS links to application + candidate + request.
+  -- An offer ALWAYS links to a candidate. The application and request are
+  -- optional: an offer may be created standalone (see relaxStandaloneLinks).
   -- offer.status is a SEPARATE lifecycle; application stage changes are explicit/controlled.
   CREATE TABLE IF NOT EXISTS offer (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     offer_no TEXT UNIQUE NOT NULL,
-    application_id INTEGER NOT NULL REFERENCES application(id) ON DELETE CASCADE,
+    application_id INTEGER REFERENCES application(id) ON DELETE CASCADE,
     candidate_id INTEGER NOT NULL REFERENCES candidate(id) ON DELETE CASCADE,
-    request_id INTEGER NOT NULL REFERENCES recruitment_request(id) ON DELETE CASCADE,
+    request_id INTEGER REFERENCES recruitment_request(id) ON DELETE CASCADE,
     position_title TEXT,
     salary_offered REAL,                              -- restricted field
     currency TEXT DEFAULT 'EGP',
@@ -1056,6 +1058,11 @@ export function ensureSchema() {
   addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
   addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
 
+  // Offer expiry: the date after which an unanswered offer lapses. Display and
+  // entry only; nothing expires an offer automatically.
+  addColumnIfMissing('offer', 'expiry_date', 'TEXT');
+  relaxStandaloneLinks();
+
   migrateWorkflowStages();
   migrateLegacyActionColor();
   syncCatalogAdditions();
@@ -1257,6 +1264,55 @@ function ensureOneJoinedPerCandidate() {
     console.error(`  ✖ BL-27: could not create the joined-uniqueness index: ${e.message}`);
   }
   return joinedUniquenessState;
+}
+
+/* ------------------- Standalone interviews and offers ---------------------- */
+
+/**
+ * Interviews and offers used to require an application AND a request. They may
+ * now be created standalone (candidate only), so `application_id` and
+ * `request_id` become nullable on both tables. `candidate_id` stays NOT NULL.
+ *
+ * PostgreSQL drops the constraint in place. SQLite cannot, so the table is
+ * rebuilt with the documented 12-step procedure (foreign keys off, copy, swap,
+ * indexes back). Idempotent: a table whose columns are already nullable is
+ * left alone, so this is a no-op on a fresh database and on every later boot.
+ * Reversible while no standalone row exists: re-adding NOT NULL is the inverse.
+ */
+function relaxStandaloneLinks() {
+  const cols = ['application_id', 'request_id'];
+  for (const table of ['interview', 'offer']) {
+    try {
+      if (driverKind() === 'sqlite') {
+        const strict = all(`PRAGMA table_info(${table})`).filter((c) => cols.includes(c.name) && c.notnull);
+        if (!strict.length) continue;
+        const ddl = get("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [table])?.sql;
+        if (!ddl) continue;
+        let relaxed = ddl;
+        for (const c of cols) relaxed = relaxed.replace(new RegExp(`(\\b${c}\\s+INTEGER)\\s+NOT\\s+NULL`, 'i'), '$1');
+        relaxed = relaxed.replace(/CREATE TABLE\s+("?)\w+\1/i, `CREATE TABLE ${table}__relaxed`);
+        const indexes = all("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", [table]).map((r) => r.sql);
+        const names = all(`PRAGMA table_info(${table})`).map((c) => c.name).join(',');
+        exec('PRAGMA foreign_keys = OFF;');
+        try {
+          tx(() => {
+            exec(relaxed);
+            exec(`INSERT INTO ${table}__relaxed (${names}) SELECT ${names} FROM ${table};`);
+            exec(`DROP TABLE ${table};`);
+            exec(`ALTER TABLE ${table}__relaxed RENAME TO ${table};`);
+            for (const ix of indexes) exec(ix);
+          });
+        } finally {
+          exec('PRAGMA foreign_keys = ON;');
+        }
+        console.log(`  • Schema: ${table}.application_id / request_id are now optional (standalone records).`);
+      } else {
+        for (const c of cols) run(`ALTER TABLE ${table} ALTER COLUMN ${c} DROP NOT NULL`);
+      }
+    } catch (e) {
+      console.error(`  ! Could not relax ${table} links (continuing):`, e.message);
+    }
+  }
 }
 
 // One-time, idempotent migration: rewrite any legacy request/application status

@@ -141,6 +141,29 @@ async function approvedRequest(token, recMgr, headcount = 1) {
   const profRec = await api(`/api/candidates/${cand.json.candidate.id}`, { token: recruiter });
   c('recruiter sees interview on candidate profile', (profRec.json.candidate.interviews || []).some((x) => x.id === ivId));
 
+  console.log('\n— Standalone interview (no application / request) —');
+  const soloCand = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Solo Interviewee', email: 'solo.iv@example.com' } });
+  const soloId = soloCand.json.candidate.id;
+  const noCand = await api('/api/interviews', { method: 'POST', token: recruiter, body: { scheduledAt: futureDate, panel: [{ interviewerId: interviewerUser.id }] } });
+  c('standalone without a candidate → 400', noCand.status === 400, `got ${noCand.status}`);
+  const badCand = await api('/api/interviews', { method: 'POST', token: recruiter, body: { candidateId: 999999, scheduledAt: futureDate, panel: [{ interviewerId: interviewerUser.id }] } });
+  c('standalone with an unknown candidate → 404', badCand.status === 404, `got ${badCand.status}`);
+  const solo = await api('/api/interviews', { method: 'POST', token: recruiter, body: {
+    candidateId: soloId, scheduledAt: futureDate, round: 2, interviewType: 'hr', mode: 'video', locationOrLink: 'https://teams.example/solo', durationMin: 45,
+    panel: [{ interviewerId: interviewerUser.id, isLead: true }],
+  } });
+  c('standalone interview scheduled (201)', solo.status === 201, `got ${solo.status} ${JSON.stringify(solo.json)}`);
+  c('standalone interview has no application or request', solo.json.interview?.applicationId == null && solo.json.interview?.requestId == null && solo.json.interview?.application === null);
+  c('standalone interview keeps every field', solo.json.interview?.round === 2 && solo.json.interview?.mode === 'video' && solo.json.interview?.durationMin === 45 && solo.json.interview?.candidate?.id === soloId);
+  const soloWithReq = await api('/api/interviews', { method: 'POST', token: recruiter, body: { candidateId: soloId, requestId: 999999, scheduledAt: futureDate, panel: [{ interviewerId: interviewerUser.id }] } });
+  c('standalone with an unknown request → 404', soloWithReq.status === 404, `got ${soloWithReq.status}`);
+  const hmSolo = await api('/api/interviews', { method: 'POST', token: hm, body: { candidateId: soloId, scheduledAt: futureDate, panel: [{ interviewerId: hmUser.id }] } });
+  c('HM cannot schedule standalone either (403)', hmSolo.status === 403, `got ${hmSolo.status}`);
+  const soloList = await api('/api/interviews', { token: recruiter });
+  c('standalone interview is listed', (soloList.json.interviews || []).some((x) => x.id === solo.json.interview?.id));
+  const soloPanel = await api(`/api/interviews/${solo.json.interview?.id}`, { token: interviewer });
+  c('panelist sees the standalone interview', soloPanel.status === 200, `got ${soloPanel.status}`);
+
   console.log('\n— Audit —');
   const audit = await api('/api/audit?pageSize=300', { token: admin });
   const acts = new Set((audit.json.logs || []).map((l) => l.action));

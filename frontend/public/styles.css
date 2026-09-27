@@ -865,7 +865,6 @@ table.table tbody tr.row-link:hover { background: var(--action-primary-tint); }
 .pcard-facts .fact { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; background: var(--neutral-tint); font-size: 11px; color: var(--text); white-space: nowrap; }
 .pcard-status { display: flex; }
 .pcard-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
-.pcard-actions .btn { min-height: 28px; padding: 0 10px; font-size: 12px; }
 .pcard-wide { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 16px; padding: 15px 18px; }
 .pcard-wide .pcard-top { flex: 1 1 260px; }
 .pcard-wide .pcard-facts { flex: 0 1 auto; }

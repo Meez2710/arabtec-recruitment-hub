@@ -52,3 +52,20 @@ One scrolling row of 40px actions under the title (never a grid of full-width bu
 
 ## R15 No bare zero from a conditional render
 `{(a && b.length) && <X/>}` renders "0" when the list is empty. Use `b.length > 0`. Origin: a stray "0" above the Talent Pool board.
+
+## R16 One spacing scale
+Every margin, padding and gap is a step of the scale: 4 / 8 / 12 / 16 / 24 / 32px, which are `--sp-1` … `--sp-6` in `claude-system.css`. New rules use the tokens. The fixed gutters built from it:
+
+| Gutter | Value |
+|---|---|
+| Content padding (page) | 16 phone / 24 desktop (`--sp-page-x`, `--sp-page-y`) |
+| Card inset | 16 |
+| Card head | 10 vertical / 16 horizontal (the one named exception to the scale) |
+| KPI tile gap | 12 |
+| Section gap | 12 inside a card / 16 between cards |
+| Controls in one row (select + button, button + button) | 8 |
+
+Guard: `ui_layout_rules_test.mjs` R16 scans the six sheets (`backend/test-support/spacing-scan.mjs`). Every off-scale px value that predated the rule is listed, declaration by declaration, in `docs/audits/spacing-legacy.json` (538 at introduction). The test fails on any declaration not on that list, and also on a listed one that has since been fixed, so the list can only shrink. Origin: CV Intake's "Waiting to parse" row had no rule at all, so the Period select and "Refresh from mailbox" touched with no gap; the Talent Pool head spaced its buttons 20px apart while every other row used 8.
+
+## R17 One button spec
+`.btn` is 40px (`--cl-ctl-lg`) on `0 16px`, `.btn-sm` is 32px (`--cl-ctl-sm`) on `0 12px`, both in `claude-system.css` section 6 and nowhere else; the phone raises every control to the 44px touch floor there too. No sheet other than `claude-system.css` gives a page-scoped `.btn` selector a height or padding (`arabtec-mobile.css`, the phone shell, is the documented exception, R14). A head row has one primary action and equal secondaries; buttons take their label's width (`flex: 0 0 auto`), never grow to fill a row, and never become `width: 100%` above the phone. Origin: the Talent Pool head carried a pill toggle, a primary, a borderless ghost, two bordered secondaries and a wrapper that re-laid out Bulk Upload with `display: contents`, and its buttons had a page-only padding. Measured before (`docs/ui-review/layout-comments/before/button-metrics.json`): at 390 and at 200% zoom the head mixed 44px and 40px buttons (Bulk Upload 40, the rest 44), and the generic ≤640px rule let every head button grow (`flex: 1 1 auto`). Measured after: Parse CV / Add manually / Bulk Upload CVs / Scan CV Inbox all 40px tall at 1440, at 125%, at 200% and at 390, each as wide as its label.

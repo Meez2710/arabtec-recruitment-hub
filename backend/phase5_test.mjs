@@ -202,6 +202,33 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   const profHm = await api(`/api/candidates/${o1.candId}`, { token: hm });
   c('HM profile offers: salary masked', (profHm.json.candidate.offers || []).every((x) => x.salaryVisible === false));
 
+  console.log('\n— Standalone offer (no application / request) —');
+  const soloCand = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Solo Offeree', email: 'solo.offer@example.com' } });
+  const soloId = soloCand.json.candidate.id;
+  const noTitle = await api('/api/offers', { method: 'POST', token: recruiter, body: { candidateId: soloId } });
+  c('standalone offer without a position title → 400', noTitle.status === 400, `got ${noTitle.status}`);
+  const noCand = await api('/api/offers', { method: 'POST', token: recruiter, body: { positionTitle: 'X' } });
+  c('offer without candidate or application → 400', noCand.status === 400, `got ${noCand.status}`);
+  const joinIn = new Date(Date.now() + 40 * 86400000).toISOString().slice(0, 10);
+  const expIn = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+  const solo = await api('/api/offers', { method: 'POST', token: recruiter, body: {
+    candidateId: soloId, positionTitle: 'Site Engineer', salaryOffered: 25000, currency: 'AED', joiningDate: joinIn, expiryDate: expIn, notes: 'Standalone test',
+  } });
+  c('standalone offer created (201)', solo.status === 201, `got ${solo.status} ${JSON.stringify(solo.json)}`);
+  const so = solo.json.offer || {};
+  c('standalone offer has no application or request', so.applicationId == null && so.requestId == null && so.application === null && so.request === null);
+  c('standalone offer keeps every field', so.positionTitle === 'Site Engineer' && so.salaryOffered === 25000 && so.currency === 'AED' && so.joiningDate === joinIn && so.expiryDate === expIn && so.notes === 'Standalone test');
+  await api(`/api/offers/${so.id}/submit`, { method: 'POST', token: recruiter });
+  const soloPending = await api(`/api/offers/${so.id}`, { token: recruiter });
+  c('standalone offer still needs the HR Director', soloPending.json.offer.status === 'pending_approval' && soloPending.json.offer.approvals.length === 1 && soloPending.json.offer.approvals[0].role_code === 'offer.approve_director');
+  c('HR Manager cannot approve the standalone offer', (await api(`/api/offers/${so.id}/approve`, { method: 'POST', token: hrMgr, body: {} })).status === 403);
+  c('HR Director approves the standalone offer', (await api(`/api/offers/${so.id}/approve`, { method: 'POST', token: hrDir, body: {} })).json?.offer?.status === 'approved');
+  const soloSend = await api(`/api/offers/${so.id}/send`, { method: 'POST', token: hrMgr });
+  c('standalone offer sends (notification without a request)', soloSend.json?.offer?.status === 'sent', `got ${soloSend.status} ${JSON.stringify(soloSend.json).slice(0, 200)}`);
+  c('standalone offer accepted', (await api(`/api/offers/${so.id}/result`, { method: 'POST', token: recruiter, body: { result: 'accepted' } })).json?.offer?.status === 'accepted');
+  c('standalone offer marked joined (no seat)', (await api(`/api/offers/${so.id}/result`, { method: 'POST', token: recruiter, body: { result: 'joined' } })).json?.offer?.status === 'joined');
+  c('viewer cannot create a standalone offer (403)', (await api('/api/offers', { method: 'POST', token: viewer, body: { candidateId: soloId, positionTitle: 'X' } })).status === 403);
+
   console.log('\n— Audit —');
   const audit = await api('/api/audit?pageSize=500', { token: admin });
   const acts = new Set((audit.json.logs || []).map((l) => l.action));

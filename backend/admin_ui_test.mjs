@@ -70,6 +70,18 @@ async function up(p, t, fn, content) { const fd = new FormData(); fd.append('fil
   const del = await J('/api/admin-ui/custom-fields/candidate/iqama_number', null, admin, 'DELETE');
   c('delete custom field', del.s === 200);
 
+  console.log('\n— Knowledge lines (owner list) —');
+  const klBad = await J('/api/settings/system', { settings: { knowledge_lines: 'A quote with no author' } }, admin, 'PUT');
+  c('knowledge lines without an author are refused (400)', klBad.s === 400, `got ${klBad.s}`);
+  const klRec = await J('/api/settings/system', { settings: { knowledge_lines: 'Measure twice, cut once. — Proverb' } }, recruiter, 'PUT');
+  c('recruiter cannot edit knowledge lines (403)', klRec.s === 403, `got ${klRec.s}`);
+  const klOk = await J('/api/settings/system', { settings: { knowledge_lines: 'Measure twice, cut once. — Proverb' } }, admin, 'PUT');
+  c('owner saves knowledge lines', klOk.s === 200 && klOk.j.settings.knowledge_lines === 'Measure twice, cut once. — Proverb');
+  const klPub = await G('/api/settings/system', recruiter);
+  c('any signed-in user reads the effective list', klPub.j?.settings?.knowledge_lines === 'Measure twice, cut once. — Proverb');
+  const klReset = await J('/api/settings/system', { settings: { knowledge_lines: '' } }, admin, 'PUT');
+  c('reset to the built-in list (empty value)', klReset.s === 200 && !klReset.j.settings.knowledge_lines);
+
   console.log(`\n=== ADMIN UI (${process.env.PG_ENGINE ? 'POSTGRES' : 'SQLITE'}): ${pass} passed, ${fail} failed ===\n`);
   process.exit(fail ? 1 : 0);
 })();

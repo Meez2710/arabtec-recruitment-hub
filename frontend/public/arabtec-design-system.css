@@ -209,6 +209,11 @@ body { color: var(--ink); font-size: 13px; line-height: 1.45; font-weight: 400; 
   opacity: .03; filter: none;
 }
 .content > * { position: relative; z-index: 1; }
+/* The footer line is a sibling of the page, after it, at the same z-index —
+   so it painted over every modal the page opened (a modal's z-index only counts
+   inside the page's stacking context). One step down keeps it above the
+   watermark (z-index -1) and below the page. */
+.content > .knowledge-line { z-index: 0; }
 
 /* ------ Page headers ------ */
 .page-head { margin-bottom: 20px; align-items: flex-end; }
@@ -994,8 +999,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
 }
 .login-card { padding: 28px; }
 .login-card h2 { font-family: Arial, Helvetica, sans-serif; font-size: 22px; font-weight: 700; }
-.login-card .btn { min-height: 44px; font-size: 13px; }
-.login-card input { min-height: 44px; }
+.login-card .btn { font-size: 13px; }
 .login-brand-label { border-radius: 999px; }
 
 /* ------------------------------------------------- 15. NOTIFICATIONS CONSOLE
@@ -1425,6 +1429,11 @@ html, body, button, input, select, textarea, .field textarea { font-family: var(
 
 /* §12b. Compact composition — the colour half of claude-system.css 19b. */
 .toolbar, .toolbar.ask-bar { background: transparent; border-color: transparent; }
+/* Talent Pool Ask bar: a secondary row over a hairline, its input without a
+   box of its own until it has focus (geometry in arabtec-responsive.css). */
+.toolbar.ask-bar { border-bottom-color: var(--border); }
+.ask-bar .ask-input { border-color: transparent; background: transparent; box-shadow: none; }
+.ask-bar .ask-input:focus { border-color: var(--border); background: var(--surface); }
 .seg-tabs { background: transparent; border-color: var(--line); }
 .tabbar, .tabs { background: transparent; border-color: var(--line); }
 .tabbar-btn, .tabbar-btn.active { border-width: 0 0 2px; border-style: solid; }
@@ -1455,3 +1464,10 @@ html, body, button, input, select, textarea, .field textarea { font-family: var(
 }
 .empty-kicker { color: var(--muted); font-weight: 600; }
 .empty-error .empty-kicker { color: var(--brand); }
+
+/* Standalone interview / offer picker and the knowledge-lines editor: colour
+   only (geometry in claude-system.css). */
+.standalone-results { border-color: var(--border); background: var(--surface); }
+.standalone-results > li:hover { background: var(--surface-2); }
+.kl-editor-count { color: var(--muted); }
+.kl-editor-count.error { color: var(--danger); }

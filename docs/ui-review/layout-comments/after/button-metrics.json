@@ -1,0 +1,26 @@
+{
+  "390": [
+    "Parse CV: 90x40",
+    "Add manually: 115x40",
+    "Bulk Upload CVs: 136x40",
+    "Scan CV Inbox: 123x40"
+  ],
+  "1440": [
+    "Parse CV: 94x40",
+    "Add manually: 119x40",
+    "Bulk Upload CVs: 140x40",
+    "Scan CV Inbox: 127x40"
+  ],
+  "1440-zoom125": [
+    "Parse CV: 94x40",
+    "Add manually: 119x40",
+    "Bulk Upload CVs: 140x40",
+    "Scan CV Inbox: 127x40"
+  ],
+  "1280-zoom200": [
+    "Parse CV: 90x40",
+    "Add manually: 115x40",
+    "Bulk Upload CVs: 136x40",
+    "Scan CV Inbox: 123x40"
+  ]
+}

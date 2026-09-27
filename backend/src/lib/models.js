@@ -1216,7 +1216,7 @@ export const Interviews = {
       `INSERT INTO interview (interview_no,application_id,candidate_id,request_id,round,interview_type,mode,
         scheduled_at,duration_min,location_or_link,organizer_id,status,created_by,created_at,updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [d.interviewNo, d.applicationId, d.candidateId, d.requestId, d.round || 1, d.interviewType || 'technical',
+      [d.interviewNo, d.applicationId ?? null, d.candidateId, d.requestId ?? null, d.round || 1, d.interviewType || 'technical',
        d.mode || 'onsite', d.scheduledAt || null, d.durationMin || 60, d.locationOrLink || null,
        d.organizerId, d.status || 'scheduled', d.createdBy, nowISO(), nowISO()],
     );
@@ -1305,10 +1305,10 @@ export const Offers = {
   create(d) {
     const r = run(
       `INSERT INTO offer (offer_no,application_id,candidate_id,request_id,position_title,salary_offered,currency,
-        benefits,joining_date,notes,status,prepared_by,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [d.offerNo, d.applicationId, d.candidateId, d.requestId, d.positionTitle || null, d.salaryOffered ?? null,
-       d.currency || 'EGP', d.benefits || null, d.joiningDate || null, d.notes || null,
+        benefits,joining_date,expiry_date,notes,status,prepared_by,created_by,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [d.offerNo, d.applicationId ?? null, d.candidateId, d.requestId ?? null, d.positionTitle || null, d.salaryOffered ?? null,
+       d.currency || 'EGP', d.benefits || null, d.joiningDate || null, d.expiryDate || null, d.notes || null,
        d.status || 'draft', d.preparedBy, d.createdBy, nowISO(), nowISO()],
     );
     return this.byId(Number(r.lastInsertRowid));
@@ -1316,9 +1316,9 @@ export const Offers = {
   update(id, fields, { salaryAllowed = false } = {}) {
     const c = this.byId(id);
     const salary = salaryAllowed && fields.salaryOffered !== undefined ? fields.salaryOffered : c.salary_offered;
-    run(`UPDATE offer SET position_title=?,salary_offered=?,currency=?,benefits=?,joining_date=?,notes=?,version=version+1,updated_at=? WHERE id=?`,
+    run(`UPDATE offer SET position_title=?,salary_offered=?,currency=?,benefits=?,joining_date=?,expiry_date=?,notes=?,version=version+1,updated_at=? WHERE id=?`,
       [fields.positionTitle ?? c.position_title, salary, fields.currency ?? c.currency,
-       fields.benefits ?? c.benefits, fields.joiningDate ?? c.joining_date, fields.notes ?? c.notes, nowISO(), id]);
+       fields.benefits ?? c.benefits, fields.joiningDate ?? c.joining_date, fields.expiryDate ?? c.expiry_date, fields.notes ?? c.notes, nowISO(), id]);
     return this.byId(id);
   },
   setStatus(id, status, extra = {}) {

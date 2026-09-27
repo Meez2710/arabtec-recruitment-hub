@@ -33,7 +33,7 @@ function serialize(o, user, { detail = false } = {}) {
   const out = {
     id: o.id, offerNo: o.offer_no,
     applicationId: o.application_id, candidateId: o.candidate_id, requestId: o.request_id,
-    positionTitle: o.position_title, currency: o.currency, joiningDate: o.joining_date,
+    positionTitle: o.position_title, currency: o.currency, joiningDate: o.joining_date, expiryDate: o.expiry_date,
     status: o.status,
     preparedBy: preparedBy ? { id: preparedBy.id, name: preparedBy.full_name } : null,
     approvedBy: approvedBy ? { id: approvedBy.id, name: approvedBy.full_name } : null,
@@ -104,44 +104,62 @@ router.get('/application/:applicationId', requirePermission('offer.view'), (req,
 /* ---------------- CREATE ---------------- */
 router.post('/', requirePermission('offer.create'), (req, res) => {
   const d = req.body || {};
-  const app = Applications.byId(Number(d.applicationId));
-  if (!app) return res.status(404).json({ error: 'Application not found.' });
+  // From an application (the pipeline), or standalone: a candidate with an
+  // optional hiring request. A standalone offer moves no application status
+  // and fills no seat; the HR Director approval step applies all the same.
+  let app = null;
+  let candidateId; let requestId = null;
+  if (d.applicationId) {
+    app = Applications.byId(Number(d.applicationId));
+    if (!app) return res.status(404).json({ error: 'Application not found.' });
+    candidateId = app.candidate_id; requestId = app.request_id;
+  } else {
+    if (!d.candidateId) return res.status(400).json({ error: 'A candidate is required.' });
+    if (!Candidates.byId(Number(d.candidateId))) return res.status(404).json({ error: 'Candidate not found.' });
+    candidateId = Number(d.candidateId);
+    if (d.requestId) {
+      if (!Requests.byId(Number(d.requestId))) return res.status(404).json({ error: 'Hiring request not found.' });
+      requestId = Number(d.requestId);
+    }
+    if (!(d.positionTitle || '').trim() && !requestId) return res.status(400).json({ error: 'A position title is required.' });
+  }
 
   // Cannot create for a terminal/on-hold application unless authorized override.
-  if (TERMINAL_APP.includes(app.status)) {
+  if (app && TERMINAL_APP.includes(app.status)) {
     if (!d.overrideTerminal) return res.status(409).json({ error: `Cannot create an offer for a ${app.status} application.`, applicationStatus: app.status });
     if (!req.user.permissions.includes('candidate.merge')) return res.status(403).json({ error: 'You are not permitted to override offer creation for this application.' });
     if (!d.overrideReason || !d.overrideReason.trim()) return res.status(400).json({ error: 'A reason is required to override.' });
   }
   // One active offer per application.
-  if (Offers.activeForApplication(app.id)) return res.status(409).json({ error: 'An active offer already exists for this application.' });
+  if (app && Offers.activeForApplication(app.id)) return res.status(409).json({ error: 'An active offer already exists for this application.' });
 
   if (d.joiningDate && new Date(d.joiningDate) < new Date(new Date().toDateString())) {
     return res.status(400).json({ error: 'Joining date cannot be in the past.' });
   }
+  if (d.expiryDate && isNaN(new Date(d.expiryDate))) return res.status(400).json({ error: 'Invalid expiry date.' });
   // Salary only settable by authorized roles.
   const salaryOffered = canEditOfferSalary(req.user) && d.salaryOffered != null && d.salaryOffered !== '' ? Number(d.salaryOffered) : null;
 
-  const req2 = Requests.byId(app.request_id);
+  const req2 = requestId ? Requests.byId(requestId) : null;
   const offerNo = Offers.nextNo();
   const created = Offers.create({
-    offerNo, applicationId: app.id, candidateId: app.candidate_id, requestId: app.request_id,
+    offerNo, applicationId: app ? app.id : null, candidateId, requestId, expiryDate: d.expiryDate,
     positionTitle: d.positionTitle || req2?.title, salaryOffered, currency: d.currency || req2?.currency || 'EGP',
     benefits: d.benefits, joiningDate: d.joiningDate, notes: d.notes, status: 'draft',
     preparedBy: req.user.id, createdBy: req.user.id,
   });
   OfferActivity.add(created.id, req.user, 'created', { toStatus: 'draft', note: `Offer ${offerNo} prepared` });
-  CandidateActivity.add({ candidateId: app.candidate_id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'offer_created', note: offerNo });
+  CandidateActivity.add({ candidateId, applicationId: app ? app.id : null, actorId: req.user.id, actorName: req.user.fullName, type: 'offer_created', note: offerNo });
 
   // Move application to Offer Preparation if it's not already past it (controlled workflow step).
-  if (![APP.ISSUING_OFFER, APP.OFFER_SENT, APP.JOINED].includes(appNorm(app.status))) {
+  if (app && ![APP.ISSUING_OFFER, APP.OFFER_SENT, APP.JOINED].includes(appNorm(app.status))) {
     StageHistory.add(app.id, app.status, APP.ISSUING_OFFER, req.user, 'Auto on offer creation');
     Applications.setStatus(app.id, APP.ISSUING_OFFER);
     CandidateActivity.add({ candidateId: app.candidate_id, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName, type: 'application_status_changed', note: `→ issuing_offer` });
     writeAudit(req, { action: 'application.status_changed', entityType: 'application', entityId: app.id, oldValue: { status: app.status }, newValue: { status: APP.ISSUING_OFFER }, comments: 'Auto on offer creation' });
   }
-  Requests.stampLifecycle(app.request_id, 'first_offer_at'); // lifecycle: first offer created
-  writeAudit(req, { action: 'offer.created', entityType: 'offer', entityId: created.id, newValue: { offerNo, applicationId: app.id, candidateId: app.candidate_id, requestId: app.request_id }, comments: d.overrideTerminal ? `Override: ${d.overrideReason}` : null });
+  if (requestId) Requests.stampLifecycle(requestId, 'first_offer_at'); // lifecycle: first offer created
+  writeAudit(req, { action: 'offer.created', entityType: 'offer', entityId: created.id, newValue: { offerNo, applicationId: app ? app.id : null, candidateId, requestId, standalone: !app }, comments: d.overrideTerminal ? `Override: ${d.overrideReason}` : null });
   res.status(201).json({ offer: serialize(created, req.user, { detail: true }) });
 });
 
@@ -366,7 +384,14 @@ router.post('/:id/result', requirePermission('offer.result_update'), (req, res) 
     writeAudit(req, { action: 'offer.withdrawn', entityType: 'offer', entityId: o.id, comments: reason });
   } else if (result === 'joined') {
     if (o.status !== 'accepted') return res.status(409).json({ error: 'Only an accepted offer can be marked joined.' });
-    if (!app) return res.status(404).json({ error: 'Application missing.' });
+    if (!app) {
+      // Standalone offer: no application and no seat to fill. The offer is
+      // settled as joined and nothing else moves.
+      Offers.setStatus(o.id, 'joined', { joined_at: new Date().toISOString() });
+      OfferActivity.add(o.id, req.user, 'joined', { toStatus: 'joined', note: 'Standalone offer — no seat filled' });
+      writeAudit(req, { action: 'offer.joined', entityType: 'offer', entityId: o.id, comments: 'Standalone offer (no application)' });
+      return res.json({ offer: serialize(Offers.byId(o.id), req.user, { detail: true }) });
+    }
     // Safe joining: prevent double-count + overfill, transactional seat fill (shared Phase 3 logic).
     if (applicationAlreadyFilledSeat(app.id) || app.status === 'joined') {
       return res.status(409).json({ error: 'This candidate has already joined (seat already filled).' });
