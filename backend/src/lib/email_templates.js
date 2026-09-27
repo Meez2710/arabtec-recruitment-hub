@@ -490,13 +490,13 @@ export function offerOutcome({ offerNo, candidateName, position, ticketNo, accep
     html: shell(good ? 'Offer accepted' : 'Offer declined', [
       p(good
         ? `<strong>${candidateName}</strong> accepted the offer${position ? ` for ${position}` : ''}.`
-        : `<strong>${candidateName}</strong> declined the offer${position ? ` for ${position}` : ''}. The seat is still open.`),
+        : `<strong>${candidateName}</strong> declined the offer${position ? ` for ${position}` : ''}.${ticketNo ? ' The seat is still open.' : ''}`),
       refBlock([['Offer', offerNo], ['Candidate', candidateName], ['Position', position],
         ['Request', ticketNo], [good ? 'Joining' : 'Reason', good ? joiningDate : reason]]),
       p(good
-        ? 'Joining formalities follow. The seat is reserved against the request until the candidate joins.'
+        ? `Joining formalities follow.${ticketNo ? ' The seat is reserved against the request until the candidate joins.' : ''}`
         : 'Consider re-opening sourcing or advancing another shortlisted candidate.'),
-      cta('Open the request', appUrl),
+      cta(ticketNo ? 'Open the request' : 'Open the offer', appUrl),
     ].join('')),
   };
 }
