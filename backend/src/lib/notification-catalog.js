@@ -174,5 +174,7 @@ export const EVENT_BY_KEY = Object.fromEntries(NOTIFICATION_EVENTS.map((e) => [e
 /** Which permission stands in for "approvers" on a given event. */
 export const APPROVER_PERMISSION = {
   'request.submitted': 'request.approve',
-  'offer.pending_approval': 'offer.approve',
+  // One approval layer: only the HR Director decides offers, so only holders
+  // of the director permission are asked.
+  'offer.pending_approval': 'offer.approve_director',
 };

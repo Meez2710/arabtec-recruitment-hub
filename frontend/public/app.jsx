@@ -2494,7 +2494,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
         sub="Demand against delivery, and the decisions that are waiting on you."
         actions={<>
           <button className="btn btn-secondary" onClick={() => onNavigate('reports')}>Reports</button>
-          {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers')}>Offer approvals</button>}
+          {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers', { status: 'pending_approval' })}>Offer approvals</button>}
         </>} />
       {notice}
 
@@ -2539,7 +2539,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
             ))}
             {pendingOffers > 0 && (
               <ActionItem tone="warn" title={`${pendingOffers} offer${pendingOffers === 1 ? '' : 's'} awaiting approval`}
-                meta="Offers held pending a decision" why="Candidates are waiting" cta="Open offers" onCta={() => onNavigate('offers')} />
+                meta="Offers held pending a decision" why="Candidates are waiting" cta="Open offers" onCta={() => onNavigate('offers', { status: 'pending_approval' })} />
             )}
           </div>}
         </section>
@@ -9368,12 +9368,25 @@ function OfferDetail({ id, user, onBack }) {
     catch (e) { toast(e.message, 'error'); }
   }
   const s = o.status;
+  // One approval layer: the HR Director. The approve/reject controls are shown
+  // only to a user who actually holds the director permission the server
+  // checks, so nobody is offered a button that would come back as 403.
+  const isDirector = can(user, 'offer.approve_director');
+  const step = (o.approvals || [])[0];
+  const approval = s === 'pending_approval'
+    ? (isDirector ? 'Waiting on your approval.' : 'Waiting on HR Director approval.')
+    : s === 'rejected_by_approver' ? `Rejected by the HR Director${step?.comment ? ': ' + step.comment : ''}`
+      : o.approvedBy ? `Approved by ${o.approvedBy.name}${step?.decided_at ? ' · ' + fmtDate(step.decided_at) : ''}`
+        : s === 'draft' ? 'Not yet submitted. The HR Director approves every offer before it is sent.' : null;
   return (
     <div>
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Offers</button>}
         title={<> Offer — {o.candidate?.fullName}</>} sub={<> <strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · <span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></>}
         actions={<>
-          {btns.send_offer?.visible && ['draft','approved'].includes(s) && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
+          {btns.submit_offer?.visible && s === 'draft' && <button className="btn" onClick={() => act('submit', {}, 'Sent to the HR Director for approval')}>Submit for approval</button>}
+          {btns.approve_offer?.visible && isDirector && s === 'pending_approval' && <button className="btn" onClick={() => act('approve', {}, 'Offer approved')}>Approve</button>}
+          {btns.reject_offer_approval?.visible && isDirector && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => setAction({ title: 'Reject Offer', path: 'reject-approval', body: (r) => ({ reason: r }), msg: 'Offer rejected' })}>Reject</button>}
+          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
           {btns.accept_offer?.visible && s === 'sent' && <button className="btn" onClick={() => act('result', { result: 'accepted' }, 'Marked accepted')}>Mark Accepted</button>}
           {btns.reject_offer_candidate?.visible && ['sent', 'accepted'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Mark Rejected by Candidate', path: 'result', body: (r) => ({ result: 'rejected_by_candidate', reason: r }), msg: 'Marked rejected by candidate' })}>Rejected by Candidate</button>}
           {btns.withdraw_offer?.visible && !['joined', 'withdrawn', 'rejected_by_candidate'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Withdraw Offer', path: 'result', body: (r) => ({ result: 'withdrawn', reason: r }), msg: 'Offer withdrawn' })}>Withdraw</button>}
@@ -9396,6 +9409,7 @@ function OfferDetail({ id, user, onBack }) {
           {o.salaryVisible && <Info label="Benefits">{o.benefits || '—'}</Info>}
           <Info label="Joining Date">{fmtDateShort(o.joiningDate)}</Info>
           <Info label="Prepared By">{o.preparedBy?.name}</Info>
+          {approval && <Info label="Approval">{approval}</Info>}
           {o.rejectionReason && <Info label="Rejection Reason">{o.rejectionReason}</Info>}
           {o.withdrawalReason && <Info label="Withdrawal Reason">{o.withdrawalReason}</Info>}
           {o.notes && <Info label="Notes">{o.notes}</Info>}

@@ -79,27 +79,29 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   const interviewerSee = await api(`/api/offers/${offer.id}`, { token: interviewer });
   c('interviewer cannot access offer detail (403)', interviewerSee.status === 403, `got ${interviewerSee.status}`);
 
-  console.log('\n— Approval chain (low salary → HR Manager only) —');
+  console.log('\n— Approval chain (one layer: HR Director, whatever the salary) —');
   await api(`/api/offers/${offer.id}/submit`, { method: 'POST', token: recruiter });
   const detail1 = await api(`/api/offers/${offer.id}`, { token: recruiter });
   c('submit → pending_approval', detail1.json.offer.status === 'pending_approval');
-  c('chain has 1 level (HR Manager, salary ≤ threshold)', detail1.json.offer.approvals.length === 1, `got ${detail1.json.offer.approvals.length}`);
+  c('chain has exactly 1 level, the HR Director', detail1.json.offer.approvals.length === 1 && detail1.json.offer.approvals[0].role_code === 'offer.approve_director', JSON.stringify(detail1.json.offer.approvals));
   const recCannotApprove = await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: recruiter, body: {} });
   c('recruiter cannot approve (403)', recCannotApprove.status === 403);
-  const appr = await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrMgr, body: { comment: 'ok' } });
-  c('HR manager approves → approved', appr.json.offer.status === 'approved', appr.json.offer.status);
+  const mgrCannotApprove = await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  c('HR manager cannot approve (403) — the step needs director authority', mgrCannotApprove.status === 403, `got ${mgrCannotApprove.status}`);
+  const appr = await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrDir, body: { comment: 'ok' } });
+  c('HR director approves → approved', appr.json.offer.status === 'approved', appr.json.offer.status);
   c('approvedBy recorded', !!appr.json.offer.approvedBy);
 
-  console.log('\n— High-salary offer requires Director level —');
+  console.log('\n— High-salary offer: still one HR Director layer, no threshold —');
   const o2 = await fullOffer(recruiter, recMgr, hrMgr, 80000);
   await api(`/api/offers/${o2.offerId}/submit`, { method: 'POST', token: recruiter });
   const hiDetail = await api(`/api/offers/${o2.offerId}`, { token: recruiter });
-  c('high-value chain has 2 levels (HR Mgr + Director)', hiDetail.json.offer.approvals.length === 2, `got ${hiDetail.json.offer.approvals.length}`);
+  c('high-value chain still has 1 level (HR Director)', hiDetail.json.offer.approvals.length === 1 && hiDetail.json.offer.approvals[0].role_code === 'offer.approve_director', `got ${hiDetail.json.offer.approvals.length}`);
 
   console.log('\n— Re-approval on salary change —');
   const o3 = await fullOffer(recruiter, recMgr, hrMgr, 20000);
   await api(`/api/offers/${o3.offerId}/submit`, { method: 'POST', token: recruiter });
-  await api(`/api/offers/${o3.offerId}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  await api(`/api/offers/${o3.offerId}/approve`, { method: 'POST', token: hrDir, body: {} });
   const beforeChange = await api(`/api/offers/${o3.offerId}`, { token: recruiter });
   c('offer approved before salary change', beforeChange.json.offer.status === 'approved');
   const salChange = await api(`/api/offers/${o3.offerId}`, { method: 'PUT', token: recruiter, body: { salaryOffered: 25000 } });
@@ -108,9 +110,11 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   console.log('\n— Reject approval requires reason —');
   const o4 = await fullOffer(recruiter, recMgr, hrMgr, 15000);
   await api(`/api/offers/${o4.offerId}/submit`, { method: 'POST', token: recruiter });
-  const rejNoReason = await api(`/api/offers/${o4.offerId}/reject-approval`, { method: 'POST', token: hrMgr, body: {} });
+  const rejNoReason = await api(`/api/offers/${o4.offerId}/reject-approval`, { method: 'POST', token: hrDir, body: {} });
   c('reject approval without reason (400)', rejNoReason.status === 400);
-  const rej = await api(`/api/offers/${o4.offerId}/reject-approval`, { method: 'POST', token: hrMgr, body: { reason: 'over budget' } });
+  const mgrReject = await api(`/api/offers/${o4.offerId}/reject-approval`, { method: 'POST', token: hrMgr, body: { reason: 'over budget' } });
+  c('HR manager cannot reject an offer approval (403)', mgrReject.status === 403, `got ${mgrReject.status}`);
+  const rej = await api(`/api/offers/${o4.offerId}/reject-approval`, { method: 'POST', token: hrDir, body: { reason: 'over budget' } });
   c('reject approval with reason → rejected_by_approver', rej.json.offer.status === 'rejected_by_approver');
 
   console.log('\n— Send + result tracking —');
@@ -149,7 +153,7 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   const oB = await api('/api/offers', { method: 'POST', token: recruiter, body: { applicationId: b.appId, salaryOffered: 10000, joiningDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10) } });
   for (const id of [oA.json.offer.id, oB.json.offer.id]) {
     await api(`/api/offers/${id}/submit`, { method: 'POST', token: recruiter });
-    await api(`/api/offers/${id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(`/api/offers/${id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(`/api/offers/${id}/send`, { method: 'POST', token: hrMgr });
     await api(`/api/offers/${id}/result`, { method: 'POST', token: recruiter, body: { result: 'accepted' } });
   }
