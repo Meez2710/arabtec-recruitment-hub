@@ -57,14 +57,26 @@ function serialize(o, user, { detail = false } = {}) {
   return out;
 }
 
-// Build the offer approval chain. HR Manager always; HR Director if salary > threshold.
-function buildChain(salaryOffered) {
-  const levels = [{ level: 1, name: 'HR Manager', roleCode: 'offer.approve' }];
-  const threshold = parseFloat(SystemSettings.all().offer_director_threshold || '50000');
-  if (salaryOffered != null && Number(salaryOffered) > threshold) {
-    levels.push({ level: 2, name: 'HR Director (high-value)', roleCode: 'offer.approve_director' });
-  }
-  return levels;
+// One approval layer: the HR Director decides every offer, whatever its value.
+// There is no HR Manager step and no salary threshold. The step carries the
+// director-only permission, so an HR Manager, who prepares and sends offers,
+// cannot approve or reject one. (The `offer_director_threshold` system setting
+// is no longer read.)
+function buildChain() {
+  return [{ level: 1, name: 'HR Director', roleCode: 'offer.approve_director' }];
+}
+// The offer approval step can be switched off from Workflow Settings (the
+// offer_approval_required system setting, system.manage, audited). Off means
+// a submitted offer is approved at once — recorded as auto-approved, never
+// silently. A missing setting means the step is required.
+function offerApprovalRequired() {
+  return SystemSettings.all().offer_approval_required !== 'false';
+}
+// Whether the user may decide the pending step. Kept next to the chain so the
+// approve and reject routes cannot drift apart.
+function mayDecide(user, pending) {
+  const needsDirector = pending.level >= 2 || pending.role_code === 'offer.approve_director';
+  return !needsDirector || user.permissions.includes('offer.approve_director');
 }
 
 /* ---------------- LIST ---------------- */
@@ -151,10 +163,11 @@ router.put('/:id', requirePermission('offer.edit'), (req, res) => {
   OfferActivity.add(o.id, req.user, 'edited');
   if (salaryChanged) {
     writeAudit(req, { action: 'offer.salary_changed', entityType: 'offer', entityId: o.id, oldValue: { salary: before.salary }, newValue: { salary: updated.salary_offered } });
-    // Salary change after approval/submission forces re-approval.
-    if (['pending_approval', 'approved'].includes(o.status)) {
+    // Salary change after approval/submission forces re-approval — unless the
+    // approval step is switched off, in which case there is nobody to re-approve.
+    if (['pending_approval', 'approved'].includes(o.status) && offerApprovalRequired()) {
       OfferApprovals.clear(o.id);
-      OfferApprovals.createChain(o.id, buildChain(updated.salary_offered));
+      OfferApprovals.createChain(o.id, buildChain());
       Offers.setStatus(o.id, 'pending_approval', { approved_by: null });
       OfferActivity.add(o.id, req.user, 'reapproval_required', { fromStatus: o.status, toStatus: 'pending_approval', note: 'Salary changed — re-approval required' });
     }
@@ -168,8 +181,20 @@ router.post('/:id/submit', requirePermission('offer.create'), (req, res) => {
   const o = Offers.byId(Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Offer not found.' });
   if (o.status !== 'draft') return res.status(409).json({ error: 'Only draft offers can be submitted.' });
+  if (!offerApprovalRequired()) {
+    OfferApprovals.clear(o.id);
+    Offers.setStatus(o.id, 'approved');
+    OfferActivity.add(o.id, req.user, 'auto_approved', { fromStatus: 'draft', toStatus: 'approved', note: 'Approved automatically — the offer approval step is switched off' });
+    writeAudit(req, { action: 'offer.auto_approved', entityType: 'offer', entityId: o.id });
+    notifyEvent('offer.approved', {
+      ...offerNotifyCtx(o, req.user, { approverName: 'Approval step off' }),
+      title: `Offer ready to send: ${o.offer_no}`,
+      body: 'The offer approval step is switched off, so this offer can be sent.',
+    });
+    return res.json({ offer: serialize(Offers.byId(o.id), req.user, { detail: true }) });
+  }
   OfferApprovals.clear(o.id);
-  OfferApprovals.createChain(o.id, buildChain(o.salary_offered));
+  OfferApprovals.createChain(o.id, buildChain());
   Offers.setStatus(o.id, 'pending_approval');
   OfferActivity.add(o.id, req.user, 'submitted', { fromStatus: 'draft', toStatus: 'pending_approval', note: 'Submitted for approval' });
   writeAudit(req, { action: 'offer.submitted', entityType: 'offer', entityId: o.id });
@@ -219,10 +244,9 @@ router.post('/:id/approve', requirePermission('offer.approve'), (req, res) => {
   if (o.status !== 'pending_approval') return res.status(409).json({ error: 'Offer is not pending approval.' });
   const pending = OfferApprovals.currentPending(o.id);
   if (!pending) return res.status(409).json({ error: 'No pending approval step.' });
-  // Enforce separation of duties: a Director-level step (level >= 2, or one whose
-  // chain role demands it) requires the distinct offer.approve_director permission.
-  const needsDirector = pending.level >= 2 || pending.role_code === 'offer.approve_director';
-  if (needsDirector && !req.user.permissions.includes('offer.approve_director')) {
+  // Separation of duties: the director step requires the distinct
+  // offer.approve_director permission, not just offer.approve.
+  if (!mayDecide(req.user, pending)) {
     return res.status(403).json({ error: 'This approval step requires HR Director authority.' });
   }
   // Don't let the same person approve a step they earlier approved at a different level.
@@ -250,6 +274,10 @@ router.post('/:id/reject-approval', requirePermission('offer.approve'), (req, re
   const reason = (req.body || {}).reason;
   if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required to reject offer approval.' });
   const pending = OfferApprovals.currentPending(o.id);
+  // The same authority that approves is the one that rejects.
+  if (pending && !mayDecide(req.user, pending)) {
+    return res.status(403).json({ error: 'This approval step requires HR Director authority.' });
+  }
   if (pending) OfferApprovals.decide(pending.id, { decision: 'rejected', approverId: req.user.id, comment: reason });
   Offers.setStatus(o.id, 'rejected_by_approver');
   OfferActivity.add(o.id, req.user, 'rejected_by_approver', { fromStatus: 'pending_approval', toStatus: 'rejected_by_approver', note: reason });

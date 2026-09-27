@@ -61,6 +61,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 (async () => {
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
   const meta = await api('/api/requests/meta/form', { token: hrMgr });
 
@@ -76,7 +77,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     });
     const id = r.json.request.id;
     await api(`/api/requests/${id}/submit`, { method: 'POST', token: hrMgr });
-    await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(`/api/requests/${id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: meta.json.recruiters[0].id } });
     return id;
   };

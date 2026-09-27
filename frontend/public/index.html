@@ -9,9 +9,11 @@
        square icon box, which is what made the favicon look distorted. -->
   <link rel="icon" type="image/svg+xml" href="/arabtec-favicon.svg?v=20260923v" />
   <link rel="apple-touch-icon" href="/arabtec-favicon.svg?v=20260923v" />
-  <!-- The approved design system is Arial / Helvetica. No web font is loaded:
-       the typeface is present on every target device, so there is no flash of
-       unstyled text and no third-party request. -->
+  <!-- Premium visual layer (docs/design/PREMIUM_UI_SPEC.md): Inter Tight for
+       display, Inter for UI. The link is non-blocking (print media until it
+       loads), so a network without Google Fonts — the on-prem case — renders
+       at once in the approved Arial / Helvetica fallback. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'" />
   <link rel="stylesheet" href="/styles.css?v=20260923v" />
   <link rel="stylesheet" href="/arabtec-approved-ui.css?v=20260923v" />
   <!-- The approved design system: the final word on chrome, colour and type. -->
@@ -44,6 +46,7 @@
   <!-- Cache-bust app.jsx (the whole SPA lives here). Bump ?v= on every UI change so a
        browser/proxy can never serve a stale build — this is what made the app appear to
        "revert" to an old version after edits. Keep in sync with styles.css version. -->
+  <script src="/knowledge-lines.js?v=20260923v"></script>
   <script type="text/babel" src="/intake-review.jsx?v=20260923v"></script>
   <script type="text/babel" src="/cv-intake.jsx?v=20260923v"></script>
   <script type="text/babel" src="/email-settings.jsx?v=20260923v"></script>

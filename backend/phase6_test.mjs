@@ -19,6 +19,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
 (async () => {
   const admin = await login('admin@arabtec.com', 'Admin@12345');
   const hrMgr = await login('hr.manager@arabtec.com');
+  const hrDir = await login('hr.director@arabtec.com'); // offers have one approval layer: the HR Director
   const recMgr = await login('rec.manager@arabtec.com');
   const recruiter = await login('recruiter@arabtec.com');
   const hm = await login('hiring.manager@arabtec.com');
@@ -32,7 +33,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
     const cr = await api('/api/requests', { method: 'POST', token: hrMgr, body: { title: 'Dash Role', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount, priority: 'high' } });
     const reqId = cr.json.request.id;
     await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-    await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} }); // single HR Director approval
+    await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} }); // single HR Director approval
     await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
     return reqId;
   }
@@ -47,7 +48,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   // offer → join
   const off = await api('/api/offers', { method: 'POST', token: recruiter, body: { applicationId: appId, salaryOffered: 40000, joiningDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10) } });
   await api(`/api/offers/${off.json.offer.id}/submit`, { method: 'POST', token: recruiter });
-  await api(`/api/offers/${off.json.offer.id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  await api(`/api/offers/${off.json.offer.id}/approve`, { method: 'POST', token: hrDir, body: {} });
   await api(`/api/offers/${off.json.offer.id}/send`, { method: 'POST', token: hrMgr });
   await api(`/api/offers/${off.json.offer.id}/result`, { method: 'POST', token: recruiter, body: { result: 'accepted' } });
   await api(`/api/offers/${off.json.offer.id}/result`, { method: 'POST', token: recruiter, body: { result: 'joined' } });

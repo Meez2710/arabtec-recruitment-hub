@@ -16,9 +16,26 @@ export function isEnabled(featureKey) {
   return row?.value === 'enabled';
 }
 
+// What each switch means to an administrator, and whether the code actually
+// consults it. A switch nothing reads is listed as reserved, not offered as a
+// control: an administrator must never be handed a toggle that does nothing.
+export const FEATURE_META = {
+  folder_watcher:            { label: 'CV folder watcher', description: 'Watch the configured CV inbox folder and import new files automatically. Takes effect on the next server start.', enforced: true },
+  cv_parsing:                { label: 'CV parsing', description: 'Reserved. Parsing is governed by the parser configuration, not this switch.', enforced: false },
+  ai_parsing:                { label: 'AI CV parsing', description: 'Reserved. Governed by the AI provider configuration.', enforced: false },
+  ai_scoring:                { label: 'AI candidate matching', description: 'Reserved. Governed by the AI provider configuration.', enforced: false },
+  auto_link_candidate:       { label: 'Create and link candidate in one step', description: 'Reserved. Always available today.', enforced: false },
+  public_careers:            { label: 'Public careers page', description: 'Reserved. No careers page ships in this version.', enforced: false },
+  email_notifications:       { label: 'Email notifications', description: 'Reserved. Email is governed by Email & Mailbox and per-event notification settings.', enforced: false },
+  interview_self_schedule:   { label: 'Candidate self-scheduling', description: 'Reserved. Not built in this version.', enforced: false },
+};
 export function allFlags() {
   const flags = all("SELECT key, value FROM system_setting WHERE key LIKE 'feature.%' ORDER BY key");
-  return flags.map(f => ({ key: f.key.replace(PREFIX, ''), enabled: f.value === 'enabled' }));
+  return flags.map((f) => {
+    const key = f.key.replace(PREFIX, '');
+    const meta = FEATURE_META[key] || { label: key, description: '', enforced: false };
+    return { key, enabled: f.value === 'enabled', label: meta.label, description: meta.description, enforced: meta.enforced };
+  });
 }
 
 export function setFlag(featureKey, enabled) {

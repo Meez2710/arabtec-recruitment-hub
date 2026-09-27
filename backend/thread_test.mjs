@@ -34,6 +34,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   const admin = await adminToken(B);
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
   const hm = await login('hiring.manager@arabtec.com');
   const interviewer = await login('interviewer@arabtec.com');
@@ -46,7 +47,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
 
   console.log('\n— System auto-posts on lifecycle —');
   await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} });
   await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
   let th = await api(`/api/thread/request/${reqId}`, { token: hrMgr });
   const sysTexts = th.json.posts.filter((p) => p.type === 'system').map((p) => p.body);

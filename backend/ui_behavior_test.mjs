@@ -504,4 +504,305 @@ await check('quality labels render through the canonical Badge, never in the rej
   assert.equal(mount(QualityBadges, { flags: [] }).render(), null, 'no labels, no markup');
 });
 
+
+/* M1 — honest loading and recovery (issue #34, PR #35). A failed read is a
+   failed read: it is reported in place with a retry, it never becomes an
+   empty list that reads as "nothing pending", and a retry never discards
+   rows that did load. */
+{
+  const api = window.ARABTEC_API; const realGet = api.get;
+  const deferred = () => { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };
+  const RECRUITER = { id: 7, fullName: 'Rana Recruiter', roles: ['recruiter'], permissions: ['dashboard.view', 'request.view_own', 'interview.view_assigned'] };
+  const DASH = { myWork: { myPendingOfferApprovals: 0 }, offersByStatus: [], aging: {}, kpis: {} };
+  const now = new Date(Date.now() + 60000).toISOString(); // still today, still ahead of render time
+  const REQUESTS = { requests: [{ id: 11, ticketNo: 'REQ-2026-0011', title: 'Site Engineer', status: 'sourcing', ownerId: 7, requesterId: 2, headcount: 1, priority: 'normal', health: { level: 'green', daysOpen: 3 }, pipeline: { total: 2 } }] };
+  const INTERVIEWS = { interviews: [
+    { id: 21, interviewNo: 'INT-21', status: 'completed', overallOutcome: null, scheduledAt: now, candidate: { fullName: 'Feedback Pending' }, request: { title: 'Site Engineer' } },
+    { id: 22, interviewNo: 'INT-22', status: 'scheduled', scheduledAt: now, interviewType: 'hr', candidate: { fullName: 'Today Candidate' }, request: { title: 'Site Engineer' } },
+  ] };
+  const routes = (map) => { api.get = async (path) => { const key = path.startsWith('/requests') ? 'requests' : path.startsWith('/interviews') ? 'interviews' : path; const r = map[key]; if (r instanceof Error) throw r; return r; }; };
+  const Dashboard = get('Dashboard'), KpiCard = get('KpiCard'), LoadError = get('LoadError'), RefetchError = get('RefetchError'), Empty = get('Empty');
+  const SectionUnavailable = get("typeof SectionUnavailable === 'function' ? SectionUnavailable : () => null");
+  const kpi = (tree, label) => nodes(persona(tree)).find((n) => n.type === KpiCard && n.props.label === label);
+  const allClear = (tree) => nodes(persona(tree)).some((n) => n.type === Empty && n.props.art === 'all-clear');
+  // The driver renders one component; child components stay as elements. Copy
+  // therefore lives in props (Empty.text, ActionItem.title…), and the in-card
+  // section state is expanded by calling it with the props it was given.
+  const RecruiterDashboard = get('RecruiterDashboard');
+  const persona = (tree) => tree && tree.type === RecruiterDashboard ? RecruiterDashboard(tree.props) : tree;
+  const expand = (tree) => { const t = persona(tree); return [t, ...nodes(t).filter((n) => n.type === SectionUnavailable).map((n) => SectionUnavailable(n.props)).filter(Boolean)]; };
+  const RoleRow = get('RoleRow');
+  const view = (tree) => expand(tree).map((t) => text(t) + nodes(t).flatMap((n) => [...Object.values(n.props || {}).filter((v) => typeof v === 'string'), n.type === RoleRow ? n.props.r.title : '']).join('\n')).join('\n');
+  // The primary retry is the page-level notice's; a section that has nothing
+  // to show carries a light one as its <Empty> action. The driver's nodes()
+  // walks children only, so both are read from props.
+  const retry = (tree) => {
+    const all = expand(tree).flatMap((t) => nodes(t));
+    const notice = all.find((n) => n.type === RefetchError && n.props.onRetry);
+    if (notice) return { props: { onClick: notice.props.onRetry } };
+    return all.map((n) => n.type === Empty ? n.props.action : null).find((b) => b && text(b) === 'Retry');
+  };
+  const sectionMarked = (tree, what) => expand(tree).flatMap((t) => nodes(t)).some((n) => n.type === Empty && n.props.title === `${what} did not load`);
+  const mountDash = async () => { const page = mount(Dashboard, { user: RECRUITER, onNavigate() {}, dash: DASH }); page.render(); await flush(); return page; };
+
+  await check('dashboard: requests fail, interviews load — the failure is named in place, interviews stay usable, no "all clear"', async () => {
+    routes({ requests: new Error('Requests service unavailable'), interviews: INTERVIEWS });
+    const page = await mountDash(); let tree = page.render();
+    assert.notEqual(tree.type, LoadError, 'one failed list must not take the whole page when the other loaded');
+    const t = view(tree);
+    assert.ok(t.includes('Could not load hiring requests'), 'the page names the failed list under its title');
+    assert.ok(t.includes('Requests service unavailable'), 'the server reason is shown, not a generic message');
+    assert.ok(sectionMarked(tree, 'Hiring requests'), 'a section that depends only on requests marks itself as not loaded');
+    assert.ok(t.includes('did not load, so this list may be incomplete'), 'a mixed list that still has rows carries a caveat');
+    assert.ok(retry(tree), 'a retry is offered');
+    assert.equal(allClear(tree), false, 'a queue that could not be read never claims "nothing is waiting on you"');
+    assert.ok(!t.includes('No open hiring requests are assigned to you'), 'a failed read is not an empty roles list');
+    assert.ok(t.includes('Feedback Pending') && t.includes('Today Candidate'), 'interviews that loaded are still rendered and actionable');
+    assert.ok(kpi(tree, 'Assigned open roles').props.unavailable, 'a KPI built only from requests shows no number');
+    assert.ok(kpi(tree, 'Overdue actions').props.unavailable, 'a KPI needing both lists shows no number when one failed');
+    assert.equal(kpi(tree, 'Interviews this week').props.unavailable, null, 'a KPI built only from interviews still counts');
+    assert.equal(kpi(tree, 'Interviews this week').props.value, 1);
+    // Retry re-reads and the section fills in without touching what loaded.
+    routes({ requests: REQUESTS, interviews: INTERVIEWS });
+    retry(tree).props.onClick(); await flush(); tree = page.render();
+    assert.ok(view(tree).includes('Site Engineer') && !view(tree).includes('Could not load'), 'retry recovers the failed section');
+    assert.ok(view(tree).includes('Today Candidate'), 'retry keeps the interviews that were already on screen');
+    assert.equal(kpi(tree, 'Assigned open roles').props.value, 1);
+    page.dispose();
+  });
+
+  await check('dashboard: interviews fail, requests load — roles render, the interview-dependent figures are withheld', async () => {
+    routes({ requests: REQUESTS, interviews: new Error('Interview calendar timed out') });
+    const page = await mountDash(); const tree = page.render();
+    assert.notEqual(tree.type, LoadError);
+    const t = view(tree);
+    assert.ok(t.includes('Could not load interviews') && t.includes('Interview calendar timed out'));
+    assert.ok(sectionMarked(tree, 'Interviews'), 'a queue with nothing else to show marks itself as not loaded');
+    assert.ok(t.includes('Site Engineer'), 'the roles that loaded are shown');
+    assert.equal(allClear(tree), false);
+    assert.ok(kpi(tree, 'Interviews this week').props.unavailable);
+    assert.ok(kpi(tree, 'Overdue actions').props.unavailable);
+    assert.equal(kpi(tree, 'Assigned open roles').props.unavailable, null);
+    assert.equal(kpi(tree, 'Assigned open roles').props.value, 1);
+    page.dispose();
+  });
+
+  await check('dashboard: both lists failing takes the page with one retry; a genuinely empty result is still "all clear"', async () => {
+    routes({ requests: new Error('down'), interviews: new Error('down') });
+    let page = await mountDash(); let tree = page.render();
+    assert.equal(tree.type, 'div'); assert.ok(nodes(tree).some((n) => n.type === LoadError), 'nothing usable loaded → page-level error');
+    page.dispose();
+    routes({ requests: { requests: [] }, interviews: { interviews: [] } });
+    page = await mountDash(); tree = page.render();
+    assert.equal(allClear(tree), true, 'an empty list that actually loaded is a real "nothing pending"');
+    assert.equal(retry(tree), undefined);
+    page.dispose();
+  });
+
+  await check('dashboard: a failed refresh keeps the loaded rows, marks them stale, and a superseded reload cannot overwrite a newer one', async () => {
+    routes({ requests: REQUESTS, interviews: INTERVIEWS });
+    const page = await mountDash(); let tree = page.render();
+    assert.ok(view(tree).includes('Site Engineer'));
+    routes({ requests: new Error('Refresh failed'), interviews: INTERVIEWS });
+    tree.props.data.reload(); await flush(); tree = page.render();
+    assert.ok(view(tree).includes('Site Engineer'), 'rows already on screen survive a failed refresh');
+    const stale = nodes(persona(tree)).find((n) => n.type === RefetchError);
+    assert.ok(stale && stale.props.text.includes('Could not refresh hiring requests'), 'the page says the rows may not be current');
+    assert.equal(kpi(tree, 'Assigned open roles').props.value, 1, 'stale figures are shown as figures, not blanked');
+    // Two overlapping reloads: the first answers last, with a failure, and must be ignored.
+    const first = deferred(), second = deferred();
+    let calls = 0; api.get = (path) => path.startsWith('/interviews') ? Promise.resolve(INTERVIEWS) : (++calls === 1 ? first.promise : second.promise);
+    tree.props.data.reload(); tree.props.data.reload();
+    second.resolve({ requests: [{ ...REQUESTS.requests[0], title: 'Newer answer' }] }); await flush(); tree = page.render();
+    assert.ok(view(tree).includes('Newer answer') && !nodes(persona(tree)).some((n) => n.type === RefetchError));
+    first.reject(new Error('late failure')); await flush(); tree = page.render();
+    assert.ok(view(tree).includes('Newer answer') && !nodes(persona(tree)).some((n) => n.type === RefetchError), 'the late response from the superseded reload changed nothing');
+    page.dispose();
+  });
+
+  const CandidateProfile = get('CandidateProfile');
+  const candidate = (id, name) => ({ candidate: { id, fullName: name, candidateNo: 'C-' + id, applications: [], interviews: [], offers: [], tags: [], history: [] } });
+  const profileProps = (id) => ({ id, user: { id: 1, permissions: [] }, btns: { edit_candidate: { visible: true } }, onBack() {}, onNavigate() {} });
+
+  await check('candidate profile: a failed first load shows a retry (never an endless skeleton) and retry recovers', async () => {
+    api.get = async () => { throw new Error('Candidate service unavailable'); };
+    const page = mount(CandidateProfile, profileProps(1)); page.render(); await flush(); let tree = page.render();
+    const err = nodes(tree).find((n) => n.type === LoadError);
+    assert.ok(err, 'a failed first load is an explicit error state');
+    assert.equal(err.props.text, 'Candidate service unavailable');
+    assert.ok(nodes(tree).some((n) => n.props?.className === 'breadcrumb'), 'the way back is still offered');
+    api.get = async () => candidate(1, 'Candidate One');
+    await err.props.onRetry(); tree = page.render();
+    assert.ok(text(tree).includes('Candidate One'));
+    // A refresh that fails keeps the profile and says so, rather than blanking it.
+    api.get = async () => { throw new Error('Refresh failed'); };
+    button(tree, 'Edit').props.onClick(); tree = page.render();
+    nodes(tree).find((n) => n.type === get('CandidateForm')).props.onSaved(); await flush(); tree = page.render();
+    assert.ok(text(tree).includes('Candidate One'), 'the loaded profile survives a failed refresh');
+    assert.ok(nodes(tree).some((n) => n.type === RefetchError));
+    page.dispose();
+  });
+
+  await check('candidate profile: opening A then B shows B, even when A answers last', async () => {
+    const a = deferred(), b = deferred();
+    api.get = (path) => path.endsWith('/1') ? a.promise : b.promise;
+    const page = mount(CandidateProfile, profileProps(1)); page.render();
+    let tree = page.render(profileProps(2));
+    assert.equal(nodes(tree).some((n) => n.type === get('Skeleton')), true, 'switching records shows a loading state, not the previous candidate');
+    b.resolve(candidate(2, 'Candidate B')); await flush(); tree = page.render();
+    assert.ok(text(tree).includes('Candidate B'));
+    a.resolve(candidate(1, 'Candidate A')); await flush(); tree = page.render();
+    assert.ok(text(tree).includes('Candidate B') && !text(tree).includes('Candidate A'), 'the late response for A never replaces B');
+    page.dispose();
+  });
+
+  const AssessmentPanel = get('AssessmentPanel');
+  const META = { scoreGuide: { 1: 'Poor', 5: 'Strong' }, behavioralCriteria: [{ key: 'b1', label: 'Openness' }], technicalCriteria: [{ key: 't1', label: 'Design' }], criticalFlags: [], decisions: [], fitLevels: [] };
+  const BUNDLE = { assessment: { unlocked: true, hr: null, technical: null, finalDecision: null } };
+  const assessRoutes = (meta, bundle) => { api.get = async (path) => { const r = path.endsWith('/meta') ? meta : bundle; if (r instanceof Error) throw r; return r; }; };
+
+  await check('assessment panel: metadata, bundle and malformed-bundle failures each end in a retry, never a stuck skeleton', async () => {
+    for (const [meta, bundle, expected] of [[new Error('Meta unavailable'), BUNDLE, 'Meta unavailable'], [META, new Error('Bundle unavailable'), 'Bundle unavailable'], [META, {}, 'no assessment']]) {
+      assessRoutes(meta, bundle);
+      const panel = mount(AssessmentPanel, { app: { id: 5 }, canFeedback: true }); panel.render(); await flush(); const tree = panel.render();
+      assert.equal(nodes(tree).some((n) => n.type === get('Skeleton')), false, 'no skeleton after a settled failure');
+      const err = nodes(tree).find((n) => n.type === LoadError);
+      assert.ok(err && err.props.text.includes(expected), `explicit error for: ${expected}`);
+      panel.dispose();
+    }
+    // Retry after a metadata failure renders the form with the approved criteria untouched.
+    assessRoutes(new Error('Meta unavailable'), BUNDLE);
+    const panel = mount(AssessmentPanel, { app: { id: 5 }, canFeedback: true }); panel.render(); await flush(); let tree = panel.render();
+    assessRoutes(META, BUNDLE);
+    await nodes(tree).find((n) => n.type === LoadError).props.onRetry(); tree = panel.render();
+    const form = nodes(tree).find((n) => n.type === get('EvaluationForm'));
+    assert.ok(form, 'retry recovers into the evaluation form');
+    assert.deepEqual(form.props.meta.behavioralCriteria, META.behavioralCriteria, 'criteria come from the server metadata as-is');
+    // A refresh that fails after a save keeps the form and reports it in place.
+    assessRoutes(META, new Error('Refresh failed'));
+    form.props.onSaved(); await flush(); tree = panel.render();
+    assert.ok(nodes(tree).some((n) => n.type === get('EvaluationForm')), 'the loaded evaluation stays on screen');
+    assert.ok(nodes(tree).some((n) => n.type === RefetchError), 'the failed refresh is visible');
+    panel.dispose();
+  });
+
+  await check('assessment panel: a locked application says so even when the form metadata failed', async () => {
+    assessRoutes(new Error('Meta unavailable'), { assessment: { unlocked: false } });
+    const panel = mount(AssessmentPanel, { app: { id: 5 }, canFeedback: true }); panel.render(); await flush(); const tree = panel.render();
+    assert.ok(view(tree).includes('unlocks once this candidate is moved to an interview stage'));
+    assert.equal(nodes(tree).some((n) => n.type === LoadError), false, 'what did load is shown instead of an error the user cannot act on');
+    panel.dispose();
+  });
+
+  api.get = realGet;
+}
+
+
+/* Approval surfaces: the HR Director's queue opens the record that needs the
+   decision, the interviewer's queue opens the interview, and the offer page
+   offers Approve/Reject only to a user who holds the director permission. */
+{
+  const api = window.ARABTEC_API; const realGet = api.get;
+  const ActionItem = get('ActionItem');
+  await check('director and interviewer dashboards deep-link to the record needing a decision', () => {
+    const calls = [];
+    const director = { id: 2, roles: ['hr_director'], permissions: ['dashboard.view', 'request.view_all', 'request.approve', 'offer.approve'] };
+    const data = { d: { kpis: {}, aging: {}, offersByStatus: [{ status: 'pending_approval', count: 1 }] }, requests: [{ id: 44, ticketNo: 'REQ-2026-0044', title: 'Site Engineer', status: 'pending_approval', headcount: 1 }], interviews: [], unavailable: {}, sectionErrors: {}, loaded: {}, reload() {} };
+    const tree = get('DirectorDashboard')({ user: director, data, onNavigate: (...a) => calls.push(a) });
+    const items = nodes(tree).filter((n) => n.type === ActionItem);
+    items.find((n) => n.props.cta === 'Open request').props.onCta();
+    assert.equal(window.__atsPendingRequestId, 44, 'the request awaiting approval is opened by id');
+    items.find((n) => n.props.cta === 'Open offers').props.onCta();
+    // Objects born inside the vm realm have a different prototype, so compare by shape.
+    assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['offers', { status: 'pending_approval' }]), 'the offers queue is filtered to those held for a decision');
+    const iv = get('InterviewerDashboard')({ user: { id: 9, roles: ['interviewer'], permissions: [] }, data: { interviews: [{ id: 77, interviewNo: 'INT-77', status: 'completed', overallOutcome: null, scheduledAt: new Date().toISOString(), candidate: { fullName: 'C' }, request: { title: 'R' } }], unavailable: {} }, onNavigate: (...a) => calls.push(a) });
+    nodes(iv).find((n) => n.type === ActionItem && n.props.cta === 'Open interview').props.onCta();
+    assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['interviews', { openId: 77 }]), 'the interview needing feedback is opened by id');
+  });
+
+  await check('offer page: one approval layer — submit on draft, approve/reject only for the director, send only once approved', async () => {
+    const buttons = ['submit_offer', 'approve_offer', 'reject_offer_approval', 'send_offer'].map((buttonKey) => ({ buttonKey, visible: true }));
+    const offerOf = (status, extra = {}) => ({ offer: { id: 3, offerNo: 'OFR-3', status, candidate: { fullName: 'Cand' }, request: {}, approvals: [{ level: 1, name: 'HR Director', role_code: 'offer.approve_director', decision: status === 'pending_approval' ? 'pending' : 'approved' }], ...extra } });
+    const director = { id: 2, permissions: ['offer.view', 'offer.approve', 'offer.approve_director'] };
+    const manager = { id: 3, permissions: ['offer.view', 'offer.approve', 'offer.send'] };
+    const render = async (status, user) => {
+      api.get = async (path) => path.endsWith('/resolved') ? { buttons } : offerOf(status);
+      const page = mount(get('OfferDetail'), { id: 3, user, onBack() {} }); page.render(); await flush(); const tree = page.render(); page.dispose(); return tree;
+    };
+    // The page's controls live in PageHead's `actions` prop, not in its children.
+    const actionBtn = (tree, label) => { const ph = nodes(tree).find((n) => n.type === get('PageHead')); return ph && button(ph.props.actions, label); };
+    let tree = await render('draft', manager);
+    assert.ok(actionBtn(tree, 'Submit for approval'), 'a draft is submitted from the page');
+    assert.equal(actionBtn(tree, 'Send Offer'), undefined, 'a draft cannot be sent: the server would refuse it');
+    tree = await render('pending_approval', director);
+    assert.ok(actionBtn(tree, 'Approve') && actionBtn(tree, 'Reject'), 'the director decides');
+    tree = await render('pending_approval', manager);
+    assert.equal(actionBtn(tree, 'Approve'), undefined, 'an HR Manager holding offer.approve but not the director permission is not offered a button that would 403');
+    assert.ok(nodes(tree).flatMap((n) => Object.values(n.props || {}).filter((v) => typeof v === 'string')).join('\n').includes('Waiting on HR Director approval'), 'the page says whose decision it waits on');
+    tree = await render('approved', manager);
+    assert.ok(actionBtn(tree, 'Send Offer'), 'an approved offer can be sent');
+  });
+  api.get = realGet;
+}
+
+/* Polish pass: bulk move scope is honest, the candidate's current application
+   is one line under the header, and the system admin can switch dashboards. */
+{
+  await check('bulk move summary: hidden rows are counted, only reachable stages are offered, only eligible rows move', () => {
+    const summary = get('bulkSelectionSummary');
+    const apps = [{ id: 1, status: 'matched' }, { id: 2, status: 'joined' }, { id: 3, status: 'sourced' }];
+    const sum = summary({ selected: new Set([1, 2, 3]), apps, visibleApps: [apps[0], apps[2]], pending: new Set([3]), target: 'sourced' });
+    assert.equal(sum.hidden.length, 1, 'the joined row is selected but hidden by the filters');
+    assert.equal(sum.hidden[0].id, 2);
+    assert.equal(sum.targets.includes('sourced'), false, 'a stage nobody can move to is not offered');
+    const canMove = get('canPipelineMove');
+    assert.ok(sum.targets.length > 0 && sum.targets.every((t) => [apps[0], apps[2]].some((a) => canMove(a.status, t))), 'every offered stage is reachable by at least one selected row');
+    assert.equal(sum.target, sum.targets[0], 'an invalid destination falls back to the first reachable stage');
+    const forward = sum.targets.find((t) => canMove('matched', t) && canMove('sourced', t));
+    const later = summary({ selected: new Set([1, 2, 3]), apps, visibleApps: apps, pending: new Set([3]), target: forward });
+    assert.equal(later.target, forward, 'a valid destination is kept');
+    assert.equal(JSON.stringify(later.eligible.map((a) => a.id)), '[1]', 'the pending row and the locked row are excluded from the move');
+    const none = summary({ selected: new Set([2]), apps, visibleApps: apps, pending: new Set(), target: 'offer' });
+    assert.equal(none.targets.length, 0); assert.equal(none.target, ''); assert.equal(none.eligible.length, 0);
+  });
+
+  await check('candidate header names the current application, never a disqualified one, and shows no dead link', () => {
+    const ApplicationContext = get('ApplicationContext'), current = get('currentApplication');
+    const active = { id: 5, requestId: 9, ticketNo: 'REQ-2026-0009', position: 'Site Engineer', status: 'interviewing', recruiter: { name: 'Karim' }, lastActivityAt: '2026-09-01' };
+    const rejected = { id: 4, requestId: 8, ticketNo: 'REQ-2026-0008', position: 'Old role', status: 'rejected' };
+    assert.equal(current([rejected, active]).id, 5, 'history is never promoted to current');
+    assert.equal(current([rejected]), null);
+    const strings = (tree) => nodes(tree).flatMap((n) => Object.values(n.props || {}).filter((v) => typeof v === 'string')).join('\n') + text(tree);
+    let tree = ApplicationContext({ application: active, count: 2, onOpenRequest: () => {} });
+    assert.ok(strings(tree).includes('Site Engineer') && nodes(tree).some((n) => n.type === get('AppStatusBadge') && n.props.status === 'interviewing'));
+    assert.ok(button(tree, 'Open request'), 'the request link is offered when the caller authorised it');
+    tree = ApplicationContext({ application: active, count: 2, onOpenRequest: null });
+    assert.equal(button(tree, 'Open request'), undefined, 'no link without authorisation');
+    tree = ApplicationContext({ application: null, count: 1 });
+    assert.ok(text(tree).includes('No active application'));
+    tree = ApplicationContext({ application: null, count: 0 });
+    assert.ok(text(tree).includes('Not linked'));
+  });
+
+  await check('system admin: director view by default, with tabs into every role\'s dashboard', async () => {
+    const api = window.ARABTEC_API; const realGet = api.get;
+    api.get = async (path) => path.startsWith('/requests') ? { requests: [] } : path.startsWith('/interviews') ? { interviews: [] } : { kpis: {}, aging: {}, offersByStatus: [], myWork: {} };
+    const admin = { id: 1, roles: ['system_admin'], permissions: ['dashboard.view', 'request.view_all', 'interview.view_all'] };
+    const page = mount(get('Dashboard'), { user: admin, onNavigate() {}, dash: { kpis: {}, aging: {}, offersByStatus: [], myWork: {} } });
+    page.render(); await flush(); let tree = page.render();
+    assert.equal(tree.type, get('DirectorDashboard'), 'the big picture is the default');
+    const tabs = nodes(tree.props.notice).filter((n) => n.props?.role === 'tab');
+    assert.deepEqual(tabs.map((t) => text(t)), ['Director', 'Executive', 'Recruitment manager', 'Recruiter', 'Interviewer']);
+    tabs.find((t) => text(t) === 'Recruiter').props.onClick(); page.render(); await flush(); tree = page.render();
+    assert.equal(tree.type, get('RecruiterDashboard'), 'the tab switches the composition');
+    tabs.find((t) => text(t) === 'Interviewer').props.onClick(); page.render(); await flush(); tree = page.render();
+    assert.equal(tree.type, get('InterviewerDashboard'));
+    page.dispose();
+    const recruiter = mount(get('Dashboard'), { user: { id: 7, roles: ['recruiter'], permissions: ['dashboard.view', 'request.view_own', 'interview.view_assigned'] }, onNavigate() {}, dash: { myWork: {}, offersByStatus: [] } });
+    recruiter.render(); await flush(); tree = recruiter.render();
+    assert.equal(nodes(tree.props.notice || []).some((n) => n.props?.role === 'tab'), false, 'a recruiter gets no view switcher');
+    recruiter.dispose(); api.get = realGet;
+  });
+}
+
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);

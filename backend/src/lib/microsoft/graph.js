@@ -231,7 +231,7 @@ export function inboxProbe({ accessToken = null, tokenRef = null } = {}) {
  * what the ATS sent from the mailbox they already read — an audit property, not
  * a mailbox mutation the integration performs on incoming mail.
  */
-export async function sendMailAs({ to, subject, html, text, replyTo, accessToken = null }) {
+export async function sendMailAs({ to, subject, html, text, replyTo, attachments, accessToken = null }) {
   // A read-only grant must fail HERE, loudly and before any recipient is
   // resolved — not at Graph with a 403 after the ATS has already decided a
   // notification was sent. `Mail.Send` is not requested unless MS_ENABLE_SEND is
@@ -265,6 +265,13 @@ export async function sendMailAs({ to, subject, html, text, replyTo, accessToken
     toRecipients: recipients,
   };
   if (replyTo) message.replyTo = [{ emailAddress: { address: String(replyTo).trim() } }];
+  if (Array.isArray(attachments) && attachments.length) {
+    message.attachments = attachments.map((a) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: a.filename, contentType: a.contentType,
+      contentBytes: Buffer.from(a.content).toString('base64'),
+    }));
+  }
 
   await graphRequest('/me/sendMail', { method: 'POST', json: { message, saveToSentItems: true }, accessToken });
   return { ok: true };

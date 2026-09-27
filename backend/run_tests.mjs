@@ -43,6 +43,8 @@ const SUITES = [
   'ui_behavior_test.mjs', // approved navigation, pipeline and mail UI behaviors
   'ui_compile_test.mjs',      // production JSX compiles in the vendored browser Babel
   'ui_form_controls_test.mjs', // buttons, inputs, selects: one box per purpose, no state-driven movement
+  'ui_layout_rules_test.mjs',   // layout defects fixed once, guarded as rules (docs/audits/ui-rules.md)
+  'ui_knowledge_lines_test.mjs', // footer knowledge line: curated list stays short, unique, attributed
   'ui_readiness_test.mjs',    // production UI release-contract regression checks
   'ui_responsive_test.mjs',   // stacked tables, cards, nav and anyhelp reflow on phones
   'ui_sort_stability_test.mjs', // sorting never unmounts the candidates table

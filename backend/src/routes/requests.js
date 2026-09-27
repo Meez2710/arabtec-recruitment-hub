@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
-  Projects, Sites, Departments, Designations, BusinessUnits, Users, SystemSettings, Posts, Applications,
+  Projects, Sites, Departments, Designations, BusinessUnits, Users, SystemSettings, Posts, Applications, Workflows,
   Candidates, HardDelete,
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
@@ -162,6 +162,7 @@ function serialize(r, user, { withDetail = false } = {}) {
   // for exactly that reason.
   out.owner = ownerLite ? { id: ownerLite.id, name: ownerLite.full_name } : null;
   if (withDetail) {
+    out.approvalRequired = approvalRequired();
     out.jobDescription = r.job_description;
     out.keyRequirements = r.key_requirements;
     out.keyResponsibilities = r.key_responsibilities;
@@ -227,6 +228,26 @@ router.get('/:id', (req, res) => {
 function defaultApprovalChain() {
   return [{ level: 1, name: 'HR Director', roleCode: 'hr_director' }];
 }
+// The single approval step can be switched off from Workflow Settings: the
+// `approval_chain` row's is_active flag, changed only by workflow.manage and
+// audited there. Off means a submitted request is approved at once — never
+// silently: the request's activity, its thread and the audit log all say it
+// skipped the step. A missing row means the step is required.
+function approvalRequired() {
+  const row = Workflows.byKey('approval_chain');
+  return !row || row.is_active !== 0;
+}
+// One approver. The step names the hr_director role, and only a holder of
+// that role (or the system administrator) may decide it, whatever other
+// permissions the user holds — an HR Manager with request.approve is still
+// not the HR Director. Mirrors offers, where the director step needs the
+// director-only permission.
+function mayDecideRequest(user, step) {
+  if (!step || !step.role_code) return true;
+  const roles = user.roles || [];
+  return roles.includes(step.role_code) || roles.includes('system_admin');
+}
+const NOT_THE_APPROVER = 'Only the HR Director can approve or reject a hiring request.';
 
 router.post('/', requirePermission('request.create'), (req, res) => {
   const d = req.body || {};
@@ -312,7 +333,9 @@ router.put('/:id', requirePermission('request.edit'), (req, res) => {
   // STATUS.APPROVED is an ALIAS for persisted `sourcing` — see
   // docs/REQUEST_STATUS_ALIAS_MAP.md. So this reads "a material change while
   // sourcing", and the re-approval limb below is reachable and live.
-  const materialChange = r.status === STATUS.APPROVED
+  // With the approval step switched off there is nobody to re-approve, so a
+  // material change is recorded like any other edit.
+  const materialChange = approvalRequired() && r.status === STATUS.APPROVED
     && (patch.headcount !== r.headcount || patch.salary_band_max !== r.salary_band_max || patch.grade !== r.grade);
 
   // BL-21/BL-23. Headcount used to move with NO seat writes at all, and the whole
@@ -374,6 +397,18 @@ router.post('/:id/submit', requirePermission('request.submit'), (req, res) => {
   if (r.status !== STATUS.DRAFT && r.status !== STATUS.REOPENED) {
     return res.status(409).json({ error: 'Only draft requests can be submitted.' });
   }
+  if (!approvalRequired()) {
+    Requests.setStatus(r.id, STATUS.APPROVED, { opened_at: r.opened_at || new Date().toISOString() });
+    RequestActivity.add(r.id, req.user, 'auto_approved', { fromStatus: r.status, toStatus: STATUS.APPROVED, note: 'Approved automatically — the approval step is switched off' });
+    Posts.system(r.id, 'Request submitted. The approval step is switched off, so sourcing can begin.', { event: 'auto_approved' }, req.user);
+    writeAudit(req, { action: 'request.auto_approved', entityType: 'recruitment_request', entityId: r.id });
+    notifyEvent('request.approved', {
+      ...requestNotifyCtx(r, req.user, { approverName: 'Approval step off' }),
+      title: `Ready for sourcing: ${r.ticket_no} — ${r.title}`,
+      body: `${req.user.fullName} submitted this request. The approval step is switched off, so sourcing can begin.`,
+    });
+    return res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
+  }
   // Build approval chain on first submit.
   if (Approvals.forRequest(r.id).length === 0) Approvals.createChain(r.id, defaultApprovalChain(r));
   else Approvals.resetChain(r.id);
@@ -398,8 +433,14 @@ router.post('/:id/approve', requirePermission('request.approve'), (req, res) => 
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
   if (r.status !== STATUS.PENDING) return res.status(409).json({ error: 'Request is not pending approval.' });
+  // A new request sits at pending_approval before anyone presses Submit (there
+  // is no persisted draft). The approver's decision is the same either way, so
+  // the one-step chain is created here when nobody started it — a request
+  // must never be stuck because a submit click was skipped.
+  if (Approvals.forRequest(r.id).length === 0) Approvals.createChain(r.id, defaultApprovalChain(r));
   const pending = Approvals.currentPending(r.id);
   if (!pending) return res.status(409).json({ error: 'No pending approval step.' });
+  if (!mayDecideRequest(req.user, pending)) return res.status(403).json({ error: NOT_THE_APPROVER });
   Approvals.decide(pending.id, { decision: 'approved', approverId: req.user.id, comment: (req.body || {}).comment });
   RequestActivity.add(r.id, req.user, 'approved', { note: `Approved: ${pending.name}` });
   writeAudit(req, { action: 'request.approval_decision', entityType: 'recruitment_request', entityId: r.id, newValue: { level: pending.level, decision: 'approved' } });
@@ -423,7 +464,9 @@ router.post('/:id/reject', requirePermission('request.reject'), (req, res) => {
   const reason = (req.body || {}).reason;
   if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required to reject.' });
   if (r.status !== STATUS.PENDING) return res.status(409).json({ error: 'Request is not in an approvable state.' });
+  if (Approvals.forRequest(r.id).length === 0) Approvals.createChain(r.id, defaultApprovalChain(r));
   const pending = Approvals.currentPending(r.id);
+  if (pending && !mayDecideRequest(req.user, pending)) return res.status(403).json({ error: NOT_THE_APPROVER });
   if (pending) Approvals.decide(pending.id, { decision: 'rejected', approverId: req.user.id, comment: reason });
   Requests.setStatus(r.id, STATUS.REJECTED, { closed_at: new Date().toISOString(), close_reason: 'rejected' });
   RequestActivity.add(r.id, req.user, 'rejected', { fromStatus: r.status, toStatus: STATUS.REJECTED, note: reason });

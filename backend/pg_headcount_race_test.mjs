@@ -35,6 +35,7 @@ try {
 
   const recruiter = await cluster.login('recruiter@arabtec.com');
   const hrMgr = await cluster.login('hr.manager@arabtec.com');
+const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const meta = await api(0, '/api/requests/meta/form', { token: hrMgr });
 
   const statusOf = (id) => get('SELECT status FROM recruitment_request WHERE id=$1', [id]).status;
@@ -53,7 +54,7 @@ try {
     });
     const id = r.json.request.id;
     await api(0, `/api/requests/${id}/submit`, { method: 'POST', token: hrMgr });
-    await api(0, `/api/requests/${id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(0, `/api/requests/${id}/approve`, { method: 'POST', token: hrDir, body: {} });
     return id;
   };
   const mkReopened = async (hc) => {

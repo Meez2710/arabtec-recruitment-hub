@@ -84,6 +84,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
 (async () => {
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+  const hrDir = await login('hr.director@arabtec.com'); // offers: one approval layer, the HR Director
   const recMgr = await login('rec.manager@arabtec.com');
   const meta = await api('/api/requests/meta/form', { token: hrMgr });
 
@@ -99,7 +100,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
     });
     const id = r.json.request.id;
     await api(`/api/requests/${id}/submit`, { method: 'POST', token: hrMgr });
-    await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(`/api/requests/${id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: meta.json.recruiters[0].id } });
     return id;
   };
@@ -292,7 +293,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
       method: 'POST', token: hrMgr, body: { applicationId: appId, positionTitle: 'Engineer', joiningDate: '2030-01-01' },
     })).json.offer;
     await api(`/api/offers/${offer.id}/submit`, { method: 'POST', token: hrMgr });
-    await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(`/api/offers/${offer.id}/send`, { method: 'POST', token: hrMgr });
     await api(`/api/offers/${offer.id}/result`, { method: 'POST', token: hrMgr, body: { result: 'accepted' } });
     const before = { req: reqRow(reqId), seats: seatsOf(reqId) };
@@ -315,7 +316,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
       method: 'POST', token: hrMgr, body: { applicationId: appId, positionTitle: 'Engineer', joiningDate: '2030-01-01' },
     })).json.offer;
     await api(`/api/offers/${offer.id}/submit`, { method: 'POST', token: hrMgr });
-    await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+    await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(`/api/offers/${offer.id}/send`, { method: 'POST', token: hrMgr });
     await api(`/api/offers/${offer.id}/result`, { method: 'POST', token: hrMgr, body: { result: 'accepted' } });
     const r = await api(`/api/offers/${offer.id}/result`, { method: 'POST', token: hrMgr, body: { result: 'joined' } });
@@ -481,7 +482,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
         method: 'POST', token: hrMgr, body: { applicationId: appId, positionTitle: 'Engineer', joiningDate: '2030-01-01' },
       })).json.offer;
       await api(`/api/offers/${offer.id}/submit`, { method: 'POST', token: hrMgr });
-      await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrMgr, body: {} });
+      await api(`/api/offers/${offer.id}/approve`, { method: 'POST', token: hrDir, body: {} });
       await api(`/api/offers/${offer.id}/send`, { method: 'POST', token: hrMgr });
       await api(`/api/offers/${offer.id}/result`, { method: 'POST', token: hrMgr, body: { result: 'accepted' } });
       const before = { req: reqRow(reqId), seats: seatsOf(reqId), offer: get('SELECT status, joined_at FROM offer WHERE id=?', [offer.id]) };

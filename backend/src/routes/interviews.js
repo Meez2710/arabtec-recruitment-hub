@@ -13,6 +13,26 @@ const router = Router();
 router.use(requireAuth);
 
 const IV_TYPES = ['phone', 'technical', 'client', 'final', 'hr', 'reference'];
+
+// A calendar entry for the invite email, so the interview lands in Outlook
+// (or any calendar) with one click instead of being retyped from the text.
+// METHOD:PUBLISH, not REQUEST: the ATS is not the meeting organizer and does
+// not track replies, so this is an entry to add, not a meeting to accept.
+function icsText(s) { return String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+function icsDate(d) { return new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); }
+function interviewIcs(iv, cand) {
+  const start = new Date(iv.scheduled_at);
+  if (isNaN(start)) return null;
+  const end = new Date(start.getTime() + (Number(iv.duration_min) || 60) * 60000);
+  const summary = `Interview — ${cand?.current_position || cand?.full_name || 'Arabtec'} (${iv.interview_type || 'interview'})`;
+  const description = [cand?.full_name ? `Candidate: ${cand.full_name}` : null, iv.interview_no ? `Reference: ${iv.interview_no}` : null,
+    iv.mode ? `Mode: ${iv.mode}` : null, iv.location_or_link ? `Where: ${iv.location_or_link}` : null].filter(Boolean).join('\n');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Arabtec Recruitment Hub//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    `UID:${iv.interview_no || iv.id}@arabtec-recruitment-hub`, `DTSTAMP:${icsDate(Date.now())}`,
+    `DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`, `SUMMARY:${icsText(summary)}`,
+    ...(iv.location_or_link ? [`LOCATION:${icsText(iv.location_or_link)}`] : []),
+    `DESCRIPTION:${icsText(description)}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
+}
 const IV_MODES = ['onsite', 'video', 'phone'];
 const IV_STATUSES = ['scheduled', 'completed', 'no_show', 'cancelled', 'rescheduled'];
 const RECS = ['strong_yes', 'yes', 'no', 'strong_no'];
@@ -167,6 +187,7 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
       dateText, mode: created.mode, locationOrLink: created.location_or_link },
     title: `Interview scheduled: ${interviewNo}`,
     body: `${cand ? cand.full_name : 'A candidate'} — ${dateText}`,
+    attachments: (() => { const ics = interviewIcs(created, cand); return ics ? [{ filename: `${interviewNo}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH', content: ics }] : []; })(),
   });
   if (invited.sent && cand) {
     try {

@@ -20,6 +20,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
 (async () => {
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
   const meta = await api('/api/requests/meta/form', { token: hrMgr });
   const recId = meta.json.recruiters.find((r) => r.name === 'Karim Adel').id;
@@ -37,7 +38,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
 
   // approve + assign so we can link
   await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} }); // single HR Director approval
+  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} }); // single HR Director approval
   await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
 
   const cand = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Workspace Cand', phone: '+201239990001', employer: 'Orascom', currentProject: 'Tower 1', university: 'Cairo Uni', major: 'MEP', graduationYear: 2015 } });

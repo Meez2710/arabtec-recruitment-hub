@@ -41,6 +41,7 @@ const { get } = await import('./src/lib/db.js');
 const reload = (id) => get('SELECT id, status, owner_id FROM recruitment_request WHERE id=?', [id]);
 
 const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
 const recMgr = await login('rec.manager@arabtec.com');
 const meta = await api('/api/requests/meta/form', { token: hrMgr });
 
@@ -78,7 +79,7 @@ const mkSourcingReq = async (headcount = 3) => {
   // auto-advances straight to SOURCING. It does NOT rest at APPROVED, so
   // assign's `if (status === APPROVED)` never fires and any fixture asserting
   // APPROVED after approve is wrong. Recorded as the contract, not worked around.
-  step(`POST /${id}/approve`, await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrMgr, body: {} }));
+  step(`POST /${id}/approve`, await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrDir, body: {} }));
   const afterApprove = reload(id).status;
   if (afterApprove !== 'sourcing') throw new Error(`after approve: ${afterApprove}`);
 

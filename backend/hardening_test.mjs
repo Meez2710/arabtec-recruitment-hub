@@ -30,6 +30,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
 (async () => {
   const admin = await adminToken(B);
   const t = await login('hr.manager@arabtec.com');
+  const dir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const rec = await login('recruiter@arabtec.com');
   const recMgr = await login('rec.manager@arabtec.com');
   const viewer = await login('viewer@arabtec.com');
@@ -40,7 +41,7 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
     const cr = await api('/api/requests', { method: 'POST', token: t, body: { title: 'Hard Role', justification: 'new_hire', projectId: meta.projects[0].id, departmentId: meta.departments[0].id, headcount: 1, priority: 'high' } });
     const id = cr.json.request.id;
     await api(`/api/requests/${id}/submit`, { method: 'POST', token: t });
-    await api(`/api/requests/${id}/approve`, { method: 'POST', token: t, body: {} });
+    await api(`/api/requests/${id}/approve`, { method: 'POST', token: dir, body: {} });
     await api(`/api/requests/${id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
     return id;
   };

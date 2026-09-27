@@ -73,6 +73,7 @@ const reload = (id) => get('SELECT id, status, headcount FROM recruitment_reques
 
 const recruiter = await login('recruiter@arabtec.com');
 const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
 const meta = await api('/api/requests/meta/form', { token: hrMgr });
 
 const step = (label, res, ok = 200) => {
@@ -97,7 +98,7 @@ const mkPendingReq = async (hc) => assertStatus(await create(hc), 'pending_appro
 const mkSourcingReq = async (hc) => {
   const id = await create(hc);
   step('submit', await api(`/api/requests/${id}/submit`, { method: 'POST', token: hrMgr }));
-  step('approve', await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrMgr, body: {} }));
+  step('approve', await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrDir, body: {} }));
   return assertStatus(id, 'sourcing');
 };
 const mkClosedReq = async (hc) => {

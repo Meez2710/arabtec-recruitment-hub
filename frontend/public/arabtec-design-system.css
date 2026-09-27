@@ -436,6 +436,41 @@ tr.row-selected > td { background: var(--green-50); }
   font-weight: 400; color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .dash-kpi-hint { font-size: 12.5px; color: var(--muted); }
+/* A tile whose source did not load shows a muted dash, never a zero: a zero
+   reads as "nothing to do", which a failed read cannot claim. */
+.dash-kpi-unavailable .dash-kpi-val { color: var(--muted); }
+/* One muted line under rows that did load, when another source for the same
+   list failed. The page-level notice carries the reason and the retry. */
+.section-caveat { display: flex; align-items: center; gap: 8px; padding: 10px 20px 14px; font-size: 12.5px; color: var(--muted); }
+.section-caveat > svg { color: var(--warning-ink); }
+/* The candidate's current application, one line under the identity header. */
+.app-context { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; }
+.app-context > .btn { margin-left: auto; }
+/* Bulk move bar: the scope on the left, the action on the right, both wrap. */
+/* The pipeline's bulk bar is the Talent Pool's bulk bar (brand background,
+   white text, defined in styles.css); these rules only let it wrap and keep
+   its two halves apart, and give the scope caveat legible ink on that field. */
+.bulk-bar { flex-wrap: wrap; justify-content: space-between; gap: 10px 16px; margin-bottom: 12px; }
+.bulk-bar .muted { color: rgba(255, 255, 255, .82); }
+/* Buttons on the brand field: the primary action is white with brand ink, the
+   ghost is outlined in white. Later layers paint .btn brand-on-brand and
+   .btn-ghost white-on-white here, which hid both labels. */
+.bulk-bar .btn { background: #fff; color: var(--green-700); border-color: #fff; }
+.bulk-bar .btn:hover:not(:disabled) { background: #F4F5F7; color: var(--green-700); }
+.bulk-bar .btn-ghost { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .6); }
+.bulk-bar .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .14); color: #fff; }
+.bulk-bar select { color: #fff; }
+.bulk-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bulk-actions select { min-width: max-content; }
+/* The system administrator's dashboard view switcher sits under the title. */
+.dash-view-tabs { margin: -4px 0 18px; }
+/* The knowledge line: a hairline, a short red dash, one quiet sentence and
+   its author. Sits under the page content, never in the way of it. */
+.knowledge-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); }
+.knowledge-line .kl-dash { flex: 0 0 auto; width: 18px; height: 2px; background: var(--brand); align-self: center; }
+.knowledge-line .kl-quote { flex: 1 1 220px; min-width: 0; max-width: 68ch; }
+.knowledge-line .kl-by { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .dash-kpi-top .dash-ico { display: none; }
 .dash-grid-2 { gap: 16px; }
 .dash-bar-fill { border-radius: 999px; }
@@ -1304,3 +1339,86 @@ button.pcard-name { color: var(--ink); background: transparent; }
    stylesheet lift both together — an inline style can't be overridden. */
 .fine-label { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
 .fine-key { font-size: 11px; }
+
+
+/* ================================================================ 12. WORKFORCE
+   The premium visual layer (docs/design/PREMIUM_UI_SPEC.md, Figma "Arabtec
+   Workforce UI Direction"). Company colours, logo and favicon are unchanged.
+   This section owns colour and typeface only; sizes, radii and spacing stay in
+   claude-system.css. Inter Tight / Inter fall back to Arial when the font host
+   is unreachable, which is the on-prem case. */
+:root {
+  --font-display: 'Inter Tight', Inter, Arial, Helvetica, sans-serif;
+  --font-ui: Inter, Arial, Helvetica, sans-serif;
+  --card-radius: 10px; --radius: 10px; --r-md: 10px;
+  --sidebar-bg: #1A1A1A; --sidebar-line: rgba(255, 255, 255, .08);
+}
+html, body, button, input, select, textarea, .field textarea { font-family: var(--font-ui); }
+.page-title, .page-head .page-title, .dash-head .page-title, .dash-kpi-val, .kpi-value,
+.card-head h2, .card-head h3, .modal-head h2, .modal-head h3, .empty-title, .login-card h1 {
+  font-family: var(--font-display);
+}
+.page-sub { max-width: 68ch; }
+
+/* Eyebrow: muted, tracked, and led by the brand's one red dash. */
+.breadcrumb, .page-head .breadcrumb, .dash-eyebrow, .dash-kpi-label, .kpi-label { color: var(--muted); }
+.page-head .breadcrumb::before, .dash-eyebrow::before {
+  content: ''; display: inline-block; width: 18px; height: 2px; margin: 0 8px 3px 0;
+  background: var(--brand); vertical-align: middle;
+}
+
+/* Sidebar: charcoal, quiet items, the active one white with a red bar. */
+.sidebar { background: var(--sidebar-bg); color: #fff; border-right: 0; }
+.sidebar-head { border-bottom-color: var(--sidebar-line); }
+.side-txt strong, .sidebar-title { color: #fff; }
+.side-txt span { color: rgba(255, 255, 255, .55); }
+.nav-section { color: rgba(255, 255, 255, .45); }
+.nav-item { color: rgba(255, 255, 255, .72); position: relative; }
+.nav-item:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+.nav-item.active { background: rgba(255, 255, 255, .09); color: #fff; }
+.nav-item.active::before {
+  content: ''; display: block; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 18px; border-radius: 2px; background: var(--brand);
+}
+.nav-item .nav-icon, .nav-item.active .nav-icon { color: inherit; opacity: 1; }
+.nav-item:focus-visible { outline-color: #fff; }
+.nav-count { background: rgba(255, 255, 255, .12); color: rgba(255, 255, 255, .85); }
+.nav-item.active .nav-count { background: #fff; color: var(--ink); }
+.scope-card { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
+.scope-card strong { color: #fff; }
+.scope-card p { color: rgba(255, 255, 255, .55); }
+
+/* Buttons: one solid green action, white secondary, transparent ghost.
+   Colour only — the box (height, padding, border width) stays in claude-system.css. */
+.btn { background: var(--green-700); color: #fff; border-color: var(--green-700); font-weight: 600; }
+.btn:hover { background: #00523F; border-color: #00523F; color: #fff; }
+.btn-secondary { background: #fff; color: var(--ink); border-color: var(--line-strong); }
+.btn-secondary:hover { background: #F5F5F5; color: var(--ink); border-color: var(--line-strong); }
+.btn-ghost { background: transparent; color: var(--ink-soft); border-color: transparent; }
+.btn-ghost:hover { background: rgba(26, 26, 26, .05); color: var(--ink); border-color: transparent; }
+.btn-danger { background: #fff; color: var(--brand-dark); border-color: var(--brand); }
+.btn-danger:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+
+/* Badges: small, 6px corners, never a pill. */
+.badge, .status-chip { border-radius: 6px; font-weight: 700; }
+
+/* Hint: one fact the product can vouch for, with its emoji, beside or under
+   the work. Never an opinion, never inside a table or a button. */
+.hint {
+  display: flex; align-items: flex-start; gap: 10px; margin: 0 0 16px;
+  padding: 10px 14px; border-left: 2px solid var(--green); border-radius: 0 10px 10px 0;
+  background: #fff; font-size: 12.5px; line-height: 1.5; color: var(--muted);
+}
+.hint-emoji { flex: 0 0 auto; font-size: 15px; line-height: 1.25; }
+.hint-text { flex: 1 1 240px; min-width: 0; max-width: 68ch; }
+.hint-text strong { color: var(--ink); }
+.hint-action { flex: 0 0 auto; margin-left: auto; }
+
+/* Phone & WhatsApp sender card: one column, it lives in the narrow aside. */
+.msg-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.msg-form .field { min-width: 0; }
+.msg-form p { margin: 0; font-size: 12.5px; line-height: 1.5; }
+.msg-form .email-settings-actions { margin: 4px 0 0; }
+
+/* Knowledge line: the topic's emoji leads the dash. */
+.knowledge-line .kl-emoji { flex: 0 0 auto; font-size: 13px; align-self: center; }

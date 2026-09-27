@@ -50,8 +50,12 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   const submit = await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hm });
   c('submit moves to pending_approval', submit.json?.request?.status === 'pending_approval', submit.json?.request?.status);
   c('single-step approval chain (HR Director only)', submit.json?.request?.approvals?.length === 1, `got ${submit.json?.request?.approvals?.length}`);
-  const approved = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: { comment: 'ok' } });
-  c('single approval → sourcing', approved.json?.request?.status === 'sourcing', approved.json?.request?.status);
+  const mgrApprove = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: { comment: 'ok' } });
+  c('HR manager cannot approve a request (403) — the step is the HR Director\'s', mgrApprove.status === 403, `got ${mgrApprove.status}`);
+  const mgrReject = await api(`/api/requests/${reqId}/reject`, { method: 'POST', token: hrMgr, body: { reason: 'no' } });
+  c('HR manager cannot reject a request (403)', mgrReject.status === 403, `got ${mgrReject.status}`);
+  const approved = await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: { comment: 'ok' } });
+  c('HR Director approval → sourcing', approved.json?.request?.status === 'sourcing', approved.json?.request?.status);
 
   console.log('\n— Recruiter assignment —');
   const recruiterUser = meta.json.recruiters.find((r) => r.name === 'Karim Adel');
@@ -76,9 +80,9 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   console.log('\n— Reject path (separate req) + RBAC —');
   const r2 = await api('/api/requests', { method: 'POST', token: hm, body: { title: 'Site Engineer', projectId: projId, departmentId: deptId, headcount: 2, priority: 'medium' } });
   await api(`/api/requests/${r2.json.request.id}/submit`, { method: 'POST', token: hm });
-  const rejNoReason = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrMgr, body: {} });
+  const rejNoReason = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrDir, body: {} });
   c('reject without reason rejected (400)', rejNoReason.status === 400, `got ${rejNoReason.status}`);
-  const rej = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrMgr, body: { reason: 'Headcount not approved this quarter' } });
+  const rej = await api(`/api/requests/${r2.json.request.id}/reject`, { method: 'POST', token: hrDir, body: { reason: 'Headcount not approved this quarter' } });
   c('reject with reason → rejected', rej.json?.request?.status === 'rejected', rej.json?.request?.status);
   const viewerCreate = await api('/api/requests', { method: 'POST', token: viewer, body: { title: 'Z', projectId: projId, departmentId: deptId, headcount: 1 } });
   c('viewer blocked from creating (403)', viewerCreate.status === 403, `got ${viewerCreate.status}`);
@@ -101,6 +105,34 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   c('audit has request.approval_decision', acts.includes('request.approval_decision'));
   c('audit has request.recruiter_assigned', acts.includes('request.recruiter_assigned'));
   c('audit has request.closed', acts.includes('request.closed'));
+
+  console.log('\n— A new request can be approved without a separate submit click —');
+  const fresh = await api('/api/requests', { method: 'POST', token: hm, body: { title: 'Direct approval role', projectId: projId, departmentId: deptId, headcount: 1 } });
+  c('a new request starts at pending_approval with no chain', fresh.json?.request?.status === 'pending_approval' && (fresh.json?.request?.approvals || []).length === 0);
+  const direct = await api(`/api/requests/${fresh.json.request.id}/approve`, { method: 'POST', token: hrDir, body: {} });
+  c('the director approves it directly → sourcing', direct.json?.request?.status === 'sourcing', direct.json?.request?.status || direct.json?.error);
+  c('the one-step chain was recorded as decided', (direct.json?.request?.approvals || []).length === 1 && direct.json.request.approvals[0].decision === 'approved');
+
+  console.log('\n— Approval step switched off from Workflow Settings —');
+  const off = await api('/api/settings/workflows/approval_chain', { method: 'PUT', token: admin, body: { isActive: false } });
+  c('admin switches the approval step off', off.status === 200 && off.json?.workflow?.isActive === false, JSON.stringify(off.json));
+  const draftOff = await api('/api/requests', { method: 'POST', token: hm, body: { title: 'Auto-approved role', projectId: projId, departmentId: deptId, headcount: 1 } });
+  // There is no persisted draft: a new request sits at pending_approval with no
+  // approval chain until it is submitted (docs/REQUEST_STATUS_ALIAS_MAP.md).
+  c('a new request still starts at pending_approval with no chain', draftOff.json?.request?.status === 'pending_approval' && (draftOff.json?.request?.approvals || []).length === 0, draftOff.json?.request?.status);
+  const subOff = await api(`/api/requests/${draftOff.json.request.id}/submit`, { method: 'POST', token: hm });
+  c('submit with the step off goes straight to sourcing', subOff.json?.request?.status === 'sourcing', subOff.json?.request?.status || subOff.json?.error);
+  c('the detail says approval is not required', subOff.json?.request?.approvalRequired === false);
+  c('the request is marked auto-approved in its activity', (subOff.json?.request?.activity || []).some((a) => a.type === 'auto_approved'));
+  const auditOff = await api('/api/audit?pageSize=50', { token: admin });
+  c('audit records request.auto_approved and the workflow change', ['request.auto_approved', 'workflow.setting_changed'].every((a) => (auditOff.json?.logs || []).some((l) => l.action === a)));
+  const on = await api('/api/settings/workflows/approval_chain', { method: 'PUT', token: admin, body: { isActive: true } });
+  c('admin switches the approval step back on', on.json?.workflow?.isActive === true);
+  const draftOn = await api('/api/requests', { method: 'POST', token: hm, body: { title: 'Approved role', projectId: projId, departmentId: deptId, headcount: 1 } });
+  const subOn = await api(`/api/requests/${draftOn.json.request.id}/submit`, { method: 'POST', token: hm });
+  c('submit with the step on waits for approval again', subOn.json?.request?.status === 'pending_approval' && subOn.json?.request?.approvalRequired === true, subOn.json?.request?.status);
+  const viewerFlip = await api('/api/settings/workflows/approval_chain', { method: 'PUT', token: viewer, body: { isActive: false } });
+  c('a viewer cannot change the approval step (403)', viewerFlip.status === 403, `got ${viewerFlip.status}`);
 
   console.log(`\n=== PHASE 2: ${pass} passed, ${fail} failed ===\n`);
   process.exit(fail ? 1 : 0);

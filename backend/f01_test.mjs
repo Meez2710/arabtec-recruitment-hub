@@ -65,6 +65,7 @@ const counts = (candidateId) => ({
 (async () => {
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const recMgr = await login('rec.manager@arabtec.com');
 
   const meta = await api('/api/requests/meta/form', { token: hrMgr });
@@ -77,7 +78,7 @@ const counts = (candidateId) => ({
   });
   const reqId = cr.json.request.id;
   await api(`/api/requests/${reqId}/submit`, { method: 'POST', token: hrMgr });
-  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrMgr, body: {} });
+  await api(`/api/requests/${reqId}/approve`, { method: 'POST', token: hrDir, body: {} });
   await api(`/api/requests/${reqId}/assign`, { method: 'POST', token: recMgr, body: { ownerId: meta.json.recruiters[0].id } });
 
   let seq = 0;

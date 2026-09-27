@@ -39,7 +39,8 @@ function stylesheetHrefs(html) {
   const out = [];
   for (const m of html.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi)) {
     const hrefMatch = m[0].match(/href=["']([^"']+)["']/i);
-    if (hrefMatch) out.push(hrefMatch[1]);
+    // Product sheets only: the non-blocking web-font link is not one of them.
+    if (hrefMatch && hrefMatch[1].startsWith('/')) out.push(hrefMatch[1]);
   }
   return out;
 }

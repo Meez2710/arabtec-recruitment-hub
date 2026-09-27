@@ -21,13 +21,14 @@ async function api(p, { method = 'GET', token, body } = {}) {
   return { status: r.status, json: j };
 }
 const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { method: 'POST', body: { email: e, password: p } })).json.token;
+let hrDirToken = null; // the one request approver, set once the director signs in
 
 async function approvedRequest(token, recMgr, requesterToken) {
   const meta = await api('/api/requests/meta/form', { token: requesterToken || token });
   const cr = await api('/api/requests', { method: 'POST', token: requesterToken || token, body: { title: 'QA IV', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount: 2, priority: 'high' } });
   const id = cr.json.request.id;
   await api(`/api/requests/${id}/submit`, { method: 'POST', token: requesterToken || token });
-  for (let i = 0; i < 3; i++) await api(`/api/requests/${id}/approve`, { method: 'POST', token, body: {} });
+  for (let i = 0; i < 3; i++) await api(`/api/requests/${id}/approve`, { method: 'POST', token: hrDirToken, body: {} });
   const recId = meta.json.recruiters.find((r) => r.name === 'Karim Adel').id;
   await api(`/api/requests/${id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: recId } });
   return id;
@@ -51,6 +52,8 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
   const admin = await adminToken(B);
   const recruiter = await login('recruiter@arabtec.com');
   const hrMgr = await login('hr.manager@arabtec.com');
+  const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
+  hrDirToken = hrDir;
   const recMgr = await login('rec.manager@arabtec.com');
   const hm = await login('hiring.manager@arabtec.com');
   const interviewer = await login('interviewer@arabtec.com');
