@@ -15,6 +15,7 @@ const SUITES = [
   'phase3_qa_test.mjs',       // overfill, masking, RBAC, dedup
   'phase4_test.mjs',          // interviews & feedback
   'phase4_qa_test.mjs',       // integrity, scope, terminal-app, audit
+  'interview_calendar_test.mjs', // calendar range filter + panel clash warning
   'phase5_test.mjs',          // offers, approval, joining
   'phase6_test.mjs',          // dashboards, scope, no-leak
   'thread_test.mjs',          // ticket conversation thread
@@ -52,6 +53,7 @@ const SUITES = [
   'ui_layout_containers_test.mjs', // card rhythm and responsive container contract
   'ui_gallery_test.mjs',      // the component gallery stays in step with the product
   'ui_overlays_test.mjs',     // dialogs, the stacked parse review, and the CV review side panel
+  'ui_interview_calendar_test.mjs', // Sat–Thu calendar date arithmetic and wiring
   'branding_migration_test.mjs', // legacy red actions migrate without overwriting custom values
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider
   'cv_proposal_test.mjs',     // CV -> proposal -> approved fields -> candidate

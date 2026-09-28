@@ -1471,3 +1471,43 @@ html, body, button, input, select, textarea, .field textarea { font-family: var(
 .standalone-results > li:hover { background: var(--surface-2); }
 .kl-editor-count { color: var(--muted); }
 .kl-editor-count.error { color: var(--danger); }
+
+/* Interview calendar: colour and type only (geometry in claude-system.css).
+   Status reads from both the label and the colour, never colour alone. */
+.cal-toolbar, .cal-head, .cal-dayhead, .cal-col, .cal-month-head .cal-dow, .cal-mcell, .cal-strip { border-color: var(--line); }
+.cal-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+.cal-dow { font-size: 11px; font-weight: 700; color: var(--muted); }
+.cal-dom { font-size: 18px; font-weight: 700; color: var(--ink); }
+.cal-dayhead.today { border-bottom-color: var(--action); }
+.cal-dayhead.today .cal-dom { color: var(--action); }
+.cal-dayhead.offday, .cal-col.offday { background: var(--surface-2); }
+.cal-time { font-size: 11px; color: var(--muted); }
+.cal-slot { background: transparent; border-bottom-color: var(--border-soft); }
+.cal-slot:nth-child(even) { border-bottom-color: var(--line); }
+button.cal-slot:hover, button.cal-slot:focus-visible { background: var(--action-tint); }
+.cal-slot.past { background: var(--surface-2); }
+.cal-now, .cal-now::before { background: var(--danger); }
+.cal-ev { font-size: 12px; line-height: 1.3; color: var(--ink); background: var(--surface); border-color: var(--line); }
+.cal-ev:focus-visible, .cal-mev:focus-visible, .cal-mdate:focus-visible { box-shadow: var(--at-focus-ring); }
+.cal-ev-time { font-weight: 700; }
+.cal-ev-status { font-size: 11px; font-weight: 700; }
+.cal-s-scheduled { background: var(--action-tint); border-inline-start-color: var(--action); }
+.cal-s-rescheduled { background: var(--warning-tint); border-inline-start-color: var(--warning); }
+.cal-s-rescheduled .cal-ev-status { color: var(--warning-ink); }
+.cal-s-completed { background: var(--surface-2); border-inline-start-color: var(--line-strong); color: var(--muted); }
+.cal-s-no_show { background: var(--brand-tint); border-inline-start-color: var(--danger); }
+.cal-s-no_show .cal-ev-status { color: var(--critical); }
+.cal-s-cancelled { background: var(--surface); color: var(--muted); }
+.cal-mcell.out { background: var(--surface-2); }
+.cal-mcell.out .cal-mdate { color: var(--muted); }
+.cal-mfill { background: transparent; }
+.cal-mfill:hover, .cal-mfill:focus-visible { background: var(--action-tint); }
+.cal-mdate { font-size: 13px; font-weight: 700; color: var(--ink); background: transparent; }
+.cal-mcell.today .cal-mdate { background: var(--action); color: var(--surface); }
+.cal-mev { font-size: 12px; color: var(--ink); background: var(--surface); }
+.cal-more { font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; }
+.cal-strip-day { background: transparent; border-color: transparent; color: var(--ink); }
+.cal-strip-day > span { font-size: 11px; font-weight: 700; color: var(--muted); }
+.cal-strip-day > strong { font-size: 16px; }
+.cal-strip-day.active { background: var(--action-tint); border-color: var(--action-tint-bd); }
+.cal-strip-day.today > strong { color: var(--action); }

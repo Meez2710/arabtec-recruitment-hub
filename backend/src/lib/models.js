@@ -1242,15 +1242,25 @@ export const Interviews = {
   forCandidate(candId) { return all('SELECT * FROM interview WHERE candidate_id=? ORDER BY scheduled_at DESC', [candId]); },
   forRequest(reqId) { return all('SELECT * FROM interview WHERE request_id=? ORDER BY scheduled_at DESC', [reqId]); },
   // List, with optional restriction to interviews where the user is a panelist (scoped roles).
-  list({ assignedTo = null, status = null, q = null } = {}) {
+  // `from`/`to` bound scheduled_at to [from, to) as ISO-8601 UTC strings, which
+  // compare correctly as text; the calendar asks only for the visible range.
+  list({ assignedTo = null, status = null, q = null, from = null, to = null } = {}) {
     let sql = 'SELECT DISTINCT i.* FROM interview i';
     const p = [];
     if (assignedTo) { sql += ' JOIN interview_panel ip ON ip.interview_id = i.id AND ip.interviewer_id = ?'; p.push(assignedTo); }
     sql += ' WHERE 1=1';
     if (status) { sql += ' AND i.status=?'; p.push(status); }
     if (q) { sql += ' AND (i.interview_no LIKE ? OR i.interview_type LIKE ?)'; const l = `%${q}%`; p.push(l, l); }
+    if (from) { sql += ' AND i.scheduled_at >= ?'; p.push(from); }
+    if (to) { sql += ' AND i.scheduled_at < ?'; p.push(to); }
     sql += ' ORDER BY i.scheduled_at DESC, i.id DESC';
     return all(sql, p);
+  },
+  // Still-active interviews that could overlap [from, to): the clash lookup.
+  activeBetween(from, to, statuses) {
+    const marks = statuses.map(() => '?').join(',');
+    return all(`SELECT * FROM interview WHERE status IN (${marks}) AND scheduled_at >= ? AND scheduled_at < ? ORDER BY scheduled_at`,
+      [...statuses, from, to]);
   },
   isPanelist(interviewId, userId) {
     return !!get('SELECT 1 FROM interview_panel WHERE interview_id=? AND interviewer_id=?', [interviewId, userId]);
