@@ -656,3 +656,8 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
 /* Empty states stay short on a phone. */
 .shell-phone .empty { padding: 24px 16px; }
 .shell-phone .empty .ico, .shell-phone .empty .ico svg { width: 96px; height: 96px; }
+
+/* Interview calendar on a phone: one day, a narrower time rail, and the hour
+   is taller (set inline) so every half-hour slot is a 44px target. */
+.shell-phone .cal-head, .shell-phone .cal-body { grid-template-columns: 44px repeat(var(--cal-cols), minmax(0, 1fr)); }
+.shell-phone .cal-toolbar { padding: var(--sp-2) var(--sp-3); }

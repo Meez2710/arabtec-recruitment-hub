@@ -1743,3 +1743,49 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   .cvrev-note-row { flex-wrap: wrap; }
   .cvrev-note-row .btn { flex: 1 1 100%; }
 }
+
+/* Interview calendar (Interviews → Day / Week / Month): geometry only; the
+   paint is in arabtec-design-system.css. --cal-cols and --cal-hour are set
+   inline by the component, so a Friday column or a phone's taller hour needs
+   no extra rule. */
+.cal-card { padding: 0; overflow: hidden; }
+.cal-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); padding: var(--sp-3) var(--sp-4); border-bottom-width: 1px; border-bottom-style: solid; }
+.cal-nav { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.cal-title { margin: 0; font-variant-numeric: tabular-nums; }
+.cal-head, .cal-body { display: grid; grid-template-columns: 56px repeat(var(--cal-cols), minmax(0, 1fr)); }
+.cal-head { border-bottom-width: 1px; border-bottom-style: solid; }
+.cal-dayhead { display: flex; flex-direction: column; align-items: center; gap: 0; padding: var(--sp-2) var(--sp-1); border-inline-start-width: 1px; border-inline-start-style: solid; }
+.cal-dow { display: block; letter-spacing: .08em; text-transform: uppercase; }
+.cal-dom { display: block; font-variant-numeric: tabular-nums; }
+.cal-dayhead.today { border-bottom-width: 2px; border-bottom-style: solid; }
+.cal-time { height: var(--cal-hour); padding-inline-end: var(--sp-2); text-align: end; transform: translateY(-7px); font-variant-numeric: tabular-nums; }
+.cal-time:first-child { visibility: hidden; }
+.cal-col { position: relative; border-inline-start-width: 1px; border-inline-start-style: solid; }
+/* Longhands, never the `border` shorthand: this sheet loads after the design
+   system, and a shorthand here would reset the border colour it paints. */
+.cal-slot { display: block; width: 100%; height: calc(var(--cal-hour) / 2); padding: 0; margin: 0; border-width: 0 0 1px; border-style: none none dashed; border-radius: 0; }
+.cal-slot:nth-child(even) { border-bottom-style: solid; }
+button.cal-slot { cursor: pointer; }
+button.cal-slot:focus-visible { outline: 0; }
+.cal-now { position: absolute; inset-inline: 0; height: 2px; z-index: 3; pointer-events: none; }
+.cal-now::before { content: ''; position: absolute; inset-inline-start: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; }
+.cal-ev { position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 0; padding: var(--sp-1) var(--sp-2); overflow: hidden; text-align: start; border-width: 1px; border-style: solid; border-inline-start-width: 3px; border-radius: var(--cl-r-sm); cursor: pointer; }
+.cal-ev:focus-visible { outline: 0; }
+.cal-ev-time { font-variant-numeric: tabular-nums; }
+.cal-ev-who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cal-ev-status { letter-spacing: .06em; text-transform: uppercase; }
+.cal-s-cancelled { border-style: dashed; text-decoration: line-through; }
+.cal-month-head, .cal-month-row { display: grid; grid-template-columns: repeat(var(--cal-cols), minmax(0, 1fr)); }
+.cal-month-head .cal-dow { padding: var(--sp-2) var(--sp-3); border-bottom-width: 1px; border-bottom-style: solid; }
+.cal-mcell { position: relative; display: flex; flex-direction: column; gap: var(--sp-1); min-height: 104px; padding: var(--sp-2); border-bottom-width: 1px; border-bottom-style: solid; border-inline-start-width: 1px; border-inline-start-style: solid; }
+.cal-mfill { position: absolute; inset: 0; z-index: 0; padding: 0; border: 0; border-radius: 0; cursor: pointer; }
+.cal-mfill:focus-visible { outline: 0; }
+.cal-mdate, .cal-mev, .cal-more { position: relative; z-index: 1; }
+.cal-mdate { align-self: flex-start; min-width: 28px; padding: 0 var(--sp-2); border: 0; border-radius: var(--cl-r-sm); cursor: pointer; font-variant-numeric: tabular-nums; }
+.cal-mev { display: block; width: 100%; padding: 0 var(--sp-2); overflow: hidden; text-align: start; white-space: nowrap; text-overflow: ellipsis; border-width: 0; border-style: none; border-inline-start-width: 3px; border-inline-start-style: solid; border-radius: var(--cl-r-xs); cursor: pointer; }
+.cal-more { align-self: flex-start; padding: 0 var(--sp-2); border: 0; cursor: pointer; }
+.cal-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-bottom-width: 1px; border-bottom-style: solid; }
+.cal-strip-day { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; min-height: 48px; padding: 0; border-width: 1px; border-style: solid; border-radius: var(--cl-r-md); cursor: pointer; }
+.cal-strip-day > span { letter-spacing: .06em; text-transform: uppercase; }
+.cal-strip-day > strong { font-variant-numeric: tabular-nums; }
+.cal-clash { margin-top: var(--sp-3); }

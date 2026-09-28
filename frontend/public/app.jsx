@@ -79,6 +79,8 @@ const ICON_MARKS = {
   close: <><path d="m6 6 12 12M18 6 6 18" /></>,
   chevronDown: <><path d="m6 9 6 6 6-6" /></>,
   chevronUp: <><path d="m6 15 6-6 6 6" /></>,
+  chevronLeft: <><path d="m15 6-6 6 6 6" /></>,
+  chevronRight: <><path d="m9 6 6 6-6 6" /></>,
   // Neutral sort affordance: the same two chevrons stacked, so an unsorted
   // column shows the control exists without claiming a direction. Same 24
   // viewBox, same stroke, same <Icon> — no new icon library.
@@ -9427,14 +9429,31 @@ async function resolveStandaloneLink(link) {
   return { candidateId, requestId: link.requestId ? Number(link.requestId) : undefined };
 }
 
-function ScheduleInterviewModal({ application, user, onClose, onScheduled }) {
+// `initialAt` is the slot clicked on the calendar; the form opens on that time.
+function ScheduleInterviewModal({ application, user, onClose, onScheduled, initialAt }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ interviewType: 'technical', mode: 'video', scheduledAt: '', durationMin: 60, round: 1, locationOrLink: '', panel: [] });
+  const [f, setF] = useState({ interviewType: 'technical', mode: 'video', scheduledAt: initialAt ? toLocalInput(initialAt) : '', durationMin: 60, round: 1, locationOrLink: '', panel: [] });
   const [link, setLink] = useState(EMPTY_LINK);
   const [busy, setBusy] = useState(false);
+  const [clashes, setClashes] = useState([]);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { api.get('/interviews/meta/form').then(setMeta); }, []);
+  // Who on the chosen panel is already booked then. A warning, never a block:
+  // panels overlap on purpose, and the scheduler decides.
+  const panelKey = f.panel.join(',');
+  useEffect(() => {
+    const start = f.scheduledAt ? new Date(f.scheduledAt) : null;
+    if (!start || isNaN(start) || !panelKey) { setClashes([]); return undefined; }
+    let live = true;
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ start: start.toISOString(), durationMin: String(Number(f.durationMin) || 60), panel: panelKey });
+      api.get('/interviews/clashes?' + qs.toString())
+        .then((r) => { if (live) setClashes(r.clashes || []); })
+        .catch(() => { if (live) setClashes([]); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [f.scheduledAt, f.durationMin, panelKey]);
   function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
 
   async function save() {
@@ -9475,7 +9494,242 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled }) {
       <div className="section-title">Panel (interviewers) *</div>
       <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} title={u.name} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
       <p className="muted" style={{ marginTop: 8 }}>First selected is the lead. Only selected interviewers will see this interview and may submit feedback.</p>
+      {clashes.length > 0 && (
+        <div className="notice notice-warn cal-clash" role="status">
+          <strong>Already booked at this time:</strong>{' '}
+          {clashes.map((c) => `${c.name} (${timeOf(c.start)}–${timeOf(c.end)})`).join(' · ')}.
+          {' '}You can still schedule; panels sometimes overlap on purpose.
+        </div>
+      )}
     </Modal>
+  );
+}
+
+/* ============================ Interview calendar ============================
+   The first screen of Interviews. Arabtec works Saturday to Thursday, 09:00 to
+   17:00, and the grid shows exactly that. It widens itself (Friday, an early
+   or late hour) only when an interview is already booked there, so nothing
+   booked is ever hidden. Presentation only: times are the browser's local
+   time; the server keeps storing ISO UTC.
+   ========================================================================== */
+const CAL_WORK_DAYS = [6, 0, 1, 2, 3, 4];   // Sat..Thu, in display order (Date#getDay)
+const CAL_FRIDAY = 5;
+const CAL_HOURS = [9, 17];                  // visible working hours [start, end)
+const CAL_SLOT_MIN = 30;                    // a click books on the half hour
+const CAL_HOUR_PX = 56;                     // desktop; phones use 88 so a slot is a 44px target
+
+function calDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function calAddDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function calSameDay(a, b) { return calDay(a).getTime() === calDay(b).getTime(); }
+function calWeekStart(d) { const x = calDay(d); return calAddDays(x, -((x.getDay() - CAL_WORK_DAYS[0] + 7) % 7)); }
+function calStart(iv) { const d = new Date(iv.scheduledAt); return iv.scheduledAt && !isNaN(d) ? d : null; }
+function calEnd(iv) { const s = calStart(iv); return s && new Date(s.getTime() + (Number(iv.durationMin) || 60) * 60000); }
+function toLocalInput(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// The [from, to) a view shows. The page fetches exactly this range.
+function calRange(view, anchor) {
+  if (view === 'day') { const from = calDay(anchor); return { from, to: calAddDays(from, 1) }; }
+  if (view === 'month') {
+    const from = calWeekStart(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+    const to = calAddDays(calWeekStart(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)), 7);
+    return { from, to };
+  }
+  const from = calWeekStart(anchor);
+  return { from, to: calAddDays(from, 7) };
+}
+// Weekday columns, Saturday first. Friday joins only when something is booked on it.
+function calWeekdays(interviews) {
+  return interviews.some((iv) => calStart(iv)?.getDay() === CAL_FRIDAY) ? [...CAL_WORK_DAYS, CAL_FRIDAY] : CAL_WORK_DAYS;
+}
+function calWeekDates(weekStart, weekdays) { return weekdays.map((w) => calAddDays(weekStart, (w - CAL_WORK_DAYS[0] + 7) % 7)); }
+// Hours the grid shows: 09–17, widened to fit anything booked outside them.
+function calHourSpan(interviews) {
+  let [start, end] = CAL_HOURS;
+  for (const iv of interviews) {
+    const s = calStart(iv); if (!s) continue;
+    const e = calEnd(iv);
+    start = Math.min(start, s.getHours());
+    end = Math.max(end, calSameDay(s, e) ? e.getHours() + (e.getMinutes() ? 1 : 0) : 24);
+  }
+  return [start, Math.min(end, 24)];
+}
+// One day's interviews as blocks: top/height in px, and side-by-side lanes
+// when they overlap, so two interviews at 10:00 are both visible and clickable.
+function calLayoutDay(interviews, hourStart, hourPx = CAL_HOUR_PX) {
+  const items = interviews.map((iv) => ({ iv, s: calStart(iv), e: calEnd(iv) })).filter((x) => x.s)
+    .sort((a, b) => a.s - b.s || b.e - a.e);
+  const out = []; let group = []; let groupEnd = 0;
+  const flush = () => { const lanes = Math.max(...group.map((g) => g.lane)) + 1; for (const g of group) out.push({ ...g, lanes }); group = []; };
+  for (const it of items) {
+    if (group.length && it.s >= groupEnd) flush();
+    const taken = new Set(group.filter((g) => g.e > it.s).map((g) => g.lane));
+    let lane = 0; while (taken.has(lane)) lane++;
+    group.push({ ...it, lane }); groupEnd = Math.max(groupEnd, it.e);
+  }
+  if (group.length) flush();
+  return out.map(({ iv, s, e, lane, lanes }) => ({
+    iv, lane, lanes,
+    top: (((s.getHours() - hourStart) * 60 + s.getMinutes()) / 60) * hourPx,
+    height: Math.max(22, ((e - s) / 3600000) * hourPx - 2),
+  }));
+}
+// The server refuses a start in the past, so the calendar never offers one.
+function calSlotOpen(start, now) { return start.getTime() > now.getTime(); }
+// Clicking a day (month view) books its first open half hour: 09:00, or the
+// next half hour if the day has already started. Null when the day is over.
+function calFirstOpenSlot(day, now) {
+  const at = new Date(day); at.setHours(CAL_HOURS[0], 0, 0, 0);
+  if (at > now) return at;
+  const next = new Date(now); next.setSeconds(0, 0);
+  next.setMinutes(Math.ceil((next.getMinutes() + 1) / CAL_SLOT_MIN) * CAL_SLOT_MIN);
+  return calSameDay(next, day) ? next : null;
+}
+function calStep(view, anchor, dir) {
+  if (view === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1);
+  if (view !== 'day') return calAddDays(anchor, dir * 7);
+  const next = calAddDays(anchor, dir);
+  return next.getDay() === CAL_FRIDAY ? calAddDays(next, dir) : next; // day-by-day skips the weekend
+}
+function calTitle(view, anchor) {
+  if (view === 'month') return anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  if (view === 'day') return anchor.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const from = calWeekStart(anchor); const to = calAddDays(from, 5); // Saturday – Thursday
+  const head = from.toLocaleDateString(undefined, from.getMonth() === to.getMonth() ? { day: 'numeric' } : { day: 'numeric', month: 'short' });
+  return `${head} – ${to.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+const calSlotLabel = (d) => d.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+
+function CalEvent({ iv, style, onOpen }) {
+  const status = IV_STATUS[iv.status];
+  return (
+    <button type="button" className={'cal-ev cal-s-' + iv.status} style={style} onClick={() => onOpen(iv.id)}
+      title={`${iv.candidate?.fullName || 'Candidate'} · ${iv.interviewType} · ${fmtWhen(iv.scheduledAt)}`}>
+      <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {iv.interviewType}</span>
+      <span className="cal-ev-who">{iv.candidate?.fullName || '—'}</span>
+      {iv.status !== 'scheduled' && <span className="cal-ev-status">{status ? status.label : iv.status}</span>}
+    </button>
+  );
+}
+
+function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpen, onCreateAt }) {
+  const days = view === 'day' ? [calDay(anchor)] : calWeekDates(calRange('week', anchor).from, calWeekdays(interviews));
+  const [h0, h1] = calHourSpan(interviews);
+  const slots = [];
+  for (let m = h0 * 60; m < h1 * 60; m += CAL_SLOT_MIN) slots.push(m);
+  const hours = [];
+  for (let h = h0; h < h1; h++) hours.push(h);
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  return (
+    <div className="cal-grid" style={{ '--cal-cols': days.length, '--cal-hour': hourPx + 'px' }}>
+      <div className="cal-head">
+        <div className="cal-corner" />
+        {days.map((d) => (
+          <div key={+d} className={'cal-dayhead' + (calSameDay(d, now) ? ' today' : '') + (d.getDay() === CAL_FRIDAY ? ' offday' : '')}>
+            <span className="cal-dow">{d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+            <span className="cal-dom">{d.getDate()}</span>
+          </div>
+        ))}
+      </div>
+      <div className="cal-body" style={{ height: (h1 - h0) * hourPx }}>
+        <div className="cal-times" aria-hidden="true">
+          {hours.map((h) => <div key={h} className="cal-time">{String(h).padStart(2, '0')}:00</div>)}
+        </div>
+        {days.map((d) => {
+          const mine = interviews.filter((iv) => { const s = calStart(iv); return s && calSameDay(s, d); });
+          return (
+            <div key={+d} className={'cal-col' + (d.getDay() === CAL_FRIDAY ? ' offday' : '')}>
+              {slots.map((m) => {
+                const at = new Date(d); at.setHours(0, m, 0, 0);
+                return canSchedule && calSlotOpen(at, now)
+                  ? <button key={m} type="button" className="cal-slot" aria-label={'Schedule an interview on ' + calSlotLabel(at)} onClick={() => onCreateAt(at)} />
+                  : <div key={m} className={'cal-slot' + (calSlotOpen(at, now) ? '' : ' past')} />;
+              })}
+              {calSameDay(d, now) && nowMin >= h0 * 60 && nowMin < h1 * 60 && (
+                <div className="cal-now" style={{ top: ((nowMin - h0 * 60) / 60) * hourPx }} aria-hidden="true" />
+              )}
+              {calLayoutDay(mine, h0, hourPx).map(({ iv, top, height, lane, lanes }) => (
+                <CalEvent key={iv.id} iv={iv} onOpen={onOpen}
+                  style={{ top, height, insetInlineStart: `calc(${lane} * 100% / ${lanes} + 2px)`, width: `calc(100% / ${lanes} - 4px)` }} />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, onPickDay }) {
+  const { from, to } = calRange('month', anchor);
+  const weekdays = calWeekdays(interviews);
+  const weeks = [];
+  for (let w = from; w < to; w = calAddDays(w, 7)) weeks.push(calWeekDates(w, weekdays));
+  return (
+    <div className="cal-month" style={{ '--cal-cols': weekdays.length }}>
+      <div className="cal-month-head">
+        {weeks[0].map((d) => <div key={d.getDay()} className="cal-dow">{d.toLocaleDateString(undefined, { weekday: 'short' })}</div>)}
+      </div>
+      {weeks.map((week) => (
+        <div key={+week[0]} className="cal-month-row">
+          {week.map((d) => {
+            const items = interviews.filter((iv) => { const s = calStart(iv); return s && calSameDay(s, d); })
+              .sort((a, b) => calStart(a) - calStart(b));
+            const slot = canSchedule ? calFirstOpenSlot(d, now) : null;
+            return (
+              <div key={+d} className={'cal-mcell' + (d.getMonth() === anchor.getMonth() ? '' : ' out') + (calSameDay(d, now) ? ' today' : '')}>
+                {slot && <button type="button" className="cal-mfill" aria-label={'Schedule an interview on ' + calSlotLabel(slot)} onClick={() => onCreateAt(slot)} />}
+                <button type="button" className="cal-mdate" aria-label={'Open ' + d.toDateString() + ' in day view'} onClick={() => onPickDay(d)}>{d.getDate()}</button>
+                {items.slice(0, 3).map((iv) => (
+                  <button key={iv.id} type="button" className={'cal-mev cal-s-' + iv.status} onClick={() => onOpen(iv.id)}
+                    title={`${iv.candidate?.fullName || 'Candidate'} · ${fmtWhen(iv.scheduledAt)}`}>
+                    <span className="cal-ev-time">{timeOf(iv.scheduledAt)}</span> {iv.candidate?.fullName || '—'}
+                  </button>
+                ))}
+                {items.length > 3 && <button type="button" className="cal-more" onClick={() => onPickDay(d)}>+{items.length - 3} more</button>}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Phones get one day at a time; this strip jumps across the working week.
+function CalDayStrip({ anchor, now, onPick }) {
+  return (
+    <div className="cal-strip" role="tablist" aria-label="Day of the week">
+      {calWeekDates(calWeekStart(anchor), CAL_WORK_DAYS).map((d) => (
+        <button key={+d} type="button" role="tab" aria-selected={calSameDay(d, anchor)} onClick={() => onPick(d)}
+          className={'cal-strip-day' + (calSameDay(d, anchor) ? ' active' : '') + (calSameDay(d, now) ? ' today' : '')}>
+          <span>{d.toLocaleDateString(undefined, { weekday: 'short' })}</span><strong>{d.getDate()}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function InterviewCalendar({ view, anchor, setAnchor, setView, interviews, now, canSchedule, isPhone, onOpen, onCreateAt }) {
+  const pickDay = (d) => { setAnchor(d); setView('day'); };
+  return (
+    <>
+      <div className="cal-toolbar">
+        <div className="cal-nav">
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Previous" onClick={() => setAnchor(calStep(view, anchor, -1))}><Icon name="chevronLeft" size={16} /></button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAnchor(new Date())}>Today</button>
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Next" onClick={() => setAnchor(calStep(view, anchor, 1))}><Icon name="chevronRight" size={16} /></button>
+        </div>
+        <h2 className="cal-title">{calTitle(view, anchor)}</h2>
+      </div>
+      {isPhone && view === 'day' && <CalDayStrip anchor={anchor} now={now} onPick={setAnchor} />}
+      {view === 'month'
+        ? <CalMonth anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule} onOpen={onOpen} onCreateAt={onCreateAt} onPickDay={pickDay} />
+        : <CalTimeGrid view={view} anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule}
+            hourPx={isPhone ? 88 : CAL_HOUR_PX} onOpen={onOpen} onCreateAt={onCreateAt} />}
+    </>
   );
 }
 
@@ -9491,7 +9745,20 @@ function InterviewsPage({ user, initialFilters }) {
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createAt, setCreateAt] = useState(null); // the calendar slot that opened the form
   const loadSeq = useRef(0);
+  // The calendar is the first screen; a dashboard link that carries list
+  // filters still lands on the list it was built for. Phones get one day.
+  const isPhone = useIsPhone();
+  const [view, setView] = useState(() => (initialFilters && !initialFilters.openId ? 'list' : isPhone ? 'day' : 'week'));
+  const [anchor, setAnchor] = useState(() => new Date());
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const t = setTimeout(() => setNow(new Date()), 60000); return () => clearTimeout(t); }, [now]);
+  useEffect(() => { if (isPhone && (view === 'week' || view === 'month')) setView('day'); }, [isPhone, view]);
+  const canSchedule = can(user, 'interview.schedule');
+  // Calendar views fetch only what they show; the key changes when the visible
+  // range does, not on every click inside it.
+  const rangeKey = view === 'list' ? '' : (() => { const r = calRange(view, anchor); return r.from.toISOString() + '|' + r.to.toISOString(); })();
 
   useEffect(() => {
     if (!initialFilters) return;
@@ -9506,6 +9773,7 @@ function InterviewsPage({ user, initialFilters }) {
     setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
     Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
+    if (rangeKey) { const [from, to] = rangeKey.split('|'); params.set('from', from); params.set('to', to); }
     try {
       const r = await api.get('/interviews?' + params.toString());
       if (seq !== loadSeq.current) return;
@@ -9516,13 +9784,14 @@ function InterviewsPage({ user, initialFilters }) {
     } finally {
       if (seq === loadSeq.current) setBusy(false);
     }
-  }, [filter]);
+  }, [filter, rangeKey]);
   useEffect(() => { load(); }, [load]);
 
   if (selected) return <InterviewDetail id={selected} user={user} onBack={() => { setSelected(null); load(); }} />;
 
+  const isCalendar = view !== 'list';
   const shown = (data ? data.interviews : []).filter((iv) => {
-    if (!filter.thisWeek) return true;
+    if (isCalendar || !filter.thisWeek) return true;
     if (iv.status !== 'scheduled') return false;
     const days = daysUntil(iv.scheduledAt);
     return days != null && days >= 0 && days <= 7;
@@ -9534,23 +9803,38 @@ function InterviewsPage({ user, initialFilters }) {
         sub={data?.scoped ? 'Interviews where you are on the panel.' : 'Every interview links to a candidate, and to an application and request when scheduled from the pipeline. Interview status is tracked separately from application status.'}
         actions={<>
           {data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>}
+          <ViewToggle value={view} onChange={setView}
+            options={isPhone ? [['day', 'Day'], ['list', 'List']] : [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['list', 'List']]} />
           {can(user, 'interview.schedule') && <button className="btn" onClick={() => setCreating(true)}>Schedule interview</button>}
         </>} />
-      {creating && <ScheduleInterviewModal user={user} onClose={() => setCreating(false)} onScheduled={() => { setCreating(false); load(); }} />}
-      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (filter.thisWeek ? 1 : 0)}
+      {(creating || createAt) && (
+        <ScheduleInterviewModal user={user} initialAt={createAt}
+          onClose={() => { setCreating(false); setCreateAt(null); }}
+          onScheduled={() => { setCreating(false); setCreateAt(null); load(); }} />
+      )}
+      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
         count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(IV_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-        <label className="switch" title="Scheduled interviews in the next 7 days">
-          <input type="checkbox" checked={filter.thisWeek} onChange={(e) => setFilter((f) => ({ ...f, thisWeek: e.target.checked }))} />
-          This week
-        </label>
+        {!isCalendar && (
+          <label className="switch" title="Scheduled interviews in the next 7 days">
+            <input type="checkbox" checked={filter.thisWeek} onChange={(e) => setFilter((f) => ({ ...f, thisWeek: e.target.checked }))} />
+            This week
+          </label>
+        )}
       </FilterToolbar>
       {/* A refetch that fails keeps the rows already on screen and reports it
           above them; only a failure with nothing to fall back on takes the page. */}
       {loadError && data ? <RefetchError text={loadError} onRetry={load} /> : null}
-      {loadError && !data ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : shown.length === 0 ? (
+      {isCalendar && canSchedule && data ? <Hint emoji="calendar">Click any open half hour to schedule an interview there. Past times are greyed out.</Hint> : null}
+      {loadError && !data ? <LoadError text={loadError} onRetry={load} /> : !data ? <ListSkeleton rows={6} /> : isCalendar ? (
+        // An empty week still draws the grid: the empty slots are how you book.
+        <div className={'card flush cal-card' + (busy ? ' table-busy' : '')} aria-busy={busy}>
+          <InterviewCalendar view={view} anchor={anchor} setAnchor={setAnchor} setView={setView} interviews={shown} now={now}
+            canSchedule={canSchedule} isPhone={isPhone} onOpen={setSelected} onCreateAt={setCreateAt} />
+        </div>
+      ) : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
           title={filter.q || filter.status || filter.thisWeek ? 'No interviews match these filters' : 'No interviews scheduled'}
           text={filter.q || filter.status || filter.thisWeek

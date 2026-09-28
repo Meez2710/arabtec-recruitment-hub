@@ -3,7 +3,8 @@ import {
   Interviews, InterviewPanel, InterviewFeedback, InterviewActivity,
   Applications, Candidates, Requests, Users, CandidateActivity,
 } from '../lib/models.js';
-import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
+import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
 import { sendMail } from '../lib/mailer.js';
@@ -92,24 +93,60 @@ function serialize(iv, user, { detail = false } = {}) {
   return out;
 }
 
+// Optional ISO date query param → canonical ISO-8601 UTC, or an error string.
+function isoParam(value, name) {
+  if (value == null || value === '') return { value: null };
+  const d = new Date(String(value));
+  return isNaN(d) ? { error: `\`${name}\` must be an ISO date.` } : { value: d.toISOString() };
+}
+
 /* ---------------- LIST (scoped) ---------------- */
 router.get('/', (req, res) => {
   if (!canViewAll(req.user) && !req.user.permissions.includes('interview.view_assigned')) {
     return res.status(403).json({ error: 'Insufficient permissions to view interviews.' });
   }
+  // The calendar asks for the visible range only; the list view sends neither.
+  const from = isoParam(req.query.from, 'from');
+  const to = isoParam(req.query.to, 'to');
+  if (from.error || to.error) return res.status(400).json({ error: from.error || to.error });
+  const range = { from: from.value, to: to.value };
   let rows;
   if (canViewAll(req.user)) {
-    rows = Interviews.list({ status: req.query.status, q: req.query.q });
+    rows = Interviews.list({ status: req.query.status, q: req.query.q, ...range });
   } else {
     // Scoped: panel interviews ∪ interviews on requests the user owns/requested.
-    const byPanel = Interviews.list({ assignedTo: req.user.id, status: req.query.status, q: req.query.q });
-    const all = Interviews.list({ status: req.query.status, q: req.query.q });
+    const byPanel = Interviews.list({ assignedTo: req.user.id, status: req.query.status, q: req.query.q, ...range });
+    const all = Interviews.list({ status: req.query.status, q: req.query.q, ...range });
     const owned = all.filter((iv) => ownsRequest(req.user, iv.request_id) || iv.organizer_id === req.user.id);
     const seen = new Set();
     rows = [...byPanel, ...owned].filter((iv) => (seen.has(iv.id) ? false : seen.add(iv.id)));
     rows.sort((a, b) => String(b.scheduled_at || '').localeCompare(String(a.scheduled_at || '')));
   }
   res.json({ interviews: rows.map((iv) => serialize(iv, req.user)), scoped: !canViewAll(req.user) });
+});
+
+/* ---------------- PANEL CLASHES (warning, never a block) ---------------- */
+// Registered before `/:id`, which would otherwise read "clashes" as an id.
+// Answers only "who is busy, when": no candidate, request or interview number,
+// so a scheduler with a scoped view learns nothing about interviews they
+// cannot open.
+router.get('/clashes', requireAnyPermission('interview.schedule', 'interview.edit'), (req, res) => {
+  const panel = String(req.query.panel || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 50);
+  // Bounded, so a huge duration cannot turn one lookup into a full-table scan.
+  const durationMin = Math.min(Number(req.query.durationMin) > 0 ? Number(req.query.durationMin) : 60, MAX_DURATION_MIN);
+  const wanted = intervalOf(req.query.start, durationMin);
+  if (!wanted) return res.status(400).json({ error: '`start` must be an ISO date.' });
+  if (panel.length === 0) return res.json({ clashes: [] });
+  const excludeId = Number(req.query.excludeId) || null;
+  const from = new Date(wanted.start - MAX_DURATION_MIN * 60000).toISOString();
+  const to = new Date(wanted.end).toISOString();
+  const existing = Interviews.activeBetween(from, to, ACTIVE_STATUSES).map((iv) => ({
+    id: iv.id, status: iv.status, scheduledAt: iv.scheduled_at, durationMin: iv.duration_min,
+    panel: InterviewPanel.forInterview(iv.id).map((m) => ({ id: m.interviewer_id, name: m.full_name })),
+  }));
+  const clashes = findPanelClashes({ start: req.query.start, durationMin, panel, excludeId }, existing)
+    .map(({ interviewerId, name, start, end }) => ({ interviewerId, name, start, end }));
+  res.json({ clashes });
 });
 
 /* ---------------- LIST for a request's pipeline / application ---------------- */
