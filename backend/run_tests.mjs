@@ -29,6 +29,7 @@ const SUITES = [
   'cv_inbox_backfill_pg_test.mjs', // transactional migration under PostgreSQL semantics
   'audit_regression_test.mjs', // role backfill, SMTP validation, image discovery and historical metadata
   'cv_auto_ingest_test.mjs',  // clean CV -> Talent Pool without a human; exceptions -> Candidate Review
+  'egypt_rule_test.mjs',     // mailbox CVs from outside Egypt are filed, not added to the Talent Pool
   'email_settings_test.mjs', // encrypted settings, draft test and RBAC
   'email_test.mjs',           // C2.2 email module (provider selection, dry-run)
   'microsoft_integration_test.mjs', // M365 delegated OAuth mailbox: connect, scan, intake, idempotency

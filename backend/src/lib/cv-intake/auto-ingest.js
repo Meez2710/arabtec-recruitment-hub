@@ -22,9 +22,10 @@
 
 import {
   reviewIntake, classifyDuplicates, IntakeReviewError,
-  markIntakeDuplicate, markIntakeNeedsReview, stampIntakeClassification,
+  markIntakeDuplicate, markIntakeNeedsReview, markIntakeExcluded, stampIntakeClassification,
 } from '../intake-store.js';
 import { Candidates, CandidateDocuments } from '../models.js';
+import { egyptVerdict } from './egypt-rule.js';
 import { raiseProposal, reviewProposal } from '../proposal-store.js';
 
 /* --------------------------------------------------------------------------
@@ -478,7 +479,7 @@ function attachDocument(candidateId, intake, actor) {
  * @returns {Promise<{outcome: string, candidateId: number|null,
  *                    classification: string, reason: string|null}>}
  */
-export async function autoIngest(intake, actor) {
+export async function autoIngest(intake, actor, opts = {}) {
   const assessment = assessIntake(intake);
 
   // The only two document-level failures. There is no person to create, so the
@@ -492,6 +493,20 @@ export async function autoIngest(intake, actor) {
       reason: assessment.reason,
       flags: [],
     };
+  }
+
+  // Automated intake is for candidates in Egypt (egypt-rule.js). Only the
+  // mailbox path asks for this; a recruiter's own upload is their decision.
+  if (opts.egyptOnly) {
+    const where = egyptVerdict(assessment.values);
+    if (where.outside) {
+      return {
+        outcome: 'EXCLUDED', candidateId: null, classification: assessment.classification,
+        code: 'outside-egypt',
+        reason: `Located outside Egypt (${where.basis}: ${where.detail}); not added to the Talent Pool automatically.`,
+        flags: [],
+      };
+    }
   }
 
   const { exact, potential } = classifyDuplicates(assessment.values, intake.fileHash ?? null);
@@ -630,7 +645,7 @@ export async function autoIngest(intake, actor) {
  * @param {object} intake  a PENDING intake as returned by createIntake()
  * @param {{id: number|null, fullName?: string}} actor
  */
-export async function ingestIntake(intake, actor) {
+export async function ingestIntake(intake, actor, opts = {}) {
   if (!intake || !intake.id) {
     return { outcome: 'NEEDS_REVIEW', candidateId: null, code: 'no-intake', reason: null,
       classification: CLASSES.UNCLASSIFIED };
@@ -656,7 +671,7 @@ export async function ingestIntake(intake, actor) {
 
   let result;
   try {
-    result = await autoIngest(intake, actor);
+    result = await autoIngest(intake, actor, opts);
   } catch (e) {
     // The gate itself failing must never cost the CV. Leave it for a person.
     result = {
@@ -678,6 +693,11 @@ export async function ingestIntake(intake, actor) {
       }
     } else if (result.outcome === 'DUPLICATE') {
       markIntakeDuplicate(intake.id, result.candidateId, result.reason, actor);
+    } else if (result.outcome === 'EXCLUDED') {
+      // Filed, not queued: the CV and its parse stay on record with the reason,
+      // but nobody is asked to look at it.
+      markIntakeExcluded(intake.id, { code: result.code, reason: result.reason,
+        classification: result.classification }, actor);
     } else {
       markIntakeNeedsReview(intake.id, {
         code: result.code, reason: result.reason, classification: result.classification,
