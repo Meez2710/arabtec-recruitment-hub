@@ -168,5 +168,19 @@ await test('UI: Submit waits for the name instead of failing after it', async ()
   assert.match(screen, /disabled: busy \|\| pending > 0 \|\| nameMissing/);
 });
 
+const app = fs.readFileSync(new URL('../frontend/public/app.jsx', import.meta.url), 'utf8');
+const overlay = app.slice(app.indexOf('function CvParseReviewOverlay'), app.indexOf('function CvParseReviewOverlay') + 6000);
+await test('UI: Talent Pool → Parse CV asks for the name too, and sends it', async () => {
+  assert.match(overlay, /canSave && !nameProposed && \(/);
+  assert.match(overlay, /\.\.\.\(nameProposed \? \{\} : \{ fullName: typedName\.trim\(\) \}\)/);
+  assert.match(overlay, /disabled=\{!canSave \|\| saving \|\| nameMissing\}/);
+});
+await test('UI: View CV opens a side panel beside the review, not a new page', async () => {
+  assert.match(screen, /onClick: \(\) => setCvOpen\(\(open\) => !open\)/);
+  assert.doesNotMatch(screen.slice(screen.indexOf("'View CV'") - 200, screen.indexOf("'View CV'")), /api\(\)\.download/,
+    'View CV must not download the file');
+  assert.match(screen, /h\(IntakeCvPanel, \{ id, fileName: intake\.fileName/);
+});
+
 console.log(`\n${failures.length === 0 ? '✓' : '✗'} ${passed} passed, ${failures.length} failed\n`);
 process.exit(failures.length === 0 ? 0 : 1);

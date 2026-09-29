@@ -520,7 +520,8 @@ function Skeleton({ rows = 6, shape = 'detail' }) {
     </div>)}</div>;
   return <div className="card-pad" role="status" aria-label="Loading details" aria-busy="true">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skeleton" style={{ width: Math.max(25, 90 - i * 8) + '%' }} />)}</div>;
 }
-window.ARABTEC_UI = { Empty, LoadError, Skeleton, Icon };
+// Shared with the separately loaded modules; read at render time, after app.jsx ran.
+window.ARABTEC_UI = { Empty, LoadError, Skeleton, Icon, CvFilePreview, useCvDocument };
 
 /* One short, attributed line at the foot of every page — a fact or a piece of
    thinking from leadership, psychology, science or building, drawn from the
@@ -8250,17 +8251,21 @@ function ParsePreviewTable({ rows }) {
  * on the preview element — enough to read a page clearly; it does not
  * re-render the PDF at higher resolution.
  */
-function CvFilePreview({ fileUrl, fileName, mimeType }) {
+// `html`: a Word CV rendered by the server. It is shown in a frame with an
+// empty sandbox (no scripts, no same-origin, no forms), so a crafted document
+// can only render, never act.
+function CvFilePreview({ fileUrl, fileName, mimeType, html }) {
   const [zoom, setZoom] = useState(1);
   const zoomOut = () => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)));
   const zoomIn = () => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)));
   const isPdf = mimeType === 'application/pdf';
   const isImage = !!mimeType && mimeType.startsWith('image/');
+  const isDoc = !!html;
   return (
     <div className="parse-review-cv">
       <div className="parse-review-cv-toolbar">
         <span className="parse-review-cv-name" title={fileName || ''}>{fileName || 'Original CV'}</span>
-        {(isPdf || isImage) && fileUrl && (
+        {(isPdf || isImage || isDoc) && fileUrl && (
           <div className="parse-review-zoom">
             <button type="button" onClick={zoomOut} aria-label="Zoom out">−</button>
             <span>{Math.round(zoom * 100)}%</span>
@@ -8271,6 +8276,8 @@ function CvFilePreview({ fileUrl, fileName, mimeType }) {
       <div className="parse-review-cv-viewport">
         {!fileUrl ? (
           <div className="parse-review-cv-empty">No file to preview.</div>
+        ) : isDoc ? (
+          <iframe title="Original CV" sandbox="" srcDoc={html} className="parse-review-cv-frame" style={{ transform: `scale(${zoom})` }} />
         ) : isPdf ? (
           <iframe title="Original CV" src={fileUrl} className="parse-review-cv-frame" style={{ transform: `scale(${zoom})` }} />
         ) : isImage ? (
@@ -8316,10 +8323,10 @@ function CvFilePreview({ fileUrl, fileName, mimeType }) {
  * The resume endpoint requires an Authorization header, so a bare URL in an
  * <iframe> or <img> gets a 401 and renders nothing — the file has to be
  * fetched with the token and wrapped in a blob. The caller OWNS the returned
- * url and MUST revoke it; see the effect in CvReviewPanel.
+ * url and MUST revoke it; see useCvDocument.
  */
-async function fetchResumeBlobUrl(candidateId) {
-  const res = await fetch(`/api/candidates/${candidateId}/resume`, {
+async function fetchDocBlobUrl(path) {
+  const res = await fetch(`/api${path}`, {
     headers: api.token ? { Authorization: 'Bearer ' + api.token } : {},
   });
   if (!res.ok) {
@@ -8332,6 +8339,41 @@ async function fetchResumeBlobUrl(candidateId) {
   // Content-Type can carry a charset; CvFilePreview compares the bare type.
   const mimeType = String(res.headers.get('content-type') || blob.type || '').split(';')[0].trim();
   return { url: URL.createObjectURL(blob), mimeType };
+}
+function fetchResumeBlobUrl(candidateId) { return fetchDocBlobUrl(`/candidates/${candidateId}/resume`); }
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const isDocxFile = (mimeType, fileName) => mimeType === DOCX_MIME || /\.docx$/i.test(String(fileName || ''));
+
+/**
+ * One CV document for a side panel: the file as an object URL, plus, for a
+ * Word file the browser cannot show, the server's HTML rendering of it
+ * (`?as=html`). The URL is revoked on close and on a switch of document, and
+ * one that arrives after close is revoked on arrival — the rule CvReviewPanel
+ * has always kept, now kept once for every panel.
+ */
+function useCvDocument(path, fileName) {
+  const [doc, setDoc] = useState(null);       // { url, mimeType, html? }
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(true);
+  useEffect(() => {
+    let alive = true, created = null;
+    setBusy(true); setError(''); setDoc(null);
+    fetchDocBlobUrl(path)
+      .then(async (r) => {
+        if (!alive) { URL.revokeObjectURL(r.url); return; }   // arrived after close
+        created = r.url;
+        let html = null;
+        if (isDocxFile(r.mimeType, fileName)) {
+          try { html = (await api.get(`${path}?as=html`)).html || null; } catch { /* download link stays */ }
+        }
+        if (alive) setDoc({ ...r, html });
+      })
+      .catch((e) => { if (alive) setError(e.message || 'Could not load the CV file.'); })
+      .finally(() => { if (alive) setBusy(false); });
+    return () => { alive = false; if (created) URL.revokeObjectURL(created); };
+  }, [path, fileName]);
+  return { doc, error, busy };
 }
 
 /** Open the CV review panel for a candidate from anywhere in the app. */
@@ -8388,9 +8430,6 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   const [cand, setCand] = useState(seed || null);
   const [loadError, setLoadError] = useState('');
-  const [cv, setCv] = useState(null);          // { url, mimeType }
-  const [cvError, setCvError] = useState('');
-  const [cvBusy, setCvBusy] = useState(true);
   const [note, setNote] = useState('');
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
@@ -8407,18 +8446,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
     return () => { alive = false; };
   }, [candidateId]);
 
-  useEffect(() => {
-    let alive = true, created = null;
-    setCvBusy(true); setCvError(''); setCv(null);
-    fetchResumeBlobUrl(candidateId)
-      .then((r) => {
-        if (!alive) { URL.revokeObjectURL(r.url); return; }   // arrived after close
-        created = r.url; setCv(r);
-      })
-      .catch((e) => { if (alive) setCvError(e.message || 'Could not load the CV file.'); })
-      .finally(() => { if (alive) setCvBusy(false); });
-    return () => { alive = false; if (created) URL.revokeObjectURL(created); };
-  }, [candidateId]);
+  const { doc: cv, error: cvError, busy: cvBusy } = useCvDocument(`/candidates/${candidateId}/resume`, (seed || {}).resumeName);
 
   async function saveNote() {
     const body = note.trim();
@@ -8484,7 +8512,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
                     <Empty art="failed" tone="error" text={cvError} />
                   </div>
                 )
-                : <CvFilePreview fileUrl={cv?.url} fileName={c.resumeName} mimeType={cv?.mimeType} />}
+                : <CvFilePreview fileUrl={cv?.url} fileName={c.resumeName} mimeType={cv?.mimeType} html={cv?.html} />}
           </div>
         </div>
 
@@ -8563,13 +8591,32 @@ function CvParseReviewOverlay({ rows, intake, fileUrl, fileName, mimeType, onSav
   const needsRecheck = rows.filter((r) => r.status === 'likely' || r.status === 'rejected').map((r) => r.label);
   const notFound = rows.filter((r) => r.status === 'not_stated').map((r) => r.label);
   const canSave = !!(intake && intake.fields && intake.fields.length > 0);
+  // The same gap Candidate Review had: a CV the reader found no name in cannot
+  // become a candidate until someone types the name (see intake-review.jsx).
+  const nameId = useId();
+  const [typedName, setTypedName] = useState('');
+  const nameProposed = !!(intake && intake.fields && intake.fields.some((f) => f.field === 'fullName'));
+  const nameMissing = canSave && !nameProposed && !typedName.trim();
+  // A Word CV cannot preview in the browser; the server renders it once the
+  // intake exists (the same `?as=html` the CV side panels use).
+  const [docHtml, setDocHtml] = useState(null);
+  useEffect(() => {
+    if (!intake || !isDocxFile(mimeType, fileName)) return undefined;
+    let alive = true;
+    api.get(`/candidates/intakes/${intake.id}/document?as=html`)
+      .then((r) => { if (alive) setDocHtml(r.html || null); })
+      .catch(() => { /* the download link stays */ });
+    return () => { alive = false; };
+  }, [intake && intake.id, mimeType, fileName]);
 
   async function save() {
-    if (!canSave || saving) return;
+    if (!canSave || saving || nameMissing) return;
     setSaving(true);
     try {
       const decisions = Object.fromEntries(intake.fields.map((f) => [f.field, true]));
-      const r = await api.post(`/candidates/intakes/${intake.id}/review`, { decisions, version: intake.version });
+      const r = await api.post(`/candidates/intakes/${intake.id}/review`, {
+        decisions, version: intake.version, ...(nameProposed ? {} : { fullName: typedName.trim() }),
+      });
       if (r.candidate) {
         toast(`Candidate created: ${r.candidate.candidateNo}`);
         onSaved(r.candidate.id);
@@ -8614,12 +8661,20 @@ function CvParseReviewOverlay({ rows, intake, fileUrl, fileName, mimeType, onSav
                 {!canSave && <div><strong>Nothing here could be confirmed well enough to save automatically.</strong> Close this and use "Add manually" instead.</div>}
               </div>
             )}
+            {canSave && !nameProposed && (
+              <div className="field parse-review-name">
+                <label htmlFor={nameId}>Candidate full name *</label>
+                <input id={nameId} value={typedName} maxLength={200} autoComplete="off" placeholder="As written on the CV"
+                  onChange={(e) => setTypedName(e.target.value)} />
+                <div className="field-hint">The CV reader could not find a name in this CV. Type it as written on the CV beside this list.</div>
+              </div>
+            )}
           </div>
-          <CvFilePreview fileUrl={fileUrl} fileName={fileName} mimeType={mimeType} />
+          <CvFilePreview fileUrl={fileUrl} fileName={fileName} mimeType={mimeType} html={docHtml} />
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="btn" onClick={save} disabled={!canSave || saving}>{saving ? 'Saving…' : 'Save candidate'}</button>
+          <button className="btn" onClick={save} disabled={!canSave || saving || nameMissing}>{saving ? 'Saving…' : 'Save candidate'}</button>
         </div>
       </div>
     </div>

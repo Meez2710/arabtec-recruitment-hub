@@ -563,26 +563,36 @@ check('the panel is mounted once, at the shell, not per page', () => {
    8. THE BLOB URL IS REVOKED — a leaked object URL pins the whole file.
    ======================================================================== */
 check('the object URL the preview uses is revoked on close and on switch', () => {
+  // One loader for every CV side panel (candidate CV and Candidate Review):
+  // the panels go through useCvDocument and never create object URLs.
   const panel = slice('function CvReviewPanel', 'function CvReviewHost');
-  const creates = (panel.match(/URL\.createObjectURL/g) || []).length;
-  const revokes = (panel.match(/URL\.revokeObjectURL/g) || []).length;
-  // The helper creates; the panel revokes — on the effect's cleanup AND on the
-  // late-arrival path where the fetch resolves after the panel has closed.
-  assert.equal(creates, 0, 'the panel creates object URLs itself instead of going through fetchResumeBlobUrl');
-  assert.equal(revokes, 2,
-    `the panel revokes ${revokes} time(s); it must revoke on the effect cleanup and on a response that arrives after close`);
-  assert.ok(/return\s*\(\)\s*=>\s*\{[^}]*revokeObjectURL/.test(panel),
+  const intakeReview = readPublic('intake-review.jsx');
+  const intakePanel = intakeReview.slice(intakeReview.indexOf('function IntakeCvPanel'), intakeReview.indexOf('function IntakeDetail'));
+  for (const [label, src] of [['CvReviewPanel', panel], ['IntakeCvPanel', intakePanel]]) {
+    assert.ok(src.length > 0, `${label} source was located`);
+    assert.equal((src.match(/URL\.createObjectURL/g) || []).length, 0, `${label} creates object URLs itself`);
+    assert.match(src, /useCvDocument\(/, `${label} does not load its CV through useCvDocument`);
+  }
+  // The hook revokes on the effect's cleanup AND on the late-arrival path
+  // where the fetch resolves after the panel has closed.
+  const hook = slice('function useCvDocument', '/** Open the CV review panel');
+  assert.equal((hook.match(/URL\.revokeObjectURL/g) || []).length, 2,
+    'useCvDocument must revoke on the effect cleanup and on a response that arrives after close');
+  assert.ok(/return\s*\(\)\s*=>\s*\{[^}]*revokeObjectURL/.test(hook),
     'the effect that creates the URL has no cleanup that revokes it');
-  assert.ok(/if\s*\(!alive\)\s*\{\s*URL\.revokeObjectURL/.test(panel),
+  assert.ok(/if\s*\(!alive\)\s*\{\s*URL\.revokeObjectURL/.test(hook),
     'a response arriving after close leaks its object URL');
-  // The helper is the only creator and has exactly one caller.
-  const helper = slice('async function fetchResumeBlobUrl', '/** Open the CV review panel');
+  // The fetch helper is the only creator.
+  const helper = slice('async function fetchDocBlobUrl', 'function fetchResumeBlobUrl');
   assert.equal((helper.match(/URL\.createObjectURL/g) || []).length, 1);
-  assert.equal((app.match(/fetchResumeBlobUrl\(/g) || []).length, 2,
-    'fetchResumeBlobUrl must have exactly one caller besides its declaration');
   // It sends the Authorization header — a bare URL 401s in an iframe.
   assert.ok(/Authorization:\s*'Bearer '\s*\+\s*api\.token/.test(helper),
-    'the résumé fetch does not send the bearer token, so the preview would be empty');
+    'the CV fetch does not send the bearer token, so the preview would be empty');
+});
+
+check('a Word CV renders in a frame with an empty sandbox', () => {
+  const preview = slice('function CvFilePreview', '/* ===========================================================================\n   CV REVIEW SIDE PANEL');
+  assert.match(preview, /sandbox=""\s+srcDoc=\{html\}/, 'the rendered Word CV must be sandboxed (no scripts, no same-origin)');
 });
 
 /* ===========================================================================

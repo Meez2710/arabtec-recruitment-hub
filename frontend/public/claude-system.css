@@ -1792,3 +1792,19 @@ button.cal-slot:focus-visible { outline: 0; }
 
 /* Candidate Review: the full name typed from the CV when the reader found none. */
 .intake-name-entry { max-width: 480px; margin-top: var(--sp-4); }
+
+/* Candidate Review: the CV in a side panel beside the review, not a new page.
+   Wide screens split the page; narrower ones slide the panel in from the
+   inline end over the review. Paint is in arabtec-design-system.css. */
+.intake-review-split.with-cv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 44%); gap: var(--sp-4); align-items: start; }
+.intake-review-main { min-width: 0; }
+.intake-cv-side { position: sticky; top: var(--sp-4); display: flex; flex-direction: column; height: calc(100vh - 128px); min-height: 480px; overflow: hidden; border-width: 1px; border-style: solid; border-radius: var(--cl-r-xl); }
+.intake-cv-side-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom-width: 1px; border-bottom-style: solid; }
+.intake-cv-side-head > strong { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.intake-cv-side > .parse-review-cv { flex: 1 1 auto; min-height: 0; }
+.intake-cv-side-state { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--sp-4); display: grid; align-content: center; }
+@media (max-width: 1100px) {
+  .intake-review-split.with-cv { grid-template-columns: minmax(0, 1fr); }
+  .intake-cv-side { position: fixed; top: 0; bottom: 0; inset-inline-end: 0; z-index: 60; width: min(92vw, 560px); height: auto; min-height: 0; border-radius: 0; }
+}
+.parse-review-name { margin-top: var(--sp-3); }
