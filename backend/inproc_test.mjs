@@ -3,6 +3,7 @@ process.env.DATABASE_URL = 'file:/tmp/arabtec_inproc.db';
 process.env.PORT = '4099';
 import fs from 'node:fs';
 import { ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';
+import { waitForReady } from './test-support/wait-ready.mjs';
 for (const f of ['/tmp/arabtec_inproc.db', '/tmp/arabtec_inproc.db-journal']) {
   try { fs.rmSync(f); } catch {}
 }
@@ -16,7 +17,9 @@ await import('./prisma/seed.js');
 
 // Start server
 await import('./src/server.js');
-await new Promise((r) => setTimeout(r, 800));
+// Wait for the readiness gate, not a guess about the machine: a fixed sleep let
+// the first login hit the gate's 503 on a loaded CI box (test-support/wait-ready.mjs).
+await waitForReady('http://localhost:4099');
 
 // Run the smoke tests against the live in-process server
 process.env.BASE = 'http://localhost:4099';

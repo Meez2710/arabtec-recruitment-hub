@@ -205,6 +205,29 @@
     }, `${parts.join(' · ')}. Check each value against the original before accepting it.`);
   }
 
+  /**
+   * The CV beside the review, not in a new page: the reviewer checks each value
+   * (and reads the name to type) against the document without losing the form.
+   * The same viewer as a candidate's CV (app.jsx), so Word files render too.
+   */
+  function IntakeCvPanel({ id, fileName, onClose }) {
+    const ui = window.ARABTEC_UI;
+    const { doc, error, busy } = ui.useCvDocument(`/candidates/intakes/${id}/document`, fileName);
+    return h('aside', { className: 'intake-cv-side', 'aria-label': 'CV' },
+      h('div', { className: 'intake-cv-side-head' },
+        h('strong', { title: fileName || '' }, fileName || 'CV document'),
+        h('button', {
+          type: 'button', className: 'btn btn-ghost btn-sm',
+          onClick: () => api().download(`/candidates/intakes/${id}/document`, fileName || 'cv'),
+        }, 'Download'),
+        h('button', { type: 'button', className: 'btn btn-secondary btn-sm', onClick: onClose }, 'Close')),
+      busy
+        ? h('div', { className: 'intake-cv-side-state' }, h(ui.Skeleton, { rows: 5 }))
+        : error
+          ? h('div', { className: 'intake-cv-side-state' }, h(ui.Empty, { art: 'failed', tone: 'error', text: error }))
+          : h(ui.CvFilePreview, { fileUrl: doc && doc.url, fileName, mimeType: doc && doc.mimeType, html: doc && doc.html }));
+  }
+
   function IntakeDetail({ id, onConverted, onBack, provenance, preview }) {
     const [intake, setIntake] = useState(null);
     const [decisions, setDecisions] = useState({});
@@ -215,6 +238,7 @@
     const [rejectOpen, setRejectOpen] = useState(false);
     const [reason, setReason] = useState('');
     const [typedName, setTypedName] = useState('');
+    const [cvOpen, setCvOpen] = useState(false);
 
     const load = useCallback(async () => {
       setError('');
@@ -310,11 +334,13 @@
           ].join(' · '))),
         h('div', { className: 'intake-head-actions' },
           h('button', {
-            className: 'btn btn-secondary',
-            onClick: () => api().download(`/candidates/intakes/${id}/document`),
-          }, 'View CV'),
+            className: 'btn btn-secondary', 'aria-pressed': cvOpen,
+            onClick: () => setCvOpen((open) => !open),
+          }, cvOpen ? 'Hide CV' : 'View CV'),
           h('button', { className: 'btn btn-danger', onClick: () => setRejectOpen(true) }, 'Reject intake'))),
 
+      h('div', { className: 'intake-review-split' + (cvOpen ? ' with-cv' : '') },
+      h('div', { className: 'intake-review-main' },
       error ? h(Banner, { tone: 'danger', title: 'Review not submitted' }, error) : null,
       h(DocumentSource, { provenance }),
       conflict ? h(BlockingDuplicate, { conflict }) : null,
@@ -367,7 +393,8 @@
           className: 'btn btn-success',
           disabled: busy || pending > 0 || nameMissing || (blocked && conflict.overridable && !override) || (blocked && !conflict.overridable),
           onClick: submit,
-        }, busy ? 'Submitting…' : (conflict ? 'Submit with override' : 'Approve & create candidate'))),
+        }, busy ? 'Submitting…' : (conflict ? 'Submit with override' : 'Approve & create candidate')))),
+      cvOpen ? h(IntakeCvPanel, { id, fileName: intake.fileName, onClose: () => setCvOpen(false) }) : null),
 
       rejectOpen
         ? h('div', { className: 'intake-modal-backdrop' }, h('div', { className: 'intake-modal' },

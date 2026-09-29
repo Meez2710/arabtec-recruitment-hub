@@ -1511,3 +1511,9 @@ button.cal-slot:hover, button.cal-slot:focus-visible { background: var(--action-
 .cal-strip-day > strong { font-size: 16px; }
 .cal-strip-day.active { background: var(--action-tint); border-color: var(--action-tint-bd); }
 .cal-strip-day.today > strong { color: var(--action); }
+
+/* Candidate Review CV side panel: colour only (geometry in claude-system.css). */
+.intake-cv-side { background: var(--surface); border-color: var(--line); }
+.intake-cv-side-head { border-color: var(--line); }
+.intake-cv-side-head > strong { font-size: 13px; color: var(--ink); }
+@media (max-width: 1100px) { .intake-cv-side { box-shadow: var(--shadow-pop); } }
