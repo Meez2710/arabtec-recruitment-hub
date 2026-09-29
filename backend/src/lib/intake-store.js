@@ -477,6 +477,23 @@ export function markIntakeNeedsReview(intakeId, { code, reason, classification }
   });
 }
 
+/**
+ * Filed by a rule, not queued for a person: REJECTED with the rule's code and
+ * reason (e.g. 'outside-egypt'). The CV and its parse stay on record, so the
+ * decision can be revisited, but Candidate Review does not list it.
+ */
+export function markIntakeExcluded(intakeId, { code, reason, classification } = {}, actor = null) {
+  return tx(() => {
+    const row = get('SELECT * FROM candidate_intake WHERE id=?', [intakeId]);
+    if (!row || row.status !== 'PENDING') return null;
+    run(`UPDATE candidate_intake SET status='REJECTED', auto_code=?, reason=?, classification=?,
+         reviewed_by=?, reviewed_at=?, version=? WHERE id=?`,
+    [code ?? null, reason ?? null, classification ?? null, actor?.id ?? null,
+      new Date().toISOString(), Number(row.version || 0) + 1, intakeId]);
+    return toIntake(get('SELECT * FROM candidate_intake WHERE id=?', [intakeId]));
+  });
+}
+
 /** Record the bucket on an intake that did convert, for the audit trail. */
 export function stampIntakeClassification(intakeId, classification) {
   run('UPDATE candidate_intake SET classification=? WHERE id=?', [classification ?? null, intakeId]);

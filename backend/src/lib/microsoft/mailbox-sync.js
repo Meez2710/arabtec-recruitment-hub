@@ -382,10 +382,11 @@ export async function parseWaiting({ categories = null, limit = 25, actor = null
       // what left 41 parsed CVs sitting behind a queue and zero candidates in
       // the pool. `ingestIntake` never throws: anything it cannot resolve stays
       // PENDING with a reason, which is exactly what Candidate Review is for.
-      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null });
+      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null }, { egyptOnly: true });
       summary.autoIngested = (summary.autoIngested || 0) + (outcome.outcome === 'CONVERTED' ? 1 : 0);
       summary.duplicates = (summary.duplicates || 0) + (outcome.outcome === 'DUPLICATE' ? 1 : 0);
       summary.needsReview = (summary.needsReview || 0) + (outcome.outcome === 'NEEDS_REVIEW' ? 1 : 0);
+      summary.outsideEgypt = (summary.outsideEgypt || 0) + (outcome.outcome === 'EXCLUDED' ? 1 : 0);
       if (outcome.candidateId) summary.candidateIds = [...(summary.candidateIds || []), outcome.candidateId];
 
       try {
@@ -553,10 +554,11 @@ async function ingestMessage({ message, mailbox, tokenRef, actor, req, summary, 
 
       // Same rule as the selection path: a clean parse belongs in the Talent
       // Pool, not in a queue. No requisition is involved here either.
-      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null });
+      const outcome = await ingestIntake(intake, actor || { id: intake.createdBy ?? null }, { egyptOnly: true });
       summary.autoIngested = (summary.autoIngested || 0) + (outcome.outcome === 'CONVERTED' ? 1 : 0);
       summary.duplicates = (summary.duplicates || 0) + (outcome.outcome === 'DUPLICATE' ? 1 : 0);
       summary.needsReview = (summary.needsReview || 0) + (outcome.outcome === 'NEEDS_REVIEW' ? 1 : 0);
+      summary.outsideEgypt = (summary.outsideEgypt || 0) + (outcome.outcome === 'EXCLUDED' ? 1 : 0);
       if (outcome.candidateId) summary.candidateIds = [...(summary.candidateIds || []), outcome.candidateId];
 
       try {
