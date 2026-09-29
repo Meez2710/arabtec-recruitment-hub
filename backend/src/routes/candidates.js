@@ -620,6 +620,8 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
       ...(body.overrideDuplicate === true ? { overrideDuplicate: true } : {}),
       ...(body.ownerRecruiterId !== undefined
         ? { ownerRecruiterId: Number(body.ownerRecruiterId) } : {}),
+      // Typed from the CV when the reader found no name. Strings only.
+      ...(typeof body.fullName === 'string' ? { enteredFullName: body.fullName } : {}),
     });
     if (result === null) return res.status(404).json({ error: 'Intake not found.' });
 
@@ -634,7 +636,8 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
     CandidateActivity.add({
       candidateId: result.candidateId, actorId: req.user.id, actorName: req.user.fullName,
       type: 'candidate_created',
-      note: `${result.candidate.candidate_no} (CV intake ${result.intakeId} approved)`,
+      note: `${result.candidate.candidate_no} (CV intake ${result.intakeId} approved`
+        + `${result.entered.includes('fullName') ? '; name entered by reviewer' : ''})`,
     });
     writeAudit(req, {
       action: 'candidate.created', entityType: 'candidate', entityId: result.candidateId,
@@ -642,7 +645,7 @@ router.post('/intakes/:iid/review', requirePermission('candidate.add'), async (r
         candidateNo: result.candidate.candidate_no,
         source: 'cv_intake', intakeId: result.intakeId,
         proposalId: result.proposalId, applicationId: result.applicationId,
-        requestId: result.requestId, accepted: result.applied,
+        requestId: result.requestId, accepted: result.applied, entered: result.entered,
       },
     });
     if (result.applicationId !== null) {
