@@ -243,7 +243,8 @@ const LIST_FIELDS = new Set(['skills', 'languages', 'certifications']);
  * @param {{ id: number, fullName?: string }} actor
  * @param {{ expectedVersion?: number, overrideDuplicate?: boolean,
  *           overrideReason?: string, source?: string,
- *           ownerRecruiterId?: number }} [opts]
+ *           ownerRecruiterId?: number, enteredFullName?: string }} [opts]
+ *   `enteredFullName`: typed by the reviewer when no proposed name is accepted.
  */
 export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
   // Resolved BEFORE the transaction: tx() callbacks must be synchronous.
@@ -279,6 +280,23 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
     const accepted = new Map(
       intake.fields.filter((f) => decisions[f.field] === true).map((f) => [f.field, f.value]),
     );
+
+    // A name the reviewer typed from the CV, for when the reader found none or
+    // the one it found was wrong and was rejected. It fills the gap only: with
+    // a proposed name accepted as well, which one is meant would be a guess.
+    const typedName = typeof opts.enteredFullName === 'string' ? opts.enteredFullName.trim() : '';
+    if (typedName !== '') {
+      if (accepted.has('fullName')) {
+        throw new IntakeReviewError('Accept the proposed name or type one, not both.',
+          'invalid', { requires: ['fullName'] });
+      }
+      if (typedName.length > 200) {
+        throw new IntakeReviewError('A full name can be at most 200 characters.',
+          'invalid', { requires: ['fullName'] });
+      }
+      accepted.set('fullName', typedName);
+    }
+    const entered = typedName !== '' ? ['fullName'] : [];
 
     /* --- the candidate's own invariants, unchanged from manual creation --- */
 
@@ -401,6 +419,8 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
       requestId: intake.requestId,
       applied: reviewed ? reviewed.applied : [],
       rejected: reviewed ? reviewed.rejected : [],
+      // Fields the reviewer typed rather than accepted from the CV.
+      entered,
       // Name-only lookalikes. Reported, never blocking — the conversion already
       // happened.
       potentialMatches: potential,

@@ -12,7 +12,10 @@
    that omits any proposed field ('incomplete'), so decisions are collected
    locally and submitted once. There is deliberately no per-field save and no
    edit-the-value control — the API accepts accept/reject only, and offering an
-   editor the backend cannot honour would be a lie in the UI. */
+   editor the backend cannot honour would be a lie in the UI. The one exception
+   is the full name: when the CV reader found none (or the reviewer rejected
+   the one it found), the reviewer types it from the CV and the review sends it
+   as `fullName`, because a candidate cannot exist without a name. */
 (function () {
   const h = React.createElement;
   const { useCallback, useEffect, useMemo, useRef, useState } = React;
@@ -211,6 +214,7 @@
     const [override, setOverride] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
     const [reason, setReason] = useState('');
+    const [typedName, setTypedName] = useState('');
 
     const load = useCallback(async () => {
       setError('');
@@ -232,6 +236,13 @@
     const fields = useMemo(() => orderFields(intake && intake.fields), [intake]);
     const pending = fields.filter((f) => (decisions[f.field] || 'PENDING') === 'PENDING').length;
     const acceptedCount = fields.filter((f) => decisions[f.field] === 'ACCEPT').length;
+    // No usable name to accept: the reader found none, or the reviewer rejected
+    // the one it proposed. The reviewer types it, before submitting rather than
+    // after a refusal.
+    const nameProposed = fields.some((f) => f.field === 'fullName');
+    const needsName = !nameProposed || decisions.fullName === 'REJECT';
+    const enteredName = needsName ? typedName.trim() : '';
+    const nameMissing = needsName && enteredName === '' && acceptedCount > 0;
 
     const setDecision = (k, v) => setDecisions((s) => ({ ...s, [k]: v }));
     const setAll = (v) => setDecisions(Object.fromEntries(fields.map((f) => [f.field, v])));
@@ -245,6 +256,7 @@
         const r = await api().post(`/candidates/intakes/${id}/review`, {
           decisions: map,
           version: intake.version,
+          ...(enteredName ? { fullName: enteredName } : {}),
           ...(conflict && override ? { overrideDuplicate: true } : {}),
         });
         setConflict(null);
@@ -320,7 +332,18 @@
           h('div', { className: 'intake-head-actions' },
             h('button', { className: 'btn btn-secondary', onClick: () => setAll('REJECT') }, 'Reject all'),
             h('button', { className: 'btn btn-secondary', onClick: () => setAll('ACCEPT') }, 'Accept all'))),
-        h(ReviewTable, { fields, decisions, setDecision })),
+        h(ReviewTable, { fields, decisions, setDecision }),
+        needsName
+          ? h('div', { className: 'field intake-name-entry' },
+            h('label', { htmlFor: `intake-${id}-name` }, 'Candidate full name *'),
+            h('input', {
+              id: `intake-${id}-name`, value: typedName, maxLength: 200, autoComplete: 'off',
+              placeholder: 'As written on the CV', onChange: (e) => setTypedName(e.target.value),
+            }),
+            h('div', { className: 'field-hint' }, nameProposed
+              ? 'You rejected the name the CV reader proposed. Type the correct name from the CV.'
+              : 'The CV reader could not find a name in this CV. Open View CV and type the name as it is written.'))
+          : null),
 
       preview ? h(ExtractionPreviewTable, { rows: preview }) : null,
 
@@ -335,12 +358,14 @@
       h('div', { className: 'review-submit' },
         h('span', null, pending > 0
           ? `${pending === 1 ? '1 field still needs' : `${pending} fields still need`} a decision`
-          : acceptedCount === 0
-            ? 'No field accepted — submitting will reject this intake and create no candidate'
-            : `Ready — ${acceptedCount} field${acceptedCount === 1 ? '' : 's'} will be applied`),
+          : nameMissing
+            ? 'Type the candidate\u2019s full name above to continue — this CV did not give one'
+            : acceptedCount === 0 && !enteredName
+              ? 'No field accepted — submitting will reject this intake and create no candidate'
+              : `Ready — ${enteredName ? `${enteredName} (typed) + ` : ''}${acceptedCount} field${acceptedCount === 1 ? '' : 's'} will be applied`),
         h('button', {
           className: 'btn btn-success',
-          disabled: busy || pending > 0 || (blocked && conflict.overridable && !override) || (blocked && !conflict.overridable),
+          disabled: busy || pending > 0 || nameMissing || (blocked && conflict.overridable && !override) || (blocked && !conflict.overridable),
           onClick: submit,
         }, busy ? 'Submitting…' : (conflict ? 'Submit with override' : 'Approve & create candidate'))),
 

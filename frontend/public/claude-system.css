@@ -1789,3 +1789,6 @@ button.cal-slot:focus-visible { outline: 0; }
 .cal-strip-day > span { letter-spacing: .06em; text-transform: uppercase; }
 .cal-strip-day > strong { font-variant-numeric: tabular-nums; }
 .cal-clash { margin-top: var(--sp-3); }
+
+/* Candidate Review: the full name typed from the CV when the reader found none. */
+.intake-name-entry { max-width: 480px; margin-top: var(--sp-4); }

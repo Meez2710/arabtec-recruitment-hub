@@ -58,6 +58,7 @@ const SUITES = [
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider
   'cv_proposal_test.mjs',     // CV -> proposal -> approved fields -> candidate
   'cv_intake_test.mjs',       // CV -> pre-candidate intake -> review -> candidate
+  'intake_entered_name_test.mjs', // Candidate Review: typed name when the CV reader found none
   'intake_route_http_test.mjs', // HTTP: /candidates/intakes is not shadowed by /:id
   'org_chart_test.mjs',        // Phase 1 organization structure chart
   'fixture_probe_test.mjs',    // fixture determinism, before anything relies on it
