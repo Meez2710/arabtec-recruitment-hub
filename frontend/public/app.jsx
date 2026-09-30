@@ -2396,7 +2396,7 @@ function withinPastDays(iso, days) {
   return !isNaN(age) && age >= 0 && age <= days * DAY_MS;
 }
 
-function ManagerDashboard({ user, data, onNavigate, notice }) {
+function ManagerDashboard({ user, data, onNavigate, notice, figures }) {
   const { d, requests } = data;
   const open = requests.filter(isOpenReq);
   const unassigned = open.filter((r) => !r.ownerId);
@@ -2479,7 +2479,8 @@ function ManagerDashboard({ user, data, onNavigate, notice }) {
           onClick={() => onNavigate('offers', { toIssue: true })} />
       </div>
 
-      <div className="dash-grid-2">
+      <FiguresToggle figures={figures} />
+      <div className="dash-grid-2 dash-figure">
         <section className="card">
           <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Workload at a glance — no ranking.</span></div>
           <div className="card-pad">
@@ -2614,7 +2615,7 @@ function PlanTable({ rows, unit }) {
 }
 
 /* --------------------------------- HR DIRECTOR ---------------------------- */
-function DirectorDashboard({ user, data, onNavigate, notice }) {
+function DirectorDashboard({ user, data, onNavigate, notice, figures }) {
   const { d, requests } = data;
   const k = (d && d.kpis) || {};
   const open = requests.filter(isOpenReq);
@@ -2659,7 +2660,8 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
           </div>}
         </section>
 
-        <section className="card">
+        <FiguresToggle figures={figures} />
+        <section className="card dash-figure">
           <div className="card-head"><div><h3>Open roles by age</h3></div><span className="dash-headnote">Where time is being lost</span></div>
           <div className="card-pad">
             {!d ? <Empty art="none-yet" text="No data." /> : (
@@ -2674,14 +2676,14 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
         </section>
       </div>
 
-      <div className="dash-grid-2" style={{ marginTop: 12 }}>
-        <section className="card">
+      <div className="dash-grid-2 dash-figure" style={{ marginTop: 12 }}>
+        <section className="card dash-figure">
           <div className="card-head"><div><h3>Requests by status</h3></div><span className="dash-headnote">Every request in scope</span></div>
           <div className="card-pad">
             <DashBars empty="No hiring requests yet." rows={((d && d.requestsByStatus) || []).filter((r) => r.count > 0).map((r) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status.replace(/_/g, ' '), count: r.count, color: r.status === 'pending_approval' ? 'var(--warning)' : ['closed', 'cancelled', 'rejected'].includes(r.status) ? 'var(--muted)' : 'var(--green-700)' }))} />
           </div>
         </section>
-        <section className="card">
+        <section className="card dash-figure">
           <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
           <div className="card-pad">
             <DashBars empty="No recruiter owns an open request yet." rows={((d && d.recruiterLoad) || []).map((r) => ({ label: r.name, count: r.c ?? r.count ?? 0, color: 'var(--green-700)' }))} />
@@ -2689,7 +2691,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
         </section>
       </div>
 
-      <section className="card" style={{ marginTop: 12 }}>
+      <section className="card dash-figure" style={{ marginTop: 12 }}>
         <div className="card-head"><div><h3>Hiring plan by project</h3></div><span className="dash-headnote">Planned versus filled</span></div>
         <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
       </section>
@@ -2707,7 +2709,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
 /* ------------------------------ COO / EXECUTIVE --------------------------- */
 /* Aggregate only. No candidate identity appears on this composition — the
    executive view answers "are we hiring to plan", not "who is in the pipeline". */
-function ExecutiveDashboard({ user, data, onNavigate, notice }) {
+function ExecutiveDashboard({ user, data, onNavigate, notice, figures }) {
   const { d, requests } = data;
   const k = (d && d.kpis) || {};
   const remaining = Math.max((k.headcountTotal || 0) - (k.headcountFilled || 0), 0);
@@ -2727,7 +2729,8 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
           meta={`${requests.filter(isOpenReq).length} open request${requests.filter(isOpenReq).length === 1 ? '' : 's'}`} />
       </div>
 
-      <section className="card">
+      <FiguresToggle figures={figures} />
+      <section className="card dash-figure">
         <div className="card-head"><div><h3>One hiring-progress view</h3></div><span className="dash-headnote">By project</span></div>
         <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
       </section>
@@ -2754,7 +2757,7 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
           </div>}
       </section>
 
-      <div className="dash-grid-2" style={{ marginTop: 16 }}>
+      <div className="dash-grid-2 dash-figure" style={{ marginTop: 16 }}>
         <section className="card">
           <div className="card-head"><div><h3>Time to fill</h3></div></div>
           <div className="card-pad"><div className="dash-kpi-val">{k.timeToFillDays == null ? '—' : k.timeToFillDays}</div>
@@ -2831,8 +2834,19 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
 // rendered with the admin's own scope.
 const DASH_VIEWS = [['director', 'Director'], ['executive', 'Executive'], ['manager', 'Recruitment manager'], ['recruiter', 'Recruiter'], ['interviewer', 'Interviewer']];
 const DASH_VIEW_KEY = 'arabtec_dash_view';
+/* Phone only (hidden on desktop by CSS): folds the chart sections marked
+   `.dash-figure` so a phone dashboard opens on the decisions, not on four
+   screens of charts. */
+function FiguresToggle({ figures }) {
+  if (!figures) return null;
+  return <button type="button" className="btn btn-secondary dash-figures-toggle" aria-expanded={figures.open} onClick={figures.toggle}>
+    {figures.open ? 'Hide hiring figures' : 'Show hiring figures'}
+    <Icon name="chevronDown" size={16} />
+  </button>;
+}
 function Dashboard({ user, onNavigate, dash }) {
   const isAdmin = (user.roles || []).includes('system_admin');
+  const [figuresOpen, setFiguresOpen] = useState(false);
   const [view, setView] = useState(() => { try { const v = localStorage.getItem(DASH_VIEW_KEY); return DASH_VIEWS.some(([k]) => k === v) ? v : 'director'; } catch { return 'director'; } });
   const persona = isAdmin ? view : personaFor(user);
   const data = useDashboardData(user, persona, dash);
@@ -2876,12 +2890,16 @@ function Dashboard({ user, onNavigate, dash }) {
     {stale.length > 0 && <RefetchError onRetry={data.reload} text={`Could not refresh ${join(stale)}. Showing the last loaded results.`} />}
   </>;
 
-  const props = { user, data, onNavigate, notice };
-  if (persona === 'manager') return <ManagerDashboard {...props} />;
-  if (persona === 'director') return <DirectorDashboard {...props} />;
-  if (persona === 'executive') return <ExecutiveDashboard {...props} />;
-  if (persona === 'interviewer') return <InterviewerDashboard {...props} />;
-  return <RecruiterDashboard {...props} />;
+  // On a phone the charts fold behind one "Show hiring figures" button, so the
+  // screen leads with what needs a decision (FiguresToggle, .dash-figure).
+  const figures = { open: figuresOpen, toggle: () => setFiguresOpen((v) => !v) };
+  const props = { user, data, onNavigate, notice, figures };
+  const personaView = persona === 'manager' ? <ManagerDashboard {...props} />
+    : persona === 'director' ? <DirectorDashboard {...props} />
+    : persona === 'executive' ? <ExecutiveDashboard {...props} />
+    : persona === 'interviewer' ? <InterviewerDashboard {...props} />
+    : <RecruiterDashboard {...props} />;
+  return <div className={'dash-root' + (figuresOpen ? ' figures-open' : '')}>{personaView}</div>;
 }
 
 /* ----------------------------- Reports / analytics ----------------------------- */

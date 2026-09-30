@@ -56,6 +56,8 @@ function text(tree) {
 }
 const button=(tree,label)=>nodes(tree).find(n=>n.type==='button'&&text(n)===label);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
+// Dashboard wraps the persona view in `.dash-root` (the phone figures fold).
+const unwrap = (tree) => tree && tree.type === 'div' && /\bdash-root\b/.test(tree.props?.className || '') ? tree.props.children : tree;
 let passed=0;
 async function check(name,run){await run();passed++;console.log(`  ✓ ${name}`);}
 
@@ -529,7 +531,7 @@ await check('quality labels render through the canonical Badge, never in the rej
   // therefore lives in props (Empty.text, ActionItem.title…), and the in-card
   // section state is expanded by calling it with the props it was given.
   const RecruiterDashboard = get('RecruiterDashboard');
-  const persona = (tree) => tree && tree.type === RecruiterDashboard ? RecruiterDashboard(tree.props) : tree;
+  const persona = (tree) => { const t = unwrap(tree); return t && t.type === RecruiterDashboard ? RecruiterDashboard(t.props) : t; };
   const expand = (tree) => { const t = persona(tree); return [t, ...nodes(t).filter((n) => n.type === SectionUnavailable).map((n) => SectionUnavailable(n.props)).filter(Boolean)]; };
   const RoleRow = get('RoleRow');
   const view = (tree) => expand(tree).map((t) => text(t) + nodes(t).flatMap((n) => [...Object.values(n.props || {}).filter((v) => typeof v === 'string'), n.type === RoleRow ? n.props.r.title : '']).join('\n')).join('\n');
@@ -604,7 +606,7 @@ await check('quality labels render through the canonical Badge, never in the rej
     const page = await mountDash(); let tree = page.render();
     assert.ok(view(tree).includes('Site Engineer'));
     routes({ requests: new Error('Refresh failed'), interviews: INTERVIEWS });
-    tree.props.data.reload(); await flush(); tree = page.render();
+    unwrap(tree).props.data.reload(); await flush(); tree = page.render();
     assert.ok(view(tree).includes('Site Engineer'), 'rows already on screen survive a failed refresh');
     const stale = nodes(persona(tree)).find((n) => n.type === RefetchError);
     assert.ok(stale && stale.props.text.includes('Could not refresh hiring requests'), 'the page says the rows may not be current');
@@ -612,7 +614,7 @@ await check('quality labels render through the canonical Badge, never in the rej
     // Two overlapping reloads: the first answers last, with a failure, and must be ignored.
     const first = deferred(), second = deferred();
     let calls = 0; api.get = (path) => path.startsWith('/interviews') ? Promise.resolve(INTERVIEWS) : (++calls === 1 ? first.promise : second.promise);
-    tree.props.data.reload(); tree.props.data.reload();
+    unwrap(tree).props.data.reload(); unwrap(tree).props.data.reload();
     second.resolve({ requests: [{ ...REQUESTS.requests[0], title: 'Newer answer' }] }); await flush(); tree = page.render();
     assert.ok(view(tree).includes('Newer answer') && !nodes(persona(tree)).some((n) => n.type === RefetchError));
     first.reject(new Error('late failure')); await flush(); tree = page.render();
@@ -789,17 +791,17 @@ await check('quality labels render through the canonical Badge, never in the rej
     api.get = async (path) => path.startsWith('/requests') ? { requests: [] } : path.startsWith('/interviews') ? { interviews: [] } : { kpis: {}, aging: {}, offersByStatus: [], myWork: {} };
     const admin = { id: 1, roles: ['system_admin'], permissions: ['dashboard.view', 'request.view_all', 'interview.view_all'] };
     const page = mount(get('Dashboard'), { user: admin, onNavigate() {}, dash: { kpis: {}, aging: {}, offersByStatus: [], myWork: {} } });
-    page.render(); await flush(); let tree = page.render();
+    page.render(); await flush(); let tree = unwrap(page.render());
     assert.equal(tree.type, get('DirectorDashboard'), 'the big picture is the default');
     const tabs = nodes(tree.props.notice).filter((n) => n.props?.role === 'tab');
     assert.deepEqual(tabs.map((t) => text(t)), ['Director', 'Executive', 'Recruitment manager', 'Recruiter', 'Interviewer']);
-    tabs.find((t) => text(t) === 'Recruiter').props.onClick(); page.render(); await flush(); tree = page.render();
+    tabs.find((t) => text(t) === 'Recruiter').props.onClick(); page.render(); await flush(); tree = unwrap(page.render());
     assert.equal(tree.type, get('RecruiterDashboard'), 'the tab switches the composition');
-    tabs.find((t) => text(t) === 'Interviewer').props.onClick(); page.render(); await flush(); tree = page.render();
+    tabs.find((t) => text(t) === 'Interviewer').props.onClick(); page.render(); await flush(); tree = unwrap(page.render());
     assert.equal(tree.type, get('InterviewerDashboard'));
     page.dispose();
     const recruiter = mount(get('Dashboard'), { user: { id: 7, roles: ['recruiter'], permissions: ['dashboard.view', 'request.view_own', 'interview.view_assigned'] }, onNavigate() {}, dash: { myWork: {}, offersByStatus: [] } });
-    recruiter.render(); await flush(); tree = recruiter.render();
+    recruiter.render(); await flush(); tree = unwrap(recruiter.render());
     assert.equal(nodes(tree.props.notice || []).some((n) => n.props?.role === 'tab'), false, 'a recruiter gets no view switcher');
     recruiter.dispose(); api.get = realGet;
   });

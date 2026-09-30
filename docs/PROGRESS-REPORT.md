@@ -43,7 +43,8 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | Status |
 |---|---|---|
-| 6 | Make the system open faster | In progress (review pending) |
+| 7 | Simpler dashboard on phones | Done — waiting for approval |
+| 6 | Make the system open faster | Done — waiting for approval (PR #45) |
 | 5 | Fixes from the page-by-page review | Done and approved (PR #44) |
 | 4 | Page-by-page review of the whole system | Done (report in `docs/audits/heuristic-2026-09-30.md`) |
 | 3 | Layout fixes, quotes editor, direct interview/offer creation | Done and approved (PR #39) |
@@ -53,12 +54,27 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | What you will see |
 |---|---|---|
-| 7 | Phone view of the dashboard | A short, easy screen on the phone instead of a very long one |
 | 8 | Organization chart | Opens neatly fitted to the screen, clear buttons |
 | 9 | Notification settings | One simple table: events down the side, who gets told across the top |
 | 10 | Roles & permissions | Grouped by area with "select all", instead of one very long list |
 
 ---
+
+## Step 7 — Simpler dashboard on phones
+
+**What changed (phone only, the computer screen is unchanged):**
+- The four headline numbers now sit in a neat 2 × 2 grid. Before, the second
+  number was cut off at the edge of the screen.
+- "Waiting on your decision" comes first.
+- The charts are folded behind one button, **"Show hiring figures"**. One tap
+  opens them.
+- Each role in the list is two short lines. Tap the role to open it; there is
+  no big button under each one any more.
+- Empty boxes show one sentence instead of a large picture.
+
+**Measured:** a director's phone dashboard went from about **4½ screens of
+scrolling to about 2** (3,704 → 1,666 pixels). A recruiter's went from 2,207 to
+1,744 pixels.
 
 ## Step 6 — Make the system open faster
 

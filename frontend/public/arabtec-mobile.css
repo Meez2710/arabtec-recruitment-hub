@@ -621,7 +621,11 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
 .shell-phone .seg-tabs { gap: 18px; margin: 0 -16px 12px; padding: 0 16px; border-bottom: 1px solid var(--line); }
 .shell-phone .seg-tabs > .seg-tab { min-height: 42px; border-radius: 0; }
 
-.shell-phone .dash-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+/* Two tiles per row (R14). The ≤640px rule in arabtec-design-system.css turns
+   this row into a sideways scroller with 238px tiles, which cut the second
+   tile at the screen edge; the phone shell restores the 2×2 grid. */
+.shell-phone .dash-kpi-row { display: grid; overflow-x: visible; scroll-snap-type: none; padding-bottom: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.shell-phone .dash-kpi-row > .dash-kpi { min-width: 0; }
 .shell-phone .dash-kpi { padding: 12px 12px 10px; min-height: 0; }
 .shell-phone .dash-kpi-val { font-size: 22px; }
 .shell-phone .dash-kpi-label { font-size: 10px; letter-spacing: .1em; }
@@ -661,3 +665,25 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
    is taller (set inline) so every half-hour slot is a 44px target. */
 .shell-phone .cal-head, .shell-phone .cal-body { grid-template-columns: 44px repeat(var(--cal-cols), minmax(0, 1fr)); }
 .shell-phone .cal-toolbar { padding: var(--sp-2) var(--sp-3); }
+
+/* ---- Dashboard on a phone: decisions first, charts on request ---------- */
+/* The chart sections (.dash-figure) fold behind one "Show hiring figures"
+   button; the headline tiles, "Waiting on your decision" and the role list
+   stay. Measured before: 3,700px of scroll for a director. */
+.shell-phone .btn.dash-figures-toggle { display: flex; width: 100%; justify-content: space-between; margin: 0 0 12px; }
+.shell-phone .dash-root.figures-open .dash-figures-toggle svg { transform: rotate(180deg); }
+.shell-phone .dash-root:not(.figures-open) .dash-figure { display: none; }
+/* A role row is one tap target on a phone, two lines tall: the title and
+   code, then status · seats · days open on one wrapping line. No progress
+   bar and no button — the whole row opens the request. */
+.shell-phone .role-row .progress { display: none; }
+.shell-phone .role-row-end .btn { display: none; }
+.shell-phone .role-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.shell-phone .role-row > :first-child { flex: 1 0 100%; }
+.shell-phone .role-row > :not(:first-child) { flex: 0 1 auto; }
+.shell-phone .role-row > .role-row-end { flex-direction: row; margin-inline-start: auto; }
+/* An empty dashboard card is a sentence on a phone, not a picture:
+   "Nothing is scheduled for today" took a 200px illustration. */
+.shell-phone .dash-root .empty .ico { display: none; }
+.shell-phone .dash-root .empty { padding-top: 16px; padding-bottom: 16px; }
+

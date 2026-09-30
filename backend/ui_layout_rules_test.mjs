@@ -107,6 +107,19 @@ rule('R9 an in-card error state is the shared Empty/LoadError, never a hand-roll
   assert.equal((jsx.match(/style=\{\{[^}]*background: ?'#FFF8F8'/g) || []).length, 0, 'inline error surfaces');
 });
 
+rule('R18 the phone dashboard leads with decisions: tiles 2x2, charts folded, one-tap role rows; desktop unchanged', () => {
+  const m = css['arabtec-mobile.css'];
+  assert.match(m, /\.shell-phone \.dash-kpi-row \{ display: grid; overflow-x: visible;/, 'the phone restores the 2x2 tile grid over the <=640px scroller');
+  assert.match(m, /\.shell-phone \.dash-root:not\(\.figures-open\) \.dash-figure \{ display: none; \}/, 'chart sections fold on a phone until asked for');
+  assert.match(m, /\.shell-phone \.btn\.dash-figures-toggle \{ display: flex;/, 'the fold button shows on a phone');
+  assert.match(css['claude-system.css'], /\.btn\.dash-figures-toggle \{ display: none; \}/, 'and never on the desktop (beats button.btn)');
+  assert.match(m, /\.shell-phone \.role-row \.progress \{ display: none; \}/);
+  for (const fn of ['DirectorDashboard', 'ManagerDashboard', 'ExecutiveDashboard']) {
+    const body = jsx.slice(jsx.indexOf('function ' + fn + '('), jsx.indexOf('\nfunction ', jsx.indexOf('function ' + fn + '(') + 10));
+    assert.match(body, /<FiguresToggle figures=\{figures\} \/>/, fn + ' offers the fold');
+    assert.match(body, /dash-figure/, fn + ' marks its chart sections');
+  }
+});
 const { offScale, SHEETS } = await import('./test-support/spacing-scan.mjs');
 rule('R16 no new margin, padding or gap off the 4/8/12/16/24/32 scale; the legacy list only shrinks', () => {
   const legacy = JSON.parse(fs.readFileSync(new URL('../docs/audits/spacing-legacy.json', import.meta.url), 'utf8')).declarations;
