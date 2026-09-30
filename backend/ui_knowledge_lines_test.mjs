@@ -21,7 +21,7 @@ check('every line fits one footer row: 160 characters or fewer, no line breaks',
 check('no duplicate quotes', () => { assert.equal(new Set(lines.map((l) => l.q.trim().toLowerCase())).size, lines.length); });
 check('the script is loaded before the app, so the list exists when the footer first renders', () => {
   const html = fs.readFileSync(pub + 'index.html', 'utf8');
-  const list = html.indexOf('src="/knowledge-lines.js'), app = html.indexOf('src="/app.jsx');
+  const list = html.indexOf('src="/knowledge-lines.js'), app = html.indexOf('src="/build/app.js');
   assert.ok(list !== -1 && app !== -1 && list < app, `script order: list at ${list}, app at ${app}`);
 });
 check('the footer is rendered in both page shells and re-drawn per route', () => {

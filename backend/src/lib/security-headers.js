@@ -20,13 +20,11 @@
 //   CSP_REPORT_ONLY=true       → send CSP as report-only (observe, don't block)
 //   SECURITY_HEADERS_DISABLED=true → escape hatch for debugging only (NOT for prod)
 //
-// IMPORTANT — Content Security Policy and the current frontend:
-//   The production frontend (frontend/public) compiles JSX in the browser with
-//   Babel (<script type="text/babel">). Babel needs 'unsafe-eval', and the
-//   inline font-loader handler needs 'unsafe-inline'. Both are included below so
-//   the existing app keeps working. This WEAKENS XSS protection. The correct fix
-//   is to ship a pre-built (compiled) frontend and then drop 'unsafe-eval' /
-//   'unsafe-inline'. Tracked in docs/PRODUCTION_BLOCKERS.md and SECURITY_HARDENING.md.
+// Content Security Policy and the frontend:
+//   The screens are compiled once on the server (lib/frontend-build.js) and
+//   served as plain JavaScript, so the browser no longer runs the Babel
+//   compiler and 'unsafe-eval' is no longer allowed. 'unsafe-inline' stays on
+//   script-src for the inline font-loader handler in index.html.
 
 const isProd = process.env.NODE_ENV === 'production';
 // Set on a production deployment that is reached over plain HTTP. Read at call
@@ -34,11 +32,11 @@ const isProd = process.env.NODE_ENV === 'production';
 const isDirectHttp = () => process.env.DIRECT_HTTP === 'true';
 
 function buildCSP() {
-  // NOTE: 'unsafe-eval' + 'unsafe-inline' on script-src are ONLY required by the
-  // Babel-in-browser frontend. Remove them once a compiled frontend is served.
+  // No 'unsafe-eval': nothing in the page compiles or evaluates code at run
+  // time any more. 'unsafe-inline' is for the font-loader handler only.
   const directives = {
     'default-src': ["'self'"],
-    'script-src': ["'self'", "'unsafe-eval'", "'unsafe-inline'"],
+    'script-src': ["'self'", "'unsafe-inline'"],
     'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
     'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
     'img-src': ["'self'", 'data:', 'blob:'],
@@ -106,7 +104,7 @@ export function securityConfigSummary() {
     directHttp: isDirectHttp(),
     hstsMaxAge: HSTS_MAX_AGE,
     cspReportOnly: process.env.CSP_REPORT_ONLY === 'true',
-    cspAllowsUnsafeEval: true, // because of Babel-in-browser frontend
+    cspAllowsUnsafeEval: false, // the frontend is compiled on the server
     disabled: process.env.SECURITY_HEADERS_DISABLED === 'true',
   };
 }
