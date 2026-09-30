@@ -224,6 +224,15 @@
                 : 'Connect Microsoft 365 first, under Administration',
             }, busy ? 'Scanning…' : 'Scan inbox now')))),
 
+      /* The cause comes first: when the mailbox is not connected nothing
+         below can work, so say so before the disabled controls (review CV1). */
+      conn.status !== 'CONNECTED' && h('div', { className: 'notice notice-warn', style: { marginBottom: 16, padding: '12px 16px' } },
+        h('p', { style: { margin: 0 } },
+          'The careers mailbox is not connected, so no new CVs are arriving. ',
+          mayAdmin
+            ? h('a', { href: '#microsoft' }, 'Connect Microsoft 365')
+            : 'Ask a system administrator to reconnect it.')),
+
       /* Waiting to parse — the decision surface. Counts come from subject and
          filename metadata the scan already has; no model call was made to
          produce them, which is the whole point of showing them first. */
@@ -279,12 +288,6 @@
                     disabled: busy || picked.size === 0,
                   }, busy ? 'Reading…' : 'Parse selected CVs'))))),
 
-      conn.status !== 'CONNECTED' && h('div', { className: 'notice notice-warn', style: { marginBottom: 16, padding: '12px 16px' } },
-        h('p', { style: { margin: 0 } },
-          'The careers mailbox is not connected, so no new CVs are arriving. ',
-          mayAdmin
-            ? 'Reconnect it under Administration → Microsoft 365.'
-            : 'Ask a system administrator to reconnect it.')),
 
       notice && h('div', { className: 'notice notice-success', style: { marginBottom: 16, padding: '12px 16px' } },
         h('p', { style: { margin: 0 } }, notice)),

@@ -937,9 +937,12 @@ table.candidates-table {
    table 12px past its card at 1440. The gap replaces the `{' '}` separators
    the markup used to rely on, so the spacing no longer depends on whitespace
    text nodes. */
-.user-actions { white-space: normal; }
-.user-actions > button { margin: 2px 0; }
-.user-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+/* A table cell stays a table cell: `display: flex` on the <td> took it out of
+   the row's box, so its wrapped buttons drew across the next row's border.
+   Two inline controls (Edit + More) now fit on one line. */
+.user-actions { white-space: nowrap; text-align: end; }
+.user-actions > * { display: inline-flex; vertical-align: middle; }
+.user-actions > * + * { margin-inline-start: var(--sp-2); }
 
 /* CV Inbox status header: four facts on one line, wrapping to a column on a
    phone. A grid, not a table — these are labelled values, not rows. */
@@ -967,8 +970,16 @@ table.candidates-table {
 /* A wrapping row of toggles inside a form field (user editor: roles,
    projects, sites). The gap is the row's, so no toggle carries a margin. */
 .tag-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* Talent Pool card facts line: stage, request, experience and place. */
+.cc-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); margin-top: var(--sp-1); font-size: 12px; min-width: 0; }
+.cc-req { font-variant-numeric: tabular-nums; font-weight: 600; }
 .tag-row > .tag-toggle { margin: 0; }
 .user-form-rest { margin-top: var(--sp-4); }
+/* Priority level (PriorityBadge): three small bars and a word, no pill. */
+.prio { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: 13px; white-space: nowrap; }
+.prio-bars { display: inline-flex; align-items: flex-end; gap: var(--sp-1); }
+.prio-bars i { display: block; width: 4px; border-radius: 1px; }
+.prio-bars i:nth-child(1) { height: 6px; } .prio-bars i:nth-child(2) { height: 9px; } .prio-bars i:nth-child(3) { height: 12px; }
 .user-form-switch { display: flex; align-items: center; min-height: var(--cl-ctl-lg); }
 /* Standalone interview / offer: the picked candidate and the Talent Pool
    search results (Interviews → Schedule interview, Offers → Create offer). */

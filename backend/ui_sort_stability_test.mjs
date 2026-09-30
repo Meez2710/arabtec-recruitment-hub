@@ -104,8 +104,11 @@ const api = get('api');
 let pending = null;
 let sent = [];                 // every /candidates query string, in order
 let totalPages = 1;            // what the stubbed endpoint claims, so paging is reachable
+let noEducation = false;
 function serveCandidates(names, query) {
-  return { candidates: names.map((fullName, i) => ({ id: `c${i}-${fullName}`, fullName, links: [], tags: [] })),
+  // One candidate carries education, so the education columns render (they
+  // hide when nobody in the list has any — see the check below).
+  return { candidates: names.map((fullName, i) => ({ id: `c${i}-${fullName}`, fullName, links: [], tags: [], ...(i === 0 && !noEducation ? { university: 'Cairo University' } : {}) })),
            pagination: { total: names.length * totalPages, totalPages, hasMore: totalPages > 1 }, query };
 }
 api.get = (path) => {
@@ -661,6 +664,16 @@ await check('every column is named, so widths cannot be reassigned by position',
   page.dispose();
 });
 
+await check('education columns step aside when nobody in the list has education recorded', async () => {
+  totalPages = 1; noEducation = true;
+  try {
+    const { page, tree } = await tableAt(user);
+    const keys = colOrder(tree);
+    assert.deepEqual(keys, ['select', 'name', 'position', 'location', 'request', 'stage', 'cv']);
+    page.dispose();
+  } finally { noEducation = false; }
+});
+
 await check('the widths are not equal thirds — they reflect each column purpose', () => {
   const width = (key) => {
     const m = candidatesCss.match(new RegExp(`th\\[data-col="${key}"\\]\\s*\\{\\s*width:\\s*([0-9.]+)%`));
@@ -979,7 +992,10 @@ async function candidatesAtPage(target, { initialFilters, view = 'table', pickTa
   if (pickTab) {
     screenTabs(tree).find((b) => text(b).startsWith(pickTab)).props.onClick();
     tree = await quiesce(p);
-    assert.equal(paramOf(sent[sent.length - 1], 'screeningStatus'), pickTab.toLowerCase(),
+    // Tab labels are words for people ("Not screened", "In review"); the
+    // query carries the stored key.
+    const TAB_KEY = { 'Not screened': 'new', 'In review': 'screening' };
+    assert.equal(paramOf(sent[sent.length - 1], 'screeningStatus'), TAB_KEY[pickTab] || pickTab.toLowerCase(),
       `the ${pickTab} tab really was selected`);
   }
   if (target > 1) {
@@ -1046,7 +1062,7 @@ await check('a screen-tab change from page 4 sends one request, and it asks for 
   const { p, tree } = await candidatesAtPage(4);
   const tabs = screenTabs(tree);
   assert.equal(tabs.length, 5, 'all five screen tabs are on the page');
-  const screening = tabs.find((b) => text(b).startsWith('Screening'));
+  const screening = tabs.find((b) => text(b).startsWith('In review'));
   startCounting();
   screening.props.onClick();
   const after = settle(p, 3);
@@ -1087,7 +1103,7 @@ await check('clearing one filter chip sends one request, for page 1 without that
 
 await check('clear-all sends one request, for page 1 with nothing set', async () => {
   // A filter AND a tab to undo, and back out on page 3 when it is undone.
-  const { p, tree } = await candidatesAtPage(3, { initialFilters: { q: 'nadia' }, pickTab: 'New' });
+  const { p, tree } = await candidatesAtPage(3, { initialFilters: { q: 'nadia' }, pickTab: 'Not screened' });
   let t = tree;
   assert.equal(paramOf(sent[sent.length - 1], 'screeningStatus'), 'new', 'the tab survived the walk to page 3');
   const clearAll = nodes(t).find((n) => n.type === 'button' && text(n) === 'Clear all');

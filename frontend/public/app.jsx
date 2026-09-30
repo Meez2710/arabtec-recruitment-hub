@@ -151,8 +151,22 @@ function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }
     </span>
   );
 }
-function fmtDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleString(); }
-function fmtDateShort(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleDateString(); }
+// One date format product-wide: "1 Oct 2026, 10:00" and "1 Oct 2026". The
+// browser's default locale string printed "10/1/2026, 10:00:00 AM" on some
+// pages and "20 Oct 2026" on others, and month/day order depends on the
+// machine (review X3).
+function fmtDate(d) {
+  if (!d) return '—'; const x = new Date(d); if (isNaN(x)) return '—';
+  return x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    + ', ' + x.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+function fmtDateShort(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
+// Interview type and mode as people say them ("Technical", "On site"), not
+// the stored keys ("technical", "onsite") — review I2.
+const IV_TYPE_LABEL = { phone: 'Phone screen', technical: 'Technical', client: 'Client', final: 'Final', hr: 'HR', reference: 'Reference' };
+const IV_MODE_LABEL = { onsite: 'On site', video: 'Video', phone: 'Phone' };
+const ivType = (t) => IV_TYPE_LABEL[t] || (t ? String(t).replace(/^./, (c) => c.toUpperCase()) : '—');
+const ivMode = (m) => IV_MODE_LABEL[m] || (m ? String(m).replace(/^./, (c) => c.toUpperCase()) : '—');
 // Relative time ("just now", "5m", "3h", "2d") — falls back to a short date past a week.
 function timeAgo(d) {
   if (!d) return '—';
@@ -323,7 +337,9 @@ function Badge({ children, variant = 'soft' }) {
 }
 function StatusBadge({ status }) {
   const map = { active: 'success', inactive: 'critical', invited: 'warning', planned: 'info', on_hold: 'warning', closed: 'soft' };
-  return <Badge variant={map[status] || 'soft'}>{status}</Badge>;
+  // "Active", "On hold": the stored key is not a label (review U2).
+  const label = status ? String(status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '—';
+  return <Badge variant={map[status] || 'soft'}>{label}</Badge>;
 }
 /**
  * Collect a short free-text reason before a destructive action.
@@ -663,7 +679,7 @@ const NAV = [
   /* Hidden unless an administrator granted this user cv_intake.view. Hiding is
      a courtesy — routes/cv-intake.js enforces the same permission server-side,
      which is what a direct API call meets. */
-  { key: 'cvIntake', label: 'CV Intake', icon: 'mail', perm: 'cv_intake.view' },
+  { key: 'cvIntake', label: 'CV Inbox', icon: 'mail', perm: 'cv_intake.view' },
   { key: 'interviews', label: 'Interviews', icon: 'calendar', anyPerm: ['interview.view_all', 'interview.view_assigned'] },
   { key: 'offers', label: 'Offers', icon: 'doc', perm: 'offer.view' },
   { key: 'orgStructure', label: 'Organization Structure', icon: 'building', perm: null },
@@ -1411,18 +1427,35 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   useEffect(() => {
     const followHash = () => {
       const raw = String(window.location.hash || '').replace(/^#/, '');
-      const [key, query] = raw.split('?');
+      const [path, query] = raw.split('?');
+      // `#requests/12` opens one record (review R9). The id is handed over the
+      // same way the Ctrl+K palette hands a candidate: a pending id for a page
+      // that mounts fresh, an event for one already on screen.
+      const [key, recId] = path.split('/');
       if (!key || !NAV.some((n) => n.key === key)) return;
       const params = Object.fromEntries(new URLSearchParams(query || ''));
+      const id = /^\d+$/.test(recId || '') ? Number(recId) : null;
+      if (id && key === 'interviews') params.openId = id;
+      if (id && RECORD_OPENERS[key]) window[RECORD_OPENERS[key].pending] = id;
       go(key, Object.keys(params).length ? params : null);
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      if (id && RECORD_OPENERS[key]) window.dispatchEvent(new CustomEvent(RECORD_OPENERS[key].event, { detail: { id } }));
+      // Keep a record link in the address bar; the page rewrites it on close.
+      if (!id) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     };
     followHash();
     window.addEventListener('hashchange', followHash);
     return () => window.removeEventListener('hashchange', followHash);
   }, [go]);
 
-  const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
+  // Branding, buttons and notifications each had two homes: a Control Center
+  // tab and a page of their own. Whoever can open the Control Center manages
+  // them there, so the duplicate menu entries are hidden for them; the routes
+  // stay, and a user without Control Center keeps their own entry (review C1).
+  const IN_CONTROL_CENTER = ['branding', 'buttons', 'notifications'];
+  const hasControl = can(user, 'app.manage_ui');
+  const visibleNav = NAV.filter((n) => n.section || (
+    !(hasControl && IN_CONTROL_CENTER.includes(n.key))
+    && (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm)))));
   const navItems = visibleNav.filter((n) => !n.section);
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
   const primaryMobile = mobileNavItems(navItems, persona);
@@ -1442,7 +1475,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? (CvIntakePage
         ? <CvIntakePage user={user} PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} Badge={Badge} />
         : <LoadError text="CV Intake module failed to load." onRetry={() => window.location.reload()} />)
-      : <Forbidden what="CV Intake" need="CV intake access, granted per user by a System Admin" />,
+      : <Forbidden what="CV Inbox" need="CV intake access, granted per user by a System Admin" />,
     orgStructure: OrgStructurePage ? <OrgStructurePage user={user} /> : <ModulePreview title="Organization Structure" />,
     offers: <OffersPage user={user} initialFilters={route === 'offers' ? routeParams : null} />,
     users: can(user, 'user.manage')
@@ -1466,7 +1499,8 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? (EmailSettingsPage ? <EmailSettingsPage PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} /> : <LoadError text="Email settings module failed to load." onRetry={() => window.location.reload()} />)
       : <Forbidden what="Email Settings" need="System Admin" />,
     notifications: can(user, 'notification.manage')
-      ? <NotificationsPanel user={user} />
+      ? <div><PageHead crumb="Administration / Notifications" title="Notification Settings"
+          sub="Which events send an in-app alert or an email, and to whom." /><NotificationsPanel user={user} /></div>
       : <Forbidden what="Notification Settings" need="HR, Recruitment or System Admin" />,
     audit: <AuditPage user={user} />,
   }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} />;
@@ -2001,20 +2035,30 @@ function RoleRow({ r, onOpen }) {
   const h = r.health || {};
   const tone = h.level === 'red' ? 'risk' : h.level === 'amber' ? 'warn' : 'good';
   const filled = r.headcount ? Math.round((r.headcountFilled / r.headcount) * 100) : 0;
+  // A request still waiting for its decision has not started, so it is not
+  // "Healthy" yet — it is waiting (review D4).
+  const awaiting = r.status === 'pending_approval';
+  const days = h.daysOpen == null ? null : h.daysOpen;
+  // The whole row opens the request; the button is a quiet affordance, not a
+  // primary — a list of five green "Open" buttons left the page with no
+  // primary at all (review D1).
   return (
-    <div className="role-row">
+    <div className={'role-row' + (onOpen ? ' role-row-link' : '')}
+      {...(onOpen ? { role: 'link', tabIndex: 0, onClick: () => onOpen(r), onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r); } } : {})}>
       <div>
         <span className="cell-title">{r.title}</span>
         <span className="cell-meta">{shortReqCode(r.ticketNo)} · {(r.project || {}).name || 'No project'}</span>
       </div>
-      <div><Badge variant={tone === 'risk' ? 'critical' : tone === 'warn' ? 'warning' : 'success'}>{h.label || '—'}</Badge></div>
+      <div>{awaiting
+        ? <Badge variant="soft">Awaiting approval</Badge>
+        : <Badge variant={tone === 'risk' ? 'critical' : tone === 'warn' ? 'warning' : 'success'}>{h.label || '—'}</Badge>}</div>
       <div>
         <span className="progress"><span style={{ width: filled + '%' }} /></span>
         <span className="cell-meta">{r.headcountFilled} of {r.headcount} seats · {(r.pipeline || {}).total || 0} in pipeline</span>
       </div>
       <div className="role-row-end">
-        <span className="idle">{h.daysOpen == null ? '—' : h.daysOpen + 'd'}</span>
-        {onOpen && <button className="btn btn-sm" onClick={() => onOpen(r)}>Open</button>}
+        <span className="idle">{days == null ? '—' : `Open ${days} ${days === 1 ? 'day' : 'days'}`}</span>
+        {onOpen && <button className="btn btn-ghost btn-sm" tabIndex={-1} onClick={(e) => { e.stopPropagation(); onOpen(r); }}>Open</button>}
       </div>
     </div>
   );
@@ -2278,7 +2322,7 @@ function RecruiterDashboard({ user, data, onNavigate, notice }) {
               : <>
                 {todays.map((i) => (
                   <EventCard key={i.id} tone="good"
-                    title={`${timeOf(i.scheduledAt)} · ${(i.interviewType || '').toUpperCase()} interview`}
+                    title={`${timeOf(i.scheduledAt)} · ${ivType(i.interviewType)} interview`}
                     meta={`${(i.candidate || {}).fullName || 'Candidate'} · ${(i.request || {}).title || ''}`} />
                 ))}
                 {stalled.slice(0, 2).map((r) => (
@@ -2594,7 +2638,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
           meta={`${awaitingApproval.length} request${awaitingApproval.length === 1 ? '' : 's'} · ${pendingOffers} offer${pendingOffers === 1 ? '' : 's'}`} />
         <KpiCard label="Overdue roles" value={d ? overdue : '—'} tone={overdue ? 'kpi-risk' : ''} meta="Open longer than 60 days" />
         <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of ${k.headcountTotal ?? 0} planned`} />
-        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.offerAcceptanceRate == null ? 'Offer acceptance not yet measured' : `Offer acceptance ${k.offerAcceptanceRate}%`} />
+        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.timeToFillDays == null ? 'No role filled yet' : 'Average, request opened to filled'} />
       </div>
 
       <div className="dash-grid-2">
@@ -2702,7 +2746,7 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
                     <td data-label="Project">{(r.project || {}).name || '—'}</td>
                     <td data-label="Seats">{r.headcountFilled} / {r.headcount}</td>
                     <td data-label="Days open">{(r.health || {}).daysOpen ?? '—'}</td>
-                    <td data-label="Health"><ReqHealth health={r.health} /></td>
+                    <td data-label="Health"><ReqHealth health={r.health} status={r.status} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -2770,7 +2814,7 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
           : <div className="event-list">
             {upcoming.slice(0, 8).map((i) => (
               <EventCard key={i.id} tone={isToday(i.scheduledAt) ? 'warn' : ''}
-                title={`${fmtWhen(i.scheduledAt)} · ${(i.interviewType || '').toUpperCase()}`}
+                title={`${fmtWhen(i.scheduledAt)} · ${ivType(i.interviewType)}`}
                 meta={`${(i.candidate || {}).fullName || 'Candidate'} · ${(i.request || {}).title || ''} · ${i.mode || ''}`} />
             ))}
           </div>}
@@ -3008,16 +3052,21 @@ function ViewToggle({ value, onChange, options }) {
 }
 
 // Compact "N results" pill used at the right edge of every filter bar.
-function CountPill({ n, total, noun }) {
+function CountPill({ n, total, noun, suffix }) {
   if (n == null) return null;
   const label = total != null && total !== n ? `${n} of ${total}` : `${n}`;
-  return <span className="count-pill">{label} <em>{n === 1 ? noun : noun + 's'}</em></span>;
+  return <span className="count-pill">{label} <em>{n === 1 ? noun : noun + 's'}{suffix ? ' ' + suffix : ''}</em></span>;
 }
 
 // SLA / aging indicator for a hiring request. Reads the `health` object the
 // requests API already returns ({ level, label, daysOpen }); renders nothing
 // when the API did not supply it.
-function ReqHealth({ health, compact }) {
+function ReqHealth({ health, compact, status }) {
+  // Sourcing has not started on a request still waiting for its decision, so
+  // its clock is not "Healthy" — say what it is waiting on (review D4/R8).
+  if (status === 'pending_approval') {
+    return <span className="sla sla-waiting" title="Waiting for approval; sourcing starts once approved"><i />{compact ? '' : 'Awaiting approval'}</span>;
+  }
   if (!health || !health.level) return <span className="muted">—</span>;
   const tone = health.level === 'red' ? 'red' : health.level === 'amber' ? 'amber' : 'green';
   return (
@@ -3237,13 +3286,18 @@ function UsersPage({ user }) {
                       table to 1107px inside a 1095px card — a 12px horizontal
                       scroll at 1440, the widest width we support. A wrapping
                       row drops that floor without hiding any action. */}
+                  {/* One visible action and a menu for the rest: four buttons in
+                      this cell wrapped, and "Deactivate" landed on the next row's
+                      border (docs/audits/heuristic-2026-09-30.md, U1). */}
                   <td className="user-actions">
                     {canManage && <>
                       <button className="btn btn-secondary btn-sm" onClick={() => setEditing(u)}>Edit</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => showActivity(u)}>Activity</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset Password</button>
-                      <button className={'btn btn-sm ' + (u.status === 'active' ? 'btn-danger' : '')} onClick={() => toggleStatus(u)} disabled={u.id === user.id}>
-                        {u.status === 'active' ? 'Deactivate' : 'Activate'}</button>
+                      <RowMenu ariaLabel={`More actions for ${u.fullName}`} items={[
+                        { label: 'Activity', onClick: () => showActivity(u) },
+                        { label: 'Reset password', onClick: () => resetPwd(u) },
+                        { label: u.status === 'active' ? 'Deactivate' : 'Activate', danger: u.status === 'active',
+                          disabled: u.id === user.id, reason: 'You cannot deactivate your own account', onClick: () => toggleStatus(u) },
+                      ]} />
                     </>}
                   </td>
                 </tr>
@@ -4796,7 +4850,16 @@ const PRIORITY = {
   low: { label: 'Low', variant: 'soft' }, medium: { label: 'Medium', variant: 'info' },
   high: { label: 'High', variant: 'warning' }, critical: { label: 'Critical', variant: 'critical' },
 };
-function PriorityBadge({ p }) { const x = PRIORITY[p] || { label: p, variant: 'soft' }; return <Badge variant={x.variant}>{x.label}</Badge>; }
+// Priority is a level, not a state, so it is not a coloured pill: pills carry
+// status, and a green "Medium" read exactly like a green "Sourcing" beside it
+// (review R1). Bars show the level; only Critical takes a colour.
+function PriorityBadge({ p }) {
+  const x = PRIORITY[p] || { label: p };
+  const level = { low: 1, medium: 2, high: 3, critical: 3 }[p] || 0;
+  return <span className={'prio prio-' + (p || 'none')} title={`${x.label} priority`}>
+    <span className="prio-bars" aria-hidden="true">{[1, 2, 3].map((i) => <i key={i} className={i <= level ? 'on' : ''} />)}</span>{x.label}
+  </span>;
+}
 // Request status badge — reuses the existing REQ_STATUS label/variant vocabulary.
 function ReqStatusBadge({ status, displayStatus }) {
   const x = REQ_STATUS[status];
@@ -4865,7 +4928,7 @@ function RequestTicketCard({ r, onOpen }) {
 
         <div className="rq-foot">
           <ReqStatusBadge status={r.status} displayStatus={r.displayStatus} />
-          {r.health && <ReqHealth health={r.health} />}
+          {r.health && <ReqHealth health={r.health} status={r.status} />}
         </div>
       </div>
     </div>
@@ -4904,6 +4967,7 @@ function RequestsPage({ user, initialFilters }) {
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [assigning, setAssigning] = useState(null); // request row being assigned/reassigned
+  useRecordUrl('requests', selectedId);
   const [recruiters, setRecruiters] = useState([]);
   const [busy, setBusy] = useState(false);
   const loadSeq = useRef(0);
@@ -5058,13 +5122,13 @@ function RequestsPage({ user, initialFilters }) {
                 {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
                   : !canAssign ? <span className="muted">Unassigned</span>
                   : canAssignStatus(r.status) ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign</button>
-                  : <button className="btn btn-ghost btn-sm" disabled title={ASSIGN_BLOCKED_TITLE}>Assign</button>}
+                  : <span className="muted" title={ASSIGN_BLOCKED_TITLE}>After approval</span>}
               </td>
               <td data-priority="secondary" data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
               <td data-label="Priority"><PriorityBadge p={r.priority} /></td>
               <td data-label="Status"><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
               <td data-priority="secondary" data-label="Idle" className="cell-sub-only">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
-              <td data-label="SLA"><ReqHealth health={r.health} /></td>
+              <td data-label="SLA"><ReqHealth health={r.health} status={r.status} /></td>
             </tr>
           ))}</tbody>
         </table></div>
@@ -5620,7 +5684,9 @@ function ThreadPost({ post, user, onView, replyOpen, onReply, replyText, onReply
     <div className="card" style={{ background: m.tint, borderLeft: `3px solid ${m.rail}` }}>
       <div style={{ padding: '11px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: post.body || m.label ? 6 : 0 }}>
-          {!isSystem
+          {/* A system post made by a person (e.g. "Request submitted") shows
+              that person's initials; the dot is for posts with no author (R6). */}
+          {!isSystem || post.author?.name
             ? <span className="avatar" style={{ width: 26, height: 26, fontSize: 11 }}>{initials(post.author?.name)}</span>
             : <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--surface-2,#f1f3f5)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', fontSize: 11, color: 'var(--muted)', flex: '0 0 auto' }}>•</span>}
           <strong style={{ fontSize: 13 }}>{post.author?.name || 'System'}</strong>
@@ -5759,7 +5825,7 @@ function TicketHeader({ req, children, onBack }) {
     crumb="Hiring Request" title={req.title} actions={children}
     sub={<><span className="th-meta"><span className="code-pill" title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span>
       <ReqStatusBadge status={req.status} displayStatus={req.displayStatus} />
-      {req.priority && <PriorityBadge p={req.priority} />}{req.health && <ReqHealth health={req.health} />}</span>
+      {req.priority && <PriorityBadge p={req.priority} />}{req.health && <ReqHealth health={req.health} status={req.status} />}</span>
       <span className="th-sub"><span><em>Department</em>{req.department?.name || '—'}</span>
       <span><em>Project / Site</em>{placeLabel(req)}</span>
       {req.headcount != null && <span><em>Headcount</em>{req.headcountFilled ?? 0} of {req.headcount}</span>}</span></>} />
@@ -5883,7 +5949,7 @@ function TimelineTab({ req }) {
 const APP_STATUS = {
   sourced:            { label: 'Sourced', variant: 'soft', column: 1 },
   screening:          { label: 'Screening', variant: 'info', column: 2 },
-  interview_hr:       { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  interview_hr:       { label: 'Interview', variant: 'info', column: 3 },
   interview_technical:{ label: '2nd Interview (Technical)', variant: 'info', column: 4 },
   offer:              { label: 'Offer', variant: 'warning', column: 5 },
   hired:              { label: 'Hired', variant: 'success', column: 6 },
@@ -5897,11 +5963,11 @@ const APP_STATUS = {
   cv_screening:{ label: 'Screening', variant: 'info', column: 2 },
   unmatched:   { label: 'Screening', variant: 'info', column: 2 },
   shortlisted: { label: 'Screening', variant: 'info', column: 2 },
-  interviewing:{ label: '1st Interview (HR)', variant: 'info', column: 3 },
-  interview_1: { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  interviewing:{ label: 'Interview', variant: 'info', column: 3 },
+  interview_1: { label: 'Interview', variant: 'info', column: 3 },
   interview_2: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
   technical_interview: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
-  waiting_feedback: { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  waiting_feedback: { label: 'Interview', variant: 'info', column: 3 },
   issuing_offer: { label: 'Offer', variant: 'warning', column: 5 },
   offer_sent:  { label: 'Offer', variant: 'warning', column: 5 },
   offer_preparation: { label: 'Offer', variant: 'warning', column: 5 },
@@ -6014,7 +6080,10 @@ function canPipelineMove(status, target) {
 }
 function pipelineResidualLabel(status) {
   const column = pipelineStage(status);
-  if (status === column) return '';
+  // The column already names the stage; its own default status ('matched'
+  // under Screening, 'interviewing' under Interview, 'issuing_offer' under
+  // Offer) adds nothing, and printing it read as a second, competing stage.
+  if (status === column || status === APP_WRITE[column]) return '';
   const label = APP_STATUS[status]?.label;
   return label && label !== APP_STATUS[column]?.label ? label : String(status).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
@@ -7249,6 +7318,28 @@ function suggestRequests(candidate, requests) {
 }
 
 /** Navigate to a request's detail view from anywhere (mirrors the palette). */
+// Record links (review R9). While a record is open the address bar reads
+// `#<route>/<id>`, so it can be copied into Teams or an email, and opening that
+// link lands on the record. replaceState, not a hash assignment: it neither
+// fires hashchange nor adds a history entry per record.
+const RECORD_OPENERS = {
+  requests: { pending: '__atsPendingRequestId', event: 'ats:open-request' },
+  candidates: { pending: '__atsPendingCandidateId', event: 'ats:open-candidate' },
+  offers: { pending: '__atsPendingOfferId', event: 'ats:open-offer' },
+};
+function useRecordUrl(route, id) {
+  useEffect(() => {
+    const base = window.location.pathname + window.location.search;
+    const mine = '#' + route + '/';
+    if (id != null) {
+      if (window.location.hash !== mine + id) window.history.replaceState(null, '', base + mine + id);
+      return () => { if (window.location.hash.startsWith(mine)) window.history.replaceState(null, '', base); };
+    }
+    if (window.location.hash.startsWith(mine)) window.history.replaceState(null, '', base);
+    return undefined;
+  }, [route, id]);
+}
+
 function openRequest(id, onNavigate) {
   window.__atsPendingRequestId = id;
   if (onNavigate) onNavigate('requests');
@@ -7377,6 +7468,47 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked, o
   );
 }
 
+/* A row's secondary actions behind one "More" button, so a table row keeps
+   one visible action and never wraps its buttons onto the next row. Same
+   popover and item styles as the candidate Action menu. `items` is a list of
+   { label, onClick, danger?, disabled?, hidden? }. */
+function RowMenu({ label = 'More', items, ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const popRef = useRef(null);
+  const anchor = useViewportAnchor(open, wrapRef, { width: 220, minBelow: 200 });
+  useEffect(() => {
+    if (!open) return undefined;
+    const inside = (t) => (wrapRef.current && wrapRef.current.contains(t)) || (popRef.current && popRef.current.contains(t));
+    const onDown = (e) => { if (!inside(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const shown = (items || []).filter((it) => it && !it.hidden);
+  if (!shown.length) return null;
+  return (
+    <div className="cc-action-wrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="btn btn-ghost btn-sm" aria-haspopup="menu" aria-expanded={open}
+        aria-label={ariaLabel} onClick={() => setOpen((v) => !v)}>
+        {label} <Icon name="chevronDown" size={16} />
+      </button>
+      {open && anchor && ReactDOM.createPortal(
+        <div className="rq-pop" ref={popRef} role="menu" aria-label={ariaLabel}
+          style={{ left: anchor.left, top: anchor.top, bottom: anchor.bottom, width: 220 }}>
+          <div className="rq-pop-list" style={{ paddingTop: 6 }}>
+            {shown.map((it) => (
+              <div key={it.label} role="menuitem" aria-disabled={it.disabled || undefined}
+                className={'menu-item' + (it.danger ? ' menu-item-danger' : '') + (it.disabled ? ' is-disabled' : '')}
+                title={it.disabled && it.reason ? it.reason : undefined}
+                onClick={() => { if (it.disabled) return; setOpen(false); it.onClick(); }}>{it.label}</div>
+            ))}
+          </div>
+        </div>, document.body)}
+    </div>
+  );
+}
 function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onScreen, onFit, onUnfit, onLinked, onRelinked, onOpen, toast }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState('menu');
@@ -7573,6 +7705,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     // uncertainty instead of queueing it.
     'qualityFlag', 'disciplineClass'];
 
+  useRecordUrl('candidates', selectedId);
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
   // (custom event) and page mounting fresh after navigation (pending id).
   useEffect(() => {
@@ -7731,7 +7864,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // NOTE: the source-attribution tab row (LinkedIn / Careers / Referral / Agency /
   // Direct) was removed — it duplicated the per-row Source chip and made the page
   // read as noise. Source is still shown on every candidate row and card.
-  const SCREEN_TABS = [['all', 'All'], ['new', 'New'], ['screening', 'Screening'], ['fit', 'Fit'], ['unfit', 'Unfit']];
+  const SCREEN_TABS = [['all', 'All'], ['new', 'Not screened'], ['screening', 'In review'], ['fit', 'Fit'], ['unfit', 'Unfit']];
   const scOf = (c) => c.screeningStatus || 'new';
   // Both updates are dispatched from one event handler, so React batches them
   // into a single render carrying the final intended query: the new sort AND
@@ -7802,6 +7935,10 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
   // Filtering happens server-side; `shown` is simply the current page.
   const shown = candidates || [];
+  // Education columns only when someone in the list has education recorded:
+  // auto-ingested CVs rarely do, and two all-dash columns took a fifth of the
+  // table's width (review T5).
+  const showEdu = shown.some((c) => c.university || c.major || c.graduationYear != null);
 
   /** A links[] entry shaped like the one GET /candidates builds server-side. */
   function linkEntry(request, application) {
@@ -7882,7 +8019,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // Progress' alongside 'Filled' — an in-progress state sharing success's
   // colour, distinguished by label, not a new colour.
   const SCREEN_CHIP = {
-    new: ['soft', 'New'], screening: ['info', 'Screening'], fit: ['success', 'Fit'], unfit: ['critical', 'Unfit'],
+    new: ['soft', 'Not screened'], screening: ['info', 'In review'], fit: ['success', 'Fit'], unfit: ['critical', 'Unfit'],
   };
   const canScreen = user.permissions.includes('candidate.edit');
 
@@ -8043,8 +8180,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               </th>
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />
-              <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />
+              {showEdu && <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />}
+              {showEdu && <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />}
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
               <th className="th-request" data-col="request">Request</th>
               <th data-col="stage">Stage</th>
@@ -8074,17 +8211,27 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <span className="cell-strong" title={c.currentPosition || undefined}>{c.currentPosition || '—'}</span>
                   {c.currentCompany ? <span className="cell-sub" title={c.currentCompany}>{c.currentCompany}</span> : null}
                 </td>
-                <td data-priority="secondary" data-label="University">
+                {showEdu && <td data-priority="secondary" data-label="University">
                   <span className="cell-strong" title={c.university || undefined}>{c.university || '—'}</span>
                   {c.major ? <span className="cell-sub" title={c.major}>{c.major}</span> : null}
-                </td>
-                <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>
+                </td>}
+                {showEdu && <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>}
                 <td data-label="Location" className="cell-sub-only" title={c.location || undefined}>{c.location || '—'}</td>
                 <td data-label="Request">
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
                     onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
                 </td>
-                <td data-label="Stage"><Badge variant={(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</Badge></td>
+                <td data-label="Stage">{(() => {
+                  // The pipeline stage of the open application — the same word the
+                  // board column uses. The fitness screen is a separate column.
+                  const act = activeLinkOf(c);
+                  if (!act) return <span className="muted">Not on a request</span>;
+                  const st = APP_STATUS[pipelineStage(act.status)] || APP_STATUS[act.status];
+                  return st ? <Badge variant={st.variant}>{st.label}</Badge> : <span className="muted">{act.status}</span>;
+                })()}
+                  {/* The fitness screen is a second, smaller fact under the stage,
+                      named for what it is so it never reads as a stage. */}
+                  <span className="cell-sub" title="Fitness screen">Screen: {(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1].toLowerCase()}</span></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
                     ? <>
@@ -8129,6 +8276,19 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} />
                   </div>
                   <div className="cc-headline">{c.currentPosition || '—'}</div>
+                  {/* Where the person stands, without opening them: stage and
+                      request of the open application, then experience and
+                      place (review T7 — the card said only name and title). */}
+                  {(() => {
+                    const act = activeLinkOf(c);
+                    const st = act ? (APP_STATUS[pipelineStage(act.status)] || APP_STATUS[act.status]) : null;
+                    const bits = [c.yearsExperience != null ? `${c.yearsExperience}y exp` : null, c.location || null].filter(Boolean);
+                    return <div className="cc-facts">
+                      {act ? <>{st && <Badge variant={st.variant}>{st.label}</Badge>}<span className="cc-req" title={act.requestTitle || ''}>{shortReqCode(act.ticketNo)}</span></>
+                        : <span className="muted">Not on a request</span>}
+                      {bits.length > 0 && <span className="muted">{bits.join(' · ')}</span>}
+                    </div>;
+                  })()}
                   <QualityBadges flags={c.qualityFlags} note={c.qualityNote} />
                 </div>
                 {/* `is-empty` lets the phone template drop a block that would only
@@ -9060,7 +9220,7 @@ function buildActivityLog(c, { canSeeInterviews, canSeeOffers }) {
         actor: (iv.organizer && iv.organizer.name) || 'System',
         requestId: iv.requestId || (iv.request && iv.request.id),
         ticketNo: iv.ticketNo || (iv.request && iv.request.ticketNo),
-        sentence: `Interview ${iv.interviewNo || ''} (${iv.interviewType || '—'} / ${iv.mode || '—'})`
+        sentence: `Interview ${iv.interviewNo || ''} (${ivType(iv.interviewType)} / ${ivMode(iv.mode)})`
           + (iv.status ? ` — ${(IV_STATUS[iv.status] || {}).label || iv.status}` : '')
           + (iv.overallOutcome ? `, outcome ${(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}` : ''),
       });
@@ -9294,7 +9454,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
           {(c.interviews || []).length === 0 ? <Empty art="none-yet" text="No interviews for this candidate (or none assigned to you)." /> : (
             <table><thead><tr><th>Interview</th><th>Request</th><th>Type / Mode</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Outcome</th></tr></thead>
               <tbody>{c.interviews.map((iv) => (
-                <tr key={iv.id}><td><strong>{iv.interviewNo}</strong></td><td title={iv.ticketNo}>{shortReqCode(iv.ticketNo)}</td><td>{iv.interviewType} / {iv.mode}</td><td>{iv.round}</td>
+                <tr key={iv.id}><td><strong>{iv.interviewNo}</strong></td><td title={iv.ticketNo}>{shortReqCode(iv.ticketNo)}</td><td>{ivType(iv.interviewType)} / {ivMode(iv.mode)}</td><td>{iv.round}</td>
                   <td className="muted">{fmtDate(iv.scheduledAt)}</td><td><IvStatusBadge status={iv.status} /></td>
                   <td>{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label}</Badge> : '—'}</td></tr>
               ))}</tbody></table>
@@ -9661,8 +9821,8 @@ function CalEvent({ iv, style, onOpen }) {
   const status = IV_STATUS[iv.status];
   return (
     <button type="button" className={'cal-ev cal-s-' + iv.status} style={style} onClick={() => onOpen(iv.id)}
-      title={`${iv.candidate?.fullName || 'Candidate'} · ${iv.interviewType} · ${fmtWhen(iv.scheduledAt)}`}>
-      <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {iv.interviewType}</span>
+      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}`}>
+      <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {ivType(iv.interviewType)}</span>
       <span className="cal-ev-who">{iv.candidate?.fullName || '—'}</span>
       {iv.status !== 'scheduled' && <span className="cal-ev-status">{status ? status.label : iv.status}</span>}
     </button>
@@ -9798,6 +9958,7 @@ function InterviewsPage({ user, initialFilters }) {
   // `openId` jumps straight to one interview (a dashboard action item always
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
+  useRecordUrl('interviews', selected);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createAt, setCreateAt] = useState(null); // the calendar slot that opened the form
@@ -9869,7 +10030,7 @@ function InterviewsPage({ user, initialFilters }) {
       )}
       <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
-        count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />}>
+        count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" suffix={isCalendar ? 'in view' : null} />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(IV_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         {!isCalendar && (
@@ -9912,7 +10073,7 @@ function InterviewsPage({ user, initialFilters }) {
                   </div>
                 </td>
                 <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
-                <td data-label="Type / Mode"><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
+                <td data-label="Type / Mode"><span className="cell-strong">{ivType(iv.interviewType)}</span><div className="cell-sub">{ivMode(iv.mode)}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
                 <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
                 <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
@@ -9949,7 +10110,7 @@ function InterviewDetail({ id, user, onBack }) {
   return (
     <div>
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Interviews</button>}
-        title={<> {iv.interviewType} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
+        title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
           {canFeedback && iv.status !== 'cancelled' && <button className="btn" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
@@ -9967,10 +10128,12 @@ function InterviewDetail({ id, user, onBack }) {
           <Info label="Application">{iv.application ? <>{iv.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={iv.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <p className="muted">The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
           <div className="section-title">Details</div>
-          <Info label="Type / Mode">{iv.interviewType} · {iv.mode}</Info>
+          <Info label="Type / Mode">{ivType(iv.interviewType)} · {ivMode(iv.mode)}</Info>
           <Info label="Round">{iv.round}</Info>
           <Info label="Duration">{iv.durationMin} min</Info>
-          <Info label="Location / Link">{iv.locationOrLink || '—'}</Info>
+          <Info label="Location / Link">{/^https?:\/\//i.test(iv.locationOrLink || '')
+            ? <a className="btn btn-secondary btn-sm" href={iv.locationOrLink} target="_blank" rel="noopener noreferrer" title={iv.locationOrLink}>Join {iv.mode === 'video' ? 'video call' : 'link'}</a>
+            : (iv.locationOrLink || '—')}</Info>
           <Info label="Organizer">{iv.organizer?.name}</Info>
           {iv.cancelReason && <Info label="Cancel Reason">{iv.cancelReason}</Info>}
           <div className="section-title">Panel</div>
@@ -10087,6 +10250,15 @@ function OffersPage({ user, initialFilters }) {
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const loadSeq = useRef(0);
+  useRecordUrl('offers', selected);
+  // Opened from a record link (`#offers/<id>`): pending id on a fresh mount,
+  // event when the page is already on screen — same as requests and candidates.
+  useEffect(() => {
+    if (window.__atsPendingOfferId) { setSelected(window.__atsPendingOfferId); window.__atsPendingOfferId = null; }
+    function onOpen(e) { if (e.detail && e.detail.id) setSelected(e.detail.id); }
+    window.addEventListener('ats:open-offer', onOpen);
+    return () => window.removeEventListener('ats:open-offer', onOpen);
+  }, []);
 
   useEffect(() => {
     if (!initialFilters) return;
@@ -10155,13 +10327,22 @@ function OffersPage({ user, initialFilters }) {
                     <span className="idcell-txt"><span className="cell-strong clamp-2" title={o.candidate?.fullName || undefined}>{o.candidate?.fullName || '—'}</span></span>
                   </div>
                 </td>
-                <td data-label="Request"><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
+                <td data-label="Request">{o.request
+                  ? <span className="code-pill" title={o.request.ticketNo}>{shortReqCode(o.request.ticketNo)}</span>
+                  : <span className="muted" title="Created without a hiring request">—</span>}</td>
                 <td data-label="Position"><span className="cell-strong clamp-2" title={o.positionTitle || undefined}>{o.positionTitle || '—'}</span></td>
                 <td data-priority="secondary" data-label="Project" className="cell-sub-only"><span className="clamp-2" title={o.project?.name || undefined}>{o.project?.name || '—'}</span></td>
                 <td data-label="Status"><OfferStatusBadge status={o.status} /></td>
                 <td data-priority="secondary" data-label="Prepared by" className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
                 <td data-priority="secondary" data-label="Approved by" className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
-                <td data-label="Joining"><DateCell value={o.joiningDate} dateOnly /></td>
+                <td data-label="Joining"><DateCell value={o.joiningDate} dateOnly />
+                  {/* An offer still open for an answer shows how long it has (review O4). */}
+                  {o.expiryDate && ['draft', 'pending_approval', 'approved', 'sent'].includes(o.status) && (() => {
+                    const d = daysUntil(o.expiryDate + 'T23:59:59');
+                    if (d == null) return null;
+                    const n = Math.ceil(d);
+                    return <div className={'cell-sub' + (n <= 3 ? ' text-warn' : '')}>{n < 0 ? 'Expired' : n === 0 ? 'Expires today' : `Expires in ${n} day${n === 1 ? '' : 's'}`}</div>;
+                  })()}</td>
               </tr>
             ))}</tbody>
           </table>

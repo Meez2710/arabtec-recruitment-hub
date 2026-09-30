@@ -665,14 +665,15 @@ check('the picker re-anchors on scroll and resize, which is why it was not chang
   // 360px phone: measured left 72, right 352 at 360 wide.
   assert.ok(/Math\.min\(Math\.max\(8, b\.left\), window\.innerWidth - width - 8\)/.test(hook),
     'the horizontal clamp is gone; the panel can be placed off-screen');
-  // Both consumers go through the hook rather than placing themselves.
-  // Three references: the declaration, and the two `.rq-pop` owners that call
-  // it. Neither owner may place itself.
+  // Every consumer goes through the hook rather than placing itself.
+  // Four references: the declaration, and the three `.rq-pop` owners that call
+  // it (the request picker, the candidate Action menu and the row "More"
+  // menu, RowMenu). None may place itself.
   const refs = (app.match(/useViewportAnchor\(/g) || []).length;
-  assert.equal(refs, 3, `expected the hook plus its two .rq-pop callers, found ${refs} reference(s)`);
+  assert.equal(refs, 4, `expected the hook plus its three .rq-pop callers, found ${refs} reference(s)`);
   const popOwners = (app.match(/className="rq-pop"/g) || []).length;
-  assert.equal(popOwners, 2, `expected two .rq-pop panels, found ${popOwners}`);
-  assert.equal((app.match(/const anchor = useViewportAnchor\(open, wrapRef/g) || []).length, 2,
+  assert.equal(popOwners, 3, `expected three .rq-pop panels, found ${popOwners}`);
+  assert.equal((app.match(/const anchor = useViewportAnchor\(open, wrapRef/g) || []).length, 3,
     'a .rq-pop owner stopped taking its position from the shared hook');
 });
 

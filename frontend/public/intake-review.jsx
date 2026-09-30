@@ -492,22 +492,26 @@
       h('div', { className: 'page-head intake-page-head' },
         h('div', { className: 'page-head-main' },
           h('div', { className: 'breadcrumb' }, 'Recruitment / Candidate Review'),
-          h('h1', { className: 'page-title' }, 'Candidate Intake Review'),
+          h('h1', { className: 'page-title' }, 'Candidate Review'),
           h('p', { className: 'page-sub' }, 'CVs that need a person. A clean CV goes straight to the Talent Pool.')),
         h('div', { className: 'page-head-actions' },
-          h('span', { className: 'status-chip pending' }, `${items.length} pending`),
+          // Amber only when something is waiting (review CR4).
+          h('span', { className: 'status-chip' + (items.length ? ' pending' : '') }, `${items.length} pending`),
           h('input', {
             ref: fileRef, type: 'file', style: { display: 'none' }, onChange: uploadCv,
             accept: '.pdf,.doc,.docx,.png,.jpg,.jpeg,.txt',
           }),
+          // Refresh is housekeeping; uploading a CV is the action (review CR2).
+          h('button', { className: 'btn btn-secondary', disabled: uploading, onClick: load }, 'Refresh'),
           h('button', {
-            className: 'btn btn-secondary', disabled: uploading,
+            className: 'btn', disabled: uploading,
             onClick: () => fileRef.current && fileRef.current.click(),
-          }, uploading ? 'Uploading…' : 'Upload CV'),
-          h('button', { className: 'btn btn-success', disabled: uploading, onClick: load }, 'Refresh'))),
+          }, uploading ? 'Uploading…' : 'Upload CV'))),
 
-      h(Banner, { tone: 'info', title: 'Workflow control' },
-        'A readable CV with a usable identity becomes a Talent Pool candidate on its own. What lands here could not be resolved safely — each row says why. Applications are never created automatically.'),
+      // One line, not a panel: the subtitle already says what this page is
+      // (review CR3). The rule stays visible under the title.
+      h('p', { className: 'muted intake-rule' },
+        'A readable CV with a usable identity goes to the Talent Pool on its own; each row here says why it could not. Applications are never created automatically.'),
 
       notice ? h(Banner, { tone: notice.tone, title: notice.title }, notice.text) : null,
       error ? h(window.ARABTEC_UI.LoadError, { title: 'Unable to load intakes', text: error, onRetry: load }) : null,
