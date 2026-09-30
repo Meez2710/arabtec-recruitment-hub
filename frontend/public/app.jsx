@@ -1427,11 +1427,20 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   useEffect(() => {
     const followHash = () => {
       const raw = String(window.location.hash || '').replace(/^#/, '');
-      const [key, query] = raw.split('?');
+      const [path, query] = raw.split('?');
+      // `#requests/12` opens one record (review R9). The id is handed over the
+      // same way the Ctrl+K palette hands a candidate: a pending id for a page
+      // that mounts fresh, an event for one already on screen.
+      const [key, recId] = path.split('/');
       if (!key || !NAV.some((n) => n.key === key)) return;
       const params = Object.fromEntries(new URLSearchParams(query || ''));
+      const id = /^\d+$/.test(recId || '') ? Number(recId) : null;
+      if (id && key === 'interviews') params.openId = id;
+      if (id && RECORD_OPENERS[key]) window[RECORD_OPENERS[key].pending] = id;
       go(key, Object.keys(params).length ? params : null);
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      if (id && RECORD_OPENERS[key]) window.dispatchEvent(new CustomEvent(RECORD_OPENERS[key].event, { detail: { id } }));
+      // Keep a record link in the address bar; the page rewrites it on close.
+      if (!id) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     };
     followHash();
     window.addEventListener('hashchange', followHash);
@@ -4949,6 +4958,7 @@ function RequestsPage({ user, initialFilters }) {
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [assigning, setAssigning] = useState(null); // request row being assigned/reassigned
+  useRecordUrl('requests', selectedId);
   const [recruiters, setRecruiters] = useState([]);
   const [busy, setBusy] = useState(false);
   const loadSeq = useRef(0);
@@ -7299,6 +7309,28 @@ function suggestRequests(candidate, requests) {
 }
 
 /** Navigate to a request's detail view from anywhere (mirrors the palette). */
+// Record links (review R9). While a record is open the address bar reads
+// `#<route>/<id>`, so it can be copied into Teams or an email, and opening that
+// link lands on the record. replaceState, not a hash assignment: it neither
+// fires hashchange nor adds a history entry per record.
+const RECORD_OPENERS = {
+  requests: { pending: '__atsPendingRequestId', event: 'ats:open-request' },
+  candidates: { pending: '__atsPendingCandidateId', event: 'ats:open-candidate' },
+  offers: { pending: '__atsPendingOfferId', event: 'ats:open-offer' },
+};
+function useRecordUrl(route, id) {
+  useEffect(() => {
+    const base = window.location.pathname + window.location.search;
+    const mine = '#' + route + '/';
+    if (id != null) {
+      if (window.location.hash !== mine + id) window.history.replaceState(null, '', base + mine + id);
+      return () => { if (window.location.hash.startsWith(mine)) window.history.replaceState(null, '', base); };
+    }
+    if (window.location.hash.startsWith(mine)) window.history.replaceState(null, '', base);
+    return undefined;
+  }, [route, id]);
+}
+
 function openRequest(id, onNavigate) {
   window.__atsPendingRequestId = id;
   if (onNavigate) onNavigate('requests');
@@ -7664,6 +7696,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     // uncertainty instead of queueing it.
     'qualityFlag', 'disciplineClass'];
 
+  useRecordUrl('candidates', selectedId);
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
   // (custom event) and page mounting fresh after navigation (pending id).
   useEffect(() => {
@@ -9898,6 +9931,7 @@ function InterviewsPage({ user, initialFilters }) {
   // `openId` jumps straight to one interview (a dashboard action item always
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
+  useRecordUrl('interviews', selected);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createAt, setCreateAt] = useState(null); // the calendar slot that opened the form
@@ -10189,6 +10223,15 @@ function OffersPage({ user, initialFilters }) {
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const loadSeq = useRef(0);
+  useRecordUrl('offers', selected);
+  // Opened from a record link (`#offers/<id>`): pending id on a fresh mount,
+  // event when the page is already on screen — same as requests and candidates.
+  useEffect(() => {
+    if (window.__atsPendingOfferId) { setSelected(window.__atsPendingOfferId); window.__atsPendingOfferId = null; }
+    function onOpen(e) { if (e.detail && e.detail.id) setSelected(e.detail.id); }
+    window.addEventListener('ats:open-offer', onOpen);
+    return () => window.removeEventListener('ats:open-offer', onOpen);
+  }, []);
 
   useEffect(() => {
     if (!initialFilters) return;

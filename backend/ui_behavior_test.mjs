@@ -834,4 +834,18 @@ await check('knowledge lines: the owner list is parsed, and it wins over the bun
   apply(''); assert.equal(pick(0).q,'Bundled line here.');
 });
 
+await check('record links: every record page keeps #<route>/<id> in the address bar, and the router opens it',()=>{
+  const src=fs.readFileSync(publicDir+'app.jsx','utf8');
+  for (const r of ['requests','candidates','interviews','offers']) assert.match(src,new RegExp(`useRecordUrl\\('${r}',`),`${r} page writes its record link`);
+  assert.match(src,/const \[key, recId\] = path\.split\('\/'\);/,'the hash router reads #route/id');
+  const openers=get('RECORD_OPENERS');
+  assert.deepEqual(Object.keys(openers).sort(),['candidates','offers','requests']);
+  const calls=[]; const real=window.history; window.history={replaceState:(a,b,u)=>calls.push(u)};
+  window.location.hash=''; window.location.pathname='/'; window.location.search='';
+  const probe=mount(()=>{get('useRecordUrl')('offers',7);return null;}); probe.render();
+  assert.equal(calls.at(-1),'/#offers/7','an open offer writes #offers/7');
+  window.location.hash='#offers/7'; probe.dispose();
+  assert.equal(calls.at(-1),'/','closing it clears the link');
+  window.history=real;
+});
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);
