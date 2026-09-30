@@ -43,7 +43,8 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | Status |
 |---|---|---|
-| 7 | Simpler dashboard on phones | Done — waiting for approval |
+| 8 | Neater organization chart | Done — waiting for approval |
+| 7 | Simpler dashboard on phones | Done — waiting for approval (PR #45) |
 | 6 | Make the system open faster | Done — waiting for approval (PR #45) |
 | 5 | Fixes from the page-by-page review | Done and approved (PR #44) |
 | 4 | Page-by-page review of the whole system | Done (report in `docs/audits/heuristic-2026-09-30.md`) |
@@ -54,11 +55,23 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | What you will see |
 |---|---|---|
-| 8 | Organization chart | Opens neatly fitted to the screen, clear buttons |
 | 9 | Notification settings | One simple table: events down the side, who gets told across the top |
 | 10 | Roles & permissions | Grouped by area with "select all", instead of one very long list |
 
 ---
+
+## Step 8 — Neater organization chart
+
+**What changed:**
+- The chart opens on **one clear screen**: the company at the top, then Head
+  Office and Projects, each with a "Show" button to open it. Before, it
+  opened on a random slice of a very wide chart with a large empty area.
+- The tools are proper buttons in two groups: **Expand all / Collapse all**,
+  and **− 100% + / Fit to screen** (you can now see the zoom level).
+- The colour key (Employee, Vacant, Unit / project) is bigger and easier to
+  read.
+- Searching for a person still works even if they sit inside a closed
+  branch: the chart opens the branches above them.
 
 ## Step 7 — Simpler dashboard on phones
 
