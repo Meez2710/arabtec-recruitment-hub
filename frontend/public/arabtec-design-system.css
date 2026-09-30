@@ -1534,3 +1534,5 @@ button.cal-slot:hover, button.cal-slot:focus-visible { background: var(--action-
 .prio-critical { color: var(--danger); }
 .prio-critical .prio-bars i.on { background: var(--danger); }
 
+/* Offer expiry about to lapse (Offers list). */
+.cell-sub.text-warn { color: var(--warning-ink); }

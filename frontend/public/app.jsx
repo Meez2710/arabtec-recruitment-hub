@@ -151,8 +151,22 @@ function Logo({ size = 28, color = 'var(--brand)', withText = false, textColor }
     </span>
   );
 }
-function fmtDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleString(); }
-function fmtDateShort(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleDateString(); }
+// One date format product-wide: "1 Oct 2026, 10:00" and "1 Oct 2026". The
+// browser's default locale string printed "10/1/2026, 10:00:00 AM" on some
+// pages and "20 Oct 2026" on others, and month/day order depends on the
+// machine (review X3).
+function fmtDate(d) {
+  if (!d) return '—'; const x = new Date(d); if (isNaN(x)) return '—';
+  return x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    + ', ' + x.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+function fmtDateShort(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? '—' : x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
+// Interview type and mode as people say them ("Technical", "On site"), not
+// the stored keys ("technical", "onsite") — review I2.
+const IV_TYPE_LABEL = { phone: 'Phone screen', technical: 'Technical', client: 'Client', final: 'Final', hr: 'HR', reference: 'Reference' };
+const IV_MODE_LABEL = { onsite: 'On site', video: 'Video', phone: 'Phone' };
+const ivType = (t) => IV_TYPE_LABEL[t] || (t ? String(t).replace(/^./, (c) => c.toUpperCase()) : '—');
+const ivMode = (m) => IV_MODE_LABEL[m] || (m ? String(m).replace(/^./, (c) => c.toUpperCase()) : '—');
 // Relative time ("just now", "5m", "3h", "2d") — falls back to a short date past a week.
 function timeAgo(d) {
   if (!d) return '—';
@@ -323,7 +337,9 @@ function Badge({ children, variant = 'soft' }) {
 }
 function StatusBadge({ status }) {
   const map = { active: 'success', inactive: 'critical', invited: 'warning', planned: 'info', on_hold: 'warning', closed: 'soft' };
-  return <Badge variant={map[status] || 'soft'}>{status}</Badge>;
+  // "Active", "On hold": the stored key is not a label (review U2).
+  const label = status ? String(status).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '—';
+  return <Badge variant={map[status] || 'soft'}>{label}</Badge>;
 }
 /**
  * Collect a short free-text reason before a destructive action.
@@ -663,7 +679,7 @@ const NAV = [
   /* Hidden unless an administrator granted this user cv_intake.view. Hiding is
      a courtesy — routes/cv-intake.js enforces the same permission server-side,
      which is what a direct API call meets. */
-  { key: 'cvIntake', label: 'CV Intake', icon: 'mail', perm: 'cv_intake.view' },
+  { key: 'cvIntake', label: 'CV Inbox', icon: 'mail', perm: 'cv_intake.view' },
   { key: 'interviews', label: 'Interviews', icon: 'calendar', anyPerm: ['interview.view_all', 'interview.view_assigned'] },
   { key: 'offers', label: 'Offers', icon: 'doc', perm: 'offer.view' },
   { key: 'orgStructure', label: 'Organization Structure', icon: 'building', perm: null },
@@ -1442,7 +1458,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? (CvIntakePage
         ? <CvIntakePage user={user} PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} Badge={Badge} />
         : <LoadError text="CV Intake module failed to load." onRetry={() => window.location.reload()} />)
-      : <Forbidden what="CV Intake" need="CV intake access, granted per user by a System Admin" />,
+      : <Forbidden what="CV Inbox" need="CV intake access, granted per user by a System Admin" />,
     orgStructure: OrgStructurePage ? <OrgStructurePage user={user} /> : <ModulePreview title="Organization Structure" />,
     offers: <OffersPage user={user} initialFilters={route === 'offers' ? routeParams : null} />,
     users: can(user, 'user.manage')
@@ -2288,7 +2304,7 @@ function RecruiterDashboard({ user, data, onNavigate, notice }) {
               : <>
                 {todays.map((i) => (
                   <EventCard key={i.id} tone="good"
-                    title={`${timeOf(i.scheduledAt)} · ${(i.interviewType || '').toUpperCase()} interview`}
+                    title={`${timeOf(i.scheduledAt)} · ${ivType(i.interviewType)} interview`}
                     meta={`${(i.candidate || {}).fullName || 'Candidate'} · ${(i.request || {}).title || ''}`} />
                 ))}
                 {stalled.slice(0, 2).map((r) => (
@@ -2780,7 +2796,7 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
           : <div className="event-list">
             {upcoming.slice(0, 8).map((i) => (
               <EventCard key={i.id} tone={isToday(i.scheduledAt) ? 'warn' : ''}
-                title={`${fmtWhen(i.scheduledAt)} · ${(i.interviewType || '').toUpperCase()}`}
+                title={`${fmtWhen(i.scheduledAt)} · ${ivType(i.interviewType)}`}
                 meta={`${(i.candidate || {}).fullName || 'Candidate'} · ${(i.request || {}).title || ''} · ${i.mode || ''}`} />
             ))}
           </div>}
@@ -3018,10 +3034,10 @@ function ViewToggle({ value, onChange, options }) {
 }
 
 // Compact "N results" pill used at the right edge of every filter bar.
-function CountPill({ n, total, noun }) {
+function CountPill({ n, total, noun, suffix }) {
   if (n == null) return null;
   const label = total != null && total !== n ? `${n} of ${total}` : `${n}`;
-  return <span className="count-pill">{label} <em>{n === 1 ? noun : noun + 's'}</em></span>;
+  return <span className="count-pill">{label} <em>{n === 1 ? noun : noun + 's'}{suffix ? ' ' + suffix : ''}</em></span>;
 }
 
 // SLA / aging indicator for a hiring request. Reads the `health` object the
@@ -5649,7 +5665,9 @@ function ThreadPost({ post, user, onView, replyOpen, onReply, replyText, onReply
     <div className="card" style={{ background: m.tint, borderLeft: `3px solid ${m.rail}` }}>
       <div style={{ padding: '11px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: post.body || m.label ? 6 : 0 }}>
-          {!isSystem
+          {/* A system post made by a person (e.g. "Request submitted") shows
+              that person's initials; the dot is for posts with no author (R6). */}
+          {!isSystem || post.author?.name
             ? <span className="avatar" style={{ width: 26, height: 26, fontSize: 11 }}>{initials(post.author?.name)}</span>
             : <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--surface-2,#f1f3f5)', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', fontSize: 11, color: 'var(--muted)', flex: '0 0 auto' }}>•</span>}
           <strong style={{ fontSize: 13 }}>{post.author?.name || 'System'}</strong>
@@ -9142,7 +9160,7 @@ function buildActivityLog(c, { canSeeInterviews, canSeeOffers }) {
         actor: (iv.organizer && iv.organizer.name) || 'System',
         requestId: iv.requestId || (iv.request && iv.request.id),
         ticketNo: iv.ticketNo || (iv.request && iv.request.ticketNo),
-        sentence: `Interview ${iv.interviewNo || ''} (${iv.interviewType || '—'} / ${iv.mode || '—'})`
+        sentence: `Interview ${iv.interviewNo || ''} (${ivType(iv.interviewType)} / ${ivMode(iv.mode)})`
           + (iv.status ? ` — ${(IV_STATUS[iv.status] || {}).label || iv.status}` : '')
           + (iv.overallOutcome ? `, outcome ${(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}` : ''),
       });
@@ -9376,7 +9394,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
           {(c.interviews || []).length === 0 ? <Empty art="none-yet" text="No interviews for this candidate (or none assigned to you)." /> : (
             <table><thead><tr><th>Interview</th><th>Request</th><th>Type / Mode</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Outcome</th></tr></thead>
               <tbody>{c.interviews.map((iv) => (
-                <tr key={iv.id}><td><strong>{iv.interviewNo}</strong></td><td title={iv.ticketNo}>{shortReqCode(iv.ticketNo)}</td><td>{iv.interviewType} / {iv.mode}</td><td>{iv.round}</td>
+                <tr key={iv.id}><td><strong>{iv.interviewNo}</strong></td><td title={iv.ticketNo}>{shortReqCode(iv.ticketNo)}</td><td>{ivType(iv.interviewType)} / {ivMode(iv.mode)}</td><td>{iv.round}</td>
                   <td className="muted">{fmtDate(iv.scheduledAt)}</td><td><IvStatusBadge status={iv.status} /></td>
                   <td>{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label}</Badge> : '—'}</td></tr>
               ))}</tbody></table>
@@ -9743,8 +9761,8 @@ function CalEvent({ iv, style, onOpen }) {
   const status = IV_STATUS[iv.status];
   return (
     <button type="button" className={'cal-ev cal-s-' + iv.status} style={style} onClick={() => onOpen(iv.id)}
-      title={`${iv.candidate?.fullName || 'Candidate'} · ${iv.interviewType} · ${fmtWhen(iv.scheduledAt)}`}>
-      <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {iv.interviewType}</span>
+      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}`}>
+      <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {ivType(iv.interviewType)}</span>
       <span className="cal-ev-who">{iv.candidate?.fullName || '—'}</span>
       {iv.status !== 'scheduled' && <span className="cal-ev-status">{status ? status.label : iv.status}</span>}
     </button>
@@ -9951,7 +9969,7 @@ function InterviewsPage({ user, initialFilters }) {
       )}
       <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
-        count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" />}>
+        count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" suffix={isCalendar ? 'in view' : null} />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(IV_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         {!isCalendar && (
@@ -9994,7 +10012,7 @@ function InterviewsPage({ user, initialFilters }) {
                   </div>
                 </td>
                 <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
-                <td data-label="Type / Mode"><span className="cell-strong">{iv.interviewType || '—'}</span><div className="cell-sub">{iv.mode || '—'}</div></td>
+                <td data-label="Type / Mode"><span className="cell-strong">{ivType(iv.interviewType)}</span><div className="cell-sub">{ivMode(iv.mode)}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
                 <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
                 <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
@@ -10031,7 +10049,7 @@ function InterviewDetail({ id, user, onBack }) {
   return (
     <div>
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Interviews</button>}
-        title={<> {iv.interviewType} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
+        title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
           {canFeedback && iv.status !== 'cancelled' && <button className="btn" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
@@ -10049,10 +10067,12 @@ function InterviewDetail({ id, user, onBack }) {
           <Info label="Application">{iv.application ? <>{iv.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={iv.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <p className="muted">The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
           <div className="section-title">Details</div>
-          <Info label="Type / Mode">{iv.interviewType} · {iv.mode}</Info>
+          <Info label="Type / Mode">{ivType(iv.interviewType)} · {ivMode(iv.mode)}</Info>
           <Info label="Round">{iv.round}</Info>
           <Info label="Duration">{iv.durationMin} min</Info>
-          <Info label="Location / Link">{iv.locationOrLink || '—'}</Info>
+          <Info label="Location / Link">{/^https?:\/\//i.test(iv.locationOrLink || '')
+            ? <a className="btn btn-secondary btn-sm" href={iv.locationOrLink} target="_blank" rel="noopener noreferrer" title={iv.locationOrLink}>Join {iv.mode === 'video' ? 'video call' : 'link'}</a>
+            : (iv.locationOrLink || '—')}</Info>
           <Info label="Organizer">{iv.organizer?.name}</Info>
           {iv.cancelReason && <Info label="Cancel Reason">{iv.cancelReason}</Info>}
           <div className="section-title">Panel</div>
@@ -10245,7 +10265,14 @@ function OffersPage({ user, initialFilters }) {
                 <td data-label="Status"><OfferStatusBadge status={o.status} /></td>
                 <td data-priority="secondary" data-label="Prepared by" className="cell-sub-only">{o.preparedBy?.name || '—'}</td>
                 <td data-priority="secondary" data-label="Approved by" className="cell-sub-only">{o.approvedBy?.name || '—'}</td>
-                <td data-label="Joining"><DateCell value={o.joiningDate} dateOnly /></td>
+                <td data-label="Joining"><DateCell value={o.joiningDate} dateOnly />
+                  {/* An offer still open for an answer shows how long it has (review O4). */}
+                  {o.expiryDate && ['draft', 'pending_approval', 'approved', 'sent'].includes(o.status) && (() => {
+                    const d = daysUntil(o.expiryDate + 'T23:59:59');
+                    if (d == null) return null;
+                    const n = Math.ceil(d);
+                    return <div className={'cell-sub' + (n <= 3 ? ' text-warn' : '')}>{n < 0 ? 'Expired' : n === 0 ? 'Expires today' : `Expires in ${n} day${n === 1 ? '' : 's'}`}</div>;
+                  })()}</td>
               </tr>
             ))}</tbody>
           </table>
