@@ -433,7 +433,7 @@ table.table tbody td, .table tbody td, table tbody td {
 .dash-kpi-row.kpi-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .role-choice { width: 100%; display: flex; align-items: center; text-align: left; min-height: 40px; padding: 8px 12px; border-width: 1px; border-style: solid; border-radius: 8px; margin-bottom: 4px; font: inherit; }
 .permissions-save { position: sticky; top: var(--topbar-h); z-index: 3; flex-wrap: wrap; }
-.permission-code { display: block; font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+.permission-code { display: block; font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .permission-toggle { align-items: flex-start; }
 .mobile-nav > button { min-width: 0; }
 .mobile-nav > button > span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -970,6 +970,17 @@ table.candidates-table {
 /* A wrapping row of toggles inside a form field (user editor: roles,
    projects, sites). The gap is the row's, so no toggle carries a margin. */
 .tag-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* Phone-only control (arabtec-mobile.css shows it inside the phone shell). */
+.btn.dash-figures-toggle { display: none; }
+/* Notification grid (Settings > Notifications): one tick per cell. Not a
+   stacked responsive table: on a phone a grid of ticks is read by swiping
+   sideways, with the event name pinned on the left. */
+.notif-grid { table-layout: fixed; width: 100%; min-width: 880px; }
+.notif-grid .notif-event { width: 240px; }
+.notif-grid .notif-tick { width: 72px; padding-left: var(--sp-1); padding-right: var(--sp-1); text-align: center; }
+.notif-grid th { text-transform: none; letter-spacing: 0; }
+.notif-grid th.notif-who { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+.notif-grid td:first-child, .notif-grid th:first-child { position: sticky; left: 0; z-index: 1; }
 /* Talent Pool card facts line: stage, request, experience and place. */
 .cc-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); margin-top: var(--sp-1); font-size: 12px; min-width: 0; }
 .cc-req { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -1819,3 +1830,15 @@ button.cal-slot:focus-visible { outline: 0; }
   .intake-cv-side { position: fixed; top: 0; bottom: 0; inset-inline-end: 0; z-index: 60; width: min(92vw, 560px); height: auto; min-height: 0; border-radius: 0; }
 }
 .parse-review-name { margin-top: var(--sp-3); }
+
+/* Roles & Permissions: one section per area, a count and Select all in the
+   head, switches in two columns (one on narrow screens). */
+.perm-search { margin-bottom: var(--sp-4); max-width: 360px; }
+.perm-search .input { width: 100%; }
+.perm-area { padding: var(--sp-4) 0; }
+.perm-area:first-of-type { border-top: 0; padding-top: 0; }
+.perm-area-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.perm-area-head h4 { margin: 0; }
+.perm-area-count { margin-right: auto; }
+.perm-area-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-5); }
+@media (max-width: 900px) { .perm-area-grid { grid-template-columns: 1fr; } }

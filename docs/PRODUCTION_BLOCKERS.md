@@ -19,15 +19,15 @@ Legend: ✅ fixed in code/config · 🟡 prepared (needs infra/decision) · ⛔ 
 | FS-01 / PG-02 | File blobs in Postgres | 🟡 | Risk + migration path documented in `BACKUP_AND_RESTORE.md` and `DEPLOYMENT.md`. Not migrated in Stage 1 (reversible-only rule). |
 | R-01 / PG-01 | Free hosting, no backups | ⛔ | Hosting **not migrated** per instruction. App/config/docs are now VPS/Coolify-ready (Dockerfile added). Backup procedure in `BACKUP_AND_RESTORE.md`. **Requires Hetzner/Coolify + paid DB decision.** |
 
-## Important: CSP and the in-browser Babel frontend
+## CSP and the frontend — `'unsafe-eval'` removed (30 Sep 2026)
 
-The current production frontend (`frontend/public`) compiles JSX in the browser
-with Babel (`<script type="text/babel">`). That requires `script-src 'unsafe-eval'`
-(and `'unsafe-inline'`), which **weakens XSS protection**. Stage 1 keeps the app
-working by allowing these, but the correct fix before a public launch is to serve a
-**pre-built/compiled** frontend (the `frontend-v2` Vite app) and then remove
-`'unsafe-eval'` / `'unsafe-inline'` from `src/lib/security-headers.js`. Tracked as a
-Stage 2 item.
+The screens used to be compiled in each browser by Babel
+(`<script type="text/babel">`), which required `script-src 'unsafe-eval'`. They
+are now compiled once on the server (`backend/src/lib/frontend-build.js`, served
+at `/build/*.js`), so the browser no longer loads Babel and `'unsafe-eval'` has
+been removed from `src/lib/security-headers.js`. First screen measured at ~0.4 s
+instead of ~6 s. `'unsafe-inline'` remains for the inline font-loader handler
+in `index.html`; removing it means moving that handler into a file.
 
 ## What remains blocked until Hetzner/Coolify
 

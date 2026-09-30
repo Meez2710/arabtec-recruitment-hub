@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureSchema } from './lib/schema.js';
 import { ensureOrganizationChartSchema, seedOrganizationChartIfEmpty } from './lib/org-chart-seed.js';
 import { withOrgStructurePage } from './lib/org-structure-app-patch.js';
+import { compiledFrontend, warmFrontend } from './lib/frontend-build.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
 import { startWatcher, getWatcherStatus } from './lib/cv-watcher.js';
 import { configureParsing } from './lib/parsing/composition.js';
@@ -236,6 +237,21 @@ app.use((req, res, next) => {
 });
 // Compress public assets even when staff connect directly to port 4001.
 app.use(compression());
+// The app's screens, compiled once on the server (lib/frontend-build.js): the
+// browser gets plain JavaScript and never downloads or runs the Babel
+// compiler. ETag + no-cache: a browser revalidates and gets a 304 until the
+// file changes; the ?v= on index.html still busts it on a release.
+app.get('/build/:name', async (req, res, next) => {
+  let entry;
+  try { entry = await compiledFrontend(frontendDir, req.params.name); }
+  catch (err) { return next(err); }
+  if (!entry) return res.status(404).end();
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('ETag', entry.etag);
+  if (req.headers['if-none-match'] === entry.etag) return res.status(304).end();
+  res.send(entry.code);
+});
 app.use(express.static(frontendDir, {
   etag: true,
   lastModified: true,
@@ -311,6 +327,13 @@ app.listen(PORT, () => {
         seedOrganizationChartIfEmpty();
         APP_READY = true;
         console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
+        // Compile the app on a worker thread once the database is ready, so the
+        // ~3 s of compiler CPU never competes with initialisation (on a small
+        // machine it did). The server keeps answering while it runs; a request
+        // that arrives first compiles its own file.
+        warmFrontend(frontendDir)
+          .then((ms) => console.log(JSON.stringify({ level: 'info', msg: 'frontend.compiled', ms })))
+          .catch((err) => console.error(JSON.stringify({ level: 'error', msg: 'frontend.compile_failed', error: String(err && err.message || err) })));
         // Start the CV inbox folder watcher if the feature flag is enabled
         if (isEnabled('folder_watcher')) {
           startWatcher();

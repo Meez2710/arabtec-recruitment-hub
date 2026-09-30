@@ -147,7 +147,9 @@
       .org-row .org-meta { margin-top:2px; }
       .org-row-count { flex:none; font-size:13px; color:var(--text-gray); white-space:nowrap; }
       .org-row-empty { padding:20px 16px; color:var(--text-gray); font-size:14px; }
-      .org-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:middle; border:1px solid var(--border); }
+      .org-legend i { display:inline-block; width:16px; height:12px; border-radius:3px; margin-right:8px; vertical-align:middle; border:1px solid var(--border-strong, #9A958E); }
+      .org-tools { display:inline-flex; align-items:center; gap:4px; }
+      .org-zoom { min-width:44px; text-align:center; font-size:13px; font-variant-numeric:tabular-nums; color:var(--text-gray); }
     `;
     document.head.appendChild(el);
   }
@@ -499,6 +501,33 @@
       ).map((n) => n.id));
     }, [visible, q]);
 
+    /* Open on the top two levels. Fully expanded, the chart is ~20,000px wide
+       (113+ positions), so any first view showed an arbitrary slice with most
+       of the page empty. The company and its first level fit on one screen;
+       Expand all is one click away. Done once per load, never after the user
+       has expanded or collapsed anything. */
+    const openedOnce = useRef(false);
+    useEffect(() => {
+      if (openedOnce.current || !visible.length) return;
+      openedOnce.current = true;
+      const byId = new Map(visible.map((n) => [n.id, n]));
+      const depthOf = (n) => { let d = 0; let p = n; while (p && p.parentId != null && byId.has(p.parentId) && d < 50) { p = byId.get(p.parentId); d += 1; } return d; };
+      setCollapsed(new Set(visible.filter((n) => depthOf(n) >= 1 && tree.kids(n.id).length).map((n) => n.id)));
+    }, [visible, tree]);
+
+    /* A search opens the branches above every match, so a person inside a
+       folded branch is still found and scrolled to. */
+    useEffect(() => {
+      if (!matches.size) return;
+      const byId = new Map((visible || []).map((n) => [n.id, n]));
+      setCollapsed((prev) => {
+        if (!prev.size) return prev;
+        const next = new Set(prev);
+        for (const id of matches) { let p = byId.get(id); while (p && p.parentId != null) { next.delete(p.parentId); p = byId.get(p.parentId); } }
+        return next.size === prev.size ? prev : next;
+      });
+    }, [matches, visible]);
+
     /* `.org-canvas` is `width: max-content` and `.org-tree` centres itself
        inside it, so with the seeded 113 positions the canvas lays out 19552px
        wide and the root sits ~9670px in. Pan (0, 0) therefore shows the far
@@ -707,11 +736,18 @@
             {projects.map((p) => <option key={p.id} value={p.positionTitle}>{p.positionTitle}</option>)}
           </select>
           {!isPhone && <>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={expandAll}>Expand</button>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={collapseAll}>Collapse</button>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setScale((s) => Math.min(1.8, s + 0.1))}>Zoom in</button>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setScale((s) => Math.max(0.45, s - 0.1))}>Zoom out</button>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={fit}>Fit</button>
+            {/* Two groups of real buttons, not five loose words: what to show,
+                then how big. The zoom level is visible between − and +. */}
+            <span className="org-tools" role="group" aria-label="Show">
+              <button className="btn btn-sm btn-secondary" type="button" onClick={expandAll}>Expand all</button>
+              <button className="btn btn-sm btn-secondary" type="button" onClick={collapseAll}>Collapse all</button>
+            </span>
+            <span className="org-tools" role="group" aria-label="Zoom">
+              <button className="btn btn-sm btn-secondary" type="button" aria-label="Zoom out" title="Zoom out" onClick={() => setScale((s) => Math.max(0.45, s - 0.1))}>−</button>
+              <span className="org-zoom" aria-live="polite">{Math.round(scale * 100)}%</span>
+              <button className="btn btn-sm btn-secondary" type="button" aria-label="Zoom in" title="Zoom in" onClick={() => setScale((s) => Math.min(1.8, s + 0.1))}>+</button>
+              <button className="btn btn-sm btn-secondary" type="button" onClick={fit}>Fit to screen</button>
+            </span>
           </>}
           <div className="spacer" />
           <span className="muted">{nodes ? nodes.length + ' positions' : 'Loading…'}</span>

@@ -2396,7 +2396,7 @@ function withinPastDays(iso, days) {
   return !isNaN(age) && age >= 0 && age <= days * DAY_MS;
 }
 
-function ManagerDashboard({ user, data, onNavigate, notice }) {
+function ManagerDashboard({ user, data, onNavigate, notice, figures }) {
   const { d, requests } = data;
   const open = requests.filter(isOpenReq);
   const unassigned = open.filter((r) => !r.ownerId);
@@ -2479,7 +2479,8 @@ function ManagerDashboard({ user, data, onNavigate, notice }) {
           onClick={() => onNavigate('offers', { toIssue: true })} />
       </div>
 
-      <div className="dash-grid-2">
+      <FiguresToggle figures={figures} />
+      <div className="dash-grid-2 dash-figure">
         <section className="card">
           <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Workload at a glance — no ranking.</span></div>
           <div className="card-pad">
@@ -2614,7 +2615,7 @@ function PlanTable({ rows, unit }) {
 }
 
 /* --------------------------------- HR DIRECTOR ---------------------------- */
-function DirectorDashboard({ user, data, onNavigate, notice }) {
+function DirectorDashboard({ user, data, onNavigate, notice, figures }) {
   const { d, requests } = data;
   const k = (d && d.kpis) || {};
   const open = requests.filter(isOpenReq);
@@ -2659,7 +2660,8 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
           </div>}
         </section>
 
-        <section className="card">
+        <FiguresToggle figures={figures} />
+        <section className="card dash-figure">
           <div className="card-head"><div><h3>Open roles by age</h3></div><span className="dash-headnote">Where time is being lost</span></div>
           <div className="card-pad">
             {!d ? <Empty art="none-yet" text="No data." /> : (
@@ -2674,14 +2676,14 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
         </section>
       </div>
 
-      <div className="dash-grid-2" style={{ marginTop: 12 }}>
-        <section className="card">
+      <div className="dash-grid-2 dash-figure" style={{ marginTop: 12 }}>
+        <section className="card dash-figure">
           <div className="card-head"><div><h3>Requests by status</h3></div><span className="dash-headnote">Every request in scope</span></div>
           <div className="card-pad">
             <DashBars empty="No hiring requests yet." rows={((d && d.requestsByStatus) || []).filter((r) => r.count > 0).map((r) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status.replace(/_/g, ' '), count: r.count, color: r.status === 'pending_approval' ? 'var(--warning)' : ['closed', 'cancelled', 'rejected'].includes(r.status) ? 'var(--muted)' : 'var(--green-700)' }))} />
           </div>
         </section>
-        <section className="card">
+        <section className="card dash-figure">
           <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
           <div className="card-pad">
             <DashBars empty="No recruiter owns an open request yet." rows={((d && d.recruiterLoad) || []).map((r) => ({ label: r.name, count: r.c ?? r.count ?? 0, color: 'var(--green-700)' }))} />
@@ -2689,7 +2691,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
         </section>
       </div>
 
-      <section className="card" style={{ marginTop: 12 }}>
+      <section className="card dash-figure" style={{ marginTop: 12 }}>
         <div className="card-head"><div><h3>Hiring plan by project</h3></div><span className="dash-headnote">Planned versus filled</span></div>
         <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
       </section>
@@ -2707,7 +2709,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
 /* ------------------------------ COO / EXECUTIVE --------------------------- */
 /* Aggregate only. No candidate identity appears on this composition — the
    executive view answers "are we hiring to plan", not "who is in the pipeline". */
-function ExecutiveDashboard({ user, data, onNavigate, notice }) {
+function ExecutiveDashboard({ user, data, onNavigate, notice, figures }) {
   const { d, requests } = data;
   const k = (d && d.kpis) || {};
   const remaining = Math.max((k.headcountTotal || 0) - (k.headcountFilled || 0), 0);
@@ -2727,7 +2729,8 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
           meta={`${requests.filter(isOpenReq).length} open request${requests.filter(isOpenReq).length === 1 ? '' : 's'}`} />
       </div>
 
-      <section className="card">
+      <FiguresToggle figures={figures} />
+      <section className="card dash-figure">
         <div className="card-head"><div><h3>One hiring-progress view</h3></div><span className="dash-headnote">By project</span></div>
         <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
       </section>
@@ -2754,7 +2757,7 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
           </div>}
       </section>
 
-      <div className="dash-grid-2" style={{ marginTop: 16 }}>
+      <div className="dash-grid-2 dash-figure" style={{ marginTop: 16 }}>
         <section className="card">
           <div className="card-head"><div><h3>Time to fill</h3></div></div>
           <div className="card-pad"><div className="dash-kpi-val">{k.timeToFillDays == null ? '—' : k.timeToFillDays}</div>
@@ -2831,8 +2834,19 @@ function InterviewerDashboard({ user, data, onNavigate, notice }) {
 // rendered with the admin's own scope.
 const DASH_VIEWS = [['director', 'Director'], ['executive', 'Executive'], ['manager', 'Recruitment manager'], ['recruiter', 'Recruiter'], ['interviewer', 'Interviewer']];
 const DASH_VIEW_KEY = 'arabtec_dash_view';
+/* Phone only (hidden on desktop by CSS): folds the chart sections marked
+   `.dash-figure` so a phone dashboard opens on the decisions, not on four
+   screens of charts. */
+function FiguresToggle({ figures }) {
+  if (!figures) return null;
+  return <button type="button" className="btn btn-secondary dash-figures-toggle" aria-expanded={figures.open} onClick={figures.toggle}>
+    {figures.open ? 'Hide hiring figures' : 'Show hiring figures'}
+    <Icon name="chevronDown" size={16} />
+  </button>;
+}
 function Dashboard({ user, onNavigate, dash }) {
   const isAdmin = (user.roles || []).includes('system_admin');
+  const [figuresOpen, setFiguresOpen] = useState(false);
   const [view, setView] = useState(() => { try { const v = localStorage.getItem(DASH_VIEW_KEY); return DASH_VIEWS.some(([k]) => k === v) ? v : 'director'; } catch { return 'director'; } });
   const persona = isAdmin ? view : personaFor(user);
   const data = useDashboardData(user, persona, dash);
@@ -2876,12 +2890,16 @@ function Dashboard({ user, onNavigate, dash }) {
     {stale.length > 0 && <RefetchError onRetry={data.reload} text={`Could not refresh ${join(stale)}. Showing the last loaded results.`} />}
   </>;
 
-  const props = { user, data, onNavigate, notice };
-  if (persona === 'manager') return <ManagerDashboard {...props} />;
-  if (persona === 'director') return <DirectorDashboard {...props} />;
-  if (persona === 'executive') return <ExecutiveDashboard {...props} />;
-  if (persona === 'interviewer') return <InterviewerDashboard {...props} />;
-  return <RecruiterDashboard {...props} />;
+  // On a phone the charts fold behind one "Show hiring figures" button, so the
+  // screen leads with what needs a decision (FiguresToggle, .dash-figure).
+  const figures = { open: figuresOpen, toggle: () => setFiguresOpen((v) => !v) };
+  const props = { user, data, onNavigate, notice, figures };
+  const personaView = persona === 'manager' ? <ManagerDashboard {...props} />
+    : persona === 'director' ? <DirectorDashboard {...props} />
+    : persona === 'executive' ? <ExecutiveDashboard {...props} />
+    : persona === 'interviewer' ? <InterviewerDashboard {...props} />
+    : <RecruiterDashboard {...props} />;
+  return <div className={'dash-root' + (figuresOpen ? ' figures-open' : '')}>{personaView}</div>;
 }
 
 /* ----------------------------- Reports / analytics ----------------------------- */
@@ -3508,6 +3526,18 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
 }
 
 /* ----------------------------- Roles & Permissions ----------------------------- */
+// Roles page areas: each raw permission resource belongs to one. Anything the
+// server adds later without an entry here lands in the last area.
+const PERMISSION_AREAS = [
+  { label: 'Hiring requests', resources: ['request'] },
+  { label: 'Candidates', resources: ['candidate', 'application'] },
+  { label: 'CV Inbox', resources: ['cv_intake'] },
+  { label: 'Interviews', resources: ['interview'] },
+  { label: 'Offers & salary', resources: ['offer', 'salary'] },
+  { label: 'Dashboard & reports', resources: ['dashboard', 'report'] },
+  { label: 'Administration', resources: ['user', 'role', 'org', 'org_chart', 'workflow', 'notification', 'audit', 'system', 'app', 'branding', 'button'] },
+];
+
 function RolesPage({ user }) {
   const toast = useToast();
   const [loadError, setLoadError] = useState(null);
@@ -3553,17 +3583,29 @@ function RolesPage({ user }) {
     try { await api.put(`/roles/${selected.id}/permissions`, { permissionCodes: draft }); setSelected((role) => ({ ...role, permissions: [...draft] })); setRoles((all) => all.map(role => role.id === selected.id ? { ...role, permissions: [...draft] } : role)); toast('Permissions updated'); }
     catch (e) { toast(e.message, 'error'); }
   }
+  // Areas people recognise, in the order the work happens, instead of one
+  // heading per raw resource (20 of them, most holding a single switch).
+  const [query, setQuery] = useState('');
   const groups = useMemo(() => {
-    const g = {};
-    for (const p of catalog) { (g[p.resource] ??= []).push(p); }
-    return g;
+    const byArea = new Map(PERMISSION_AREAS.map((a) => [a.label, []]));
+    for (const p of catalog) {
+      const area = PERMISSION_AREAS.find((a) => a.resources.includes(p.resource)) || PERMISSION_AREAS[PERMISSION_AREAS.length - 1];
+      byArea.get(area.label).push(p);
+    }
+    return [...byArea].filter(([, perms]) => perms.length);
   }, [catalog]);
+  const q = query.trim().toLowerCase();
+  const shown = q ? groups.map(([area, perms]) => [area, perms.filter((p) => (p.description + ' ' + p.code).toLowerCase().includes(q))]).filter(([, perms]) => perms.length) : groups;
+  function setArea(perms, on) {
+    const codes = perms.map((p) => p.code);
+    setDraft((d) => on ? [...new Set([...d, ...codes])] : d.filter((c) => !codes.includes(c)));
+  }
 
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!roles) return <Skeleton rows={8} />;
   return (
     <div>
-      <PageHead crumb="Administration / Roles" title="Roles & Permissions" sub="Toggle capabilities per role. Changes are enforced server-side and audited." />
+      <PageHead crumb="Administration / Roles" title="Roles & Permissions" sub="Pick a role, then switch on what it is allowed to do. Every change is recorded in the audit log." />
       <div className="roles-layout">
         <div className="card roles-list"><div className="card-pad">
           {roles.map((r) => (
@@ -3576,16 +3618,30 @@ function RolesPage({ user }) {
           <div className="card-head permissions-save"><h3>{selected?.name} — {draft.length} permissions{dirty && <span className="muted" style={{ fontWeight: 400 }}> · unsaved</span>}</h3>
             {canManage && <button className="btn btn-sm" disabled={!dirty} onClick={save}>Save Changes</button>}</div>
           <div className="card-pad permissions-panel">
-            {Object.entries(groups).map(([res, perms]) => (
-              <div key={res} style={{ marginBottom: 16 }}>
-                <div className="muted fine-label" style={{ fontWeight: 700, marginBottom: 8 }}>{res}</div>
-                {perms.map((p) => (
-                  <label key={p.code} className="switch permission-toggle">
-                    <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> <span>{p.description}<code className="permission-code">{p.code}</code></span>
-                  </label>
-                ))}
-              </div>
-            ))}
+            <div className="perm-search">
+              <input className="input" type="search" placeholder="Search permissions" aria-label="Search permissions" value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            {shown.length === 0 && <p className="muted">No permission matches “{query}”.</p>}
+            {shown.map(([area, perms]) => {
+              const on = perms.filter((p) => draft.includes(p.code)).length;
+              const all = on === perms.length;
+              return (
+                <section key={area} className="perm-area">
+                  <div className="perm-area-head">
+                    <h4>{area}</h4>
+                    <span className="muted perm-area-count">{on} of {perms.length} on</span>
+                    {canManage && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea(perms, !all)}>{all ? 'Clear all' : 'Select all'}</button>}
+                  </div>
+                  <div className="perm-area-grid">
+                    {perms.map((p) => (
+                      <label key={p.code} className="switch permission-toggle">
+                        <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> <span>{p.description}<code className="permission-code">{p.code}</code></span>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -3964,6 +4020,12 @@ function ButtonsPanel({ user }) {
 // One row per catalogued event: on/off, the two channels, and who it reaches.
 // Saves per-row so a mis-tick never takes the whole page with it, and every
 // change is written to the audit log by the API.
+// Column headings for the notification grid: short, with the full sentence
+// on hover (title) and on the phone's stacked label.
+const NOTIF_WHO_SHORT = {
+  requester: 'Requester', owner: 'Recruiter', hiring_manager: 'Hiring manager',
+  approvers: 'Approvers', panel: 'Panel', candidate: 'Candidate', actor: 'Who acted',
+};
 function NotificationsPanel({ user }) {
   const toast = useToast();
   const [data, setData] = useState(null);
@@ -4027,13 +4089,20 @@ function NotificationsPanel({ user }) {
           <div className="card-head"><h3>{cat}</h3>
             <span className="dash-headnote">{data.notifications.filter((n) => n.category === cat).length} events</span></div>
           <div className="table-wrap">
-            <table className="table responsive-table">
+            <table className="table notif-grid">
+              {/* One grid: events down the side, who is told across the top,
+                  one tick where they meet. It replaced a block of seven
+                  labelled checkboxes repeated under every event (review C2). */}
               <thead><tr>
-                <th style={{ minWidth: 260 }}>Event</th>
-                <th style={{ width: 70 }}>On</th>
-                <th style={{ width: 80 }}>In-app</th>
-                <th style={{ width: 80 }}>Email</th>
-                <th>Send to</th>
+                <th className="notif-event">Event</th>
+                <th className="notif-tick">On</th>
+                <th className="notif-tick">In-app</th>
+                <th className="notif-tick">Email</th>
+                {Object.entries(data.recipients).map(([token, label]) => (
+                  <th key={token} className={'notif-tick notif-who' + (external.has(token) ? ' recip-external' : '')} title={label}>
+                    {NOTIF_WHO_SHORT[token] || label.split(' — ')[0]}
+                  </th>
+                ))}
               </tr></thead>
               <tbody>
                 {data.notifications.filter((n) => n.category === cat).map((n) => {
@@ -4048,34 +4117,29 @@ function NotificationsPanel({ user }) {
                           <span className="badge badge-warning" style={{ marginTop: 6 }}>Reaches candidates</span>
                         )}
                       </td>
-                      <td data-label="On">
+                      <td data-label="On" className="notif-tick">
                         <input type="checkbox" checked={n.enabled} disabled={!canEdit || busy}
                           aria-label={`Enable ${n.label}`}
                           onChange={(e) => patch(n.eventKey, { enabled: e.target.checked })} />
                       </td>
-                      <td data-label="In-app">
+                      <td data-label="In-app" className="notif-tick">
                         <input type="checkbox" checked={n.inApp} disabled={!canEdit || busy || off}
                           aria-label={`In-app alert for ${n.label}`}
                           onChange={(e) => patch(n.eventKey, { inApp: e.target.checked })} />
                       </td>
-                      <td data-label="Email">
+                      <td data-label="Email" className="notif-tick">
                         <input type="checkbox" checked={n.email} disabled={!canEdit || busy || off}
                           aria-label={`Email for ${n.label}`}
                           onChange={(e) => patch(n.eventKey, { email: e.target.checked })} />
                       </td>
-                      <td data-label="Send to">
-                        <div className="recip-grid">
-                          {Object.entries(data.recipients).map(([token, label]) => (
-                            <label key={token} className={'recip' + (external.has(token) ? ' recip-external' : '')}
-                              title={label}>
-                              <input type="checkbox" checked={n.recipients.includes(token)}
-                                disabled={!canEdit || busy || off}
-                                onChange={() => toggleRecipient(n, token)} />
-                              <span>{label.split(' — ')[0]}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </td>
+                      {Object.entries(data.recipients).map(([token, label]) => (
+                        <td key={token} data-label={label.split(' — ')[0]} className={'notif-tick' + (external.has(token) ? ' recip-external' : '')}>
+                          <input type="checkbox" checked={n.recipients.includes(token)}
+                            aria-label={`${label.split(' — ')[0]} — ${n.label}`}
+                            disabled={!canEdit || busy || off}
+                            onChange={() => toggleRecipient(n, token)} />
+                        </td>
+                      ))}
                     </tr>
                   );
                 })}
