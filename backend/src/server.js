@@ -252,11 +252,6 @@ app.get('/build/:name', async (req, res, next) => {
   if (req.headers['if-none-match'] === entry.etag) return res.status(304).end();
   res.send(entry.code);
 });
-// Compile at start-up on a worker thread, so the first visitor never waits
-// and the server keeps answering while it runs.
-warmFrontend(frontendDir)
-  .then((ms) => console.log(JSON.stringify({ level: 'info', msg: 'frontend.compiled', ms })))
-  .catch((err) => console.error(JSON.stringify({ level: 'error', msg: 'frontend.compile_failed', error: String(err && err.message || err) })));
 app.use(express.static(frontendDir, {
   etag: true,
   lastModified: true,
@@ -332,6 +327,13 @@ app.listen(PORT, () => {
         seedOrganizationChartIfEmpty();
         APP_READY = true;
         console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
+        // Compile the app on a worker thread once the database is ready, so the
+        // ~3 s of compiler CPU never competes with initialisation (on a small
+        // machine it did). The server keeps answering while it runs; a request
+        // that arrives first compiles its own file.
+        warmFrontend(frontendDir)
+          .then((ms) => console.log(JSON.stringify({ level: 'info', msg: 'frontend.compiled', ms })))
+          .catch((err) => console.error(JSON.stringify({ level: 'error', msg: 'frontend.compile_failed', error: String(err && err.message || err) })));
         // Start the CV inbox folder watcher if the feature flag is enabled
         if (isEnabled('folder_watcher')) {
           startWatcher();
