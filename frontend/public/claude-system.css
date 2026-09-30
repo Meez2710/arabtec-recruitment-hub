@@ -972,6 +972,15 @@ table.candidates-table {
 .tag-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 /* Phone-only control (arabtec-mobile.css shows it inside the phone shell). */
 .btn.dash-figures-toggle { display: none; }
+/* Notification grid (Settings > Notifications): one tick per cell. Not a
+   stacked responsive table: on a phone a grid of ticks is read by swiping
+   sideways, with the event name pinned on the left. */
+.notif-grid { table-layout: fixed; width: 100%; min-width: 880px; }
+.notif-grid .notif-event { width: 240px; }
+.notif-grid .notif-tick { width: 72px; padding-left: var(--sp-1); padding-right: var(--sp-1); text-align: center; }
+.notif-grid th { text-transform: none; letter-spacing: 0; }
+.notif-grid th.notif-who { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+.notif-grid td:first-child, .notif-grid th:first-child { position: sticky; left: 0; z-index: 1; }
 /* Talent Pool card facts line: stage, request, experience and place. */
 .cc-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); margin-top: var(--sp-1); font-size: 12px; min-width: 0; }
 .cc-req { font-variant-numeric: tabular-nums; font-weight: 600; }

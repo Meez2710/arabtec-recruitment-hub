@@ -3982,6 +3982,12 @@ function ButtonsPanel({ user }) {
 // One row per catalogued event: on/off, the two channels, and who it reaches.
 // Saves per-row so a mis-tick never takes the whole page with it, and every
 // change is written to the audit log by the API.
+// Column headings for the notification grid: short, with the full sentence
+// on hover (title) and on the phone's stacked label.
+const NOTIF_WHO_SHORT = {
+  requester: 'Requester', owner: 'Recruiter', hiring_manager: 'Hiring manager',
+  approvers: 'Approvers', panel: 'Panel', candidate: 'Candidate', actor: 'Who acted',
+};
 function NotificationsPanel({ user }) {
   const toast = useToast();
   const [data, setData] = useState(null);
@@ -4045,13 +4051,20 @@ function NotificationsPanel({ user }) {
           <div className="card-head"><h3>{cat}</h3>
             <span className="dash-headnote">{data.notifications.filter((n) => n.category === cat).length} events</span></div>
           <div className="table-wrap">
-            <table className="table responsive-table">
+            <table className="table notif-grid">
+              {/* One grid: events down the side, who is told across the top,
+                  one tick where they meet. It replaced a block of seven
+                  labelled checkboxes repeated under every event (review C2). */}
               <thead><tr>
-                <th style={{ minWidth: 260 }}>Event</th>
-                <th style={{ width: 70 }}>On</th>
-                <th style={{ width: 80 }}>In-app</th>
-                <th style={{ width: 80 }}>Email</th>
-                <th>Send to</th>
+                <th className="notif-event">Event</th>
+                <th className="notif-tick">On</th>
+                <th className="notif-tick">In-app</th>
+                <th className="notif-tick">Email</th>
+                {Object.entries(data.recipients).map(([token, label]) => (
+                  <th key={token} className={'notif-tick notif-who' + (external.has(token) ? ' recip-external' : '')} title={label}>
+                    {NOTIF_WHO_SHORT[token] || label.split(' — ')[0]}
+                  </th>
+                ))}
               </tr></thead>
               <tbody>
                 {data.notifications.filter((n) => n.category === cat).map((n) => {
@@ -4066,34 +4079,29 @@ function NotificationsPanel({ user }) {
                           <span className="badge badge-warning" style={{ marginTop: 6 }}>Reaches candidates</span>
                         )}
                       </td>
-                      <td data-label="On">
+                      <td data-label="On" className="notif-tick">
                         <input type="checkbox" checked={n.enabled} disabled={!canEdit || busy}
                           aria-label={`Enable ${n.label}`}
                           onChange={(e) => patch(n.eventKey, { enabled: e.target.checked })} />
                       </td>
-                      <td data-label="In-app">
+                      <td data-label="In-app" className="notif-tick">
                         <input type="checkbox" checked={n.inApp} disabled={!canEdit || busy || off}
                           aria-label={`In-app alert for ${n.label}`}
                           onChange={(e) => patch(n.eventKey, { inApp: e.target.checked })} />
                       </td>
-                      <td data-label="Email">
+                      <td data-label="Email" className="notif-tick">
                         <input type="checkbox" checked={n.email} disabled={!canEdit || busy || off}
                           aria-label={`Email for ${n.label}`}
                           onChange={(e) => patch(n.eventKey, { email: e.target.checked })} />
                       </td>
-                      <td data-label="Send to">
-                        <div className="recip-grid">
-                          {Object.entries(data.recipients).map(([token, label]) => (
-                            <label key={token} className={'recip' + (external.has(token) ? ' recip-external' : '')}
-                              title={label}>
-                              <input type="checkbox" checked={n.recipients.includes(token)}
-                                disabled={!canEdit || busy || off}
-                                onChange={() => toggleRecipient(n, token)} />
-                              <span>{label.split(' — ')[0]}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </td>
+                      {Object.entries(data.recipients).map(([token, label]) => (
+                        <td key={token} data-label={label.split(' — ')[0]} className={'notif-tick' + (external.has(token) ? ' recip-external' : '')}>
+                          <input type="checkbox" checked={n.recipients.includes(token)}
+                            aria-label={`${label.split(' — ')[0]} — ${n.label}`}
+                            disabled={!canEdit || busy || off}
+                            onChange={() => toggleRecipient(n, token)} />
+                        </td>
+                      ))}
                     </tr>
                   );
                 })}

@@ -1536,3 +1536,8 @@ button.cal-slot:hover, button.cal-slot:focus-visible { background: var(--action-
 
 /* Offer expiry about to lapse (Offers list). */
 .cell-sub.text-warn { color: var(--warning-ink); }
+/* The candidate column reaches someone outside the company: amber heading and a tinted column. */
+th.recip-external { color: var(--warning-ink); }
+th.recip-external::after { content: none; }
+td.recip-external { background: var(--warning-tint); }
+.notif-grid td:first-child, .notif-grid th:first-child { background: var(--surface); }

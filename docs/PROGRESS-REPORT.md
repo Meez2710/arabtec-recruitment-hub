@@ -43,6 +43,7 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | Status |
 |---|---|---|
+| 9 | Notification settings as one simple table | Done — waiting for approval |
 | 8 | Neater organization chart | Done — waiting for approval |
 | 7 | Simpler dashboard on phones | Done — waiting for approval (PR #45) |
 | 6 | Make the system open faster | Done — waiting for approval (PR #45) |
@@ -55,10 +56,26 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | What you will see |
 |---|---|---|
-| 9 | Notification settings | One simple table: events down the side, who gets told across the top |
 | 10 | Roles & permissions | Grouped by area with "select all", instead of one very long list |
 
 ---
+
+## Step 9 — Notification settings as one simple table
+
+**What changed:**
+- Each section (Hiring requests, Candidates, Interviews, Offers) is now one
+  table: the events are listed down the left, and **who gets told** runs
+  across the top (Requester, Recruiter, Hiring manager, Approvers, Panel,
+  Candidate, Who acted). Tick a box to switch it on. Before, the list of
+  people was squeezed into each row and hard to scan.
+- The **Candidate** column is shaded amber so it is obvious which alerts
+  reach people outside the company.
+- On a phone, swipe the table sideways; the event names stay fixed on the
+  left.
+
+**Measured:** the page is about **40% shorter** on a computer (3,607 → 2,180
+pixels) and fits the screen width with no sideways scrolling. Changing a
+tick still saves straight away.
 
 ## Step 8 — Neater organization chart
 
