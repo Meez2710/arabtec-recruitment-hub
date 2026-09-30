@@ -1104,8 +1104,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .roles-list .nav-item { width: 100%; text-align: left; color: var(--ink); }
 .roles-list .nav-item.active { color: var(--at-action-hover); background: var(--at-action-tint); font-weight: 700; }
 .permissions-panel { display: grid; }
-.permission-toggle { display: inline-flex; align-items: flex-start; gap: 8px; width: calc(50% - 6px); margin: 0 8px 10px 0; line-height: 1.4; }
-.permission-toggle input { flex: 0 0 auto; margin-top: 2px; accent-color: var(--at-action); }
+.permission-toggle { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+.permission-toggle input { flex: 0 0 auto; margin-top: 4px; accent-color: var(--at-action); }
 
 /* One tab treatment for the Control Center; red remains reserved for risk. */
 .control-tabs { display: flex; gap: 4px; margin-bottom: 18px; padding: 3px; width: max-content; max-width: 100%; overflow-x: auto; background: #ECEEF0; border-radius: 999px; }
@@ -1164,7 +1164,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 @media (max-width: 900px) {
   .roles-layout { grid-template-columns: 1fr; }
   .roles-list .card-pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .permission-toggle { width: 100%; margin-right: 0; }
   .review-panel-head, .review-submit { align-items: flex-start; flex-direction: column; }
   .intake-head-actions { flex-wrap: wrap; }
 }
@@ -1190,6 +1189,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .role-choice.active { background: var(--green-050, #E6F4F0); border-color: var(--action); color: var(--action-dark); font-weight: 600; }
 .permissions-save { background: var(--surface); }
 .permission-code { color: var(--muted); }
+.perm-area { border-top: 1px solid var(--line); }
+.perm-area-head h4 { color: var(--text-strong); font-size: 15px; }
+.perm-area-count { font-size: 13px; }
 button.pcard-name { color: var(--ink); background: transparent; }
 .pcard-menu-trigger, .pipeline-menu .menu-item { color: var(--ink); background: transparent; }
 .pipeline-menu .menu-item:hover, .pipeline-menu .menu-item:focus-visible { background: var(--green-050, #E6F4F0); }

@@ -43,8 +43,9 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | Status |
 |---|---|---|
-| 9 | Notification settings as one simple table | Done — waiting for approval |
-| 8 | Neater organization chart | Done — waiting for approval |
+| 10 | Roles & permissions grouped by area | Done — waiting for approval (PR #45) |
+| 9 | Notification settings as one simple table | Done — waiting for approval (PR #45) |
+| 8 | Neater organization chart | Done — waiting for approval (PR #45) |
 | 7 | Simpler dashboard on phones | Done — waiting for approval (PR #45) |
 | 6 | Make the system open faster | Done — waiting for approval (PR #45) |
 | 5 | Fixes from the page-by-page review | Done and approved (PR #44) |
@@ -52,13 +53,30 @@ without a hiring request. Offers still need the HR Director's approval.
 | 3 | Layout fixes, quotes editor, direct interview/offer creation | Done and approved (PR #39) |
 | 2 | Update the company server | **Waiting — needs someone on the company network** |
 
-### Coming next (in this order)
+### Coming next
 
-| # | Step | What you will see |
-|---|---|---|
-| 10 | Roles & permissions | Grouped by area with "select all", instead of one very long list |
+All the improvements you approved are now done. Once PR #45 is approved,
+the next step is **step 2: updating the company server** so staff see
+everything.
 
 ---
+
+## Step 10 — Roles & permissions grouped by area
+
+**What changed:**
+- The 57 switches are sorted into **7 plain areas**: Hiring requests,
+  Candidates, CV Inbox, Interviews, Offers & salary, Dashboard & reports, and
+  Administration. Before, there were 20 technical headings such as
+  "CV_INTAKE" and "ORG_CHART", most with a single switch.
+- Each area shows how many switches are on ("5 of 10 on") and has one
+  **Select all / Clear all** button.
+- A **search box** finds a permission by name (for example "salary").
+- Switches sit in two columns on a computer, one on a phone.
+- Nothing is saved until you press **Save Changes**, and the system still
+  warns you if you try to leave with unsaved changes.
+
+**Measured:** the page is about **40% shorter** on a computer (3,981 → 2,488
+pixels).
 
 ## Step 9 — Notification settings as one simple table
 

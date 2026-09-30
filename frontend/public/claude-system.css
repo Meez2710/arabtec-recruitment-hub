@@ -433,7 +433,7 @@ table.table tbody td, .table tbody td, table tbody td {
 .dash-kpi-row.kpi-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .role-choice { width: 100%; display: flex; align-items: center; text-align: left; min-height: 40px; padding: 8px 12px; border-width: 1px; border-style: solid; border-radius: 8px; margin-bottom: 4px; font: inherit; }
 .permissions-save { position: sticky; top: var(--topbar-h); z-index: 3; flex-wrap: wrap; }
-.permission-code { display: block; font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+.permission-code { display: block; font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .permission-toggle { align-items: flex-start; }
 .mobile-nav > button { min-width: 0; }
 .mobile-nav > button > span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1830,3 +1830,15 @@ button.cal-slot:focus-visible { outline: 0; }
   .intake-cv-side { position: fixed; top: 0; bottom: 0; inset-inline-end: 0; z-index: 60; width: min(92vw, 560px); height: auto; min-height: 0; border-radius: 0; }
 }
 .parse-review-name { margin-top: var(--sp-3); }
+
+/* Roles & Permissions: one section per area, a count and Select all in the
+   head, switches in two columns (one on narrow screens). */
+.perm-search { margin-bottom: var(--sp-4); max-width: 360px; }
+.perm-search .input { width: 100%; }
+.perm-area { padding: var(--sp-4) 0; }
+.perm-area:first-of-type { border-top: 0; padding-top: 0; }
+.perm-area-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.perm-area-head h4 { margin: 0; }
+.perm-area-count { margin-right: auto; }
+.perm-area-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-5); }
+@media (max-width: 900px) { .perm-area-grid { grid-template-columns: 1fr; } }

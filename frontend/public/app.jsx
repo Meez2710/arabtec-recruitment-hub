@@ -3526,6 +3526,18 @@ function UserModal({ user, roles, depts, projects, sites, onClose, onSaved }) {
 }
 
 /* ----------------------------- Roles & Permissions ----------------------------- */
+// Roles page areas: each raw permission resource belongs to one. Anything the
+// server adds later without an entry here lands in the last area.
+const PERMISSION_AREAS = [
+  { label: 'Hiring requests', resources: ['request'] },
+  { label: 'Candidates', resources: ['candidate', 'application'] },
+  { label: 'CV Inbox', resources: ['cv_intake'] },
+  { label: 'Interviews', resources: ['interview'] },
+  { label: 'Offers & salary', resources: ['offer', 'salary'] },
+  { label: 'Dashboard & reports', resources: ['dashboard', 'report'] },
+  { label: 'Administration', resources: ['user', 'role', 'org', 'org_chart', 'workflow', 'notification', 'audit', 'system', 'app', 'branding', 'button'] },
+];
+
 function RolesPage({ user }) {
   const toast = useToast();
   const [loadError, setLoadError] = useState(null);
@@ -3571,17 +3583,29 @@ function RolesPage({ user }) {
     try { await api.put(`/roles/${selected.id}/permissions`, { permissionCodes: draft }); setSelected((role) => ({ ...role, permissions: [...draft] })); setRoles((all) => all.map(role => role.id === selected.id ? { ...role, permissions: [...draft] } : role)); toast('Permissions updated'); }
     catch (e) { toast(e.message, 'error'); }
   }
+  // Areas people recognise, in the order the work happens, instead of one
+  // heading per raw resource (20 of them, most holding a single switch).
+  const [query, setQuery] = useState('');
   const groups = useMemo(() => {
-    const g = {};
-    for (const p of catalog) { (g[p.resource] ??= []).push(p); }
-    return g;
+    const byArea = new Map(PERMISSION_AREAS.map((a) => [a.label, []]));
+    for (const p of catalog) {
+      const area = PERMISSION_AREAS.find((a) => a.resources.includes(p.resource)) || PERMISSION_AREAS[PERMISSION_AREAS.length - 1];
+      byArea.get(area.label).push(p);
+    }
+    return [...byArea].filter(([, perms]) => perms.length);
   }, [catalog]);
+  const q = query.trim().toLowerCase();
+  const shown = q ? groups.map(([area, perms]) => [area, perms.filter((p) => (p.description + ' ' + p.code).toLowerCase().includes(q))]).filter(([, perms]) => perms.length) : groups;
+  function setArea(perms, on) {
+    const codes = perms.map((p) => p.code);
+    setDraft((d) => on ? [...new Set([...d, ...codes])] : d.filter((c) => !codes.includes(c)));
+  }
 
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!roles) return <Skeleton rows={8} />;
   return (
     <div>
-      <PageHead crumb="Administration / Roles" title="Roles & Permissions" sub="Toggle capabilities per role. Changes are enforced server-side and audited." />
+      <PageHead crumb="Administration / Roles" title="Roles & Permissions" sub="Pick a role, then switch on what it is allowed to do. Every change is recorded in the audit log." />
       <div className="roles-layout">
         <div className="card roles-list"><div className="card-pad">
           {roles.map((r) => (
@@ -3594,16 +3618,30 @@ function RolesPage({ user }) {
           <div className="card-head permissions-save"><h3>{selected?.name} — {draft.length} permissions{dirty && <span className="muted" style={{ fontWeight: 400 }}> · unsaved</span>}</h3>
             {canManage && <button className="btn btn-sm" disabled={!dirty} onClick={save}>Save Changes</button>}</div>
           <div className="card-pad permissions-panel">
-            {Object.entries(groups).map(([res, perms]) => (
-              <div key={res} style={{ marginBottom: 16 }}>
-                <div className="muted fine-label" style={{ fontWeight: 700, marginBottom: 8 }}>{res}</div>
-                {perms.map((p) => (
-                  <label key={p.code} className="switch permission-toggle">
-                    <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> <span>{p.description}<code className="permission-code">{p.code}</code></span>
-                  </label>
-                ))}
-              </div>
-            ))}
+            <div className="perm-search">
+              <input className="input" type="search" placeholder="Search permissions" aria-label="Search permissions" value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+            {shown.length === 0 && <p className="muted">No permission matches “{query}”.</p>}
+            {shown.map(([area, perms]) => {
+              const on = perms.filter((p) => draft.includes(p.code)).length;
+              const all = on === perms.length;
+              return (
+                <section key={area} className="perm-area">
+                  <div className="perm-area-head">
+                    <h4>{area}</h4>
+                    <span className="muted perm-area-count">{on} of {perms.length} on</span>
+                    {canManage && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea(perms, !all)}>{all ? 'Clear all' : 'Select all'}</button>}
+                  </div>
+                  <div className="perm-area-grid">
+                    {perms.map((p) => (
+                      <label key={p.code} className="switch permission-toggle">
+                        <input type="checkbox" disabled={!canManage} checked={draft.includes(p.code)} onChange={() => toggle(p.code)} /> <span>{p.description}<code className="permission-code">{p.code}</code></span>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </div>
       </div>
