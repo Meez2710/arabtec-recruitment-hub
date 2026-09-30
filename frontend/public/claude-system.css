@@ -970,6 +970,9 @@ table.candidates-table {
 /* A wrapping row of toggles inside a form field (user editor: roles,
    projects, sites). The gap is the row's, so no toggle carries a margin. */
 .tag-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* Talent Pool card facts line: stage, request, experience and place. */
+.cc-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); margin-top: var(--sp-1); font-size: 12px; min-width: 0; }
+.cc-req { font-variant-numeric: tabular-nums; font-weight: 600; }
 .tag-row > .tag-toggle { margin: 0; }
 .user-form-rest { margin-top: var(--sp-4); }
 /* Priority level (PriorityBadge): three small bars and a word, no pill. */

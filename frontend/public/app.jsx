@@ -7935,6 +7935,10 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
   // Filtering happens server-side; `shown` is simply the current page.
   const shown = candidates || [];
+  // Education columns only when someone in the list has education recorded:
+  // auto-ingested CVs rarely do, and two all-dash columns took a fifth of the
+  // table's width (review T5).
+  const showEdu = shown.some((c) => c.university || c.major || c.graduationYear != null);
 
   /** A links[] entry shaped like the one GET /candidates builds server-side. */
   function linkEntry(request, application) {
@@ -8176,12 +8180,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               </th>
               <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />
-              <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />
+              {showEdu && <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />}
+              {showEdu && <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />}
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
               <th className="th-request" data-col="request">Request</th>
               <th data-col="stage">Stage</th>
-              <th data-col="screen" title="Fitness screen before linking to a request">Screen</th>
               <th data-col="cv">CV</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
@@ -8208,11 +8211,11 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <span className="cell-strong" title={c.currentPosition || undefined}>{c.currentPosition || '—'}</span>
                   {c.currentCompany ? <span className="cell-sub" title={c.currentCompany}>{c.currentCompany}</span> : null}
                 </td>
-                <td data-priority="secondary" data-label="University">
+                {showEdu && <td data-priority="secondary" data-label="University">
                   <span className="cell-strong" title={c.university || undefined}>{c.university || '—'}</span>
                   {c.major ? <span className="cell-sub" title={c.major}>{c.major}</span> : null}
-                </td>
-                <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>
+                </td>}
+                {showEdu && <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>}
                 <td data-label="Location" className="cell-sub-only" title={c.location || undefined}>{c.location || '—'}</td>
                 <td data-label="Request">
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
@@ -8225,8 +8228,10 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   if (!act) return <span className="muted">Not on a request</span>;
                   const st = APP_STATUS[pipelineStage(act.status)] || APP_STATUS[act.status];
                   return st ? <Badge variant={st.variant}>{st.label}</Badge> : <span className="muted">{act.status}</span>;
-                })()}</td>
-                <td data-label="Screen"><Badge variant={(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</Badge></td>
+                })()}
+                  {/* The fitness screen is a second, smaller fact under the stage,
+                      named for what it is so it never reads as a stage. */}
+                  <span className="cell-sub" title="Fitness screen">Screen: {(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1].toLowerCase()}</span></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
                     ? <>
@@ -8271,6 +8276,19 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} />
                   </div>
                   <div className="cc-headline">{c.currentPosition || '—'}</div>
+                  {/* Where the person stands, without opening them: stage and
+                      request of the open application, then experience and
+                      place (review T7 — the card said only name and title). */}
+                  {(() => {
+                    const act = activeLinkOf(c);
+                    const st = act ? (APP_STATUS[pipelineStage(act.status)] || APP_STATUS[act.status]) : null;
+                    const bits = [c.yearsExperience != null ? `${c.yearsExperience}y exp` : null, c.location || null].filter(Boolean);
+                    return <div className="cc-facts">
+                      {act ? <>{st && <Badge variant={st.variant}>{st.label}</Badge>}<span className="cc-req" title={act.requestTitle || ''}>{shortReqCode(act.ticketNo)}</span></>
+                        : <span className="muted">Not on a request</span>}
+                      {bits.length > 0 && <span className="muted">{bits.join(' · ')}</span>}
+                    </div>;
+                  })()}
                   <QualityBadges flags={c.qualityFlags} note={c.qualityNote} />
                 </div>
                 {/* `is-empty` lets the phone template drop a block that would only
