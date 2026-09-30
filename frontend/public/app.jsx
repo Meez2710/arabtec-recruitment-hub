@@ -1447,7 +1447,15 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
     return () => window.removeEventListener('hashchange', followHash);
   }, [go]);
 
-  const visibleNav = NAV.filter((n) => n.section || (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm))));
+  // Branding, buttons and notifications each had two homes: a Control Center
+  // tab and a page of their own. Whoever can open the Control Center manages
+  // them there, so the duplicate menu entries are hidden for them; the routes
+  // stay, and a user without Control Center keeps their own entry (review C1).
+  const IN_CONTROL_CENTER = ['branding', 'buttons', 'notifications'];
+  const hasControl = can(user, 'app.manage_ui');
+  const visibleNav = NAV.filter((n) => n.section || (
+    !(hasControl && IN_CONTROL_CENTER.includes(n.key))
+    && (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm)))));
   const navItems = visibleNav.filter((n) => !n.section);
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
   const primaryMobile = mobileNavItems(navItems, persona);
@@ -1491,7 +1499,8 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? (EmailSettingsPage ? <EmailSettingsPage PageHead={PageHead} Empty={Empty} Skeleton={Skeleton} Icon={Icon} /> : <LoadError text="Email settings module failed to load." onRetry={() => window.location.reload()} />)
       : <Forbidden what="Email Settings" need="System Admin" />,
     notifications: can(user, 'notification.manage')
-      ? <NotificationsPanel user={user} />
+      ? <div><PageHead crumb="Administration / Notifications" title="Notification Settings"
+          sub="Which events send an in-app alert or an email, and to whom." /><NotificationsPanel user={user} /></div>
       : <Forbidden what="Notification Settings" need="HR, Recruitment or System Admin" />,
     audit: <AuditPage user={user} />,
   }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} />;
