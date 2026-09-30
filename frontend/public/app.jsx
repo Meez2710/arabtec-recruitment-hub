@@ -3237,13 +3237,18 @@ function UsersPage({ user }) {
                       table to 1107px inside a 1095px card — a 12px horizontal
                       scroll at 1440, the widest width we support. A wrapping
                       row drops that floor without hiding any action. */}
+                  {/* One visible action and a menu for the rest: four buttons in
+                      this cell wrapped, and "Deactivate" landed on the next row's
+                      border (docs/audits/heuristic-2026-09-30.md, U1). */}
                   <td className="user-actions">
                     {canManage && <>
                       <button className="btn btn-secondary btn-sm" onClick={() => setEditing(u)}>Edit</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => showActivity(u)}>Activity</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => resetPwd(u)}>Reset Password</button>
-                      <button className={'btn btn-sm ' + (u.status === 'active' ? 'btn-danger' : '')} onClick={() => toggleStatus(u)} disabled={u.id === user.id}>
-                        {u.status === 'active' ? 'Deactivate' : 'Activate'}</button>
+                      <RowMenu ariaLabel={`More actions for ${u.fullName}`} items={[
+                        { label: 'Activity', onClick: () => showActivity(u) },
+                        { label: 'Reset password', onClick: () => resetPwd(u) },
+                        { label: u.status === 'active' ? 'Deactivate' : 'Activate', danger: u.status === 'active',
+                          disabled: u.id === user.id, reason: 'You cannot deactivate your own account', onClick: () => toggleStatus(u) },
+                      ]} />
                     </>}
                   </td>
                 </tr>
@@ -5883,7 +5888,7 @@ function TimelineTab({ req }) {
 const APP_STATUS = {
   sourced:            { label: 'Sourced', variant: 'soft', column: 1 },
   screening:          { label: 'Screening', variant: 'info', column: 2 },
-  interview_hr:       { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  interview_hr:       { label: 'Interview', variant: 'info', column: 3 },
   interview_technical:{ label: '2nd Interview (Technical)', variant: 'info', column: 4 },
   offer:              { label: 'Offer', variant: 'warning', column: 5 },
   hired:              { label: 'Hired', variant: 'success', column: 6 },
@@ -5897,11 +5902,11 @@ const APP_STATUS = {
   cv_screening:{ label: 'Screening', variant: 'info', column: 2 },
   unmatched:   { label: 'Screening', variant: 'info', column: 2 },
   shortlisted: { label: 'Screening', variant: 'info', column: 2 },
-  interviewing:{ label: '1st Interview (HR)', variant: 'info', column: 3 },
-  interview_1: { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  interviewing:{ label: 'Interview', variant: 'info', column: 3 },
+  interview_1: { label: 'Interview', variant: 'info', column: 3 },
   interview_2: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
   technical_interview: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
-  waiting_feedback: { label: '1st Interview (HR)', variant: 'info', column: 3 },
+  waiting_feedback: { label: 'Interview', variant: 'info', column: 3 },
   issuing_offer: { label: 'Offer', variant: 'warning', column: 5 },
   offer_sent:  { label: 'Offer', variant: 'warning', column: 5 },
   offer_preparation: { label: 'Offer', variant: 'warning', column: 5 },
@@ -6014,7 +6019,10 @@ function canPipelineMove(status, target) {
 }
 function pipelineResidualLabel(status) {
   const column = pipelineStage(status);
-  if (status === column) return '';
+  // The column already names the stage; its own default status ('matched'
+  // under Screening, 'interviewing' under Interview, 'issuing_offer' under
+  // Offer) adds nothing, and printing it read as a second, competing stage.
+  if (status === column || status === APP_WRITE[column]) return '';
   const label = APP_STATUS[status]?.label;
   return label && label !== APP_STATUS[column]?.label ? label : String(status).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
@@ -7377,6 +7385,47 @@ function LinkRequestCell({ candidate, requests, canLink, onNavigate, onLinked, o
   );
 }
 
+/* A row's secondary actions behind one "More" button, so a table row keeps
+   one visible action and never wraps its buttons onto the next row. Same
+   popover and item styles as the candidate Action menu. `items` is a list of
+   { label, onClick, danger?, disabled?, hidden? }. */
+function RowMenu({ label = 'More', items, ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const popRef = useRef(null);
+  const anchor = useViewportAnchor(open, wrapRef, { width: 220, minBelow: 200 });
+  useEffect(() => {
+    if (!open) return undefined;
+    const inside = (t) => (wrapRef.current && wrapRef.current.contains(t)) || (popRef.current && popRef.current.contains(t));
+    const onDown = (e) => { if (!inside(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const shown = (items || []).filter((it) => it && !it.hidden);
+  if (!shown.length) return null;
+  return (
+    <div className="cc-action-wrap" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="btn btn-ghost btn-sm" aria-haspopup="menu" aria-expanded={open}
+        aria-label={ariaLabel} onClick={() => setOpen((v) => !v)}>
+        {label} <Icon name="chevronDown" size={16} />
+      </button>
+      {open && anchor && ReactDOM.createPortal(
+        <div className="rq-pop" ref={popRef} role="menu" aria-label={ariaLabel}
+          style={{ left: anchor.left, top: anchor.top, bottom: anchor.bottom, width: 220 }}>
+          <div className="rq-pop-list" style={{ paddingTop: 6 }}>
+            {shown.map((it) => (
+              <div key={it.label} role="menuitem" aria-disabled={it.disabled || undefined}
+                className={'menu-item' + (it.danger ? ' menu-item-danger' : '') + (it.disabled ? ' is-disabled' : '')}
+                title={it.disabled && it.reason ? it.reason : undefined}
+                onClick={() => { if (it.disabled) return; setOpen(false); it.onClick(); }}>{it.label}</div>
+            ))}
+          </div>
+        </div>, document.body)}
+    </div>
+  );
+}
 function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onScreen, onFit, onUnfit, onLinked, onRelinked, onOpen, toast }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState('menu');
@@ -7731,7 +7780,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // NOTE: the source-attribution tab row (LinkedIn / Careers / Referral / Agency /
   // Direct) was removed — it duplicated the per-row Source chip and made the page
   // read as noise. Source is still shown on every candidate row and card.
-  const SCREEN_TABS = [['all', 'All'], ['new', 'New'], ['screening', 'Screening'], ['fit', 'Fit'], ['unfit', 'Unfit']];
+  const SCREEN_TABS = [['all', 'All'], ['new', 'Not screened'], ['screening', 'In review'], ['fit', 'Fit'], ['unfit', 'Unfit']];
   const scOf = (c) => c.screeningStatus || 'new';
   // Both updates are dispatched from one event handler, so React batches them
   // into a single render carrying the final intended query: the new sort AND
@@ -7882,7 +7931,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // Progress' alongside 'Filled' — an in-progress state sharing success's
   // colour, distinguished by label, not a new colour.
   const SCREEN_CHIP = {
-    new: ['soft', 'New'], screening: ['info', 'Screening'], fit: ['success', 'Fit'], unfit: ['critical', 'Unfit'],
+    new: ['soft', 'Not screened'], screening: ['info', 'In review'], fit: ['success', 'Fit'], unfit: ['critical', 'Unfit'],
   };
   const canScreen = user.permissions.includes('candidate.edit');
 
@@ -8048,6 +8097,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
               <th className="th-request" data-col="request">Request</th>
               <th data-col="stage">Stage</th>
+              <th data-col="screen" title="Fitness screen before linking to a request">Screen</th>
               <th data-col="cv">CV</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
@@ -8084,7 +8134,15 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
                     onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
                 </td>
-                <td data-label="Stage"><Badge variant={(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</Badge></td>
+                <td data-label="Stage">{(() => {
+                  // The pipeline stage of the open application — the same word the
+                  // board column uses. The fitness screen is a separate column.
+                  const act = activeLinkOf(c);
+                  if (!act) return <span className="muted">Not on a request</span>;
+                  const st = APP_STATUS[pipelineStage(act.status)] || APP_STATUS[act.status];
+                  return st ? <Badge variant={st.variant}>{st.label}</Badge> : <span className="muted">{act.status}</span>;
+                })()}</td>
+                <td data-label="Screen"><Badge variant={(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[0]}>{(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1]}</Badge></td>
                 <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
                   {c.hasResume
                     ? <>
@@ -10155,7 +10213,9 @@ function OffersPage({ user, initialFilters }) {
                     <span className="idcell-txt"><span className="cell-strong clamp-2" title={o.candidate?.fullName || undefined}>{o.candidate?.fullName || '—'}</span></span>
                   </div>
                 </td>
-                <td data-label="Request"><span className="code-pill" title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></td>
+                <td data-label="Request">{o.request
+                  ? <span className="code-pill" title={o.request.ticketNo}>{shortReqCode(o.request.ticketNo)}</span>
+                  : <span className="muted" title="Created without a hiring request">—</span>}</td>
                 <td data-label="Position"><span className="cell-strong clamp-2" title={o.positionTitle || undefined}>{o.positionTitle || '—'}</span></td>
                 <td data-priority="secondary" data-label="Project" className="cell-sub-only"><span className="clamp-2" title={o.project?.name || undefined}>{o.project?.name || '—'}</span></td>
                 <td data-label="Status"><OfferStatusBadge status={o.status} /></td>

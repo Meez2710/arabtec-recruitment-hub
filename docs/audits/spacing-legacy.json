@@ -481,8 +481,6 @@
   "claude-system.css | .content | padding: var(--sp-4) var(--sp-page-x) 80px",
   "claude-system.css | .content.has-dock | padding-bottom: 96px",
   "claude-system.css | .candidates-table > thead > tr > th[data-priority=\"secondary\"] .sort-th-inner | gap: 2px",
-  "claude-system.css | .user-actions > button | margin: 2px 0",
-  "claude-system.css | .user-actions | gap: 6px",
   "claude-system.css | .content.has-dock | padding-bottom: 96px",
   "claude-system.css | .seg-tab | padding: 0 2px",
   "claude-system.css | .profile-tab | padding: 8px 2px 10px",
