@@ -2001,20 +2001,30 @@ function RoleRow({ r, onOpen }) {
   const h = r.health || {};
   const tone = h.level === 'red' ? 'risk' : h.level === 'amber' ? 'warn' : 'good';
   const filled = r.headcount ? Math.round((r.headcountFilled / r.headcount) * 100) : 0;
+  // A request still waiting for its decision has not started, so it is not
+  // "Healthy" yet — it is waiting (review D4).
+  const awaiting = r.status === 'pending_approval';
+  const days = h.daysOpen == null ? null : h.daysOpen;
+  // The whole row opens the request; the button is a quiet affordance, not a
+  // primary — a list of five green "Open" buttons left the page with no
+  // primary at all (review D1).
   return (
-    <div className="role-row">
+    <div className={'role-row' + (onOpen ? ' role-row-link' : '')}
+      {...(onOpen ? { role: 'link', tabIndex: 0, onClick: () => onOpen(r), onKeyDown: (e) => { if (e.key === 'Enter') onOpen(r); } } : {})}>
       <div>
         <span className="cell-title">{r.title}</span>
         <span className="cell-meta">{shortReqCode(r.ticketNo)} · {(r.project || {}).name || 'No project'}</span>
       </div>
-      <div><Badge variant={tone === 'risk' ? 'critical' : tone === 'warn' ? 'warning' : 'success'}>{h.label || '—'}</Badge></div>
+      <div>{awaiting
+        ? <Badge variant="soft">Awaiting approval</Badge>
+        : <Badge variant={tone === 'risk' ? 'critical' : tone === 'warn' ? 'warning' : 'success'}>{h.label || '—'}</Badge>}</div>
       <div>
         <span className="progress"><span style={{ width: filled + '%' }} /></span>
         <span className="cell-meta">{r.headcountFilled} of {r.headcount} seats · {(r.pipeline || {}).total || 0} in pipeline</span>
       </div>
       <div className="role-row-end">
-        <span className="idle">{h.daysOpen == null ? '—' : h.daysOpen + 'd'}</span>
-        {onOpen && <button className="btn btn-sm" onClick={() => onOpen(r)}>Open</button>}
+        <span className="idle">{days == null ? '—' : `Open ${days} ${days === 1 ? 'day' : 'days'}`}</span>
+        {onOpen && <button className="btn btn-ghost btn-sm" tabIndex={-1} onClick={(e) => { e.stopPropagation(); onOpen(r); }}>Open</button>}
       </div>
     </div>
   );
@@ -2594,7 +2604,7 @@ function DirectorDashboard({ user, data, onNavigate, notice }) {
           meta={`${awaitingApproval.length} request${awaitingApproval.length === 1 ? '' : 's'} · ${pendingOffers} offer${pendingOffers === 1 ? '' : 's'}`} />
         <KpiCard label="Overdue roles" value={d ? overdue : '—'} tone={overdue ? 'kpi-risk' : ''} meta="Open longer than 60 days" />
         <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of ${k.headcountTotal ?? 0} planned`} />
-        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.offerAcceptanceRate == null ? 'Offer acceptance not yet measured' : `Offer acceptance ${k.offerAcceptanceRate}%`} />
+        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.timeToFillDays == null ? 'No role filled yet' : 'Average, request opened to filled'} />
       </div>
 
       <div className="dash-grid-2">
@@ -2702,7 +2712,7 @@ function ExecutiveDashboard({ user, data, onNavigate, notice }) {
                     <td data-label="Project">{(r.project || {}).name || '—'}</td>
                     <td data-label="Seats">{r.headcountFilled} / {r.headcount}</td>
                     <td data-label="Days open">{(r.health || {}).daysOpen ?? '—'}</td>
-                    <td data-label="Health"><ReqHealth health={r.health} /></td>
+                    <td data-label="Health"><ReqHealth health={r.health} status={r.status} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -3017,7 +3027,12 @@ function CountPill({ n, total, noun }) {
 // SLA / aging indicator for a hiring request. Reads the `health` object the
 // requests API already returns ({ level, label, daysOpen }); renders nothing
 // when the API did not supply it.
-function ReqHealth({ health, compact }) {
+function ReqHealth({ health, compact, status }) {
+  // Sourcing has not started on a request still waiting for its decision, so
+  // its clock is not "Healthy" — say what it is waiting on (review D4/R8).
+  if (status === 'pending_approval') {
+    return <span className="sla sla-waiting" title="Waiting for approval; sourcing starts once approved"><i />{compact ? '' : 'Awaiting approval'}</span>;
+  }
   if (!health || !health.level) return <span className="muted">—</span>;
   const tone = health.level === 'red' ? 'red' : health.level === 'amber' ? 'amber' : 'green';
   return (
@@ -4801,7 +4816,16 @@ const PRIORITY = {
   low: { label: 'Low', variant: 'soft' }, medium: { label: 'Medium', variant: 'info' },
   high: { label: 'High', variant: 'warning' }, critical: { label: 'Critical', variant: 'critical' },
 };
-function PriorityBadge({ p }) { const x = PRIORITY[p] || { label: p, variant: 'soft' }; return <Badge variant={x.variant}>{x.label}</Badge>; }
+// Priority is a level, not a state, so it is not a coloured pill: pills carry
+// status, and a green "Medium" read exactly like a green "Sourcing" beside it
+// (review R1). Bars show the level; only Critical takes a colour.
+function PriorityBadge({ p }) {
+  const x = PRIORITY[p] || { label: p };
+  const level = { low: 1, medium: 2, high: 3, critical: 3 }[p] || 0;
+  return <span className={'prio prio-' + (p || 'none')} title={`${x.label} priority`}>
+    <span className="prio-bars" aria-hidden="true">{[1, 2, 3].map((i) => <i key={i} className={i <= level ? 'on' : ''} />)}</span>{x.label}
+  </span>;
+}
 // Request status badge — reuses the existing REQ_STATUS label/variant vocabulary.
 function ReqStatusBadge({ status, displayStatus }) {
   const x = REQ_STATUS[status];
@@ -4870,7 +4894,7 @@ function RequestTicketCard({ r, onOpen }) {
 
         <div className="rq-foot">
           <ReqStatusBadge status={r.status} displayStatus={r.displayStatus} />
-          {r.health && <ReqHealth health={r.health} />}
+          {r.health && <ReqHealth health={r.health} status={r.status} />}
         </div>
       </div>
     </div>
@@ -5063,13 +5087,13 @@ function RequestsPage({ user, initialFilters }) {
                 {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
                   : !canAssign ? <span className="muted">Unassigned</span>
                   : canAssignStatus(r.status) ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign</button>
-                  : <button className="btn btn-ghost btn-sm" disabled title={ASSIGN_BLOCKED_TITLE}>Assign</button>}
+                  : <span className="muted" title={ASSIGN_BLOCKED_TITLE}>After approval</span>}
               </td>
               <td data-priority="secondary" data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
               <td data-label="Priority"><PriorityBadge p={r.priority} /></td>
               <td data-label="Status"><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
               <td data-priority="secondary" data-label="Idle" className="cell-sub-only">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
-              <td data-label="SLA"><ReqHealth health={r.health} /></td>
+              <td data-label="SLA"><ReqHealth health={r.health} status={r.status} /></td>
             </tr>
           ))}</tbody>
         </table></div>
@@ -5764,7 +5788,7 @@ function TicketHeader({ req, children, onBack }) {
     crumb="Hiring Request" title={req.title} actions={children}
     sub={<><span className="th-meta"><span className="code-pill" title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span>
       <ReqStatusBadge status={req.status} displayStatus={req.displayStatus} />
-      {req.priority && <PriorityBadge p={req.priority} />}{req.health && <ReqHealth health={req.health} />}</span>
+      {req.priority && <PriorityBadge p={req.priority} />}{req.health && <ReqHealth health={req.health} status={req.status} />}</span>
       <span className="th-sub"><span><em>Department</em>{req.department?.name || '—'}</span>
       <span><em>Project / Site</em>{placeLabel(req)}</span>
       {req.headcount != null && <span><em>Headcount</em>{req.headcountFilled ?? 0} of {req.headcount}</span>}</span></>} />

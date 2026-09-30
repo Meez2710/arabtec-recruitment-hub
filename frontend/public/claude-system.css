@@ -972,6 +972,11 @@ table.candidates-table {
 .tag-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .tag-row > .tag-toggle { margin: 0; }
 .user-form-rest { margin-top: var(--sp-4); }
+/* Priority level (PriorityBadge): three small bars and a word, no pill. */
+.prio { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: 13px; white-space: nowrap; }
+.prio-bars { display: inline-flex; align-items: flex-end; gap: var(--sp-1); }
+.prio-bars i { display: block; width: 4px; border-radius: 1px; }
+.prio-bars i:nth-child(1) { height: 6px; } .prio-bars i:nth-child(2) { height: 9px; } .prio-bars i:nth-child(3) { height: 12px; }
 .user-form-switch { display: flex; align-items: center; min-height: var(--cl-ctl-lg); }
 /* Standalone interview / offer: the picked candidate and the Talent Pool
    search results (Interviews → Schedule interview, Offers → Create offer). */
