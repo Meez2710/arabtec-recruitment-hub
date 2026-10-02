@@ -1155,13 +1155,16 @@ export const Assessments = {
       technical_justification: d.technicalJustification || null,
       submitted: d.submitted ? 1 : 0,
     };
+    // evaluator_id/evaluator_name are the "last saved by" shown on the form, so
+    // an update records the actual editor; earlier authors stay in the audit log.
     if (existing) {
-      run(`UPDATE application_assessment SET behavioral=?,technical=?,critical_flags=?,recommendation=?,behavioral_fit=?,technical_fit=?,behavioral_justification=?,technical_justification=?,submitted=?,updated_at=? WHERE id=?`,
-        [cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted, nowISO(), existing.id]);
+      run(`UPDATE application_assessment SET evaluator_id=?,evaluator_name=?,behavioral=?,technical=?,critical_flags=?,recommendation=?,behavioral_fit=?,technical_fit=?,behavioral_justification=?,technical_justification=?,submitted=?,updated_at=? WHERE id=?`,
+        [d.evaluatorId, d.evaluatorName, cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted, nowISO(), existing.id]);
       return get('SELECT * FROM application_assessment WHERE id=?', [existing.id]);
     }
-    const r = run(`INSERT INTO application_assessment (application_id,evaluator_type,evaluator_id,evaluator_name,behavioral,technical,critical_flags,recommendation,behavioral_fit,technical_fit,behavioral_justification,technical_justification,submitted) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [d.applicationId, d.evaluatorType, d.evaluatorId, d.evaluatorName, cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted]);
+    const now = nowISO();
+    const r = run(`INSERT INTO application_assessment (application_id,evaluator_type,evaluator_id,evaluator_name,behavioral,technical,critical_flags,recommendation,behavioral_fit,technical_fit,behavioral_justification,technical_justification,submitted,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [d.applicationId, d.evaluatorType, d.evaluatorId, d.evaluatorName, cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted, now, now]);
     return get('SELECT * FROM application_assessment WHERE id=?', [Number(r.lastInsertRowid)]);
   },
   finalDecision(appId) { return get('SELECT * FROM application_final_decision WHERE application_id=?', [appId]); },

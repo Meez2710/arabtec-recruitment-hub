@@ -689,6 +689,7 @@ const NAV = [
   { key: 'sites', label: 'Sites', icon: 'pin', perm: 'org.manage' },
   { key: 'departments', label: 'Departments', icon: 'building', perm: 'org.manage' },
   { key: 'notifications', label: 'Notification Settings', icon: 'bell', perm: 'notification.manage' },
+  { key: 'assessmentPolicy', label: 'Assessment Settings', icon: 'doc', perm: 'interview.assessment_policy' },
   { key: 'users', label: 'Users', icon: 'users', perm: 'user.manage' },
   { key: 'roles', label: 'Roles & Permissions', icon: 'shield', perm: 'role.manage' },
   { key: 'control', label: 'Control Center', icon: 'gear', perm: 'app.manage_ui' },
@@ -1502,6 +1503,9 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? <div><PageHead crumb="Administration / Notifications" title="Notification Settings"
           sub="Which events send an in-app alert or an email, and to whom." /><NotificationsPanel user={user} /></div>
       : <Forbidden what="Notification Settings" need="HR, Recruitment or System Admin" />,
+    assessmentPolicy: can(user, 'interview.assessment_policy')
+      ? <AssessmentPolicyPage user={user} />
+      : <Forbidden what="Assessment Settings" need="System Admin" />,
     audit: <AuditPage user={user} />,
   }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} />;
 
@@ -6707,8 +6711,17 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   const c = app.candidate || {};
   const toast = useToast();
   const titleId = useId();
-  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  // Unsaved assessment edits must not vanish with the drawer: closing asks first.
+  const assessDirty = useRef(false);
+  const requestClose = useCallback(() => {
+    if (assessDirty.current && !window.confirm('Discard unsaved assessment changes?')) return;
+    onClose();
+  }, [onClose]);
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(requestClose);
   const [tab, setTab] = useState('profile'); // profile | assessment
+  // Once opened, the assessment stays mounted (hidden) so switching to the
+  // Candidate tab and back keeps any unsaved edits.
+  const [assessOpened, setAssessOpened] = useState(false);
   const [cand, setCand] = useState(c);
   const [resumeBusy, setResumeBusy] = useState(false);
   const canEditCand = user?.permissions?.includes('candidate.edit');
@@ -6734,16 +6747,17 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   }
 
   return (
-    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    // The assessment tab gets a wider drawer: the form is a document laid out like the A4 sheet.
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
       <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}
         tabIndex="-1" onKeyDown={onDialogKeyDown}
-        style={{ maxWidth: 560, marginLeft: 'auto', height: '100vh', borderRadius: 0, display: 'flex', flexDirection: 'column' }}>
+        style={{ maxWidth: tab === 'assessment' ? 960 : 560, marginLeft: 'auto', height: '100vh', borderRadius: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="modal-head" style={{ borderTop: '4px solid var(--green)' }}>
           <div>
             <h3 id={titleId} style={{ margin: 0 }}>{c.fullName}</h3>
             <div className="muted" style={{ fontSize: 12 }}>{c.candidateNo} · {app.applicationNo} · <AppStatusBadge status={app.status} /></div>
           </div>
-          <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={onClose}><Icon name="close" size={16} /></button>
+          <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={requestClose}><Icon name="close" size={16} /></button>
         </div>
         <div style={{ display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid var(--border)' }}>
           {/* Selecting a tab may not change its metrics. fontWeight used to be
@@ -6756,7 +6770,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
               already reserved as `2px solid transparent` on the unselected tab,
               so it never moved anything either. */}
           {[['profile', 'Candidate'], ['assessment', 'Interview Assessment']].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: 700 }}>{label}</button>
+            <button key={k} onClick={() => { setTab(k); if (k === 'assessment') setAssessOpened(true); }} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: 700 }}>{label}</button>
           ))}
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
@@ -6790,8 +6804,11 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
               {app.rejectionReason && <Info label="Rejection Reason">{app.rejectionReason}</Info>}
               {app.onHoldReason && <Info label="On Hold Reason">{app.onHoldReason}</Info>}
             </>
-          ) : (
-            <AssessmentPanel app={app} canFeedback={canFeedback} />
+          ) : null}
+          {(tab === 'assessment' || assessOpened) && (
+            <div hidden={tab !== 'assessment'}>
+              <AssessmentPanel app={app} canFeedback={canFeedback} onDirtyChange={(d) => { assessDirty.current = d; }} />
+            </div>
           )}
         </div>
       </div>
@@ -6799,17 +6816,146 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   );
 }
 
-// Interview assessment: HR + technical evaluations (Big-Five + technical competency,
-// critical flags, recommendation, fit) plus the shared final decision. Matches the PDF form.
-function AssessmentPanel({ app, canFeedback }) {
+// Interview assessment — ONE canonical document, laid out like the approved
+// Arabtec assessment sheet: Candidate Personal Information, HR Assessment
+// (Big Five), Technical Assessment, Critical Flags, Final Recommendation.
+// Which parts this user may see or change is decided on the server
+// (lib/assessment-policy.js) and arrives as bundle.permissions; withheld values
+// never arrive at all. This file makes no role decisions of its own.
+const ASSESS_NOT_RECORDED = 'Not recorded';
+const ASSESS_SECTIONS = {
+  hr: { policy: 'assessment.behavioral', field: 'behavioral', just: 'behavioralJustification', justPolicy: 'assessment.finalRecommendation.behavioralJustification', title: 'HR Assessment — Behavioral (Big Five Model)', short: 'Behavioral', fitLabel: 'Behavioral Fit', evaluator: 'HR evaluation' },
+  technical: { policy: 'assessment.technical', field: 'technical', just: 'technicalJustification', justPolicy: 'assessment.finalRecommendation.technicalJustification', title: 'Technical Assessment — Role Competency', short: 'Technical', fitLabel: 'Technical Fit', evaluator: 'Technical evaluation' },
+};
+// Used only when the server's metadata predates the candidate field list.
+const ASSESS_CANDIDATE_FIELDS = [
+  ['assessment.candidate.fullName', 'Full Name', 'fullName'], ['assessment.candidate.position', 'Position', 'position'],
+  ['assessment.candidate.department', 'Department', 'department'], ['assessment.candidate.interviewDate', 'Interview Date', 'interview'],
+  ['assessment.candidate.education', 'Education', 'education'], ['assessment.candidate.yearsExperience', 'Years of Experience', 'yearsExperience'],
+  ['assessment.candidate.currentEmployer', 'Current Employer', 'currentEmployer'], ['assessment.candidate.availability', 'Notice / Availability', 'noticePeriod'],
+  ['assessment.candidate.currentSalary', 'Current Salary', 'currentSalary'], ['assessment.candidate.expectedSalary', 'Expected Salary', 'expectedSalary'],
+].map(([policy, label, key]) => ({ policy, label, key }));
+const ASSESS_FIT_RANGE = { strong: '4.2+', acceptable: '3.5–4.1', borderline: '3.0–3.4', weak: '<3.0' };
+const assessCriterionKey = (type, key) => `${ASSESS_SECTIONS[type].policy}.${key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())}`;
+
+// Form state from a saved evaluation (or blank). Scores are kept as strings:
+// '' unanswered, '1'..'5', 'na'.
+function assessFormState(existing, criteria, flagsMeta) {
+  const rows = {};
+  (criteria || []).forEach((cr) => {
+    const r = existing?.rows?.[cr.key];
+    rows[cr.key] = { score: r?.score == null ? '' : String(r.score), notes: r?.notes || '' };
+  });
+  const flags = {};
+  (flagsMeta || []).forEach((f) => { flags[f.key] = !!existing?.criticalFlags?.[f.key]; });
+  return { rows, flags, recommendation: existing?.recommendation || '', justification: existing?.justification || '' };
+}
+// Live section summary: numeric rows only, one-decimal half-up rounding, band
+// from the server's fit thresholds. Mirrors the server, which stays authoritative.
+function assessSummary(rows, criteria, fitLevels) {
+  let sum = 0, scored = 0, na = 0, open = 0;
+  (criteria || []).forEach((cr) => {
+    const s = rows[cr.key]?.score;
+    if (s === 'na') na++; else if (s) { sum += Number(s); scored++; } else open++;
+  });
+  const average = scored ? Math.round((sum / scored) * 10) / 10 : null;
+  const fit = average == null ? null : (fitLevels || []).find((f) => average >= f.min) || null;
+  return { average, scored, na, open, fit };
+}
+function assessStatusLine(ev) {
+  if (!ev) return 'Status: Not started';
+  return ev.submitted
+    ? `Status: Submitted · Completed by ${ev.evaluatorName || ASSESS_NOT_RECORDED}${ev.updatedAt ? ' · ' + fmtDate(ev.updatedAt) : ''}`
+    : `Status: Draft · Last saved by ${ev.evaluatorName || ASSESS_NOT_RECORDED}${ev.updatedAt ? ' · ' + fmtDate(ev.updatedAt) : ''}`;
+}
+
+// One evaluator's draft: everything needed to edit, save, submit and reopen an
+// HR or Technical evaluation, independent of where its parts are drawn.
+function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSaved, onDirtyChange }) {
+  const toast = useToast();
+  const s = ASSESS_SECTIONS[type];
+  const criteria = (meta && (type === 'hr' ? meta.behavioralCriteria : meta.technicalCriteria)) || [];
+  const flagsMeta = meta?.criticalFlags;
+  const fresh = () => assessFormState(existing, criteria, flagsMeta);
+  const [form, setForm] = useState(fresh);
+  const [base, setBase] = useState(form); // what the server holds, as form state
+  const [editing, setEditing] = useState(!existing?.submitted);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [error, setError] = useState(null); // { text, submit, retry }
+  const [stale, setStale] = useState(false);
+  const dirty = JSON.stringify(form) !== JSON.stringify(base);
+  useEffect(() => { onDirtyChange && onDirtyChange(type, dirty); }, [dirty]);
+
+  // A refreshed evaluation (or the form metadata arriving) replaces the form
+  // only when nothing is unsaved; otherwise the edits stay and the user is told
+  // the record moved underneath them.
+  const seen = useRef({ existing, n: criteria.length });
+  useEffect(() => {
+    if (seen.current.existing === existing && seen.current.n === criteria.length) return;
+    seen.current = { existing, n: criteria.length };
+    const next = assessFormState(existing, criteria, flagsMeta);
+    if (!dirty) { setForm(next); setBase(next); setEditing(!existing?.submitted); setStale(false); }
+    else if (JSON.stringify(next) !== JSON.stringify(base)) setStale(true);
+  }, [existing, criteria.length]);
+
+  const visibleCriteria = criteria.filter((cr) => perm(assessCriterionKey(type, cr.key)).canView);
+  // An average over a partly hidden section would reveal the hidden scores.
+  const summary = visibleCriteria.length === criteria.length && criteria.length ? assessSummary(form.rows, criteria, meta?.fitLevels) : null;
+  const locked = !editable || !editing;
+  const setRow = (key, patch) => setForm((f) => ({ ...f, rows: { ...f.rows, [key]: { ...f.rows[key], ...patch } } }));
+  const setFlag = (key, on) => setForm((f) => ({ ...f, flags: { ...f.flags, [key]: on } }));
+  const setRecommendation = (v) => setForm((f) => ({ ...f, recommendation: v }));
+  const setJustification = (v) => setForm((f) => ({ ...f, justification: v }));
+
+  async function save(submit) {
+    if (busyRef.current) return; // one save at a time — no duplicate submissions
+    setError(null);
+    if (submit) {
+      const missing = visibleCriteria.filter((cr) => !form.rows[cr.key]?.score).map((cr) => cr.label);
+      if (missing.length) { setError({ text: `Answer every criterion (a score or N/A) before submitting. Missing: ${missing.join(', ')}.` }); return; }
+      if (!form.recommendation) { setError({ text: 'Choose a recommendation before submitting.' }); return; }
+    }
+    busyRef.current = true; setBusy(true);
+    const sent = form;
+    // Only the parts this user may change are sent; the server keeps the rest.
+    const section = {};
+    criteria.forEach((cr) => {
+      if (!perm(assessCriterionKey(type, cr.key)).canEdit) return;
+      const r = sent.rows[cr.key];
+      section[cr.key] = { score: !r.score ? null : r.score === 'na' ? 'na' : Number(r.score), notes: r.notes };
+    });
+    const body = { evaluatorType: type, submitted: !!submit, recommendation: sent.recommendation || null, [s.field]: section };
+    if (perm('assessment.criticalFlags').canEdit) body.criticalFlags = sent.flags;
+    if (perm(s.justPolicy).canEdit) body[s.just] = sent.justification;
+    try {
+      const r = await api.post('/assessments/application/' + appId, body);
+      setBase(sent); setStale(false); setEditing(!submit);
+      toast(submit ? 'Evaluation submitted' : 'Draft saved');
+      onSaved(r && r.assessment);
+    } catch (e) {
+      // The form is left exactly as it was so the save can be retried.
+      setError({ text: `${e.message || 'Save failed'}. Your changes have not been lost.`, submit: !!submit, retry: true });
+      toast(e.message || 'Save failed', 'error');
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  function cancelEdit() {
+    if (dirty && !window.confirm('Discard your unsaved changes to this evaluation?')) return;
+    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false);
+  }
+  return { type, criteria, visibleCriteria, form, dirty, editing, setEditing, editable, locked, busy, error, stale, summary, existing,
+    setRow, setFlag, setRecommendation, setJustification, save, cancelEdit };
+}
+
+function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
   const [bundle, setBundle] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const [evalType, setEvalType] = useState('hr'); // hr | technical
+  const [dirtyParts, setDirtyParts] = useState({}); // { hr, technical, final }
 
-  // The form needs both reads: the approved criteria/weights (`meta`, the same
-  // for every application, so fetched once and kept) and this application's
+  // The form needs both reads: the approved criteria (`meta`, the same for
+  // every application, so fetched once and kept) and this application's
   // bundle. Each read settles on its own — a metadata failure is reported,
   // never swallowed into an endless skeleton, and a bundle that fails on a
   // refresh keeps the last one on screen with a visible caveat. A response
@@ -6832,6 +6978,34 @@ function AssessmentPanel({ app, canFeedback }) {
     setLoadError(failure ? (failure.message || 'Request failed') : null);
   }, [app.id]);
   useEffect(() => { setBundle(null); setLoadError(null); load(); return () => { gen.current++; }; }, [load]);
+  // A save answers with the fresh bundle; use it directly (and drop any older
+  // read still in flight). Without one, re-read.
+  const onSaved = useCallback((fresh) => {
+    if (fresh) { gen.current++; setBundle(fresh); setLoadError(null); } else load();
+  }, [load]);
+
+  // Unsaved edits in either evaluation or the final decision guard leaving.
+  const markDirty = useCallback((part, value) => setDirtyParts((d) => (!!d[part] === value ? d : { ...d, [part]: value })), []);
+  const dirty = Object.values(dirtyParts).some(Boolean);
+  useEffect(() => { onDirtyChange && onDirtyChange(dirty); }, [dirty]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    const navigate = (e) => { if (!window.confirm('Discard unsaved assessment changes?')) e.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    window.addEventListener('ats:before-navigate', navigate);
+    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('ats:before-navigate', navigate); };
+  }, [dirty]);
+
+  // The resolved policy for this user and application. A bundle without one
+  // (an older server) means "visible, editable when the caller may edit".
+  const fallbackEdit = !!canFeedback && bundle?.canEdit !== false;
+  const perm = (key) => {
+    const p = bundle?.permissions?.[key] || { canView: true, canEdit: fallbackEdit };
+    return { canView: !!p.canView, canEdit: !!p.canEdit && !!canFeedback };
+  };
+  const hr = useEvaluationDraft({ type: 'hr', meta, existing: bundle?.hr, editable: perm('assessment.behavioral').canEdit, perm, appId: app.id, onSaved, onDirtyChange: markDirty });
+  const tech = useEvaluationDraft({ type: 'technical', meta, existing: bundle?.technical, editable: perm('assessment.technical').canEdit, perm, appId: app.id, onSaved, onDirtyChange: markDirty });
 
   if (!bundle) return loadError
     ? <LoadError title="Could not load the assessment" text={loadError} onRetry={load} />
@@ -6841,127 +7015,437 @@ function AssessmentPanel({ app, canFeedback }) {
     ? <LoadError title="Could not load the assessment form" text={loadError} onRetry={load} />
     : <Skeleton rows={6} />;
 
-  const existing = bundle[evalType];
+  const ctx = bundle.context || {};
+  const fmtInfo = (key, v) => {
+    if (v == null || v === '') return ASSESS_NOT_RECORDED;
+    if (key === 'interview') return `${fmtDate(v.scheduledAt)} · ${v.interviewNo}${v.type ? ' · ' + ivType(v.type) : ''}${v.status && v.status !== 'scheduled' ? ' · ' + v.status : ''}`;
+    if (key === 'yearsExperience') return `${v} years`;
+    if (key === 'currentSalary' || key === 'expectedSalary') return Number(v).toLocaleString();
+    return String(v);
+  };
+  // A field the user may not see is absent from the bundle and from the page;
+  // the grid simply reflows.
+  const infoFields = (meta.candidateFields || ASSESS_CANDIDATE_FIELDS)
+    .filter((f) => perm(f.policy).canView && Object.prototype.hasOwnProperty.call(ctx, f.key));
+  const show = { hr: perm('assessment.behavioral').canView, technical: perm('assessment.technical').canView };
+  const drafts = [['hr', hr], ['technical', tech]].filter(([t]) => show[t]).map(([, d]) => d);
+  const flagGroups = perm('assessment.criticalFlags').canView ? drafts : [];
+  const showFinal = perm('assessment.finalRecommendation').canView;
+  const editableDrafts = drafts.filter((d) => d.editable);
+
   return (
-    <div>
+    <div className="assess">
       {loadError && <RefetchError text={`Could not refresh this assessment: ${loadError}. Showing the last loaded evaluation.`} onRetry={load} />}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-        {[['hr', 'HR / Behavioral'], ['technical', 'Technical']].map(([k, label]) => (
-          <button key={k} className={'tag-toggle' + (evalType === k ? ' on' : '')} onClick={() => setEvalType(k)}>
-            {label}{bundle[k]?.submitted ? ' ✓' : ''}
-          </button>
-        ))}
+      <article className="assess-doc" aria-label="Interview assessment">
+        <h2 className="assess-doc-title">ARABTEC CONSTRUCTION — ASSESSMENT &amp; EVALUATION</h2>
+
+        {infoFields.length > 0 && (
+          <section className="assess-sec" aria-labelledby={`assess-${app.id}-info`}>
+            <h3 className="assess-sec-title" id={`assess-${app.id}-info`}>Candidate Personal Information</h3>
+            <dl className="assess-info">
+              {infoFields.map((f) => (
+                <div key={f.key} className="assess-info-cell"><dt>{f.label}</dt><dd>{fmtInfo(f.key, ctx[f.key])}</dd></div>
+              ))}
+            </dl>
+          </section>
+        )}
+
+        {show.hr && <EvaluationForm type="hr" meta={meta} draft={hr} perm={perm} appId={app.id} readOnly={!hr.editable} onSaved={onSaved} />}
+        {show.technical && <EvaluationForm type="technical" meta={meta} draft={tech} perm={perm} appId={app.id} readOnly={!tech.editable} onSaved={onSaved} />}
+
+        {flagGroups.length > 0 && <AssessmentFlags meta={meta} drafts={flagGroups} canEditFlags={perm('assessment.criticalFlags').canEdit} />}
+
+        {(showFinal || drafts.length > 0) && (
+          <section className="assess-sec" aria-labelledby={`assess-${app.id}-final`}>
+            <h3 className="assess-sec-title" id={`assess-${app.id}-final`}>Final Recommendation</h3>
+            {showFinal && <FinalDecisionBox bundle={bundle} meta={meta} canFeedback={perm('assessment.finalRecommendation').canEdit} appId={app.id} onSaved={onSaved} onDirtyChange={markDirty} />}
+            {drafts.map((d) => <AssessmentFit key={d.type} draft={d} meta={meta} appId={app.id} perm={perm} />)}
+          </section>
+        )}
+
+        {editableDrafts.length > 0 && (
+          <div className="assess-bar" role="group" aria-label="Save or submit evaluations">
+            {editableDrafts.map((d) => <AssessmentSaveRow key={d.type} draft={d} />)}
+          </div>
+        )}
+      </article>
+      <div className="assess-actions">
+        <button type="button" className="btn btn-secondary" onClick={() => api.download(`/assessments/application/${app.id}/preview`).catch((e) => toast(e.message || 'Could not open the preview', 'error'))}>Preview printable form</button>
       </div>
-      <p className="muted" style={{ fontSize: 11.5, marginTop: 0 }}>
-        {Object.entries(meta.scoreGuide).sort((a, b) => b[0] - a[0]).map(([score, label]) => `${score} ${label}`).join(' · ')}
+    </div>
+  );
+}
+
+// One assessment table (HR or Technical), drawn like the sheet.
+function EvaluationForm({ type, meta, draft, perm, appId, readOnly }) {
+  const s = ASSESS_SECTIONS[type];
+  const id = `assess-${appId}-${type}`;
+  const ev = draft.existing;
+  const fitLabel = (v) => (meta.fitLevels || []).find((f) => f.value === v)?.label || v;
+  return (
+    <section className="assess-sec" aria-labelledby={id + '-title'}>
+      <h3 className="assess-sec-title" id={id + '-title'}>{s.title}</h3>
+      <p className="assess-sec-meta">
+        {assessStatusLine(ev)}{readOnly ? ' · View only' : ''}{draft.dirty ? ' · Unsaved changes' : ''}
       </p>
-
-      <EvaluationForm
-        key={evalType}
-        type={evalType}
-        meta={meta}
-        existing={existing}
-        readOnly={!canFeedback}
-        onSaved={() => { toast('Evaluation saved'); load(); }}
-        appId={app.id}
-      />
-
-      <FinalDecisionBox bundle={bundle} meta={meta} canFeedback={canFeedback} appId={app.id} onSaved={() => { toast('Final decision recorded'); load(); }} />
-    </div>
+      {draft.stale && <div className="assess-note assess-warn" role="status">This evaluation was saved by someone else while you were editing. Your edits are kept; saving will replace their version.</div>}
+      {type === 'hr' && meta.behavioralInstruction && <p className="assess-instruction">{meta.behavioralInstruction}</p>}
+      <table className="assess-table">
+        <colgroup><col className="assess-col-crit" /><col className="assess-col-desc" /><col className="assess-col-score" /><col className="assess-col-notes" /></colgroup>
+        <thead><tr><th scope="col">Criterion</th><th scope="col">What to Evaluate</th><th scope="col">Score 1–5</th><th scope="col">Notes</th></tr></thead>
+        <tbody>
+          {draft.visibleCriteria.map((cr) => (
+            <ScoreRow key={cr.key} idBase={`${id}-${cr.key}`} label={cr.label} description={cr.description}
+              value={draft.form.rows[cr.key]?.score} notes={draft.form.rows[cr.key]?.notes}
+              readOnly={draft.locked || !perm(assessCriterionKey(type, cr.key)).canEdit} scoreGuide={meta.scoreGuide} naLabel={meta.naLabel}
+              onChange={(v) => draft.setRow(cr.key, { score: v })} onNotes={(v) => draft.setRow(cr.key, { notes: v })} />
+          ))}
+        </tbody>
+      </table>
+      <p className="assess-guide">Score Guide: 5 Excellent • 4 Proficient • 3 Average • 2 Below Standard • 1 Unsuitable • N/A {meta.naLabel || 'Not Applicable'}</p>
+      {draft.summary && (
+        <p className="assess-summary">
+          Average: <strong>{draft.summary.average != null ? draft.summary.average.toFixed(1) + ' / 5' : 'Not rated'}</strong>
+          {draft.summary.fit && <> · Fit: <strong>{draft.summary.fit.label}</strong></>}
+          {' · '}{draft.summary.scored} scored · {draft.summary.na} N/A{draft.summary.open ? ` · ${draft.summary.open} unanswered` : ''}
+        </p>
+      )}
+      {draft.summary && draft.summary.scored === 0 && draft.summary.na > 0 && <div className="assess-note assess-warn">No scored evidence — every answered criterion is N/A, so this section is Not rated.</div>}
+      {ev?.fitHistorical && <div className="assess-note">Previously recorded fit (manual, historical): {fitLabel(ev.savedFit)}. Fit is now derived from the scores.</div>}
+    </section>
   );
 }
 
-function ScoreRow({ label, hint, value, onChange, readOnly }) {
-  const opts = ['', '1', '2', '3', '4', '5', 'na'];
+// One criterion row: 1 2 3 4 5 N/A as a compact segmented control that sits
+// inside the table cell; read-only shows the chosen value plainly.
+function ScoreRow({ idBase, label, description, value, notes, onChange, onNotes, readOnly, scoreGuide, naLabel }) {
+  const guide = scoreGuide || {};
+  const na = naLabel || 'Not Applicable';
+  const options = ['1', '2', '3', '4', '5', 'na'];
+  const optionLabel = (v) => (v === 'na' ? `N/A — ${na}` : `${v} — ${guide[v] || ''}`);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-      <div><div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>{hint && <div className="muted fine-key" style={{ lineHeight: 1.4 }}>{hint}</div>}</div>
-      <select value={value ?? ''} disabled={readOnly} onChange={(e) => onChange(e.target.value)} style={{ padding: '5px 8px', border: '1px solid var(--border)', borderRadius: 6, minWidth: 70 }}>
-        {opts.map((o) => <option key={o} value={o}>{o === '' ? '—' : o === 'na' ? 'N/A' : o}</option>)}
-      </select>
-    </div>
+    <tr>
+      <th scope="row" className="assess-crit">{label}</th>
+      <td className="assess-desc">{description}</td>
+      <td className="assess-score">
+        {readOnly
+          ? (value
+            ? <span className="assess-score-val" aria-label={`${label} score: ${optionLabel(value)}`}><strong>{value === 'na' ? 'N/A' : value}</strong><span>{value === 'na' ? na : guide[value]}</span></span>
+            : <span className="assess-score-val assess-score-empty" aria-label={`${label} score: not answered`}>—</span>)
+          : (
+            <div className="assess-seg" role="radiogroup" aria-label={`${label} score`}>
+              {options.map((v) => (
+                <button key={v} type="button" role="radio" aria-checked={value === v} aria-label={optionLabel(v)} title={optionLabel(v)}
+                  className={'assess-seg-btn' + (value === v ? ' on' : '')} onClick={() => onChange(value === v ? '' : v)}>{v === 'na' ? 'N/A' : v}</button>
+              ))}
+            </div>
+          )}
+      </td>
+      <td className="assess-notes">
+        {readOnly
+          ? <div className="assess-notes-text">{notes || ''}</div>
+          : <textarea id={idBase + '-notes'} rows="2" aria-label={`${label} notes`} placeholder="Notes" value={notes ?? ''} onChange={(e) => onNotes(e.target.value)} />}
+      </td>
+    </tr>
   );
 }
 
-function EvaluationForm({ type, meta, existing, readOnly, onSaved, appId }) {
-  const toast = useToast();
-  const criteria = type === 'hr' ? meta.behavioralCriteria : meta.technicalCriteria;
-  const stored = type === 'hr' ? existing?.behavioral : existing?.technical;
-  const [scores, setScores] = useState(() => {
-    const init = {}; criteria.forEach((cr) => { init[cr.key] = stored?.[cr.key]?.score != null ? String(stored[cr.key].score) : ''; });
-    return init;
-  });
-  const [flags, setFlags] = useState(() => {
-    const init = {}; (meta.criticalFlags || []).forEach((f) => { init[f.key] = !!existing?.criticalFlags?.[f.key]; }); return init;
-  });
-  const [rec, setRec] = useState(existing?.recommendation || '');
-  const [fit, setFit] = useState((type === 'hr' ? existing?.behavioralFit : existing?.technicalFit) || '');
-  const [justification, setJustification] = useState((type === 'hr' ? existing?.behavioralJustification : existing?.technicalJustification) || '');
-  const [busy, setBusy] = useState(false);
-
-  async function save() {
-    setBusy(true);
-    const scoreObj = {}; Object.entries(scores).forEach(([k, v]) => { if (v) scoreObj[k] = { score: v === 'na' ? null : Number(v) }; });
-    const body = { evaluatorType: type, criticalFlags: flags, recommendation: rec || null };
-    if (type === 'hr') { body.behavioral = scoreObj; body.behavioralFit = fit || null; body.behavioralJustification = justification; }
-    else { body.technical = scoreObj; body.technicalFit = fit || null; body.technicalJustification = justification; }
-    try { await api.post('/assessments/application/' + appId, body); onSaved(); }
-    catch (e) { toast(e.message, 'error'); }
-    finally { setBusy(false); }
-  }
-
+// Critical Flags — one line per evaluation the user may see, each flag labelled
+// with its own text so assistive technology announces what it means.
+function AssessmentFlags({ meta, drafts, canEditFlags }) {
+  const raised = drafts.some((d) => Object.values(d.form.flags || {}).some(Boolean));
   return (
-    <div className="card card-pad" style={{ marginBottom: 14 }}>
-      <div className="section-title" style={{ marginTop: 0 }}>{type === 'hr' ? 'Behavioral (Big-Five)' : 'Technical Competency'}</div>
-      {criteria.map((cr) => (
-        <ScoreRow key={cr.key} label={cr.label} hint={cr.hint} value={scores[cr.key]} readOnly={readOnly} onChange={(v) => setScores((s) => ({ ...s, [cr.key]: v }))} />
-      ))}
+    <section className="assess-sec" aria-label="Critical Flags — Review if Any Are True">
+      <h3 className="assess-sec-title">Critical Flags — Review if Any Are True</h3>
+      {drafts.map((d) => {
+        const editable = canEditFlags && !d.locked;
+        return (
+          <div key={d.type} className="assess-flags" role="group" aria-label={`Critical flags — ${ASSESS_SECTIONS[d.type].evaluator}`}>
+            <span className="assess-flags-who">{ASSESS_SECTIONS[d.type].evaluator}:</span>
+            {(meta.criticalFlags || []).map((f) => {
+              const fid = `assess-flag-${d.type}-${f.key}`;
+              const on = !!d.form.flags[f.key];
+              // View-only: marked as on the sheet, not shown as a greyed-out control.
+              if (!editable) return <span key={f.key} className={'assess-box' + (on ? ' on' : '')} aria-label={`${f.label}: ${on ? 'flagged' : 'not flagged'}`}>{on ? '☒' : '☐'} {f.label}</span>;
+              return (
+                <label key={f.key} htmlFor={fid} className="assess-flag">
+                  <input id={fid} type="checkbox" aria-label={f.label} checked={on}
+                    onChange={(e) => d.setFlag(f.key, e.target.checked)} />
+                  <span>{f.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        );
+      })}
+      {raised && <div className="assess-note"><span className="badge badge-warning">Review required</span> A critical flag is set. This does not reject the candidate.</div>}
+    </section>
+  );
+}
 
-      <div className="section-title">Critical Flags</div>
-      {(meta.criticalFlags || []).map((f) => (
-        <label key={f.key} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '4px 0', fontSize: 13 }}>
-          <input type="checkbox" checked={flags[f.key]} disabled={readOnly} onChange={(e) => setFlags((x) => ({ ...x, [f.key]: e.target.checked }))} style={{ marginTop: 2 }} />
-          <span>{f.label}</span>
-        </label>
-      ))}
-
-      <div className="form-grid" style={{ marginTop: 12 }}>
-        <div className="field"><label>Recommendation</label>
-          <select value={rec} disabled={readOnly} onChange={(e) => setRec(e.target.value)}>
-            <option value="">— Select —</option>{meta.decisions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
-        <div className="field"><label>{type === 'hr' ? 'Behavioral Fit' : 'Technical Fit'}</label>
-          <select value={fit} disabled={readOnly} onChange={(e) => setFit(e.target.value)}>
-            <option value="">— Select —</option>{meta.fitLevels.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
+// Behavioral Fit / Technical Fit lines of the Final Recommendation, with the
+// evaluator's recommendation and the PDF's "Justification / Key Strengths".
+function AssessmentFit({ draft, meta, appId, perm }) {
+  const s = ASSESS_SECTIONS[draft.type];
+  const fit = draft.summary?.fit?.value || null;
+  const recId = `assess-${appId}-${draft.type}-rec`;
+  const justId = `assess-${appId}-${draft.type}-just`;
+  const just = perm(s.justPolicy);
+  const justEditable = just.canEdit && !draft.locked;
+  const recLabel = (meta.decisions || []).find((d) => d.value === draft.form.recommendation)?.label;
+  return (
+    <div className="assess-fit">
+      <div className="assess-fit-line">
+        <strong>{s.fitLabel}:</strong>
+        {draft.summary
+          ? (meta.fitLevels || []).map((f) => <span key={f.value} className={'assess-box' + (fit === f.value ? ' on' : '')}>{fit === f.value ? '☒' : '☐'} {f.label} ({ASSESS_FIT_RANGE[f.value] || f.range})</span>)
+          : <span className="assess-muted">Not shown — part of this section is not visible to you.</span>}
       </div>
-      <div className="field"><label>Justification / Notes</label>
-        <textarea rows="3" value={justification} disabled={readOnly} onChange={(e) => setJustification(e.target.value)} placeholder="Evidence, examples, rationale…" /></div>
-
-      {!readOnly && <button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : (existing ? 'Update ' : 'Submit ') + (type === 'hr' ? 'HR Evaluation' : 'Technical Evaluation')}</button>}
-      {existing?.evaluatorName && <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Last saved by {existing.evaluatorName}{existing.updatedAt ? ' · ' + fmtDate(existing.updatedAt) : ''}</div>}
+      <div className="assess-fit-row">
+        <label htmlFor={recId}>{s.short} recommendation</label>
+        {draft.locked
+          ? <span id={recId} className="assess-fit-value">{recLabel || ASSESS_NOT_RECORDED}</span>
+          : <select id={recId} aria-label={`${s.short} recommendation`} value={draft.form.recommendation} onChange={(e) => draft.setRecommendation(e.target.value)}>
+            <option value="">— Select —</option>{(meta.decisions || []).map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select>}
+      </div>
+      {just.canView && (
+        <div className="assess-fit-row assess-just">
+          <label htmlFor={justId}>Justification / Key Strengths</label>
+          {justEditable
+            ? <textarea id={justId} rows="2" value={draft.form.justification} onChange={(e) => draft.setJustification(e.target.value)} placeholder="Evidence, examples, key strengths…" />
+            : <div id={justId} className="assess-fit-value assess-just-text">{draft.form.justification || '—'}</div>}
+        </div>
+      )}
     </div>
   );
 }
 
-function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved }) {
+// Save / submit controls for one evaluation the user may edit.
+function AssessmentSaveRow({ draft }) {
+  const s = ASSESS_SECTIONS[draft.type];
+  const ev = draft.existing;
+  return (
+    <div className="assess-bar-row">
+      <div className="assess-bar-state"><strong>{s.short} assessment</strong> <span className="assess-muted">{assessStatusLine(ev).replace('Status: ', '')}{draft.dirty ? ' · Unsaved changes' : ''}</span></div>
+      {draft.error && (
+        <div className="assess-note assess-warn" role="alert">
+          {draft.error.text}
+          {draft.error.retry && <> <button type="button" className="btn btn-sm btn-secondary" disabled={draft.busy} onClick={() => draft.save(draft.error.submit)}>Retry</button></>}
+        </div>
+      )}
+      <div className="btn-row">
+        {!draft.editing
+          ? <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.setEditing(true)}>Edit evaluation</button>
+          : <>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Save ${s.short.toLowerCase()} draft`} onClick={() => draft.save(false)} disabled={draft.busy}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Save as draft (withdraws submission)' : 'Save draft'}</button>
+            <button type="button" className="btn btn-sm" aria-label={`Submit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.save(true)} disabled={draft.busy}>{draft.busy ? 'Saving…' : 'Submit evaluation'}</button>
+            {ev?.submitted && <button type="button" className="btn btn-sm btn-ghost" onClick={draft.cancelEdit} disabled={draft.busy}>Cancel edit</button>}
+          </>}
+      </div>
+    </div>
+  );
+}
+
+function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved, onDirtyChange }) {
   const toast = useToast();
   const fd = bundle.finalDecision;
-  const [decision, setDecision] = useState(fd?.decision || '');
-  const [notes, setNotes] = useState(fd?.notes || '');
+  const choices = meta.finalDecisions || meta.decisions || [];
+  // A historical value (e.g. "hired") is shown as such, never pre-selected.
+  const savedOf = (f) => ({ decision: f && choices.some((d) => d.value === f.decision) ? f.decision : '', notes: f?.notes || '' });
+  const [base, setBase] = useState(() => savedOf(fd));
+  const [decision, setDecision] = useState(base.decision);
+  const [notes, setNotes] = useState(base.notes);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [error, setError] = useState(null);
+  const dirty = decision !== base.decision || notes !== base.notes;
+  useEffect(() => { onDirtyChange && onDirtyChange('final', dirty); }, [dirty]);
+  // Adopt a refreshed decision unless the user has an unsaved one.
+  const seen = useRef(fd);
+  useEffect(() => {
+    if (seen.current === fd) return;
+    seen.current = fd;
+    if (dirty) return;
+    const next = savedOf(fd); setBase(next); setDecision(next.decision); setNotes(next.notes);
+  }, [fd]);
   async function save() {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setError(null);
+    const sent = { decision, notes };
+    try { const r = await api.post(`/assessments/application/${appId}/final`, sent); setBase(sent); toast('Final decision recorded'); onSaved(r && r.assessment); }
+    catch (e) { setError(`${e.message || 'Save failed'}. Your choice has not been lost.`); toast(e.message || 'Save failed', 'error'); }
+    finally { busyRef.current = false; setBusy(false); }
+  }
+  const notesId = `assess-${appId}-final-notes`;
+  return (
+    <div className="assess-final">
+      {!canFeedback ? (
+        // View-only: the recorded choice as the sheet marks it, not greyed-out controls.
+        <div className="assess-decision" role="group" aria-label={`Final decision: ${choices.find((d) => d.value === decision)?.label || 'not recorded'}`}>
+          <strong>Decision:</strong>
+          {choices.map((d) => <span key={d.value} className={'assess-box' + (decision === d.value ? ' on' : '')}>{decision === d.value ? '☒' : '☐'} {d.label}</span>)}
+        </div>
+      ) : (
+      <div className="assess-decision" role="radiogroup" aria-label="Final decision">
+        <strong>Decision:</strong>
+        {choices.map((d) => {
+          const id = `assess-${appId}-final-${d.value}`;
+          return (
+            <label key={d.value} htmlFor={id} className={'assess-box assess-choice' + (decision === d.value ? ' on' : '')}>
+              <input id={id} type="radio" name={`assess-${appId}-final`} value={d.value} checked={decision === d.value} onChange={() => setDecision(d.value)} />
+              <span>{d.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      )}
+      {fd?.historical && <div className="assess-note">Recorded decision (historical vocabulary): {fd.decisionLabel || fd.decision}</div>}
+      <p className="assess-muted assess-instruction">Records the panel's decision only. It does not move the candidate in the pipeline or create an offer.</p>
+      {(canFeedback || notes) && (
+        <div className="assess-fit-row">
+          <label htmlFor={notesId}>Decision notes</label>
+          {canFeedback
+            ? <textarea id={notesId} rows="2" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            : <div id={notesId} className="assess-fit-value assess-just-text">{notes}</div>}
+        </div>
+      )}
+      {error && <div className="assess-note assess-warn" role="alert">{error}</div>}
+      <div className="assess-final-foot">
+        {fd?.decidedByName && <span className="assess-muted">Decided by {fd.decidedByName}{fd.decidedAt ? ' · ' + fmtDate(fd.decidedAt) : ''}</span>}
+        {canFeedback && <button type="button" className="btn btn-sm" onClick={save} disabled={busy || !decision}>{busy ? 'Saving…' : error ? 'Retry' : 'Record Final Decision'}</button>}
+      </div>
+    </div>
+  );
+}
+
+// Opens the assessment from an interview the user is assigned to — the
+// Technical Interviewer's way in, without access to the hiring request.
+function InterviewAssessmentDrawer({ applicationId, title, user, onClose }) {
+  const titleId = useId();
+  const assessDirty = useRef(false);
+  const requestClose = useCallback(() => {
+    if (assessDirty.current && !window.confirm('Discard unsaved assessment changes?')) return;
+    onClose();
+  }, [onClose]);
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(requestClose);
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
+      <div ref={dialogRef} className="modal assess-drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head">
+          <div><h3 id={titleId}>Interview assessment</h3>{title && <div className="assess-muted">{title}</div>}</div>
+          <button type="button" className="icon-btn" aria-label="Close assessment" onClick={requestClose}><Icon name="close" size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <AssessmentPanel app={{ id: applicationId }} canFeedback={can(user, 'interview.feedback')} onDirtyChange={(d) => { assessDirty.current = d; }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Administration → Interview Settings → Assessment Form → Visibility & Permissions.
+// Edits the server's assessment field policy; the server validates, stores and
+// audits it, and the same policy then drives the form, the API and the preview.
+function AssessmentPolicyPage({ user }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [draft, setDraft] = useState(null); // overrides being edited
+  const [busy, setBusy] = useState(false);
+  const [showCriteria, setShowCriteria] = useState(false);
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try { const r = await api.get('/assessments/policy'); setData(r.policy); setDraft(r.policy.overrides); }
+    catch (e) { setLoadError(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const dirty = !!data && JSON.stringify(draft) !== JSON.stringify(data.overrides);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    const navigate = (e) => { if (!window.confirm('Discard unsaved assessment permission changes?')) e.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    window.addEventListener('ats:before-navigate', navigate);
+    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('ats:before-navigate', navigate); };
+  }, [dirty]);
+
+  if (loadError) return <LoadError title="Could not load assessment permissions" text={loadError} onRetry={load} />;
+  if (!data || !draft) return <Skeleton rows={8} />;
+
+  // Unsaved preview of the server rule (field → its own entry, else its
+  // section's). Saving returns the server's authoritative result.
+  const sectionOf = {};
+  data.sections.forEach((s) => s.fields.forEach((f) => { sectionOf[f.key] = s.key; }));
+  const ruleOf = (aud, key) => draft[aud]?.[key] || data.defaults[aud]?.[key]
+    || (sectionOf[key] && (draft[aud]?.[sectionOf[key]] || data.defaults[aud]?.[sectionOf[key]])) || { view: false, edit: false };
+  const setRule = (aud, key, patch) => setDraft((d) => {
+    const next = { ...ruleOf(aud, key), ...patch };
+    if (patch.view === false) next.edit = false;
+    if (patch.edit === true) next.view = true;
+    return { ...d, [aud]: { ...(d[aud] || {}), [key]: next } };
+  });
+  const clearRule = (aud, key) => setDraft((d) => { const a = { ...(d[aud] || {}) }; delete a[key]; return { ...d, [aud]: a }; });
+
+  async function save(overrides, message) {
     setBusy(true);
-    try { await api.post(`/assessments/application/${appId}/final`, { decision, notes }); onSaved(); }
+    try { const r = await api.put('/assessments/policy', { overrides }); setData(r.policy); setDraft(r.policy.overrides); toast(message); }
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+
+  const row = (key, label, { editable, depth = 0, hint = false }) => (
+    <tr key={key} className={depth ? 'assess-pol-field' : 'assess-pol-section'}>
+      <th scope="row">{label}{hint && <span className="assess-muted"> · follows its section unless changed</span>}</th>
+      {data.audiences.map((a) => {
+        const r = ruleOf(a.key, key);
+        const set = draft[a.key]?.[key];
+        return (
+          <React.Fragment key={a.key}>
+            <td className="assess-pol-cell">
+              <input type="checkbox" aria-label={`${a.label}: view ${label}`} checked={!!r.view} onChange={(e) => setRule(a.key, key, { view: e.target.checked })} />
+            </td>
+            <td className="assess-pol-cell">
+              {editable
+                ? <input type="checkbox" aria-label={`${a.label}: edit ${label}`} checked={!!r.edit} onChange={(e) => setRule(a.key, key, { edit: e.target.checked })} />
+                : <span className="assess-muted" aria-label="Not editable from the assessment">—</span>}
+              {set && <button type="button" className="assess-pol-reset" title="Reset to default" aria-label={`${a.label}: reset ${label} to default`} onClick={() => clearRule(a.key, key)}>↺</button>}
+            </td>
+          </React.Fragment>
+        );
+      })}
+    </tr>
+  );
+
   return (
-    <div className="card card-pad" style={{ borderTop: '3px solid var(--green)' }}>
-      <div className="section-title" style={{ marginTop: 0 }}>Final Decision (shared — recruiter &amp; technical interviewer)</div>
-      <div className="field"><label>Decision</label>
-        <select value={decision} disabled={!canFeedback} onChange={(e) => setDecision(e.target.value)}>
-          <option value="">— Select —</option>{meta.finalDecisions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
-      <div className="field"><label>Notes</label><textarea rows="2" value={notes} disabled={!canFeedback} onChange={(e) => setNotes(e.target.value)} /></div>
-      {canFeedback && <button className="btn" onClick={save} disabled={busy || !decision}>{busy ? 'Saving…' : 'Record Final Decision'}</button>}
-      {fd?.decidedByName && <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Decided by {fd.decidedByName}{fd.decidedAt ? ' · ' + fmtDate(fd.decidedAt) : ''}</div>}
+    <div>
+      <PageHead crumb="Administration / Interview Settings / Assessment Form" title="Assessment Visibility & Permissions"
+        sub="Who may view or edit each part of the interview assessment. These rules apply to the form, the API and the printable form alike. They can only narrow existing access — salary always also requires the salary permission."
+        actions={<>
+          <button type="button" className="btn btn-ghost" disabled={busy || !dirty} onClick={() => setDraft(data.overrides)}>Discard</button>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => { if (window.confirm('Restore the default assessment permissions?')) save({}, 'Defaults restored'); }}>Restore defaults</button>
+          <button type="button" className="btn" disabled={busy || !dirty} onClick={() => save(draft, 'Assessment permissions saved')}>{busy ? 'Saving…' : 'Save changes'}</button>
+        </>} />
+      <div className="card card-pad assess-pol">
+        <table className="assess-pol-table">
+          <thead>
+            <tr><th scope="col" rowSpan="2">Field / Section</th>{data.audiences.map((a) => <th key={a.key} scope="colgroup" colSpan="2">{a.label}</th>)}</tr>
+            <tr>{data.audiences.map((a) => <React.Fragment key={a.key}><th scope="col">View</th><th scope="col">Edit</th></React.Fragment>)}</tr>
+          </thead>
+          <tbody>
+            {data.sections.map((s) => {
+              const criteria = s.key === 'assessment.behavioral' || s.key === 'assessment.technical';
+              return (
+                <React.Fragment key={s.key}>
+                  {s.key === 'assessment.candidate'
+                    ? <tr className="assess-pol-group"><th scope="rowgroup" colSpan={1 + data.audiences.length * 2}>{s.label}</th></tr>
+                    : row(s.key, s.label, { editable: s.editable })}
+                  {s.fields.filter(() => !criteria || showCriteria).map((f) => row(f.key, f.label, { editable: s.editable, depth: 1, hint: criteria }))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        <label className="assess-flag"><input type="checkbox" checked={showCriteria} onChange={(e) => setShowCriteria(e.target.checked)} /><span>Show per-criterion settings</span></label>
+      </div>
     </div>
   );
 }
@@ -10157,6 +10641,7 @@ function InterviewDetail({ id, user, onBack }) {
   const [loadError, setLoadError] = useState(null);
   const [fbOpen, setFbOpen] = useState(false);
   const [action, setAction] = useState(null);
+  const [assessOpen, setAssessOpen] = useState(false);
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -10176,6 +10661,7 @@ function InterviewDetail({ id, user, onBack }) {
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Interviews</button>}
         title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
+          {iv.application && can(user, 'candidate.view') && <button className="btn btn-secondary" onClick={() => setAssessOpen(true)}>Open assessment</button>}
           {canFeedback && iv.status !== 'cancelled' && <button className="btn" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
@@ -10221,6 +10707,7 @@ function InterviewDetail({ id, user, onBack }) {
       </div>
 
       {fbOpen && <FeedbackModal interviewId={id} onClose={() => setFbOpen(false)} onSaved={() => { setFbOpen(false); load(); }} />}
+      {assessOpen && <InterviewAssessmentDrawer applicationId={iv.application.id} user={user} title={`${iv.candidate?.fullName || ''} · ${iv.interviewNo}`} onClose={() => setAssessOpen(false)} />}
       {action && <Confirm title={action.title} message="Provide a reason. Recorded in the audit trail." requireReason danger onConfirm={action.run} onClose={() => setAction(null)} />}
     </div>
   );

@@ -1174,3 +1174,91 @@ tr.row-pending td { pointer-events: none; }
 .act-ico { color: var(--muted); display: grid; place-items: center; padding-top: 2px; }
 .act-sentence { font-size: 13.5px; color: var(--text-strong); line-height: 1.45; }
 .act-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+/* Interview assessment — drawn as the approved Arabtec assessment sheet:
+   red document title, red section headings over a red rule, a two-column
+   candidate grid with red label bars, and red-headed criteria tables. Scoped to
+   .assess / .assess-* so nothing else in the ATS changes. */
+.assess { --assess-red: var(--brand-dark, #b01420); --assess-line: #cfcfcf; }
+.assess-doc { background: #fff; color: var(--ink); border: 1px solid var(--assess-line); border-radius: 4px; padding: 24px; max-width: 920px; }
+.assess-doc-title { color: var(--assess-red); font-size: 16px; font-weight: 700; text-align: center; letter-spacing: .2px; margin: 0 0 16px; }
+.assess-sec { margin: 0 0 24px; }
+.assess-sec:last-child { margin-bottom: 0; }
+.assess-sec-title { color: var(--assess-red); font-size: 15px; font-weight: 700; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--assess-red); }
+.assess-sec-meta { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+.assess-instruction { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+.assess-muted { color: var(--muted); font-size: 12px; }
+.assess-info { display: grid; grid-template-columns: 1fr 1fr; margin: 0; border-top: 1px solid var(--assess-line); border-left: 1px solid var(--assess-line); }
+.assess-info-cell { border-right: 1px solid var(--assess-line); border-bottom: 1px solid var(--assess-line); min-width: 0; }
+/* An odd field out (a withheld neighbour) takes the full row instead of leaving a hole. */
+.assess-info-cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.assess-info dt { background: var(--assess-red); color: #fff; font-weight: 700; font-size: 12.5px; padding: 4px 8px; }
+.assess-info dd { margin: 0; padding: 8px; font-size: 13px; min-height: 32px; overflow-wrap: anywhere; }
+.assess-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12.5px; }
+.assess-col-crit { width: 17%; } .assess-col-desc { width: 31%; } .assess-col-score { width: 20%; } .assess-col-notes { width: 32%; }
+.assess-table thead th { background: var(--assess-red); color: #fff; text-align: left; font-weight: 700; font-size: 13px; text-transform: none; letter-spacing: normal; padding: 4px 8px; border: 1px solid var(--assess-line); }
+.assess-table td, .assess-table tbody th { border: 1px solid var(--assess-line); padding: 4px 8px; vertical-align: middle; text-align: left; }
+.assess-table tbody th { font-weight: 500; }
+.assess-desc { color: var(--ink-soft); }
+.assess-seg { display: inline-flex; border: 1px solid var(--assess-line); border-radius: 4px; overflow: hidden; }
+.assess-seg-btn { border: 0; border-right: 1px solid var(--assess-line); background: #fff; color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; min-width: 24px; height: 24px; padding: 0 4px; cursor: pointer; }
+.assess-seg-btn:last-child { border-right: 0; }
+.assess-seg-btn:hover { background: var(--brand-tint, #fcefef); }
+.assess-seg-btn.on { background: var(--assess-red); color: #fff; }
+.assess-seg-btn:focus-visible { outline: 2px solid var(--assess-red); outline-offset: -2px; position: relative; }
+.assess-score-val { display: inline-flex; align-items: baseline; gap: 4px; }
+.assess-score-val strong { color: var(--assess-red); font-size: 14px; }
+.assess-score-val span { color: var(--ink-soft); font-size: 12px; }
+.assess-score-empty { color: var(--muted); }
+.assess-notes textarea { width: 100%; min-height: 0; resize: vertical; border: 1px solid transparent; background: transparent; padding: 4px; font: inherit; font-size: 12.5px; border-radius: 4px; }
+.assess-notes textarea:hover { border-color: var(--assess-line); }
+.assess-notes textarea:focus-visible { outline: 2px solid var(--assess-red); outline-offset: 0; background: #fff; }
+.assess-notes-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.assess-guide { font-size: 11.5px; color: var(--muted); margin: 4px 0 0; }
+.assess-summary { font-size: 12.5px; margin: 8px 0 0; text-align: right; }
+.assess-note { font-size: 12px; margin: 8px 0; line-height: 1.5; }
+.assess-warn { color: var(--assess-red); }
+.assess-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 4px 0; font-size: 13px; }
+.assess-flags + .assess-flags { margin-top: 4px; }
+.assess-flags-who { flex-basis: 100%; font-size: 12px; font-weight: 600; color: var(--muted); }
+.assess-flag { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+.assess-flag input:focus-visible, .assess-choice input:focus-visible { outline: 2px solid var(--assess-red); outline-offset: 2px; }
+.assess-final { margin-bottom: 12px; }
+.assess-decision, .assess-fit-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; margin: 0 0 8px; }
+.assess-box { white-space: nowrap; color: var(--ink); }
+.assess-box.on { color: var(--assess-red); font-weight: 700; }
+.assess-choice { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.assess-fit { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+.assess-fit-row { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 8px 12px; align-items: start; margin: 8px 0; font-size: 13px; }
+.assess-fit-row label { color: var(--ink-soft); padding-top: 4px; }
+.assess-fit-row select, .assess-fit-row textarea { width: 100%; font: inherit; font-size: 13px; }
+.assess-fit-row textarea { min-height: 56px; }
+.assess-fit-row select { max-width: 320px; }
+.assess-fit-value { padding-top: 4px; }
+.assess-just-text { white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid var(--assess-line); min-height: 24px; }
+.assess-final-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.assess-bar { background: var(--surface-2, #fafafa); border-top: 1px solid var(--assess-line); margin: 24px -24px -24px; padding: 12px 24px; display: grid; gap: 12px; }
+.assess-bar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.assess-bar-state { font-size: 13px; }
+.assess-actions { display: flex; justify-content: flex-end; margin-top: 12px; max-width: 920px; }
+.assess-drawer { max-width: 960px; margin-left: auto; height: 100vh; border-radius: 0; display: flex; flex-direction: column; }
+.assess-drawer .modal-body { flex: 1; overflow-y: auto; }
+.assess-pol { overflow-x: auto; }
+.assess-pol-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.assess-pol-table th, .assess-pol-table td { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; }
+.assess-pol-table thead th { font-size: 12px; color: var(--muted); font-weight: 700; }
+.assess-pol-cell { text-align: center; white-space: nowrap; }
+.assess-pol-section th { font-weight: 700; }
+.assess-pol-field th { padding-left: 24px; font-weight: 500; }
+.assess-pol-group th { background: var(--brand-tint, #fcefef); color: var(--brand-dark, #b01420); font-weight: 700; }
+.assess-pol-reset { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 12px; }
+@media (max-width: 640px) {
+  .assess-doc { padding: 12px; }
+  .assess-info { grid-template-columns: minmax(0, 1fr); }
+  .assess-info-cell:last-child:nth-child(odd) { grid-column: auto; }
+  .assess-table, .assess-table tbody, .assess-table tr, .assess-table td, .assess-table tbody th { display: block; width: 100%; }
+  .assess-table thead, .assess-table colgroup { display: none; }
+  .assess-table tr { border: 1px solid var(--assess-line); margin-bottom: 8px; }
+  .assess-table td, .assess-table tbody th { border: 0; }
+  .assess-fit-row { grid-template-columns: minmax(0, 1fr); }
+  .assess-bar { margin: 16px -12px -12px; padding: 12px; }
+}

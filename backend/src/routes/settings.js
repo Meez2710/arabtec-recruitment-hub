@@ -9,6 +9,7 @@ import { connectionStatus as microsoftStatus } from '../lib/microsoft/connection
 import { NOTIFICATION_EVENTS, RECIPIENTS, EXTERNAL_RECIPIENTS } from '../lib/notification-catalog.js';
 import { testEmail } from '../lib/email_templates.js';
 import { allFlags, setFlag, isEnabled } from '../lib/feature-flags.js';
+import { ASSESSMENT_POLICY_SETTING } from '../lib/assessment-policy.js';
 
 import { publicMailSettings, saveMailSettings, effectiveMailSettings, safeSystemSettings, validEmail, safeMailError, mailVerification, recordMailVerification, mailDeliveryStats } from '../lib/mail-settings.js';
 
@@ -168,6 +169,8 @@ router.get('/system', requireAuth, (req, res) => res.json({ settings: safeSystem
 router.put('/system', requireAuth, requirePermission('system.manage'), (req, res) => {
   const updates = req.body?.settings || {};
   if (Object.keys(updates).some(key => key.startsWith('email_'))) return res.status(400).json({error:'Use Email & Mailbox to change mail settings.'});
+  // The assessment field policy is validated and audited by its own endpoint.
+  if (Object.hasOwn(updates, ASSESSMENT_POLICY_SETTING)) return res.status(400).json({ error: 'Use Assessment Visibility & Permissions to change the assessment policy.' });
   if (Object.hasOwn(updates, KNOWLEDGE_LINES_KEY)) {
     const { errors } = parseKnowledgeLines(updates[KNOWLEDGE_LINES_KEY]);
     if (errors.length) return res.status(400).json({ error: errors[0], errors });

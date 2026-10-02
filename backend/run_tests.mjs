@@ -21,6 +21,9 @@ const SUITES = [
   'thread_test.mjs',          // ticket conversation thread
   'admin_ui_test.mjs',        // control center
   'connections_audit_test.mjs', // every action lands in its designed path
+  'assessment_pdf_test.mjs',  // PDF-faithful assessment: scores, lifecycle, scope, audit, preview
+  'assessment_policy_test.mjs', // field policy: resolver, API filtering, field-level writes, preview, settings
+  'ui_assessment_test.mjs',   // assessment UI: PDF document, policy-driven views, draft/submit/edit, settings
   'hardening_test.mjs',       // security hardening gate items
   'production_hardening_test.mjs', // destructive migration must fail closed before wiping data
   'production_reset_test.mjs', // go-live reset clears the pipeline and keeps the company

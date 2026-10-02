@@ -37,6 +37,9 @@ export const PERMISSIONS = [
   ['interview.schedule', 'interview', 'schedule', 'Schedule interview'],
   ['interview.edit', 'interview', 'edit', 'Reschedule / cancel interview'],
   ['interview.feedback', 'interview', 'feedback', 'Add interview feedback'],
+  // Granted to system_admin only (system_admin holds every code); an administrator
+  // may delegate it to another role in Roles & Permissions.
+  ['interview.assessment_policy', 'interview', 'assessment_policy', 'Configure who may view or edit each part of the interview assessment'],
   // Sensitive fields
   ['salary.view', 'salary', 'view', 'View salary fields'],
   ['offer.view', 'offer', 'view', 'View offer fields'],
