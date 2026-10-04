@@ -5544,7 +5544,7 @@ function RequestsPage({ user, initialFilters }) {
         </label>
         <select className="sort-select" value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
           <option value="created">Sort: Created</option><option value="priority">Priority</option><option value="title">Title</option><option value="status">Status</option><option value="ticket">Ticket No</option></select>
-        <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}><Icon name={filters.dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={16} />{filters.dir === 'desc' ? 'Desc' : 'Asc'}</button>
+        <button className="btn btn-ghost" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}><Icon name={filters.dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={16} />{filters.dir === 'desc' ? 'Desc' : 'Asc'}</button>
         </FilterToolbar>
 
       {activeChips.length > 0 && (

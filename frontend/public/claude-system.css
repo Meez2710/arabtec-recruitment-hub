@@ -1326,10 +1326,12 @@ section.card:has(> .cvi-status) > .cvi-status { padding: 0 0 var(--sp-3); gap: v
   }
   .filter-toolbar > .toolbar-secondary > input,
   .filter-toolbar > .toolbar-secondary > select { width: 100%; min-width: 0; max-width: none; }
-  .filter-toolbar > .toolbar-secondary > .switch,
-  .filter-toolbar > .toolbar-secondary > .btn {
+  /* The sort-direction button is a standard .btn (40px, R17); a switch is a
+     label, so it is given the control height here. */
+  .filter-toolbar > .toolbar-secondary > .btn { justify-self: start; }
+  .filter-toolbar > .toolbar-secondary > .switch {
     justify-self: start; box-sizing: border-box;
-    height: var(--cl-ctl-lg); min-height: var(--cl-ctl-lg); padding-top: 0; padding-bottom: 0;
+    height: var(--cl-ctl-lg); padding-top: 0; padding-bottom: 0;
   }
 }
 
