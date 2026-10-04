@@ -71,11 +71,11 @@ rule('R11 every page title carries its eyebrow with the brand dash, tracked and 
   const t = block('claude-system.css', '.breadcrumb, .page-head .breadcrumb, .dash-eyebrow {');
   assert.match(t, /text-transform: uppercase/); assert.match(t, /letter-spacing: \.18em/);
 });
-rule('R12 the sidebar is charcoal with one red bar on the active item; buttons are one solid green action, badges never pills', () => {
+rule('R12 the sidebar is light grey (a step darker than the canvas) with the green active item; buttons are one solid green action, badges never pills', () => {
   const ds = css['arabtec-design-system.css'].slice(css['arabtec-design-system.css'].indexOf('12. WORKFORCE'));
-  assert.match(ds, /\.sidebar \{ background: var\(--sidebar-bg\); color: #fff;/);
-  assert.match(ds, /--sidebar-bg: #1A1A1A/);
-  assert.match(ds, /\.nav-item\.active::before \{[^}]*background: var\(--brand\)/s);
+  assert.match(ds, /\.sidebar \{ background: var\(--sidebar-bg\); color: var\(--ink\);/);
+  assert.match(ds, /--sidebar-bg: #E8EAED/, 'owner, 4 Oct 2026: light grey, darker than the #F4F5F7 canvas');
+  assert.match(ds, /\.nav-item\.active \{ background: var\(--green-50\); color: var\(--green-700\);/);
   assert.match(ds, /\.btn \{ background: var\(--green-700\); color: #fff;/);
   assert.match(ds, /\.badge, \.status-chip \{ border-radius: 6px;/);
   assert.equal(/border-width|min-height|padding: 0/.test(ds.slice(ds.indexOf('/* Buttons'), ds.indexOf('/* Badges'))), false, 'button colour rules never touch the box');

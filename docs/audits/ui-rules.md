@@ -42,7 +42,7 @@ Emoji appear only through the `EMOJI` map in app.jsx, and only in a `Hint` or th
 Every page title carries a tracked uppercase eyebrow led by the 18×2px brand-red dash. Origin: the premium spec; titles without an eyebrow read as orphaned.
 
 ## R12 Chrome and controls
-Sidebar charcoal (`#1A1A1A`) with one 3px red bar on the active item; `.btn` is the one solid green action, `.btn-secondary` white, `.btn-ghost` transparent; badges 6px, never pills. Colour rules never touch a control's box (height, padding, border width), which stays in claude-system.css so the form-control tests keep holding.
+Sidebar light grey (`#E8EAED`, a step darker than the `#F4F5F7` canvas — owner, 4 Oct 2026, to match the phone menu), dark text, the active item green (`--green-50` with `--green-700` text); `.btn` is the one solid green action, `.btn-secondary` white, `.btn-ghost` transparent; badges 6px, never pills. Colour rules never touch a control's box (height, padding, border width), which stays in claude-system.css so the form-control tests keep holding.
 
 ## R13 One page, not stacked rectangles
 Headers, toolbars, tabs and detail heads never carry their own bordered white surface above the working content. The toolbar and the Ask bar sit on the canvas; tabs are an underline row; the request and candidate heads sit on the canvas over a hairline; stat tiles reserve no height. Origin: at 1440×900 the first table or board began at y=260–571 behind two to four full-width rectangles ("three rectangles before the table"). Measured after: dashboards at 161, lists at 220–268.

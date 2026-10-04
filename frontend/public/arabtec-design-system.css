@@ -1357,7 +1357,8 @@ button.pcard-name { color: var(--ink); background: transparent; }
   --font-display: 'Inter Tight', Inter, Arial, Helvetica, sans-serif;
   --font-ui: Inter, Arial, Helvetica, sans-serif;
   --card-radius: 10px; --radius: 10px; --r-md: 10px;
-  --sidebar-bg: #1A1A1A; --sidebar-line: rgba(255, 255, 255, .08);
+  /* Owner, 4 Oct 2026: light grey, a little darker than the page canvas (#F4F5F7), as on the phone. */
+  --sidebar-bg: #E8EAED; --sidebar-line: #D8DCE1;
 }
 html, body, button, input, select, textarea, .field textarea { font-family: var(--font-ui); }
 .page-title, .page-head .page-title, .dash-head .page-title, .dash-kpi-val, .kpi-value,
@@ -1373,26 +1374,25 @@ html, body, button, input, select, textarea, .field textarea { font-family: var(
   background: var(--brand); vertical-align: middle;
 }
 
-/* Sidebar: charcoal, quiet items, the active one white with a red bar. */
-.sidebar { background: var(--sidebar-bg); color: #fff; border-right: 0; }
+/* Sidebar: light grey rail (a step darker than the canvas), dark text, and the
+   phone menu's green for the active item and its count. */
+.sidebar { background: var(--sidebar-bg); color: var(--ink); border-right: 1px solid var(--sidebar-line); }
 .sidebar-head { border-bottom-color: var(--sidebar-line); }
-.side-txt strong, .sidebar-title { color: #fff; }
-.side-txt span { color: rgba(255, 255, 255, .55); }
-.nav-section { color: rgba(255, 255, 255, .45); }
-.nav-item { color: rgba(255, 255, 255, .72); position: relative; }
-.nav-item:hover { background: rgba(255, 255, 255, .06); color: #fff; }
-.nav-item.active { background: rgba(255, 255, 255, .09); color: #fff; }
-.nav-item.active::before {
-  content: ''; display: block; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 18px; border-radius: 2px; background: var(--brand);
-}
-.nav-item .nav-icon, .nav-item.active .nav-icon { color: inherit; opacity: 1; }
-.nav-item:focus-visible { outline-color: #fff; }
-.nav-count { background: rgba(255, 255, 255, .12); color: rgba(255, 255, 255, .85); }
-.nav-item.active .nav-count { background: #fff; color: var(--ink); }
-.scope-card { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
-.scope-card strong { color: #fff; }
-.scope-card p { color: rgba(255, 255, 255, .55); }
+.side-txt strong, .sidebar-title { color: var(--ink); }
+.side-txt span { color: var(--muted); }
+.nav-section { color: var(--muted); }
+.nav-item { color: var(--ink); position: relative; }
+.nav-item:hover { background: #DCDFE3; color: var(--ink); }
+.nav-item.active { background: var(--green-50); color: var(--green-700); font-weight: 700; }
+.nav-item.active::before { display: none; }
+.nav-item .nav-icon { color: var(--muted); opacity: 1; }
+.nav-item.active .nav-icon { color: var(--green-700); }
+.nav-item:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.nav-count { background: #fff; color: var(--ink-soft); }
+.nav-item.active .nav-count { background: #fff; color: var(--green-700); }
+.scope-card { background: #fff; border-color: var(--sidebar-line); }
+.scope-card strong { color: var(--ink); }
+.scope-card p { color: var(--muted); }
 
 /* Buttons: one solid green action, white secondary, transparent ghost.
    Colour only — the box (height, padding, border width) stays in claude-system.css. */
