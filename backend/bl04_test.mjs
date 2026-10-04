@@ -94,10 +94,10 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
     return app;
   };
   const close = (reqId) => api(`/api/requests/${reqId}/close`, {
-    method: 'POST', token: hrMgr, body: { reason: 'closing for test' },
+    method: 'POST', token: recMgr, body: { reason: 'closing for test' },
   });
   const reopen = (reqId) => api(`/api/requests/${reqId}/reopen`, {
-    method: 'POST', token: hrMgr, body: { reason: 'reopening for test' },
+    method: 'POST', token: recMgr, body: { reason: 'reopening for test' },
   });
 
   /* ------------------------- A. restore-only path ------------------------ */

@@ -31,6 +31,9 @@ const c = (n, ok, x = '') => { console.log((ok ? '  ✅ ' : '  ❌ ') + n + (x ?
  */
 const EXPECTED = [
   ['GET', '/'],
+  // Recruitment Manager's per-recruiter status (owner review, 4 Oct 2026).
+  // Read-only; registered before `/:id`, which would read the path as an id.
+  ['GET', '/recruiter-status'],
   ['GET', '/:id'],
   ['POST', '/'],
   ['PUT', '/:id'],
@@ -38,6 +41,8 @@ const EXPECTED = [
   ['POST', '/:id/approve'],
   ['POST', '/:id/reject'],
   ['POST', '/:id/assign'],
+  // Remove the recruiter (owner review: assign, re-assign or remove).
+  ['POST', '/:id/unassign'],
   ['POST', '/:id/hold'],
   ['POST', '/:id/resume'],
   ['POST', '/:id/cancel'],

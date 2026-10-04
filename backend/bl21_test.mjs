@@ -74,6 +74,7 @@ const reload = (id) => get('SELECT id, status, headcount FROM recruitment_reques
 const recruiter = await login('recruiter@arabtec.com');
 const hrMgr = await login('hr.manager@arabtec.com');
 const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR Director approves
+const recMgr = await login('rec.manager@arabtec.com'); // close / reopen: Recruitment Manager (owner, 4 Oct 2026)
 const meta = await api('/api/requests/meta/form', { token: hrMgr });
 
 const step = (label, res, ok = 200) => {
@@ -103,12 +104,12 @@ const mkSourcingReq = async (hc) => {
 };
 const mkClosedReq = async (hc) => {
   const r = await mkSourcingReq(hc);
-  step('close', await api(`/api/requests/${r.id}/close`, { method: 'POST', token: hrMgr, body: { reason: 'setup' } }));
+  step('close', await api(`/api/requests/${r.id}/close`, { method: 'POST', token: recMgr, body: { reason: 'setup' } }));
   return assertStatus(r.id, 'closed');
 };
 const mkReopenedReq = async (hc) => {
   const r = await mkClosedReq(hc);
-  step('reopen', await api(`/api/requests/${r.id}/reopen`, { method: 'POST', token: hrMgr, body: { reason: 'setup' } }));
+  step('reopen', await api(`/api/requests/${r.id}/reopen`, { method: 'POST', token: recMgr, body: { reason: 'setup' } }));
   return assertStatus(r.id, 'reopened');
 };
 const joinOne = async (reqId, label) => {

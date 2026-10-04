@@ -1378,3 +1378,19 @@ tr.row-pending td { pointer-events: none; }
   .dash-filter label, .dash-filter select { min-width: 0; width: 100%; }
   .dash-kpi-row.dash-kpi-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Hiring Requests — role panels (owner review, 4 Oct 2026). */
+.req-overview, .req-control { margin: 0 0 16px; }
+.req-overview .dash-details-toggle { margin: 12px 0; }
+.req-process { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.req-step { display: inline-flex; align-items: baseline; gap: 8px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; font: inherit; color: var(--ink); position: relative; }
+.req-step:hover { border-color: var(--green-border, #b7dcd3); background: var(--green-50, #e6f4f0); }
+.req-step:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.req-step-n { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.req-step-l { font-size: 13px; color: var(--ink-soft); }
+.req-step-arrow { color: var(--muted); margin-left: 4px; }
+.req-mine { display: inline-flex; gap: 4px; margin: 0 0 12px; padding: 4px; border-radius: 8px; background: var(--surface-2, #f4f5f7); }
+.owner-cell { display: grid; gap: 4px; }
+.owner-actions { display: inline-flex; gap: 4px; }
+.text-risk { color: var(--critical, #c0392b); font-weight: 600; }
+.req-control-stack { display: grid; gap: 12px; }

@@ -21,6 +21,7 @@ const SUITES = [
   'phase5_test.mjs',          // offers, approval, joining
   'phase6_test.mjs',          // dashboards, scope, no-leak
   'dashboard_director_test.mjs', // director dashboard: narrowing filters, approval-based aging, scope never widened
+  'request_control_test.mjs', // only RM + admin control requests; recruiters see all; unassign; recruiter status; one-time migration
   'thread_test.mjs',          // ticket conversation thread
   'admin_ui_test.mjs',        // control center
   'connections_audit_test.mjs', // every action lands in its designed path

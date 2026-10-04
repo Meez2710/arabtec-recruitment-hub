@@ -1067,6 +1067,7 @@ export function ensureSchema() {
   migrateLegacyActionColor();
   syncCatalogAdditions();
   backfillCvInboxGrants();
+  applyRequestControlPolicy();
   ensureOneJoinedPerCandidate();
 }
 
@@ -1100,6 +1101,46 @@ const CV_INBOX_BACKFILL = {
   hr_manager:          CV_INBOX_CODES,
   hr_director:         CV_INBOX_CODES,
 };
+
+// Owner decision, 4 Oct 2026: only the Recruitment Manager and the System
+// Administrator control a hiring request — assign / re-assign / remove the
+// recruiter, hold, resume, cancel, close and reopen. Applied ONCE per database
+// (flag below) so a later change in Roles & Permissions is never reverted.
+const REQUEST_CONTROL_KEY = 'policy_request_control_v1';
+const REQUEST_CONTROL_CODES = ['request.assign_recruiter', 'request.hold', 'request.cancel', 'request.close', 'request.reopen'];
+const REQUEST_CONTROL_ROLES = ['recruitment_manager', 'system_admin'];
+function applyRequestControlPolicy() {
+  try {
+    const result = tx(() => {
+      if (get('SELECT id FROM system_setting WHERE key = ?', [REQUEST_CONTROL_KEY])) return null;
+      const permId = Object.fromEntries(all('SELECT id, code FROM permission').map((p) => [p.code, p.id]));
+      const roles = all('SELECT id, code FROM role');
+      const keep = roles.filter((r) => REQUEST_CONTROL_ROLES.includes(r.code));
+      if (!REQUEST_CONTROL_CODES.every((c) => permId[c]) || keep.length < REQUEST_CONTROL_ROLES.length) return null; // catalog not seeded yet
+      const ids = REQUEST_CONTROL_CODES.map((c) => permId[c]);
+      const keepIds = keep.map((r) => r.id);
+      // Only reshape a matrix that is in use: if no role holds any of these
+      // codes yet (an unseeded catalog), leave it alone and do not mark it done.
+      if (!get(`SELECT 1 AS x FROM role_permission WHERE permission_id IN (${ids.map(() => '?').join(',')}) LIMIT 1`, ids)) return null;
+      const removed = all(`SELECT r.code role, p.code perm FROM role_permission rp JOIN role r ON r.id = rp.role_id JOIN permission p ON p.id = rp.permission_id
+        WHERE rp.permission_id IN (${ids.map(() => '?').join(',')}) AND rp.role_id NOT IN (${keepIds.map(() => '?').join(',')})`, [...ids, ...keepIds]);
+      run(`DELETE FROM role_permission WHERE permission_id IN (${ids.map(() => '?').join(',')}) AND role_id NOT IN (${keepIds.map(() => '?').join(',')})`, [...ids, ...keepIds]);
+      let granted = 0;
+      for (const roleRow of keep) for (const pid of ids) {
+        if (get('SELECT 1 AS x FROM role_permission WHERE role_id=? AND permission_id=?', [roleRow.id, pid])) continue;
+        run('INSERT INTO role_permission (role_id,permission_id) VALUES (?,?) ON CONFLICT DO NOTHING RETURNING role_id', [roleRow.id, pid]);
+        granted++;
+      }
+      const stamp = new Date().toISOString();
+      run('INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)',
+        [REQUEST_CONTROL_KEY, JSON.stringify({ appliedAt: stamp, removed, granted }), stamp]);
+      return { removed, granted };
+    });
+    if (result) console.log(JSON.stringify({ level: 'info', msg: 'schema.request_control_policy', removed: result.removed, granted: result.granted }));
+  } catch (e) {
+    console.error('  ! Request control policy failed (continuing):', e.message);
+  }
+}
 
 function backfillCvInboxGrants() {
   try {

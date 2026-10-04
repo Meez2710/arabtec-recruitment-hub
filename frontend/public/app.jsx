@@ -5235,6 +5235,131 @@ function RequestTicketCard({ r, onOpen }) {
 // reused by the dashboard card, this toggle, and the filter chip's label.
 function needsAction(r) { return (r.health || {}).level === 'red' || (r.health || {}).level === 'amber' || !!r.slaBreached; }
 
+// Focus filters for the hiring-process strip (client-side over the list).
+const REQ_FOCUS = [['awaiting', 'Awaiting approval'], ['unassigned', 'Needs a recruiter'], ['nocands', 'No candidates yet'], ['interview', 'Interviewing'], ['offer', 'Offer stage'], ['filled', 'Filled']];
+const RF_INTERVIEW = ['interviewing', 'interview_hr', 'interview_technical', 'interview_1', 'interview_2', 'waiting_feedback'];
+const RF_OFFER = ['issuing_offer', 'offer', 'offer_sent'];
+function reqStageCount(r, list) { const b = (r.pipeline || {}).byStage || {}; return list.reduce((n, k) => n + (b[k] || 0), 0); }
+function inFocus(r, focus) {
+  const running = isOpenReq(r) && r.status !== 'pending_approval';
+  switch (focus) {
+    case 'awaiting': return r.status === 'pending_approval';
+    case 'unassigned': return running && !r.owner;
+    case 'nocands': return running && !!r.owner && !((r.pipeline || {}).total);
+    case 'interview': return running && reqStageCount(r, RF_INTERVIEW) > 0;
+    case 'offer': return running && reqStageCount(r, RF_OFFER) > 0;
+    case 'filled': return r.status === 'filled';
+    default: return true;
+  }
+}
+function atRiskReq(r) { const h = r.health || {}; return isOpenReq(r) && r.status !== 'pending_approval' && (h.level === 'red' || h.level === 'amber' || (h.daysToTarget != null && h.daysToTarget < 0)); }
+// Director / Executive: the eagle-eye view, then every number per project.
+function RequestsOverview({ all, meta, onPick }) {
+  const [open, setOpen] = useState(false);
+  if (!all) return <div className="req-overview"><Skeleton rows={2} /></div>;
+  const running = all.filter((r) => isOpenReq(r) && r.status !== 'pending_approval');
+  const awaiting = all.filter((r) => r.status === 'pending_approval');
+  const planned = all.filter(isOpenReq).reduce((n, r) => n + (r.headcount || 0), 0);
+  const filled = all.filter(isOpenReq).reduce((n, r) => n + (r.headcountFilled || 0), 0);
+  const risk = all.filter(atRiskReq);
+  const critical = running.filter((r) => r.priority === 'critical');
+  const pipeline = running.reduce((n, r) => n + ((r.pipeline || {}).total || 0), 0);
+  const byProject = new Map();
+  for (const r of all) {
+    const key = r.projectId || 0;
+    const row = byProject.get(key) || { id: r.projectId, name: (r.project || {}).name || 'No project', requests: 0, open: 0, awaiting: 0, planned: 0, filled: 0, pipeline: 0, risk: 0 };
+    row.requests++; if (isOpenReq(r) && r.status !== 'pending_approval') row.open++; if (r.status === 'pending_approval') row.awaiting++;
+    if (isOpenReq(r)) { row.planned += r.headcount || 0; row.filled += r.headcountFilled || 0; row.pipeline += (r.pipeline || {}).total || 0; }
+    if (atRiskReq(r)) row.risk++;
+    byProject.set(key, row);
+  }
+  const projects = [...byProject.values()].sort((a, b) => b.planned - a.planned || a.name.localeCompare(b.name));
+  return (
+    <section className="req-overview" aria-label="Hiring requests at a glance">
+      <div className="dash-kpi-row dash-kpi-6">
+        <KpiCard label="Open roles" value={running.length} meta="Approved and recruiting" onClick={() => onPick({ openOnly: true })} />
+        <KpiCard label="Awaiting approval" value={awaiting.length} tone={awaiting.length ? 'kpi-attn' : ''} meta="Sourcing starts at approval" onClick={() => onPick({ focus: 'awaiting' })} />
+        <KpiCard label="Seats" value={`${filled} / ${planned}`} meta={planned ? `${Math.round(filled / planned * 100)}% filled` : 'No open seats'} />
+        <KpiCard label="At risk" value={risk.length} tone={risk.length ? 'kpi-risk' : ''} meta="Overdue or past target date" onClick={() => onPick({ attention: true })} />
+        <KpiCard label="Critical open" value={critical.length} meta="Flagged critical" onClick={() => onPick({ priority: 'critical' })} />
+        <KpiCard label="In pipeline" value={pipeline} meta="Candidates on open roles" />
+      </div>
+      <button type="button" className="btn btn-secondary dash-details-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? 'Hide' : 'Show'} the numbers for each project ({projects.length}) <Icon name="chevronDown" size={16} />
+      </button>
+      {open && (
+        <div className="card flush"><div className="table-wrap"><table className="table responsive-table req-projects">
+          <thead><tr><th>Project</th><th>Requests</th><th>Open</th><th>Awaiting approval</th><th>Seats filled</th><th>In pipeline</th><th>At risk</th><th><span className="sr-only">Show</span></th></tr></thead>
+          <tbody>{projects.map((p) => (
+            <tr key={p.id || 'none'}>
+              <td data-label="Project"><span className="cell-strong">{p.name}</span></td>
+              <td data-label="Requests">{p.requests}</td>
+              <td data-label="Open">{p.open}</td>
+              <td data-label="Awaiting approval">{p.awaiting || '—'}</td>
+              <td data-label="Seats filled">{p.filled} / {p.planned}</td>
+              <td data-label="In pipeline">{p.pipeline}</td>
+              <td data-label="At risk">{p.risk ? <span className="text-risk">{p.risk}</span> : '—'}</td>
+              <td>{p.id ? <button className="btn btn-ghost btn-sm" onClick={() => onPick({ projectId: String(p.id) })}>Show requests</button> : null}</td>
+            </tr>
+          ))}</tbody>
+        </table></div></div>
+      )}
+    </section>
+  );
+}
+// Recruitment Manager / System Administrator: the hiring process, what needs
+// doing, and how each recruiter stands.
+function RequestsControlPanel({ all, rstat, onPick, onAssign }) {
+  if (!all) return <div className="req-control"><Skeleton rows={3} /></div>;
+  const count = (f) => all.filter((r) => inFocus(r, f)).length;
+  const unassigned = all.filter((r) => inFocus(r, 'unassigned'));
+  const noCands = all.filter((r) => inFocus(r, 'nocands'));
+  const overdue = all.filter((r) => isOpenReq(r) && r.status !== 'pending_approval' && (r.health || {}).level === 'red');
+  return (
+    <section className="req-control" aria-label="Hiring process and recruiters">
+      <div className="req-process" role="list" aria-label="Hiring process">
+        {REQ_FOCUS.map(([k, label], i) => (
+          <button key={k} type="button" role="listitem" className="req-step" onClick={() => onPick({ focus: k })}>
+            <span className="req-step-n">{count(k)}</span><span className="req-step-l">{label}</span>{i < REQ_FOCUS.length - 1 && <span className="req-step-arrow" aria-hidden="true">›</span>}
+          </button>
+        ))}
+      </div>
+      <div className="req-control-stack">
+        <section className="card">
+          <div className="card-head"><div><h3>Actions needed</h3></div><span className="dash-headnote">Assign, start sourcing, recover overdue roles</span></div>
+          {!unassigned.length && !noCands.length && !overdue.length
+            ? <div className="dash-allclear">Every approved request has a recruiter and candidates, and none is overdue.</div>
+            : <div className="action-list">
+              {unassigned.slice(0, 5).map((r) => <ActionItem key={'u' + r.id} tone="warn" title={`Assign a recruiter — ${shortReqCode(r.ticketNo)} ${r.title}`} meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}`} why="Approved but nobody is sourcing" cta="Assign" onCta={() => onAssign(r)} />)}
+              {overdue.slice(0, 5).map((r) => <ActionItem key={'o' + r.id} tone="risk" title={`Overdue — ${shortReqCode(r.ticketNo)} ${r.title}`} meta={`${r.owner ? r.owner.name : 'No recruiter'} · open ${(r.health || {}).daysOpen} days · ${(r.pipeline || {}).total || 0} in pipeline`} why="Past the health threshold" cta="Re-assign" onCta={() => onAssign(r)} />)}
+              {noCands.slice(0, 5).map((r) => <ActionItem key={'n' + r.id} tone="warn" title={`No candidates yet — ${shortReqCode(r.ticketNo)} ${r.title}`} meta={`${r.owner.name} · open ${(r.health || {}).daysOpen ?? 0} days`} why="Sourcing has not produced a candidate" cta="Show" onCta={() => onPick({ focus: 'nocands' })} />)}
+            </div>}
+        </section>
+        <section className="card">
+          <div className="card-head"><div><h3>Recruiters</h3></div><span className="dash-headnote">{rstat ? `${rstat.unassigned} request${rstat.unassigned === 1 ? '' : 's'} without a recruiter` : 'Workload and progress'}</span></div>
+          {!rstat ? <div className="card-pad"><Skeleton rows={3} /></div> : !rstat.recruiters.length ? <div className="dash-allclear">No recruiter is set up yet.</div> : (
+            <div className="table-wrap"><table className="table responsive-table req-recruiters">
+              <thead><tr><th>Recruiter</th><th>Open</th><th>No candidates</th><th>In pipeline</th><th>Interviews</th><th>Offers</th><th>Overdue</th><th><span className="sr-only">Show</span></th></tr></thead>
+              <tbody>{rstat.recruiters.map((x) => (
+                <tr key={x.id}>
+                  <td data-label="Recruiter"><span className="cell-strong">{x.name}</span></td>
+                  <td data-label="Open">{x.openRequests}</td>
+                  <td data-label="No candidates">{x.withoutCandidates || '—'}</td>
+                  <td data-label="In pipeline">{x.inPipeline}</td>
+                  <td data-label="Interviews">{x.interviewsAhead || '—'}</td>
+                  <td data-label="Offers">{x.offersOut || '—'}</td>
+                  <td data-label="Overdue">{x.overdue ? <span className="text-risk">{x.overdue}</span> : '—'}</td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => onPick({ owner: String(x.id) })}>Requests</button></td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function RequestsPage({ user, initialFilters }) {
   const isPhone = useIsPhone();
   const toast = useToast();
@@ -5256,7 +5381,7 @@ function RequestsPage({ user, initialFilters }) {
   // surface from growing for something that isn't a real column.
   const [filters, setFilters] = useState(() => ({
     q: '', status: '', priority: '', sort: 'created', dir: 'desc',
-    owner: '', attention: false, openOnly: false,
+    owner: '', attention: false, openOnly: false, projectId: '', departmentId: '', focus: '',
     ...(initialFilters || {}),
   }));
   const [selectedId, setSelectedId] = useState(null);
@@ -5276,9 +5401,25 @@ function RequestsPage({ user, initialFilters }) {
     setFilters((f) => ({ ...f, ...initialFilters }));
   }, [initialFilters]);
 
+  const [meta, setMeta] = useState({ projects: [], departments: [] });
   useEffect(() => {
-    api.get('/requests/meta/form').then((m) => setRecruiters(m.assignableRecruiters || [])).catch(() => {});
+    api.get('/requests/meta/form').then((m) => { setRecruiters(m.assignableRecruiters || []); setMeta({ projects: m.projects || [], departments: m.departments || [] }); }).catch(() => {});
   }, []);
+  // Role panels above the list (owner review, 4 Oct 2026): the eagle-eye view
+  // for the Director and Executive, the hiring process and recruiter status for
+  // whoever controls requests (Recruitment Manager, System Administrator).
+  const persona = personaFor(user);
+  const isAdmin = (user.roles || []).includes('system_admin');
+  const showOverview = isAdmin || persona === 'director' || persona === 'executive';
+  const showControl = can(user, 'request.assign_recruiter');
+  const [allReqs, setAllReqs] = useState(null);
+  const [rstat, setRstat] = useState(null);
+  const loadPanels = useCallback(() => {
+    if (!showOverview && !showControl) return;
+    api.get('/requests?pageSize=200').then((r) => setAllReqs(r.requests || [])).catch(() => setAllReqs([]));
+    if (showControl) api.get('/requests/recruiter-status').then(setRstat).catch(() => setRstat(null));
+  }, [showOverview, showControl]);
+  useEffect(() => { loadPanels(); }, [loadPanels]);
 
   // Opened from elsewhere (a Talent Pool request link), the same way the Ctrl+K
   // palette opens a candidate: pending id when mounting fresh, event when the
@@ -5307,7 +5448,7 @@ function RequestsPage({ user, initialFilters }) {
     // ticket_no can be matched; the text the user typed is left as-is in the input.
     // `attention`/`openOnly` are deliberately excluded — they filter client-side, below.
     Object.entries(filters).forEach(([k, v]) => {
-      if (k === 'attention' || k === 'openOnly' || !v) return;
+      if (k === 'attention' || k === 'openOnly' || k === 'focus' || !v) return;
       params.set(k === 'owner' ? 'ownerId' : k, k === 'q' ? expandReqCode(v) : v);
     });
     try {
@@ -5333,6 +5474,7 @@ function RequestsPage({ user, initialFilters }) {
   const shown = (data ? data.requests : []).filter((r) => {
     if (filters.openOnly && !isOpenReq(r)) return false;
     if (filters.attention && !needsAction(r)) return false;
+    if (filters.focus && !inFocus(r, filters.focus)) return false;
     return true;
   });
 
@@ -5348,20 +5490,43 @@ function RequestsPage({ user, initialFilters }) {
     ownerName && ['owner', `Owner: ${ownerName}`, () => setFilters((f) => ({ ...f, owner: '' }))],
     filters.attention && ['attention', 'Needs action', () => setFilters((f) => ({ ...f, attention: false }))],
     filters.openOnly && ['openOnly', 'Open only', () => setFilters((f) => ({ ...f, openOnly: false }))],
+    filters.projectId && ['projectId', `Project: ${(meta.projects.find((x) => String(x.id) === String(filters.projectId)) || {}).name || filters.projectId}`, () => setFilters((f) => ({ ...f, projectId: '' }))],
+    filters.departmentId && ['departmentId', `Department: ${(meta.departments.find((x) => String(x.id) === String(filters.departmentId)) || {}).name || filters.departmentId}`, () => setFilters((f) => ({ ...f, departmentId: '' }))],
+    filters.focus && ['focus', `Stage: ${(REQ_FOCUS.find(([k]) => k === filters.focus) || [])[1] || filters.focus}`, () => setFilters((f) => ({ ...f, focus: '' }))],
   ].filter(Boolean);
+  const pick = (patch) => setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+  const unassign = async (r) => {
+    if (!window.confirm(`Remove ${r.owner?.name || 'the recruiter'} from ${shortReqCode(r.ticketNo)}? The request stays open with no recruiter until someone is assigned.`)) return;
+    try { await api.post(`/requests/${r.id}/unassign`, {}); toast(`Recruiter removed from ${shortReqCode(r.ticketNo)}`); load(); loadPanels(); }
+    catch (e) { toast(e.message, 'error'); }
+  };
+  const isMine = String(filters.owner) === String(user.id);
 
   return (
     <div>
       <PageHead crumb="Recruitment / Requests" title="Hiring Requests"
-        sub="Every hiring need is a controlled ticket with approvals, ownership, SLA and audit trail."
+        sub="Every hiring request — its approval, recruiter, candidates and progress."
         actions={<>
           <ViewToggle value={view} onChange={setView} options={[['cards', 'Cards'], ['table', 'Table']]} />
           {canCreate && <button className="btn" onClick={() => setCreating(true)}>{btns.create_request.label}</button>}
         </>} />
 
+      {showOverview && <RequestsOverview all={allReqs} meta={meta} onPick={pick} />}
+      {showControl && <RequestsControlPanel all={allReqs} rstat={rstat} onPick={pick} onAssign={(r) => setAssigning(r)} />}
+      {persona === 'recruiter' && !isAdmin && (
+        <div className="req-mine" role="group" aria-label="Whose requests">
+          <button type="button" className={'seg-tab' + (!isMine ? ' active' : '')} aria-pressed={!isMine} onClick={() => setFilters((f) => ({ ...f, owner: '' }))}>All requests</button>
+          <button type="button" className={'seg-tab' + (isMine ? ' active' : '')} aria-pressed={isMine} onClick={() => setFilters((f) => ({ ...f, owner: String(user.id) }))}>Assigned to me</button>
+        </div>
+      )}
+
       <FilterToolbar activeCount={activeChips.length} search={<input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />}>
         <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-          <option value="">All statuses</option>{Object.entries(REQ_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+          <option value="">All statuses</option>{Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        <select value={filters.projectId} onChange={(e) => setFilters((f) => ({ ...f, projectId: e.target.value }))} aria-label="Project">
+          <option value="">All projects</option>{meta.projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+        <select value={filters.departmentId} onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value }))} aria-label="Department">
+          <option value="">All departments</option>{meta.departments.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
         <select value={filters.priority} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
           <option value="">All priorities</option>{Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <select value={filters.owner} onChange={(e) => setFilters((f) => ({ ...f, owner: e.target.value }))} aria-label="Owner">
@@ -5390,7 +5555,7 @@ function RequestsPage({ user, initialFilters }) {
               <button aria-label={`Remove ${label} filter`} onClick={clear}><Icon name="close" size={16} /></button>
             </span>
           ))}
-          <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, status: '', priority: '', owner: '', attention: false, openOnly: false }))}>Clear all</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, status: '', priority: '', owner: '', attention: false, openOnly: false, projectId: '', departmentId: '', focus: '' }))}>Clear all</button>
         </div>
       )}
 
@@ -5414,7 +5579,10 @@ function RequestsPage({ user, initialFilters }) {
                 <span className="clamp-2" title={placeLabel(r)}>{placeLabel(r)}</span>
               </td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
-                {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
+                {r.owner ? (canAssign
+                  ? <span className="owner-cell"><span className="cell-sub-only">{r.owner.name}</span>
+                    <span className="owner-actions"><button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Change</button><button className="btn btn-ghost btn-sm" onClick={() => unassign(r)}>Remove</button></span></span>
+                  : <span className="cell-sub-only">{r.owner.name}</span>)
                   : !canAssign ? <span className="muted">Unassigned</span>
                   : canAssignStatus(r.status) ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign</button>
                   : <span className="muted" title={ASSIGN_BLOCKED_TITLE}>After approval</span>}
@@ -5422,12 +5590,12 @@ function RequestsPage({ user, initialFilters }) {
               <td data-priority="secondary" data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
               <td data-label="Priority"><PriorityBadge p={r.priority} /></td>
               <td data-label="Status"><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
-              <td data-priority="secondary" data-label="Idle" className="cell-sub-only">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
-              <td data-label="SLA"><ReqHealth health={r.health} status={r.status} /></td>
+              <td data-priority="secondary" data-label="Idle" className="cell-sub-only" title="Days since the last change on this request">{r.status === 'pending_approval' || r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
+              <td data-label="SLA">{r.status === 'pending_approval' ? <span className="muted" title="The SLA clock starts at approval">—</span> : <ReqHealth health={r.health} status={r.status} />}</td>
             </tr>
           ))}</tbody>
         </table></div>
-        <div className="reassurance">Requests without a warning are progressing normally.</div></div>
+        <div className="reassurance">Rows without a warning are on track. The SLA clock starts when a request is approved.</div></div>
       ) : (
         <div className="ats-card-grid">
           {shown.map((r) => <RequestTicketCard key={r.id} r={r} onOpen={() => setSelectedId(r.id)} />)}
@@ -5440,7 +5608,7 @@ function RequestsPage({ user, initialFilters }) {
             try {
               await api.post(`/requests/${assigning.id}/assign`, { ownerId });
               toast(`Recruiter assigned to ${shortReqCode(assigning.ticketNo)}`);
-              setAssigning(null); load();
+              setAssigning(null); load(); loadPanels();
             } catch (e) { toast(e.message, 'error'); }
           }} />
       )}
@@ -5761,6 +5929,9 @@ function RequestDetail({ id, user, btns, onBack }) {
             canAssignNow
               ? <button className="btn btn-secondary" onClick={() => setAssigning(true)}>{assignLabel}</button>
               : <button className="btn btn-secondary" disabled title={ASSIGN_BLOCKED_TITLE}>{assignLabel}</button>
+          )}
+          {btns.assign_recruiter?.visible && req.owner && !TERMINAL_STATUSES.includes(s) && (
+            <button className="btn btn-ghost" onClick={() => { if (window.confirm(`Remove ${req.owner.name} from this request? It stays open with no recruiter until someone is assigned.`)) doAction('unassign', {}, 'Recruiter removed'); }}>Remove recruiter</button>
           )}
           {btns.hold_request?.visible && PAUSABLE_STATUSES.includes(s) && (
             <button className="btn btn-secondary" onClick={() => reasonAction('hold', 'Pause Request', 'Request paused', true)}>Pause</button>

@@ -8,6 +8,7 @@ export const PERMISSIONS = [
   // Requests (Phase 2 functional, permissions seeded now)
   ['request.view_all', 'request', 'view_all', 'View all requests'],
   ['request.view_own', 'request', 'view_own', 'View own requests'],
+  ['request.view_team', 'request', 'view_team', 'View every hiring request'],
   ['request.create', 'request', 'create', 'Create request'],
   ['request.edit', 'request', 'edit', 'Edit request'],
   ['request.delete', 'request', 'delete', 'Delete request'],
@@ -116,11 +117,10 @@ export const ROLE_PERMISSIONS = {
   hr_director: [
     'dashboard.view', 'request.view_all', 'request.approve', 'request.reject',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
-    'request.budget_approve', 'request.cancel', 'request.close',
+    'request.budget_approve',
     // Widened: a director can now assign/reassign a recruiter and put a
     // request on hold/resume it directly, not just approve it — the same
     // authority hr_manager and recruitment_manager already hold.
-    'request.assign_recruiter', 'request.hold',
     'candidate.view', 'candidate.privacy', 'salary.view',
     'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
     'interview.view_all', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
@@ -129,8 +129,8 @@ export const ROLE_PERMISSIONS = {
   hr_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
-    'request.submit', 'request.approve', 'request.reject', 'request.assign_recruiter',
-    'request.budget_approve', 'request.hold', 'request.cancel', 'request.close', 'request.reopen',
+    'request.submit', 'request.approve', 'request.reject',
+    'request.budget_approve',
     'candidate.view', 'candidate.add', 'candidate.edit', 'candidate.link', 'candidate.move_stage',
     'candidate.merge', 'candidate.note', 'candidate.privacy', 'application.bulk_action',
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',
@@ -142,7 +142,7 @@ export const ROLE_PERMISSIONS = {
   recruitment_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
-    'request.submit', 'request.assign_recruiter', 'request.hold', 'request.close', 'request.reopen',
+    'request.submit', 'request.assign_recruiter', 'request.hold', 'request.cancel', 'request.close', 'request.reopen',
     'candidate.view', 'candidate.add',
     'candidate.edit', 'candidate.link', 'candidate.move_stage', 'candidate.merge', 'candidate.note',
     'application.bulk_action',
@@ -152,7 +152,7 @@ export const ROLE_PERMISSIONS = {
     'notification.manage',
   ],
   recruiter: [
-    'dashboard.view', 'request.view_own', 'request.create', 'request.edit', 'request.submit',
+    'dashboard.view', 'request.view_own', 'request.view_team', 'request.create', 'request.edit', 'request.submit',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
     'candidate.view', 'candidate.add', 'candidate.edit', 'candidate.link', 'candidate.move_stage',
     'candidate.note', 'application.bulk_action',
