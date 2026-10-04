@@ -54,3 +54,13 @@ Release run `/home/ats/releases/20261004-101314-6bd501a/`: backup `pre-release-2
 Post-deploy (read-only): HEAD = DEPLOYED_SHA = `6bd501a`; 0 tracked edits; active; `/api/health` 200 db up; `/api/health/ready` 200; assets token `20261004d`; new UI present; unauthenticated `POST /api/interviews/1/link-application` → 401.
 
 Rollback: `ssh ats@10.20.0.9 'cd ~/arabtec-release && ATS_SHA=38f72cffdbb83d9284069d84de766f51cf37f5a9 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release.bundle bash ./09-safe-release.sh'`.
+
+---
+
+# Deployment 3 — 4 October 2026, 11:05 UTC
+
+**Deployed:** `4504ecf76fd56c372685b49b9d02d5999efa5398` (was `6bd501a`), by Claude with `09-safe-release.sh`.
+Changes: owner's new footer quote list (150 lines) as the built-in list; Control Center › Footer quotes becomes a row editor (search, add, edit, remove, save, discard, reset, paste a list).
+Verification on `4504ecf` (`evidence/verify-4504ecf/`): build 0, typecheck 0, `npm test` 78/78, domain 798/0/9, PostgreSQL required 7/7, PostgreSQL behaviour 9/9. Browser check (local): load 150, search, add, edit, remove, save, reload persists, reset → built-in (`evidence/ui-footer-quotes/`).
+Backup `pre-release-20261004-110549-4504ecf.dump` (53 table-data entries). Post-deploy: HEAD = DEPLOYED_SHA = `4504ecf`, active, health/ready 200, db up, token `20261004e`. Live editor shows "Built-in list in use · 150 quotes".
+Rollback: `ATS_SHA=6bd501a1acfe507a6fad7351e92a3354f9c1485e ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-b.bundle bash ./09-safe-release.sh`.
