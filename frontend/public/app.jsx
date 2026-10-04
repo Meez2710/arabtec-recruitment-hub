@@ -667,6 +667,12 @@ function Login({ branding, onLogin }) {
   );
 }
 
+/* Who sees the whole Talent Pool and the CV review queue. Mirrors
+   backend/src/lib/candidate-scope.js (AR-01); a courtesy so scoped roles are not
+   offered a page the server refuses — the server is what enforces it. */
+const BROAD_CANDIDATE_PERMS = ['request.view_all', 'interview.view_all', 'candidate.add'];
+function hasBroadCandidateAccess(user) { return BROAD_CANDIDATE_PERMS.some((p) => can(user, p)); }
+
 /* ----------------------------- Navigation config ----------------------------- */
 const NAV = [
   /* Order follows the approved internal UI reference (§02): Workspace first,
@@ -675,7 +681,7 @@ const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view' },
   { key: 'requests', label: 'Hiring Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
   { key: 'candidates', label: 'Talent Pool', icon: 'user', perm: 'candidate.view' },
-  { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view' },
+  { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view', broadCandidates: true },
   /* Hidden unless an administrator granted this user cv_intake.view. Hiding is
      a courtesy — routes/cv-intake.js enforces the same permission server-side,
      which is what a direct API call meets. */
@@ -873,7 +879,7 @@ function useWorkCounts(user) {
   const reload = useCallback(() => {
     const jobs = [
       can(user, 'dashboard.view') ? api.get('/dashboard').catch(() => null) : Promise.resolve(null),
-      can(user, 'candidate.view') ? api.get('/candidates/intakes').catch(() => null) : Promise.resolve(null),
+      can(user, 'candidate.view') && hasBroadCandidateAccess(user) ? api.get('/candidates/intakes').catch(() => null) : Promise.resolve(null),
     ];
     Promise.all(jobs).then(([dash, intake]) => {
       setCounts({ dash: dash || null, intakes: intake ? (intake.intakes || []).length : null });
@@ -1456,6 +1462,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const hasControl = can(user, 'app.manage_ui');
   const visibleNav = NAV.filter((n) => n.section || (
     !(hasControl && IN_CONTROL_CENTER.includes(n.key))
+    && (!n.broadCandidates || hasBroadCandidateAccess(user))
     && (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm)))));
   const navItems = visibleNav.filter((n) => !n.section);
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
