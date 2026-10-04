@@ -3,6 +3,9 @@
 Updated: 2026-10-04. Scope: the real company ATS (owner correction; no demo deliverables).
 Release evidence: `docs/production-release/` (plan, evidence, summaries). Living owner report: outputs/ATS_INSPECTION_AND_RELEASE_REPORT.md (maintained by Codex).
 
+## DEPLOYED 2026-10-04 10:13 UTC: `6bd501a` (was `38f72cf`)
+- Interview → assessment fix + reopen + Footer quotes tab. Verified 78/78, domain 798/0/9, PG 7/7 + behaviour 9/9; browser A/B/C pass. Post-deploy health/ready 200, SHA equal. Record: DEPLOYMENT_RECORD.md (Deployment 2).
+
 ## DEPLOYED 2026-10-04 09:35 UTC: `38f72cf` (was `5272780`)
 - Run by owner with 09-safe-release.sh; backup pre-release-20261004-093506-38f72cf.dump (61 MB). Read-only checks: HEAD = DEPLOYED_SHA = 38f72cf, active, health/ready 200, db up, new assets (20261004c), unauth API 401. Owner login smoke pending. Record: docs/production-release/DEPLOYMENT_RECORD.md
 

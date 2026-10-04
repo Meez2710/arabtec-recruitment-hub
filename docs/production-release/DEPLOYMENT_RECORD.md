@@ -36,3 +36,21 @@ Sign in on http://10.20.0.9:4001; open Interviews and one interview; open an ass
 
 Code: `ssh ats@10.20.0.9 'cd ~/arabtec-release && ATS_SHA=5272780e054246e2c789e8cd1ecfe9ec267116f8 bash ./09-safe-release.sh'` (fetches from origin, where 5272780 exists; takes another backup first).
 Database: not needed for a code rollback (startup schema changes are additive). A restore from the dump above discards data written after 09:35 UTC and is an owner decision.
+
+---
+
+# Deployment 2 — 4 October 2026, 10:13 UTC
+
+**Deployed:** `6bd501a1acfe507a6fad7351e92a3354f9c1485e` (was `38f72cf`). Run by Claude with `09-safe-release.sh` after the owner enabled command permissions.
+
+Why: owner found interviews scheduled from the Interviews page had no assessment (only "Add Feedback"), and asked for an undo after "Mark Completed".
+
+Changes: interviews scheduled with a hiring request are linked to the candidate's application; "Open assessment" is the primary action on every interview, and an unlinked one asks which request it is for; the assessment unlocks once an active interview exists; "Reopen interview" for completed / no-show; Control Center tab renamed "Footer quotes".
+
+Verification on `6bd501a` before release (`evidence/verify-6bd501a/`): build 0, typecheck 0, `npm test` 78/78, domain 798/0/9, required PostgreSQL suites 7/7 (227 checks), PostgreSQL behaviour suites 9/9 (incl. new interview-assessment suite 18/0). Browser check (local synthetic, `evidence/ui-interview-assessment/`): schedule with request → sheet opens; schedule without request → link dialog → sheet opens; mark completed → reopen → Scheduled; 0 console errors, 0 failed requests.
+
+Release run `/home/ats/releases/20261004-101314-6bd501a/`: backup `pre-release-20261004-101314-6bd501a.dump` (61,292,253 bytes, 53 table-data entries); built outside the live checkout; new pid 21557 ready.
+
+Post-deploy (read-only): HEAD = DEPLOYED_SHA = `6bd501a`; 0 tracked edits; active; `/api/health` 200 db up; `/api/health/ready` 200; assets token `20261004d`; new UI present; unauthenticated `POST /api/interviews/1/link-application` → 401.
+
+Rollback: `ssh ats@10.20.0.9 'cd ~/arabtec-release && ATS_SHA=38f72cffdbb83d9284069d84de766f51cf37f5a9 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release.bundle bash ./09-safe-release.sh'`.
