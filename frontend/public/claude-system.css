@@ -1279,6 +1279,72 @@ section.card:has(> .cvi-status) > .cvi-status { padding: 0 0 var(--sp-3); gap: v
   .profile-overview .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* ==========================================================================
+   18c. ROW RULES — one control height, one spacing scale, aligned rows
+   ----------------------------------------------------------------------------
+   Owner review, 4 Oct 2026, on the live Talent Pool at 1920 wide: "buttons are
+   crowded and irregular … where's the spacing and margins rule". Measured on
+   production before this section:
+     • head row: view switch segments 34px beside 40px buttons, gaps 15/8/9/8;
+     • filter row: search 717px, five 112px inputs, a 162px select, and
+       "All classifications" stranded alone on a second line at 280px;
+     • cards: five columns of ~300px with name and university side by side,
+       so both truncated ("Zagazig Univer…", "Senior Store Ke…").
+
+   The rules, which apply to every page that uses these shared parts:
+     R-a  Every control in a head row or a filter row is 40px (--cl-ctl-lg).
+     R-b  8px between controls of one group, 16px between groups, 12px
+          between rows. Nothing else.
+     R-c  A filter row is a grid of equal columns. A control that wraps lands
+          in a column; it is never stretched across a line on its own.
+     R-d  On wide screens the search and the result count share the first row,
+          and the filters own the second — always the same two rows.
+     R-e  A card never sets two text columns side by side; its content stacks
+          under the name, so nothing is cut off at any column count.
+   Geometry only; colour stays in arabtec-design-system.css.
+   ========================================================================= */
+
+/* R-a / R-b — the head row. The view switch is a 40px box (3 + 34 + 3) with
+   the same 8px corner as the buttons beside it, not a pill, and it is a group
+   of its own: 8px gap + 8px margin = 16px to the actions. */
+.page-head-actions { gap: var(--sp-2); }
+.page-head-actions .view-toggle {
+  box-sizing: border-box; height: var(--cl-ctl-lg); /* track inset stays the base 3px */
+  align-items: stretch; border-radius: var(--cl-r-md);
+}
+.page-head-actions .view-toggle-btn { height: 100%; padding: 0 var(--sp-3); border-radius: var(--cl-r-sm); }
+.page-head-actions > .view-toggle { margin-inline-end: var(--sp-2); }
+
+/* R-c / R-d — the filter row on wide screens. Below 1101px the filters live
+   behind the disclosure button (section 18) and keep their stacked layout. */
+@media (min-width: 1101px) {
+  .toolbar.filter-toolbar { flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); }
+  .filter-toolbar > .toolbar-secondary {
+    order: 1; flex: 1 0 100%;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: var(--sp-2); align-items: center;
+  }
+  .filter-toolbar > .toolbar-secondary > input,
+  .filter-toolbar > .toolbar-secondary > select { width: 100%; min-width: 0; max-width: none; }
+  .filter-toolbar > .toolbar-secondary > .switch,
+  .filter-toolbar > .toolbar-secondary > .btn {
+    justify-self: start; box-sizing: border-box;
+    height: var(--cl-ctl-lg); min-height: var(--cl-ctl-lg); padding-top: 0; padding-bottom: 0;
+  }
+}
+
+/* R-e — candidate cards: wider columns, one stacked text column. */
+.cand-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); }
+.cand-card { padding: var(--sp-4); gap: var(--sp-3); }
+.cand-card .cc-face { grid-template-columns: 40px minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); }
+.cand-card .cc-avatar { grid-row: auto; width: 40px; height: 40px; }
+.cand-card .cc-uni { grid-column: 2; text-align: start; }
+/* An empty education block would only print two dashes. Cards in a row still
+   end level: grid rows stretch and the footer is pushed to the bottom. */
+.cand-card .cc-uni.is-empty { display: none; }
+.cand-card .cc-facts { margin-top: var(--sp-2); }
+.cand-card .cc-foot { padding-top: var(--sp-3); gap: var(--sp-3); }
+
 /* ============================================================================
    19. COMPACT STATE COMPONENTS — badges, chips and tabs are ONE family
    ----------------------------------------------------------------------------

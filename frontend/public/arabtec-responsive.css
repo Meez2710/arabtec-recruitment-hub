@@ -521,7 +521,7 @@ img, svg, video, canvas {
   width: 100%;
 }
 .page-head:has(+ .ask-bar) .view-toggle {
-  margin-right: 4px;
+  margin-right: 8px; /* 8px gap + 8px = 16px between groups (claude-system.css 18c, R-b) */
 }
 .tp-page .tp-actions {
   display: inline-flex;
