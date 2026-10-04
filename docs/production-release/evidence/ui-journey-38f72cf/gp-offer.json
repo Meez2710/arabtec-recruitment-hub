@@ -1,0 +1,136 @@
+{
+ "stage": "offer",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "open #interviews/1"
+  },
+  {
+   "s": "click \"Mark Completed\""
+  },
+  {
+   "s": "complete dialog",
+   "mb": null
+  },
+  {
+   "s": "interview status",
+   "status": "completed"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "s": "click \"Generate Offer\""
+  },
+  {
+   "s": "type \"Salary Offered\""
+  },
+  {
+   "s": "set Joining Date = 2026-11-01"
+  },
+  {
+   "s": "set Offer expiry = 2026-10-20"
+  },
+  {
+   "s": "type \"Benefits\""
+  },
+  {
+   "s": "type \"Notes\""
+  },
+  {
+   "s": "screenshot gp-20-offer-form.png"
+  },
+  {
+   "s": "click \"Create Offer\""
+  },
+  {
+   "s": "offer created",
+   "id": 1,
+   "no": "OFR-2026-00001",
+   "status": "draft",
+   "salary": 42000
+  },
+  {
+   "s": "open #offers/1"
+  },
+  {
+   "s": "click \"Submit for approval\""
+  },
+  {
+   "s": "after offer submit",
+   "status": "pending_approval"
+  },
+  {
+   "s": "screenshot gp-21-offer-submitted.png"
+  },
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.director@arabtec.com"
+  },
+  {
+   "s": "open #offers/1"
+  },
+  {
+   "s": "click \"Approve\""
+  },
+  {
+   "s": "after offer approve",
+   "status": "approved"
+  },
+  {
+   "s": "screenshot gp-22-offer-approved.png"
+  },
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "open #reports"
+  },
+  {
+   "s": "screenshot gp-23-reports.png"
+  },
+  {
+   "s": "open #dashboard"
+  },
+  {
+   "s": "screenshot gp-24-dashboard-after.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

@@ -1,0 +1,60 @@
+{
+ "stage": "approve",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Submit for approval\""
+  },
+  {
+   "s": "after submit",
+   "status": "pending_approval",
+   "toast": []
+  },
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.director@arabtec.com"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "screenshot gp-05-director-review.png"
+  },
+  {
+   "s": "click \"Approve\""
+  },
+  {
+   "s": "approve dialog",
+   "buttons": null
+  },
+  {
+   "s": "after approve",
+   "status": "sourcing"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

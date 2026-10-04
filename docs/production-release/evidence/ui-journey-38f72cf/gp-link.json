@@ -1,0 +1,80 @@
+{
+ "stage": "link",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click \"Add Candidate\""
+  },
+  {
+   "s": "choose \"Candidate\" = Omar Hassan (BOARD DEMO) (CAN-00003) — Planning Engineer"
+  },
+  {
+   "s": "choose \"Initial Status\" = Sourced"
+  },
+  {
+   "s": "click \"Link\""
+  },
+  {
+   "s": "linked",
+   "applicationId": 3,
+   "status": "sourced"
+  },
+  {
+   "s": "screenshot gp-10-pipeline-linked.png"
+  },
+  {
+   "0": "Dashboard",
+   "1": "Hiring Requests2",
+   "2": "Talent Pool",
+   "3": "Candidate Review",
+   "4": "CV Inbox",
+   "5": "Interviews",
+   "6": "Offers",
+   "7": "Organization Structure",
+   "8": "Reports",
+   "9": "Notification Settings",
+   "10": "Toggle sidebar",
+   "11": "Search candidatesCtrl K",
+   "12": "Notifications",
+   "13": "Hiring Requests",
+   "14": "Edit",
+   "15": "Request detailsPlanning · Hills of One — New ZayedShow",
+   "16": "Conversation",
+   "17": "Candidates",
+   "18": "AI Shortlist",
+   "19": "Details",
+   "20": "Activity",
+   "21": "Board",
+   "22": "List",
+   "23": "Table",
+   "24": "SELECT::All stages|Sourced|Screening|Interview|Offer|Hired",
+   "25": "SELECT::All recruiters|Karim Adel",
+   "26": "SELECT::Sort: Last updated|Name|Match score",
+   "27": "Import CVs",
+   "28": "Add Candidate",
+   "29": "Omar Hassan (BOARD DEMO)",
+   "30": "Actions for Omar Hassan (BOARD DEMO)",
+   "s": "pipeline controls"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}
