@@ -3,6 +3,9 @@
 Updated: 2026-10-04. Scope: the real company ATS (owner correction; no demo deliverables).
 Release evidence: `docs/production-release/` (plan, evidence, summaries). Living owner report: outputs/ATS_INSPECTION_AND_RELEASE_REPORT.md (maintained by Codex).
 
+## DEPLOYED 2026-10-04 09:35 UTC: `38f72cf` (was `5272780`)
+- Run by owner with 09-safe-release.sh; backup pre-release-20261004-093506-38f72cf.dump (61 MB). Read-only checks: HEAD = DEPLOYED_SHA = 38f72cf, active, health/ready 200, db up, new assets (20261004c), unauth API 401. Owner login smoke pending. Record: docs/production-release/DEPLOYMENT_RECORD.md
+
 ## Release progress (this session)
 - Server baseline (read-only SSH): deployed `5272780e05…`, clean tree, service active. Further production reads REFUSED by the permission classifier ("Production Reads"); exact permission request in `docs/production-release/DEPLOYMENT_PLAN.md`.
 - `eca7c9c` Ollama guard: local-only default restored; hosted host only if listed in OLLAMA_ALLOWED_HOSTS and https. Domain ollama tests 26/0. Production (`node src/server.js`) does not use this TS client.
