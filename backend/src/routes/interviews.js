@@ -38,6 +38,32 @@ const IV_MODES = ['onsite', 'video', 'phone'];
 const IV_STATUSES = ['scheduled', 'completed', 'no_show', 'cancelled', 'rescheduled'];
 const RECS = ['strong_yes', 'yes', 'no', 'strong_no'];
 
+// One unambiguous instant per interview. Accepts an ISO-8601 date-time with Z
+// or an explicit offset and returns it as ISO UTC; refuses what the server
+// would have to guess (no offset = the server's own timezone) or would
+// silently roll over (V8 reads 2031-02-30 as 2 March). null = unusable.
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+function canonicalInstant(v) {
+  if (typeof v !== 'string') return null;
+  const m = ISO_INSTANT.exec(v.trim());
+  if (!m) return null;
+  const [, y, mo, d, h, mi, sec = '0'] = m;
+  if (+h > 23 || +mi > 59 || +sec > 59) return null;
+  const civil = new Date(Date.UTC(+y, +mo - 1, +d));
+  if (civil.getUTCFullYear() !== +y || civil.getUTCMonth() !== +mo - 1 || civil.getUTCDate() !== +d) return null;
+  const t = new Date(v.trim()).getTime();
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+// Whole minutes the calendar can reason about (its clash lookup looks back at
+// most MAX_DURATION_MIN). null = unusable.
+function validDuration(v) {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  return Number.isInteger(n) && n > 0 && n <= MAX_DURATION_MIN ? n : null;
+}
+const BAD_INSTANT = 'Scheduled date/time must be a valid date and time with a timezone, e.g. 2031-01-06T10:00:00Z.';
+const BAD_DURATION = `Duration must be a whole number of minutes from 1 to ${MAX_DURATION_MIN}.`;
+const given = (v) => v !== undefined && v !== null;
+
 // --- Scope helpers ----------------------------------------------------------
 // Full-view roles see every interview; scoped roles (HM, interviewer) only see
 // interviews where they are a panelist (or organizer).
@@ -192,8 +218,12 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   // Validation
   if (d.interviewType && !IV_TYPES.includes(d.interviewType)) return res.status(400).json({ error: 'Invalid interview type.' });
   if (d.mode && !IV_MODES.includes(d.mode)) return res.status(400).json({ error: 'Invalid interview mode.' });
-  if (!d.scheduledAt) return res.status(400).json({ error: 'Scheduled date/time is required.' });
-  if (new Date(d.scheduledAt) < new Date(Date.now() - 60000)) return res.status(400).json({ error: 'Interview cannot be scheduled in the past.' });
+  if (!given(d.scheduledAt) || d.scheduledAt === '') return res.status(400).json({ error: 'Scheduled date/time is required.' });
+  const scheduledAt = canonicalInstant(d.scheduledAt);
+  if (!scheduledAt) return res.status(400).json({ error: BAD_INSTANT });
+  if (new Date(scheduledAt) < new Date(Date.now() - 60000)) return res.status(400).json({ error: 'Interview cannot be scheduled in the past.' });
+  const durationMin = given(d.durationMin) ? validDuration(d.durationMin) : 60;
+  if (!durationMin) return res.status(400).json({ error: BAD_DURATION });
   const panel = Array.isArray(d.panel) ? d.panel : [];
   if (panel.length === 0) return res.status(400).json({ error: 'At least one interviewer (panel member) is required.' });
   for (const m of panel) if (!Users.byId(Number(m.interviewerId))) return res.status(400).json({ error: 'A selected interviewer does not exist.' });
@@ -217,7 +247,7 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   const created = Interviews.create({
     interviewNo, applicationId: app ? app.id : null, candidateId, requestId,
     round: d.round || 1, interviewType: d.interviewType || 'technical', mode: d.mode || 'onsite',
-    scheduledAt: d.scheduledAt, durationMin: d.durationMin || 60, locationOrLink: d.locationOrLink,
+    scheduledAt, durationMin, locationOrLink: d.locationOrLink,
     organizerId: req.user.id, status: 'scheduled', createdBy: req.user.id,
   });
   InterviewPanel.set(created.id, panel.map((m) => ({ interviewerId: Number(m.interviewerId), isLead: !!m.isLead })));
@@ -257,15 +287,32 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
   if (!iv) return res.status(404).json({ error: 'Interview not found.' });
   if (['cancelled', 'completed'].includes(iv.status)) return res.status(409).json({ error: `Cannot edit a ${iv.status} interview.` });
   const d = req.body || {};
-  if (d.scheduledAt && new Date(d.scheduledAt) < new Date(Date.now() - 60000)) return res.status(400).json({ error: 'Cannot reschedule into the past.' });
-  const before = { scheduledAt: iv.scheduled_at, mode: iv.mode };
-  const rescheduled = d.scheduledAt && d.scheduledAt !== iv.scheduled_at;
-  const panelBefore = InterviewPanel.interviewerIds(iv.id);
-  const updated = Interviews.update(iv.id, d);
-  let panelChanged = false;
+  // Everything is checked before anything is written: a refused update must
+  // leave the interview exactly as it was.
+  let scheduledAt;
+  if (given(d.scheduledAt)) {
+    scheduledAt = canonicalInstant(d.scheduledAt);
+    if (!scheduledAt) return res.status(400).json({ error: BAD_INSTANT });
+    if (new Date(scheduledAt) < new Date(Date.now() - 60000)) return res.status(400).json({ error: 'Cannot reschedule into the past.' });
+  }
+  let durationMin;
+  if (given(d.durationMin)) {
+    durationMin = validDuration(d.durationMin);
+    if (!durationMin) return res.status(400).json({ error: BAD_DURATION });
+  }
+  if (d.interviewType && !IV_TYPES.includes(d.interviewType)) return res.status(400).json({ error: 'Invalid interview type.' });
+  if (d.mode && !IV_MODES.includes(d.mode)) return res.status(400).json({ error: 'Invalid interview mode.' });
   if (Array.isArray(d.panel)) {
     if (d.panel.length === 0) return res.status(400).json({ error: 'At least one interviewer is required.' });
     for (const m of d.panel) if (!Users.byId(Number(m.interviewerId))) return res.status(400).json({ error: 'A selected interviewer does not exist.' });
+  }
+  const before = { scheduledAt: iv.scheduled_at, mode: iv.mode };
+  // Same instant in another spelling is not a reschedule.
+  const rescheduled = !!scheduledAt && new Date(scheduledAt).getTime() !== new Date(iv.scheduled_at).getTime();
+  const panelBefore = InterviewPanel.interviewerIds(iv.id);
+  const updated = Interviews.update(iv.id, { ...d, scheduledAt, durationMin });
+  let panelChanged = false;
+  if (Array.isArray(d.panel)) {
     InterviewPanel.set(iv.id, d.panel.map((m) => ({ interviewerId: Number(m.interviewerId), isLead: !!m.isLead })));
     const panelAfter = InterviewPanel.interviewerIds(iv.id);
     panelChanged = JSON.stringify([...panelBefore].sort()) !== JSON.stringify([...panelAfter].sort());
@@ -274,7 +321,7 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
       writeAudit(req, { action: 'interview.panel_changed', entityType: 'interview', entityId: iv.id, oldValue: { panel: panelBefore }, newValue: { panel: panelAfter } });
     }
   }
-  if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); InterviewActivity.add(iv.id, req.user, 'rescheduled', `→ ${d.scheduledAt}`); }
+  if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); InterviewActivity.add(iv.id, req.user, 'rescheduled', `→ ${scheduledAt}`); }
   else if (!panelChanged) InterviewActivity.add(iv.id, req.user, 'updated');
   writeAudit(req, { action: 'interview.updated', entityType: 'interview', entityId: iv.id, oldValue: before, newValue: { scheduledAt: updated.scheduled_at, rescheduled } });
   res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });

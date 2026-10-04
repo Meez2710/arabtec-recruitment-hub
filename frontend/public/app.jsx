@@ -10310,7 +10310,7 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
         <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
         <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
         <div className="field"><label>Date &amp; Time *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
-        <div className="field"><label>Duration (min)</label><input type="number" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+        <div className="field"><label>Duration (min)</label><input type="number" min="1" max="480" step="1" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
         <div className="field"><label>Round</label><input type="number" min="1" value={f.round} onChange={(e) => set('round', e.target.value)} /></div>
         <div className="field">
           <label>{f.mode === 'video' ? 'Google Meet link' : f.mode === 'phone' ? 'Phone number' : 'Location'}</label>
