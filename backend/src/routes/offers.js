@@ -10,6 +10,7 @@ import { hasOpenSeat, applicationAlreadyFilledSeat } from '../lib/vacancy.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import { APP, appNorm } from '../lib/stages.js';
 import { sendMail } from '../lib/mailer.js';
+import { applicationScopeFilter } from '../lib/candidate-scope.js';
 import { offerSent as offerSentTpl, offerLetterHtml } from '../lib/email_templates.js';
 
 const router = Router();
@@ -79,12 +80,19 @@ function mayDecide(user, pending) {
   return !needsDirector || user.permissions.includes('offer.approve_director');
 }
 
+// Offer visibility follows candidate assignment scope (AR-01). Broad roles see
+// every offer; a scoped offer viewer (e.g. a Hiring Manager) sees only offers
+// on their own requests or on applications they interview — the same rule the
+// candidate profile already applies to its nested offers.
+const offerScope = (user) => { const inScope = applicationScopeFilter(user); return (o) => inScope({ id: o.application_id, request_id: o.request_id }); };
+const OFFER_OUT_OF_SCOPE = 'You can only view offers for candidates assigned to you.';
+
 /* ---------------- LIST ---------------- */
 router.get('/', requirePermission('offer.view'), (req, res) => {
   const rows = Offers.list({
     status: req.query.status, requestId: req.query.requestId, preparedBy: req.query.preparedBy,
     q: req.query.q, joiningFrom: req.query.joiningFrom, joiningTo: req.query.joiningTo,
-  });
+  }).filter(offerScope(req.user));
   res.json({ offers: rows.map((o) => serialize(o, req.user)) });
 });
 
@@ -92,12 +100,13 @@ router.get('/', requirePermission('offer.view'), (req, res) => {
 router.get('/:id', requirePermission('offer.view'), (req, res) => {
   const o = Offers.byId(Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Offer not found.' });
+  if (!offerScope(req.user)(o)) return res.status(403).json({ error: OFFER_OUT_OF_SCOPE });
   res.json({ offer: serialize(o, req.user, { detail: true }) });
 });
 
 /* ---------------- offers for an application ---------------- */
 router.get('/application/:applicationId', requirePermission('offer.view'), (req, res) => {
-  const offers = Offers.forApplication(Number(req.params.applicationId)).map((o) => serialize(o, req.user));
+  const offers = Offers.forApplication(Number(req.params.applicationId)).filter(offerScope(req.user)).map((o) => serialize(o, req.user));
   res.json({ offers });
 });
 
@@ -434,6 +443,7 @@ router.get('/meta/form', requirePermission('offer.view'), (req, res) => {
 router.get('/:id/preview', requirePermission('offer.view'), (req, res) => {
   const o = Offers.byId(Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Offer not found.' });
+  if (!offerScope(req.user)(o)) return res.status(403).json({ error: OFFER_OUT_OF_SCOPE });
   const cand = Candidates.byId(o.candidate_id);
   // The salary BREAKDOWN (basic / accommodation / transportation / others, and
   // an area allowance on some offers) is what the signed letters actually show,

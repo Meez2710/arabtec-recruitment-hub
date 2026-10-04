@@ -66,8 +66,8 @@ try {
   await api(`/api/applications/${appAssignedSecret}/move`, { method: 'POST', token: recruiter, body: { status: 'rejected', reason: 'Not a fit for that role' } });
   const appAssigned = await app(assigned, rHr);
   if (!appAssigned || !appAssignedSecret) throw new Error('fixture: applications not created');
-  await app(hmCand, rHm);
-  await app(unrelated, rSecret);
+  const appHm = await app(hmCand, rHm);
+  const appUnrelated = await app(unrelated, rSecret);
   await api(`/api/applications/${appAssigned}/move`, { method: 'POST', token: recruiter, body: { status: 'interviewing' } });
   const iv = (await api('/api/interviews/meta/form', { token: recruiter })).json;
   const mona = iv.interviewers.find((u) => u.name === 'Mona Sami');
@@ -148,6 +148,28 @@ try {
   const hmDetail = await api(`/api/candidates/${hmCand}`, { token: hm });
   c('standalone offer on an unrelated request is not exposed to the scoped offer viewer', hmDetail.status === 200 && !hmDetail.text.includes('SENTINEL Standalone Offer') && !hmDetail.text.includes('SCOPE Unrelated Confidential Request'), `${hmDetail.status}`);
   c('HR still sees that offer', (await api(`/api/candidates/${hmCand}`, { token: hrMgr })).text.includes('SENTINEL Standalone Offer'));
+
+  console.log('\n— Offers module follows the same scope —');
+  const mkOffer = async (body) => { const r = await api('/api/offers', { method: 'POST', token: recruiter, body: { joiningDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), ...body } }); if (!r.json?.offer?.id) throw new Error('fixture offer ' + r.text); return r.json.offer.id; };
+  const offerOwn = await mkOffer({ applicationId: appHm, salaryOffered: 41000 });
+  const offerUnrelated = await mkOffer({ applicationId: appUnrelated, salaryOffered: 88888 });
+  const offerSentinel = offer.json.offer.id;
+  const hol = await api('/api/offers', { token: hm });
+  const holIds = (hol.json?.offers || []).map((o) => o.id);
+  c('HM offer list includes the offer on their own request', hol.status === 200 && holIds.includes(offerOwn), JSON.stringify(holIds));
+  c('HM offer list excludes offers on unrelated requests', !holIds.includes(offerUnrelated) && !holIds.includes(offerSentinel)
+    && !hol.text.includes('SCOPE Unrelated Candidate') && !hol.text.includes('SCOPE Unrelated Confidential Request'), JSON.stringify(holIds));
+  const hod = await api(`/api/offers/${offerUnrelated}`, { token: hm });
+  c('HM opening an unrelated offer is refused (403)', hod.status === 403 && !hod.text.includes('SCOPE Unrelated Candidate'), `${hod.status} ${hod.text.slice(0, 80)}`);
+  c('HM unrelated standalone offer refused (403)', (await api(`/api/offers/${offerSentinel}`, { token: hm })).status === 403);
+  const hop = await api(`/api/offers/${offerUnrelated}/preview`, { token: hm });
+  c('HM unrelated offer letter refused (403)', hop.status === 403 && !hop.text.includes('SCOPE Unrelated Candidate'), `${hop.status}`);
+  const hoa = await api(`/api/offers/application/${appUnrelated}`, { token: hm });
+  c('HM offers-by-application for an unrelated application reveal nothing', [200, 403].includes(hoa.status) && !(hoa.json?.offers || []).length && !hoa.text.includes('SCOPE Unrelated Candidate'), `${hoa.status} ${hoa.text.slice(0, 80)}`);
+  const hown = await api(`/api/offers/${offerOwn}`, { token: hm });
+  c('HM opens the offer on their own request, salary masked', hown.status === 200 && hown.json.offer.salaryVisible === false && hown.json.offer.salaryOffered === null && !hown.text.includes('41000'), `${hown.status}`);
+  const hrl = ((await api('/api/offers', { token: hrMgr })).json?.offers || []).map((o) => o.id);
+  c('HR still lists every offer', [offerOwn, offerUnrelated, offerSentinel].every((id) => hrl.includes(id)), JSON.stringify(hrl));
 
   console.log('\n— Project Manager (no interview scope) —');
   const pl = await api('/api/candidates?pageSize=200', { token: pm });
