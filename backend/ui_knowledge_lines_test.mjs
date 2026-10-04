@@ -47,7 +47,7 @@ check('the bundled list itself passes the owner-list parser (the two rule sets a
 check('the app prefers the owner\u2019s saved list and falls back to the bundled one', () => {
   const jsx = fs.readFileSync(pub + 'app.jsx', 'utf8');
   assert.match(jsx, /Array\.isArray\(own\) && own\.length \? own : window\.ARABTEC_KNOWLEDGE_LINES/);
-  assert.match(jsx, /\['knowledge', 'Knowledge lines'\]/, 'Control Center has a Knowledge lines tab');
+  assert.match(jsx, /\['knowledge', 'Footer quotes'\]/, 'Control Center has a Footer quotes tab');
   assert.match(jsx, /Reset to the built-in list/);
   const routes = fs.readFileSync(new URL('./src/routes/settings.js', import.meta.url), 'utf8');
   assert.match(routes, /parseKnowledgeLines\(updates\[KNOWLEDGE_LINES_KEY\]\)/, 'the server validates on save');

@@ -17,6 +17,7 @@ const SUITES = [
   'phase4_qa_test.mjs',       // integrity, scope, terminal-app, audit
   'interview_calendar_test.mjs', // calendar range filter + panel clash warning
   'scheduler_validation_test.mjs', // interview date/duration contract on POST/PUT; refused updates never half-apply
+  'interview_assessment_link_test.mjs', // interviews reach their assessment: link, unlock on active interview, reopen
   'phase5_test.mjs',          // offers, approval, joining
   'phase6_test.mjs',          // dashboards, scope, no-leak
   'thread_test.mjs',          // ticket conversation thread

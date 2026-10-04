@@ -327,6 +327,29 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
   res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
 });
 
+/* ---------------- LINK a standalone interview to an application ---------------- */
+// The interview assessment is stored per application. An interview scheduled
+// from the Interviews page without one has no assessment until it is attached
+// to the candidate's application on the hiring request it was for.
+router.post('/:id/link-application', requirePermission('interview.edit'), (req, res) => {
+  const iv = Interviews.byId(Number(req.params.id));
+  if (!iv) return res.status(404).json({ error: 'Interview not found.' });
+  if (iv.application_id) return res.status(409).json({ error: 'This interview is already linked to an application.', applicationId: iv.application_id });
+  if (iv.status === 'cancelled') return res.status(409).json({ error: 'A cancelled interview cannot be linked.' });
+  const app = Applications.byId(Number((req.body || {}).applicationId));
+  if (!app) return res.status(404).json({ error: 'Application not found.' });
+  if (Number(app.candidate_id) !== Number(iv.candidate_id)) return res.status(400).json({ error: 'That application belongs to a different candidate.' });
+  const TERMINAL_APP = ['rejected', 'withdrawn', 'joined', 'offer_rejected', 'offer_declined'];
+  if (TERMINAL_APP.includes(app.status)) return res.status(409).json({ error: `Cannot link an interview to a ${app.status} application.` });
+  if (iv.request_id && app.request_id && Number(iv.request_id) !== Number(app.request_id)) {
+    return res.status(400).json({ error: 'That application is for a different hiring request than this interview.' });
+  }
+  const linked = Interviews.linkApplication(iv.id, app.id, app.request_id || iv.request_id || null);
+  InterviewActivity.add(iv.id, req.user, 'updated', `Linked to application ${app.application_no || app.id}`);
+  writeAudit(req, { action: 'interview.application_linked', entityType: 'interview', entityId: iv.id, oldValue: { applicationId: null, requestId: iv.request_id }, newValue: { applicationId: app.id, requestId: linked.request_id } });
+  res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
+});
+
 /* ---------------- STATUS: complete / no_show / cancel ---------------- */
 router.post('/:id/status', requirePermission('interview.edit'), (req, res) => {
   const iv = Interviews.byId(Number(req.params.id));

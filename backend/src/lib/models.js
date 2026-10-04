@@ -1247,6 +1247,11 @@ export const Interviews = {
     return this.byId(id);
   },
   setOutcome(id, outcome) { run('UPDATE interview SET overall_outcome=?, updated_at=? WHERE id=?', [outcome, nowISO(), id]); },
+  // Attach a standalone interview to the candidate's application (and its request).
+  linkApplication(id, applicationId, requestId) {
+    run('UPDATE interview SET application_id=?, request_id=?, updated_at=? WHERE id=? AND application_id IS NULL', [applicationId, requestId, nowISO(), id]);
+    return this.byId(id);
+  },
   forApplication(appId) { return all('SELECT * FROM interview WHERE application_id=? ORDER BY round, scheduled_at', [appId]); },
   forCandidate(candId) { return all('SELECT * FROM interview WHERE candidate_id=? ORDER BY scheduled_at DESC', [candId]); },
   forRequest(reqId) { return all('SELECT * FROM interview WHERE request_id=? ORDER BY scheduled_at DESC', [reqId]); },

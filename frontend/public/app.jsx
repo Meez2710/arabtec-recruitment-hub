@@ -3870,7 +3870,7 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
   const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
-    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Knowledge lines']] : [])];
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
@@ -3910,7 +3910,7 @@ function KnowledgeLinesPanel() {
     }).catch((e) => setLoadError(e.message));
   }, []);
   useEffect(() => { load(); }, [load]);
-  if (loadError) return <LoadError title="Could not load knowledge lines" text={loadError} onRetry={load} />;
+  if (loadError) return <LoadError title="Could not load footer quotes" text={loadError} onRetry={load} />;
   if (text == null) return <Skeleton rows={5} />;
   const { lines, errors } = parseKnowledgeText(text);
   const usingOwn = !!saved.trim();
@@ -3926,11 +3926,11 @@ function KnowledgeLinesPanel() {
   return (
     <div className="card kl-editor">
       <div className="card-head">
-        <div><h3>Knowledge lines</h3><div className="muted">One line per entry: <code>Quote — Author</code>. An optional third field sets the topic (<code>— leadership</code>).</div></div>
+        <div><h3>Footer quotes</h3><div className="muted">The quotes shown at the foot of every page. One line per entry: <code>Quote — Author</code>. An optional third field sets the topic (<code>— leadership</code>).</div></div>
         <span className="dash-headnote">{usingOwn ? 'Your list is in use' : 'Built-in list in use'}</span>
       </div>
       <div className="card-pad">
-        <textarea aria-label="Knowledge lines, one per line" rows="16" value={text} onChange={(e) => setText(e.target.value)} spellCheck="true" />
+        <textarea aria-label="Footer quotes, one per line" rows="16" value={text} onChange={(e) => setText(e.target.value)} spellCheck="true" />
         <div className="kl-editor-foot">
           <span className={errors.length ? 'kl-editor-count error' : 'kl-editor-count'} role="status">
             {lines.length} {lines.length === 1 ? 'line' : 'lines'}{errors.length ? ` · ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}` : ''}
@@ -10297,6 +10297,18 @@ async function resolveStandaloneLink(link) {
   }
   return { candidateId, requestId: link.requestId ? Number(link.requestId) : undefined };
 }
+// The interview assessment is kept on the candidate's application to a hiring
+// request. Reuse the live application on that request, or create one at the
+// entry stage through the normal application rules (one live application per
+// candidate, request still open, …) — the server refuses with a clear message.
+const APP_CLOSED = ['rejected', 'withdrawn', 'joined', 'offer_declined', 'offer_rejected'];
+async function ensureApplication(candidateId, requestId) {
+  const r = await api.get(`/candidates/${candidateId}`);
+  const live = (r.candidate?.applications || []).find((a) => Number(a.requestId) === Number(requestId) && !APP_CLOSED.includes(a.status));
+  if (live) return live.id;
+  const created = await api.post('/applications', { candidateId, requestId, initialStatus: 'matched' });
+  return created.application.id;
+}
 
 // `initialAt` is the slot clicked on the calendar; the form opens on that time.
 function ScheduleInterviewModal({ application, user, onClose, onScheduled, initialAt }) {
@@ -10328,7 +10340,10 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
   async function save() {
     setBusy(true);
     try {
-      const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
+      let target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
+      // With a hiring request chosen, schedule on the candidate's application so
+      // the interview assessment is available for this interview.
+      if (!application && target.requestId) target = { applicationId: await ensureApplication(target.candidateId, target.requestId) };
       await api.post('/interviews', {
         ...target, interviewType: f.interviewType, mode: f.mode,
         scheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : null,
@@ -10741,6 +10756,68 @@ function InterviewsPage({ user, initialFilters }) {
   );
 }
 
+// An interview scheduled without a hiring request has no assessment sheet yet:
+// the sheet belongs to the candidate's application on a request. This asks
+// which request the interview is for, links it, then the sheet opens.
+function LinkInterviewModal({ iv, user, onClose, onLinked }) {
+  const toast = useToast();
+  const [apps, setApps] = useState(null);
+  const [requests, setRequests] = useState(null);
+  const [choice, setChoice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const canLink = can(user, 'interview.edit');
+  useEffect(() => {
+    if (!canLink) return;
+    api.get(`/candidates/${iv.candidate?.id}`).then((r) => {
+      const live = (r.candidate?.applications || []).filter((a) => !APP_CLOSED.includes(a.status));
+      setApps(live);
+      const pre = iv.request ? live.find((a) => Number(a.requestId) === Number(iv.request.id)) : live[0];
+      setChoice(pre ? 'app:' + pre.id : iv.request ? 'req:' + iv.request.id : '');
+    }).catch(() => setApps([]));
+    api.get('/requests?pageSize=100').then((r) => setRequests(r.requests || [])).catch(() => setRequests([]));
+  }, []);
+  async function save() {
+    setBusy(true);
+    try {
+      const [kind, val] = choice.split(':');
+      const applicationId = kind === 'app' ? Number(val) : await ensureApplication(iv.candidate.id, Number(val));
+      await api.post(`/interviews/${iv.id}/link-application`, { applicationId });
+      toast('Interview linked — the assessment is ready');
+      onLinked();
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  if (!canLink) {
+    return (
+      <Modal title="Interview assessment" onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
+        <p style={{ marginTop: 0 }}>This interview is not linked to a hiring request yet, so it has no assessment sheet.</p>
+        <p className="muted">Ask HR or the recruiter to open this interview and choose its hiring request; the sheet then appears here.</p>
+      </Modal>
+    );
+  }
+  const linkedReqIds = new Set((apps || []).map((a) => Number(a.requestId)));
+  const openReqs = (requests || []).filter((r) => !linkedReqIds.has(Number(r.id)) && !['closed', 'cancelled', 'rejected', 'filled', 'expired'].includes(r.status));
+  return (
+    <Modal title="Which hiring request is this interview for?" onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !choice || apps === null}>{busy ? 'Linking…' : 'Link and open assessment'}</button></>}>
+      <p className="muted" style={{ marginTop: 0 }}>The interview assessment is kept with {iv.candidate?.fullName || 'the candidate'}'s application to a hiring request. Choose it once; the sheet then opens from this interview.</p>
+      {apps === null || requests === null ? <Skeleton rows={2} /> : (
+        <div className="field">
+          <label htmlFor="link-iv-choice">Hiring request</label>
+          <select id="link-iv-choice" value={choice} onChange={(e) => setChoice(e.target.value)}>
+            <option value="">— Select —</option>
+            {apps.length > 0 && <optgroup label="Already applied">
+              {apps.map((a) => <option key={'a' + a.id} value={'app:' + a.id}>{a.ticketNo || 'Request'} — {a.position || ''} ({a.applicationNo})</option>)}
+            </optgroup>}
+            {openReqs.length > 0 && <optgroup label="Add the candidate to">
+              {openReqs.map((r) => <option key={'r' + r.id} value={'req:' + r.id}>{r.ticketNo} — {r.title}</option>)}
+            </optgroup>}
+          </select>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function InterviewDetail({ id, user, onBack }) {
   const toast = useToast();
   const [iv, setIv] = useState(null);
@@ -10748,6 +10825,8 @@ function InterviewDetail({ id, user, onBack }) {
   const [fbOpen, setFbOpen] = useState(false);
   const [action, setAction] = useState(null);
   const [assessOpen, setAssessOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [reopenAsk, setReopenAsk] = useState(false);
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -10755,7 +10834,7 @@ function InterviewDetail({ id, user, onBack }) {
   if (!iv) return <Skeleton rows={8} />;
 
   async function setStatus(status, reason) {
-    try { await api.post(`/interviews/${id}/status`, { status, reason }); toast('Interview ' + status); load(); }
+    try { await api.post(`/interviews/${id}/status`, { status, reason }); toast(status === 'scheduled' ? 'Interview reopened' : 'Interview ' + status.replace('_', '-')); load(); }
     catch (e) { toast(e.message, 'error'); }
   }
   const canEdit = btns.cancel_interview?.visible || btns.complete_interview?.visible;
@@ -10767,10 +10846,11 @@ function InterviewDetail({ id, user, onBack }) {
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Interviews</button>}
         title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
-          {iv.application && can(user, 'candidate.view') && <button className="btn btn-secondary" onClick={() => setAssessOpen(true)}>Open assessment</button>}
-          {canFeedback && iv.status !== 'cancelled' && <button className="btn" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
+          {can(user, 'candidate.view') && (iv.application || iv.status !== 'cancelled') && <button className="btn" onClick={() => (iv.application ? setAssessOpen(true) : setLinkOpen(true))}>Open assessment</button>}
+          {canFeedback && iv.status !== 'cancelled' && <button className="btn btn-secondary" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
+          {btns.complete_interview?.visible && ['completed', 'no_show'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setReopenAsk(true)}>Reopen interview</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
         </>} />
 
@@ -10814,6 +10894,10 @@ function InterviewDetail({ id, user, onBack }) {
 
       {fbOpen && <FeedbackModal interviewId={id} onClose={() => setFbOpen(false)} onSaved={() => { setFbOpen(false); load(); }} />}
       {assessOpen && <InterviewAssessmentDrawer applicationId={iv.application.id} user={user} title={`${iv.candidate?.fullName || ''} · ${iv.interviewNo}`} onClose={() => setAssessOpen(false)} />}
+      {reopenAsk && <Confirm title="Reopen interview" confirmLabel="Reopen"
+        message={`Move this interview back to Scheduled? It was marked ${iv.status === 'no_show' ? 'No-Show' : 'Completed'}. Feedback and the assessment are kept; the change is recorded in the audit trail.`}
+        onConfirm={() => { setReopenAsk(false); setStatus('scheduled', iv.status === 'no_show' ? 'Reopened after No-Show' : 'Reopened after Completed'); }} onClose={() => setReopenAsk(false)} />}
+      {linkOpen && <LinkInterviewModal iv={iv} user={user} onClose={() => setLinkOpen(false)} onLinked={async () => { setLinkOpen(false); await load(); setAssessOpen(true); }} />}
       {action && <Confirm title={action.title} message="Provide a reason. Recorded in the audit trail." requireReason danger onConfirm={action.run} onClose={() => setAction(null)} />}
     </div>
   );

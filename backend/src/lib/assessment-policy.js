@@ -209,7 +209,17 @@ export function effectivePolicy(overrides = storedOverrides()) {
 // ── Existing access (layer 1) ───────────────────────────────────────────
 
 const INTERVIEW_STAGES = ['interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
-export const isAssessmentUnlocked = (app) => INTERVIEW_STAGES.includes(appNorm(app.status));
+// Unlocked once the candidate is at an interview stage, or as soon as an
+// interview for this application exists and is not cancelled — scheduling the
+// interview is what makes the assessment relevant, whether or not the pipeline
+// card was moved by hand.
+const UNLOCK_MEMO = new WeakMap(); // per application row, so one request queries once
+export const isAssessmentUnlocked = (app) => {
+  if (INTERVIEW_STAGES.includes(appNorm(app.status))) return true;
+  if (app.id == null) return false;
+  if (!UNLOCK_MEMO.has(app)) UNLOCK_MEMO.set(app, Interviews.forApplication(app.id).some((iv) => iv.status !== 'cancelled'));
+  return UNLOCK_MEMO.get(app);
+};
 const has = (user, p) => (user.permissions || []).includes(p);
 
 // Same rules as routes/interviews.js, applied to an application: full-view roles
