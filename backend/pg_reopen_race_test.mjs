@@ -40,7 +40,7 @@ const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only 
     await api(0, `/api/requests/${id}/submit`, { method: 'POST', token: hrMgr });
     await api(0, `/api/requests/${id}/approve`, { method: 'POST', token: hrDir, body: {} });
     await api(0, `/api/requests/${id}/assign`, { method: 'POST', token: recMgr, body: { ownerId: meta.json.recruiters[0].id } });
-    await api(0, `/api/requests/${id}/close`, { method: 'POST', token: hrMgr, body: { reason: 'race setup' } });
+    await api(0, `/api/requests/${id}/close`, { method: 'POST', token: recMgr, body: { reason: 'race setup' } });
     return id;
   };
   const available = (id) => get(
@@ -56,7 +56,7 @@ const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only 
   const auditBefore = get("SELECT COUNT(*) c FROM audit_log WHERE action='request.reopened'").c;
 
   const resultsA = await race(Array.from({ length: 6 }, (_, i) => () => api(i, `/api/requests/${idA}/reopen`, {
-    method: 'POST', token: hrMgr, body: { reason: `racer ${i}` },
+    method: 'POST', token: recMgr, body: { reason: `racer ${i}` },
   })));
   const settledA = resultsA.map((r) => (r.status === 'fulfilled' ? r.value : { status: 0 }));
   const okA = settledA.filter((r) => r.status === 200);
@@ -84,7 +84,7 @@ const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only 
   const before = Object.fromEntries(ids.map((id) => [id, seatCount(id)]));
 
   const resultsB = await race(ids.map((id, i) => () => api(i, `/api/requests/${id}/reopen`, {
-    method: 'POST', token: hrMgr, body: { reason: 'parallel reopen' },
+    method: 'POST', token: recMgr, body: { reason: 'parallel reopen' },
   })));
   const okB = resultsB.filter((r) => r.status === 'fulfilled' && r.value.status === 200);
   c('all four unrelated reopens succeeded — no unnecessary serialization',
