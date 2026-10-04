@@ -168,8 +168,8 @@ await check('score control: 1 2 3 4 5 N/A in the cell with the guide as accessib
 await check('document follows the PDF: title, section order, table columns, instruction, guide, justification label; no fit selector', async () => {
   const p = await openPanel(bundleOf());
   const t = p.view();
-  assert.ok(text(t).includes('ARABTEC CONSTRUCTION — ASSESSMENT & EVALUATION'));
-  eq(nodes(t).filter((n) => n.type === 'h3').map(text), ['Candidate Personal Information', 'HR Assessment — Behavioral (Big Five Model)', 'Technical Assessment — Role Competency', 'Critical Flags — Review if Any Are True', 'Final Recommendation']);
+  assert.ok(!text(t).includes('ARABTEC CONSTRUCTION — ASSESSMENT & EVALUATION'), 'the interactive drawer does not repeat the printed document title');
+  eq(nodes(t).filter((n) => n.type === 'h3').map(text), ['Candidate details', 'HR Assessment — Behavioral (Big Five Model)', 'Technical Assessment — Role Competency', 'Critical Flags — Review if Any Are True', 'Final Recommendation']);
   const hr = section(t, 'HR Assessment — Behavioral (Big Five Model)');
   eq(nodes(hr).filter((n) => n.type === 'th' && n.props.scope === 'col').map(text), ['Criterion', 'What to Evaluate', 'Score 1–5', 'Notes']);
   eq(rowsIn(hr).map((r) => text(nodes(r).find((x) => x.type === 'th'))), HR.map((h) => h.label));
@@ -382,8 +382,8 @@ await check('drawer: unsaved assessment edits ask before closing; nothing is dis
 
 await check('candidate grid: zero years kept, missing shown as "Not recorded"; a withheld field is absent and the grid reflows', async () => {
   const p = await openPanel(bundleOf());
-  const cells = (t) => nodes(section(t, 'Candidate Personal Information')).filter((n) => n.type === 'dt').map(text);
-  const val = (t, label) => text(nodes(section(t, 'Candidate Personal Information')).find((n) => n.type === 'div' && n.props.className === 'assess-info-cell' && text(nodes(n).find((x) => x.type === 'dt')) === label)).replace(label, '');
+  const cells = (t) => nodes(section(t, 'Candidate details')).filter((n) => n.type === 'dt').map(text);
+  const val = (t, label) => text(nodes(section(t, 'Candidate details')).find((n) => n.type === 'div' && n.props.className === 'assess-info-cell' && text(nodes(n).find((x) => x.type === 'dt')) === label)).replace(label, '');
   let t = p.view();
   eq(cells(t), ['Full Name', 'Position', 'Department', 'Interview Date', 'Education', 'Years of Experience', 'Current Employer', 'Notice / Availability', 'Current Salary', 'Expected Salary']);
   assert.equal(val(t, 'Full Name'), '<b>Ali</b>', 'rendered as text by React, never as markup');
@@ -403,7 +403,7 @@ await check('hidden section is absent; view-only section renders values without 
   const technicalView = perms({ 'assessment.behavioral': [false, false], 'assessment.finalRecommendation': [true, false], 'assessment.finalRecommendation.behavioralJustification': [false, false] });
   const p = await openPanel(bundleOf({ permissions: technicalView, technical: { ...submittedHr(), evaluatorType: 'technical', rows: Object.fromEntries(TECH.map((c) => [c.key, { score: 4, notes: '' }])) } }));
   let t = p.view();
-  eq(nodes(t).filter((n) => n.type === 'h3').map(text), ['Candidate Personal Information', 'Technical Assessment — Role Competency', 'Critical Flags — Review if Any Are True', 'Final Recommendation']);
+  eq(nodes(t).filter((n) => n.type === 'h3').map(text), ['Candidate details', 'Technical Assessment — Role Competency', 'Critical Flags — Review if Any Are True', 'Final Recommendation']);
   assert.equal(text(t).includes('Behavioral Fit'), false);
   assert.equal(nodes(t).some((n) => n.props?.['aria-label'] === 'Behavioral recommendation'), false);
   const fdEl = nodes(t).find((n) => n.type === FinalDecisionBox);
