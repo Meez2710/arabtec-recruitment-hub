@@ -1,0 +1,31 @@
+  ✓ reflow stylesheet is linked after the Claude geometry layer
+  ✓ all deployed UI assets share one cache version
+  ✓ viewport includes viewport-fit=cover for iPhone safe areas
+  ✓ stacked table cells reflow as columns, not squeezed rows
+  ✓ stacked table labels no longer reserve 40% of a phone row
+  ✓ cell-sub-only display:block applies to descendants, not the TD
+  ✓ long cell values wrap instead of ellipsizing on a phone
+  ✓ request-card meta stacks label then value
+  ✓ candidate cards drop the two-column university squeeze
+  ✓ bottom navigation keeps env(safe-area-inset-bottom)
+  ✓ anyhelp launcher sits above the bottom navigation and safe area
+  ✓ page content reserves space for nav + launcher
+  ✓ page-level overflow is clipped, not used as a layout strategy
+  ✓ reflow layer does not paper over bugs with !important
+  ✓ design-system still documents the stacked-table transform
+  ✓ stylesheet link order is styles → approved → design-system → claude → reflow → phone
+  ✓ the row basis this depends on is still declared
+  ✓ the Talent Pool head stays a row
+  ✓ it wraps, so the actions still get their own line
+  ✓ the title block claims that line explicitly, not via a height basis
+  ✓ a closed phone drawer is inert, not merely moved off-screen
+  ✓ the closed drawer waits for its slide before going inert
+  ✓ opening the drawer restores it to the keyboard immediately
+  ✓ drawer rows meet the 44px phone touch floor the rest of the UI holds
+  ✓ every rule in the phone stylesheet is scoped to the phone presentation
+  ✓ no text is hard-coded below 11.5px in an inline style (use .fine-label / .fine-key)
+  ✓ the phone stylesheet lifts both named small-print classes
+  ✓ the phone sign-in page does not crop the landscape artwork
+
+=== UI RESPONSIVE: 28 passed, 0 failed ===
+

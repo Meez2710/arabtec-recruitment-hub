@@ -1,0 +1,252 @@
+[
+ {
+  "role": "technical",
+  "size": "desktop",
+  "keyboard": {
+   "focused": {
+    "label": "4 — Proficient",
+    "checkedBefore": "false",
+    "group": "Technical Knowledge score",
+    "outline": "solid 2px rgb(0, 128, 100)",
+    "focusVisible": true
+   },
+   "afterSpace": {
+    "label": "4 — Proficient",
+    "checked": "true"
+   },
+   "ok": true
+  },
+  "clickSelected": true,
+  "guideVisible": true,
+  "bar": {
+   "buttons": [
+    "Save technical draft",
+    "Submit technical evaluation"
+   ],
+   "unobstructed": true,
+   "state": "Technical assessment Draft · Last saved by Mona Sami · 4 Oct 2026, 10:53 · Unsaved changes"
+  },
+  "afterSave": {
+   "status": "draft",
+   "note": "Gate check technical desktop"
+  },
+  "afterRefresh1": {
+   "hasNote": true,
+   "stateText": "Status: Draft · Last saved by Mona Sami · 4 Oct 2026, 10:55"
+  },
+  "afterSubmit": {
+   "status": "submitted"
+  },
+  "afterRefresh2": "Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:55",
+  "ok": true
+ },
+ {
+  "role": "technical",
+  "size": "tablet",
+  "keyboard": {
+   "focused": {
+    "label": "5 — Excellent",
+    "checkedBefore": "false",
+    "group": "Technical Knowledge score",
+    "outline": "solid 2px rgb(0, 128, 100)",
+    "focusVisible": true
+   },
+   "afterSpace": {
+    "label": "5 — Excellent",
+    "checked": "true"
+   },
+   "ok": true
+  },
+  "clickSelected": true,
+  "guideVisible": true,
+  "bar": {
+   "buttons": [
+    "Save technical draft",
+    "Submit technical evaluation",
+    "Cancel edit"
+   ],
+   "unobstructed": true,
+   "state": "Technical assessment Submitted · Completed by Mona Sami · 4 Oct 2026, 10:55 · Unsaved changes"
+  },
+  "afterSave": {
+   "status": "draft",
+   "note": "Gate check technical tablet"
+  },
+  "afterRefresh1": {
+   "hasNote": true,
+   "stateText": "Status: Draft · Last saved by Mona Sami · 4 Oct 2026, 10:55"
+  },
+  "afterSubmit": {
+   "status": "submitted"
+  },
+  "afterRefresh2": "Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56",
+  "ok": true
+ },
+ {
+  "role": "technical",
+  "size": "phone",
+  "keyboard": {
+   "focused": {
+    "label": "4 — Proficient",
+    "checkedBefore": "false",
+    "group": "Technical Knowledge score",
+    "outline": "solid 2px rgb(0, 128, 100)",
+    "focusVisible": true
+   },
+   "afterSpace": {
+    "label": "4 — Proficient",
+    "checked": "true"
+   },
+   "ok": true
+  },
+  "clickSelected": true,
+  "guideVisible": true,
+  "bar": {
+   "buttons": [
+    "Save technical draft",
+    "Submit technical evaluation",
+    "Cancel edit"
+   ],
+   "unobstructed": true,
+   "state": "Technical assessment Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56 · Unsaved changes"
+  },
+  "afterSave": {
+   "status": "draft",
+   "note": "Gate check technical phone"
+  },
+  "afterRefresh1": {
+   "hasNote": true,
+   "stateText": "Status: Draft · Last saved by Mona Sami · 4 Oct 2026, 10:56"
+  },
+  "afterSubmit": {
+   "status": "submitted"
+  },
+  "afterRefresh2": "Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56",
+  "ok": true
+ },
+ {
+  "role": "hr",
+  "size": "desktop",
+  "keyboard": {
+   "focused": {
+    "label": "5 — Excellent",
+    "checkedBefore": "false",
+    "group": "Openness score",
+    "outline": "solid 2px rgb(0, 128, 100)",
+    "focusVisible": true
+   },
+   "afterSpace": {
+    "label": "5 — Excellent",
+    "checked": "true"
+   },
+   "ok": true
+  },
+  "clickSelected": true,
+  "guideVisible": true,
+  "bar": {
+   "buttons": [
+    "Save behavioral draft",
+    "Submit behavioral evaluation"
+   ],
+   "unobstructed": true,
+   "state": "Behavioral assessment Draft · Last saved by Omar Khalil · 4 Oct 2026, 10:54 · Unsaved changes"
+  },
+  "afterSave": {
+   "status": "draft",
+   "note": "Gate check hr desktop"
+  },
+  "afterRefresh1": {
+   "hasNote": true,
+   "stateText": "Status: Draft · Last saved by Omar Khalil · 4 Oct 2026, 10:56 | Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56 · View only"
+  },
+  "afterSubmit": {
+   "status": "submitted"
+  },
+  "afterRefresh2": "Status: Submitted · Completed by Omar Khalil · 4 Oct 2026, 10:57 | Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56 · View only",
+  "ok": true
+ },
+ {
+  "role": "hr",
+  "size": "tablet",
+  "keyboard": {
+   "focused": {
+    "label": "4 — Proficient",
+    "checkedBefore": "false",
+    "group": "Openness score",
+    "outline": "solid 2px rgb(0, 128, 100)",
+    "focusVisible": true
+   },
+   "afterSpace": {
+    "label": "4 — Proficient",
+    "checked": "true"
+   },
+   "ok": true
+  },
+  "clickSelected": true,
+  "guideVisible": true,
+  "bar": {
+   "buttons": [
+    "Save behavioral draft",
+    "Submit behavioral evaluation",
+    "Cancel edit"
+   ],
+   "unobstructed": true,
+   "state": "Behavioral assessment Submitted · Completed by Omar Khalil · 4 Oct 2026, 10:57 · Unsaved changes"
+  },
+  "afterSave": {
+   "status": "draft",
+   "note": "Gate check hr tablet"
+  },
+  "afterRefresh1": {
+   "hasNote": true,
+   "stateText": "Status: Draft · Last saved by Omar Khalil · 4 Oct 2026, 10:57 | Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56 · View only"
+  },
+  "afterSubmit": {
+   "status": "submitted"
+  },
+  "afterRefresh2": "Status: Submitted · Completed by Omar Khalil · 4 Oct 2026, 10:57 | Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56 · View only",
+  "ok": true
+ },
+ {
+  "role": "hr",
+  "size": "phone",
+  "keyboard": {
+   "focused": {
+    "label": "5 — Excellent",
+    "checkedBefore": "false",
+    "group": "Openness score",
+    "outline": "solid 2px rgb(0, 128, 100)",
+    "focusVisible": true
+   },
+   "afterSpace": {
+    "label": "5 — Excellent",
+    "checked": "true"
+   },
+   "ok": true
+  },
+  "clickSelected": true,
+  "guideVisible": true,
+  "bar": {
+   "buttons": [
+    "Save behavioral draft",
+    "Submit behavioral evaluation",
+    "Cancel edit"
+   ],
+   "unobstructed": true,
+   "state": "Behavioral assessment Submitted · Completed by Omar Khalil · 4 Oct 2026, 10:57 · Unsaved changes"
+  },
+  "afterSave": {
+   "status": "draft",
+   "note": "Gate check hr phone"
+  },
+  "afterRefresh1": {
+   "hasNote": true,
+   "stateText": "Status: Draft · Last saved by Omar Khalil · 4 Oct 2026, 10:57 | Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56 · View only"
+  },
+  "afterSubmit": {
+   "status": "submitted"
+  },
+  "afterRefresh2": "Status: Submitted · Completed by Omar Khalil · 4 Oct 2026, 10:57 | Status: Submitted · Completed by Mona Sami · 4 Oct 2026, 10:56 · View only",
+  "ok": true
+ }
+]

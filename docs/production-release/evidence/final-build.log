@@ -1,0 +1,4 @@
+
+> arabtec-recruitment-hub-backend@1.0.0 build
+> tsc -p tsconfig.build.json
+

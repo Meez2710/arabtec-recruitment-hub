@@ -1,0 +1,68 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:12047) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4101 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4101/api/health
+
+{"level":"info","msg":"request","requestId":"acd9115c-16c9-4bdc-b0fe-3e744d1bd780","method":"GET","path":"/","status":200,"ms":17,"ip":"::1"}
+  ✅ serves index.html 
+{"level":"info","msg":"request","requestId":"1271e4c9-76b6-4403-9e93-1b36593c6bbe","method":"GET","path":"/styles.css","status":200,"ms":6,"ip":"::1"}
+  ✅ serves styles.css 
+  ✅ serves app.jsx 
+{"level":"info","msg":"request","requestId":"8773a8c9-8237-497a-a29d-39b20eb0d984","method":"GET","path":"/app.jsx","status":200,"ms":10,"ip":"::1"}
+{"level":"info","msg":"frontend.compiled","ms":2603}
+{"level":"info","msg":"request","requestId":"b4192e31-2cfd-44e5-a5b3-5e3c6d78b99e","method":"GET","path":"/build/app.js","status":200,"ms":2170,"ip":"::1"}
+  ✅ serves the compiled app as JavaScript 
+  ✅ the compiled app contains no JSX (it was compiled on the server) 
+  ✅ compiled app is gzip-compressed on direct HTTP 
+{"level":"info","msg":"request","requestId":"82ac8d26-7c77-4f88-bd3a-f82c91b51fcc","method":"GET","path":"/build/app.js","status":304,"ms":1,"ip":"::1"}
+  ✅ an unchanged compiled file revalidates with 304 
+{"level":"info","msg":"request","requestId":"1510ad54-7ef5-4a9e-acac-6792ab02ea8d","method":"GET","path":"/build/intake-review.js","status":200,"ms":2,"ip":"::1"}
+  ✅ serves compiled intake-review 
+{"level":"info","msg":"request","requestId":"f4b70812-a62d-428d-b0f1-4da6c9a24494","method":"GET","path":"/build/cv-intake.js","status":200,"ms":1,"ip":"::1"}
+  ✅ serves compiled cv-intake 
+{"level":"info","msg":"request","requestId":"409aea34-4c2a-4d2c-b0cf-961332227b0f","method":"GET","path":"/build/email-settings.js","status":200,"ms":1,"ip":"::1"}
+  ✅ serves compiled email-settings 
+{"level":"info","msg":"request","requestId":"a69bd44d-d82e-4907-a4d6-b11c7e6ed952","method":"GET","path":"/build/org-structure.js","status":200,"ms":3,"ip":"::1"}
+  ✅ serves compiled org-structure 
+{"level":"warn","msg":"request","requestId":"fb75d845-bbf9-4969-a3c9-7927b90615ad","method":"GET","path":"/build/nope.js","status":404,"ms":0,"ip":"::1"}
+  ✅ an unknown compiled name is 404 
+  ✅ the page no longer loads the Babel compiler or text/babel scripts 
+  ✅ the security policy no longer allows unsafe-eval default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-
+{"level":"info","msg":"request","requestId":"505813c5-295b-4b5c-893d-81767ee74f40","method":"GET","path":"/","status":200,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4e759b29-1979-49f6-a1db-8df2911a2d58","method":"GET","path":"/users","status":200,"ms":2,"ip":"::1"}
+  ✅ SPA fallback for client route /users 
+{"level":"warn","msg":"request","requestId":"6f99330b-816a-4843-8259-a2e73af6e8a6","method":"GET","path":"/api/nonexistent","status":404,"ms":1,"ip":"::1"}
+  ✅ unknown /api route is 404 (not SPA html) 
+{"level":"info","msg":"request","requestId":"7ba06fbe-d519-42fd-b745-016d34ca1b96","method":"GET","path":"/api/health","status":200,"ms":0,"ip":"::1"}
+  ✅ api health ok 
+
+=== STATIC: 17 passed, 0 failed ===
+

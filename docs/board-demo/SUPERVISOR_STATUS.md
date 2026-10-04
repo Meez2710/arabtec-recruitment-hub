@@ -1,4 +1,20 @@
-# Supervisor status — board-demo readiness
+# Supervisor status — production release of the real ATS
+
+Updated: 2026-10-04. Scope: the real company ATS (owner correction; no demo deliverables).
+Release evidence: `docs/production-release/` (plan, evidence, summaries). Living owner report: outputs/ATS_INSPECTION_AND_RELEASE_REPORT.md (maintained by Codex).
+
+## Release progress (this session)
+- Server baseline (read-only SSH): deployed `5272780e05…`, clean tree, service active. Further production reads REFUSED by the permission classifier ("Production Reads"); exact permission request in `docs/production-release/DEPLOYMENT_PLAN.md`.
+- `eca7c9c` Ollama guard: local-only default restored; hosted host only if listed in OLLAMA_ALLOWED_HOSTS and https. Domain ollama tests 26/0. Production (`node src/server.js`) does not use this TS client.
+- `752c804` **Release blocker fixed — PostgreSQL final decision 500.** INSERT RETURNING-id probe aborted the transaction for id-less tables. Savepoint (rolled back + released) on the expected error; table remembered. pg_tx red on eca7c9c (aborted) → 55/0 incl. constraint-error rollback. Behaviour suites on PG: assessment_pdf 117/4 → 121/0, assessment_policy 75/2 → 77/0; 8/8 PG suites green.
+- PG start-up: first PG run timed out at 20 s for two suites while a parallel UI replay loaded the Mac (failed logs kept). Measured ready times unloaded: 1.7–2.5 s. Timeout made configurable (test harness only); not the fix.
+- `4b71e75` assessment form: calmer design (neutral headings, gray dividers, green selections, stacked cards < 900 px). Styling only.
+- `03a1ddb` login redesign merged from `d076d3d` (token conflicts only); drawer no longer repeats the printed title; "Candidate details".
+- Review gate (local synthetic, real browser): HR + Technical × desktop/tablet/phone 6/6 — keyboard Shift+Tab + Space selects, green focus ring, click select, guide visible, bottom actions unobstructed, save draft → refresh keeps note → submit → refresh Submitted. Incomplete submit correctly refused with message. Evidence `docs/production-release/evidence/assessment-review-gate.json`, screenshots `docs/board-demo/evidence/release/{before,after,gate}/`.
+- UI suites on merged tree: 16/16 exit 0.
+- Safer release script `deploy/on-prem/09-safe-release.sh` (build outside live tree, fresh backup, auto code recovery, no deletion). Syntax-checked only; not executed.
+
+## Earlier history (board-demo phase)
 
 Updated: 2026-10-04. Evidence logs: `docs/board-demo/evidence/`.
 

@@ -1,0 +1,14 @@
+# Test PostgreSQL server log (local disposable container), eca7c9c code path:
+# the RETURNING-id probe fails inside the final-decision transaction, and the retry is refused.
+2026-10-04 07:31:28.496 UTC [2262] ERROR:  column "id" does not exist at character 349
+2026-10-04 07:31:28.496 UTC [2262] STATEMENT:  INSERT INTO application_final_decision (application_id,decision,decided_by,decided_by_name,notes,decided_at) VALUES ($1,$2,$3,$4,$5,$6)
+	         ON CONFLICT(application_id) DO UPDATE SET decision=excluded.decision,decided_by=excluded.decided_by,decided_by_name=excluded.decided_by_name,notes=excluded.notes,decided_at=excluded.decided_at RETURNING id
+2026-10-04 07:31:28.499 UTC [2262] ERROR:  current transaction is aborted, commands ignored until end of transaction block
+--
+2026-10-04 07:31:28.634 UTC [2262] ERROR:  column "id" does not exist at character 349
+2026-10-04 07:31:28.634 UTC [2262] STATEMENT:  INSERT INTO application_final_decision (application_id,decision,decided_by,decided_by_name,notes,decided_at) VALUES ($1,$2,$3,$4,$5,$6)
+	         ON CONFLICT(application_id) DO UPDATE SET decision=excluded.decision,decided_by=excluded.decided_by,decided_by_name=excluded.decided_by_name,notes=excluded.notes,decided_at=excluded.decided_at RETURNING id
+2026-10-04 07:31:28.636 UTC [2262] ERROR:  current transaction is aborted, commands ignored until end of transaction block
+--
+2026-10-04 07:31:28.699 UTC [2262] ERROR:  column "id" does not exist at character 349
+2026-10-04 07:31:28.699 UTC [2262] STATEMENT:  INSERT INTO application_final_decision (application_id,decision,decided_by,decided_by_name,notes,decided_at) VALUES ($1,$2,$3,$4,$5,$6)
