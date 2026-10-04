@@ -605,64 +605,96 @@ function KnowledgeLine({ seed }) {
 }
 
 /* ----------------------------- Login ----------------------------- */
+// Sign-in — calm and corporate, in the system's own colours: the light grey
+// canvas used inside the app, one white bordered card for the form, and the
+// Arabtec signature (red dash, heavy display heading with a red full stop, a
+// faint logo watermark). Real markup throughout, so nothing is cropped at any
+// width; the phone gets the same design stacked. Sign-in behaviour is unchanged.
 function Login({ branding, onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(null);
 
   async function submit(e) {
-    e.preventDefault(); setErr(null); setBusy(true);
+    e.preventDefault(); setErr(null); setForgot(null); setBusy(true);
     try {
       const { token, user, mustChangePassword } = await api.post('/auth/login', { email, password, remember });
       // Keep the flag on the object the app renders from, so the forced-rotation
       // screen engages immediately rather than after the next /auth/me.
       api.setToken(token); onLogin({ ...user, mustChangePassword: !!mustChangePassword });
-    } catch (e) { setErr(e.message || 'Login failed'); } finally { setBusy(false); }
+    } catch (e) { setErr(e.message || 'Sign-in failed. Please try again.'); } finally { setBusy(false); }
   }
+  // Self-service reset is not available yet: the request is still recorded for
+  // the administrator, and the user is told plainly who can help.
   async function doForgot() {
-    try { const r = await api.post('/auth/forgot-password', { email }); setForgot(r.message); }
-    catch (e) { setForgot(e.message); }
+    setErr(null);
+    try { await api.post('/auth/forgot-password', { email }); } catch { /* the message below stands either way */ }
+    setForgot('Password resets are handled by your system administrator. Please contact them to reset your password.');
   }
-  const name = branding?.company_name || 'Arabtec Recruitment Hub';
+  const trackCaps = (e) => { if (e.getModifierState) setCapsLock(e.getModifierState('CapsLock')); };
+  // The admin-set company name (Branding) heads the panel; the product name is fixed.
+  const company = branding?.company_name || 'Arabtec';
+  const year = new Date().getFullYear();
   return (
-    <div className="login-wrap">
-      {/* Left visual panel — artwork comes from /bgats.png via .login-brand in styles.css.
-          The wordmark is intentionally NOT repeated here (it already appears in the image);
-          a small platform label is used instead. */}
-      <div className="login-brand">
-        <span className="login-brand-label">ATS Platform</span>
-        <h1>Hiring, smarter than ever.</h1>
-        <p>End-to-end recruitment tracking. Create requests, manage candidates, and move them through your hiring pipeline.</p>
-      </div>
-      <div className="login-form-side">
-        {/* Phone only: the artwork that carries the brand on desktop is dropped
-            there (it crops badly), so the mark sits above the card instead. */}
-        <div className="login-phone-mark" aria-hidden="true"><Logo size={56} withText textColor="rgba(255,255,255,.72)" /></div>
-        <form className="login-card" onSubmit={submit}>
-          <h2>Sign in</h2>
-          <p className="sub">Use your {name} account.</p>
-          {err && <div className="error-banner">{err}</div>}
-          {forgot && <div className="success-banner">{forgot}</div>}
-          <div className="field"><label>Work Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@arabtec.com" autoComplete="username" autoFocus required /></div>
-          <div className="field"><label>Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required /></div>
-          <div className="row-between" style={{ marginBottom: 20 }}>
-            <label className="checkbox"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember me</label>
-            <a href="#" onClick={(e) => { e.preventDefault(); doForgot(); }}>Forgot password?</a>
+    <div className="signin">
+      <header className="signin-header"><Logo size={36} withText textColor="var(--ink)" /></header>
+
+      <main className="signin-main" id="main-content">
+        <section className="signin-intro" aria-labelledby="signin-title">
+          <p className="signin-eyebrow"><span className="signin-dash" aria-hidden="true" />Human Resources</p>
+          <h1 id="signin-title" className="signin-title">Recruitment Hub<span className="signin-stop" aria-hidden="true">.</span></h1>
+          <p className="signin-lede">Hiring requests, candidates, interviews and offers for {company}, in one place.</p>
+        </section>
+
+        <form className="signin-card" onSubmit={submit} aria-labelledby="signin-heading">
+          <h2 id="signin-heading" className="signin-heading">Sign in</h2>
+          <p className="signin-sub">Use your {company} work account.</p>
+          {err && <div className="error-banner" role="alert">{err}</div>}
+          {forgot && <div className="signin-info" role="status">{forgot}</div>}
+
+          <div className="field">
+            <label htmlFor="signin-email">Work email</label>
+            <input id="signin-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@arabtec.com" autoComplete="username" autoFocus required />
           </div>
-          <button className="btn btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-          <p className="login-note">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7z" />
-            </svg>
-            <span>Secure sign-in. Repeated failed attempts are rate-limited and the account is temporarily locked.</span>
-          </p>
+          <div className="field">
+            <label htmlFor="signin-password">Password</label>
+            <div className="signin-password">
+              <input id="signin-password" type={showPassword ? 'text' : 'password'} value={password}
+                onChange={(e) => setPassword(e.target.value)} onKeyUp={trackCaps} onKeyDown={trackCaps}
+                placeholder="Enter your password" autoComplete="current-password" required
+                aria-describedby={capsLock ? 'signin-caps' : undefined} />
+              <button type="button" className="signin-reveal" onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} aria-controls="signin-password">
+                {showPassword
+                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18" /><path d="M10.6 6.1A10.9 10.9 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-3.2 3.9" /><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.5 6 10 6a10.6 10.6 0 0 0 5.4-1.4" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+                  : <Icon name="eye" size={16} />}
+              </button>
+            </div>
+            {capsLock && <p id="signin-caps" className="signin-hint" role="status">Caps Lock is on.</p>}
+          </div>
+
+          <div className="signin-row">
+            <label className="checkbox" htmlFor="signin-remember">
+              <input id="signin-remember" type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Keep me signed in
+            </label>
+            <button type="button" className="signin-link" onClick={doForgot}>Forgot password?</button>
+          </div>
+
+          <button type="submit" className="btn btn-block signin-submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
         </form>
-      </div>
+      </main>
+
+      <footer className="signin-footer">
+        <span>© {year} Arabtec Construction. All rights reserved.</span>
+        <span>Trouble signing in? Contact your system administrator.</span>
+      </footer>
+      {!HAS_CUSTOM_LOGO && <img className="signin-watermark" src="/arabtec-logo.svg" alt="" aria-hidden="true" />}
     </div>
   );
 }
