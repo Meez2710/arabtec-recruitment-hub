@@ -64,3 +64,12 @@ Changes: owner's new footer quote list (150 lines) as the built-in list; Control
 Verification on `4504ecf` (`evidence/verify-4504ecf/`): build 0, typecheck 0, `npm test` 78/78, domain 798/0/9, PostgreSQL required 7/7, PostgreSQL behaviour 9/9. Browser check (local): load 150, search, add, edit, remove, save, reload persists, reset → built-in (`evidence/ui-footer-quotes/`).
 Backup `pre-release-20261004-110549-4504ecf.dump` (53 table-data entries). Post-deploy: HEAD = DEPLOYED_SHA = `4504ecf`, active, health/ready 200, db up, token `20261004e`. Live editor shows "Built-in list in use · 150 quotes".
 Rollback: `ATS_SHA=6bd501a1acfe507a6fad7351e92a3354f9c1485e ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-b.bundle bash ./09-safe-release.sh`.
+
+---
+
+# Deployment 4 — 4 October 2026, 11:25 UTC
+
+**Deployed:** `facce8b26d4e5ea7dd9f27eae29db461d23c9654` (was `4504ecf`). Light grey desktop sidebar (`#E8EAED`, darker than the `#F4F5F7` canvas), per owner.
+Verification (`evidence/verify-facce8b/`): build 0, typecheck 0, `npm test` 78/78, PostgreSQL 7/7 + behaviour 9/9; domain first run 797/1/9 (`api.test.ts` "refuses to overfill a requisition" timed out at 5 s — transient; CSS-only change), rerun 798/0/9.
+Backup `pre-release-20261004-112535-facce8b.dump`. Post-deploy: HEAD = DEPLOYED_SHA = `facce8b`, active, health/ready 200, token `20261004f`; live computed colours sidebar rgb(232,234,237), canvas rgb(244,245,247).
+Rollback: `ATS_SHA=4504ecf76fd56c372685b49b9d02d5999efa5398 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-c.bundle bash ./09-safe-release.sh`.

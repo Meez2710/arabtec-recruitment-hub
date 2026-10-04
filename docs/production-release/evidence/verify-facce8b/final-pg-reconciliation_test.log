@@ -1,0 +1,104 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"postgres","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+
+🏗️  Arabtec Recruitment Hub listening on 4134 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"af747c91-d9ed-457e-a61d-22009e2cf2bd","method":"POST","path":"/api/auth/login","status":503,"ms":3,"ip":"::ffff:127.0.0.1"}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4134/api/health
+
+{"level":"warn","msg":"request","requestId":"a4ee9164-5846-44f4-82ac-a68b9562c788","method":"POST","path":"/api/auth/login","status":401,"ms":4,"ip":"::ffff:127.0.0.1"}
+
+Engine: real PostgreSQL (PG_TEST_URL)
+
+— fixture guard —
+  ✅ an absent seed row fails cleanly and names the table fixture bootstrap failed: no empty_probe row — the seed did not run
+
+— increase on a recruiting requisition —
+  ✅ increase by one creates exactly one seat {"restored":0,"created":1,"retired":0,"deferred":false}
+  ✅ active capacity matches the new headcount active=3
+  ✅ increase by multiple creates the exact shortfall {"restored":0,"created":4,"retired":0,"deferred":false}
+
+— restore before create —
+  ✅ restore-only: reuses cancelled seats, creates nothing {"restored":2,"created":0,"retired":0,"deferred":false}
+  ✅ no new rows were added
+  ✅ restored seats keep their identities
+  ✅ mixed: restores one then creates the rest {"restored":1,"created":2,"retired":0,"deferred":false}
+  ✅ new seat numbers append after the historical maximum
+
+— a linked cancelled seat is NEVER reused —
+  ✅ the linked seat stays cancelled and linked
+  ✅ a new seat was created instead {"restored":0,"created":1,"retired":0,"deferred":false}
+
+— decrease —
+  ✅ retires exactly the excess {"restored":0,"created":0,"retired":2,"deferred":false}
+  ✅ active capacity is now the new headcount
+  ✅ retirement takes the HIGHEST seat numbers first
+  ✅ no seat row was deleted
+  ✅ decrease exactly to the filled count is allowed {"restored":0,"created":0,"retired":2,"deferred":false}
+  ✅ filled seats are untouched
+  ✅ their links survive
+  ✅ decrease below filled commitments is a conflict
+  ✅ and nothing changed
+
+— no-op and validation —
+  ✅ repeating the same headcount writes nothing
+  ✅ headcount 0 is rejected
+  ✅ headcount -1 is rejected
+  ✅ headcount 1.5 is rejected
+  ✅ headcount 10000 is rejected
+  ✅ headcount x is rejected
+
+— closed requisition gains INVENTORY, not capacity —
+  ✅ future seats are created {"restored":0,"created":2,"retired":0,"deferred":true}
+  ✅ but NO active capacity is exposed active=0
+  ✅ they are reusable by a later reopen
+  ✅ the filled seat is untouched
+
+— reconciliation issue codes —
+  ✅ ACTIVE_CAPACITY_SHORTAGE
+  ✅ ACTIVE_CAPACITY_EXCESS
+  ✅ FILLED_EXCEEDS_HEADCOUNT
+  ✅ FILLED_SEAT_WITHOUT_LINK
+  ✅ LINKED_SEAT_IN_AVAILABLE_STATUS
+  ✅ CLOSED_REQUEST_HAS_ACTIVE_CAPACITY
+  ✅ MISSING_FUTURE_CAPACITY
+  ✅ IMPOSSIBLE_SEAT_STATE
+  ✅ DUPLICATE_SEAT_NUMBER
+
+— the deferred BL-01/BL-13 lifecycle finding —
+  ✅ a pending requisition with open seats is REPORTED
+  ✅ cross-referenced to BL-01 and BL-13
+  ✅ reported as a warning, not auto-repaired
+
+— output carries no PII —
+  ✅ issues contain ids and counts only [{"code":"FILLED_EXCEEDS_HEADCOUNT","requestId":12,"filled":2,"headcount":1}]
+
+— rollback inside a transaction —
+  ✅ a rolled-back reconciliation leaves seats untouched
+
+✓ reconciliation: 44 passed, 0 failed
+

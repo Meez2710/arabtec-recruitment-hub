@@ -1,0 +1,64 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+
+— 1. six overlapping PUTs on ONE reopened request —
+  ✅ fixture is reopened reopened
+  ✅ every request settled 2+4
+  ✅ at least one stale writer was rejected 4 conflicts
+  ✅ conflicts name the stale write
+  ✅ the race spanned processes
+  ✅ active capacity matches the COMMITTED headcount active=11 hc=11
+  ✅ the committed headcount is one of the requested targets hc=11
+  ✅ status stayed reopened reopened
+  ✅ no duplicate seat_no
+  ✅ no linked/filled seat changed
+  ✅ seat rows only grew by the winner amount
+  ✅ one edited activity per success — no duplicates, none lost edited=2 ok=2
+  ✅ one audit per success audit=2 ok=2
+  ✅ no reapproval on reopened
+
+— 2. six overlapping PUTs on ONE sourcing request —
+  ✅ fixture is sourcing sourcing
+  ✅ every request settled 2+4
+  ✅ at least one stale writer was rejected 4 conflicts
+  ✅ committed headcount is one of the requested targets hc=10
+  ✅ final status is pending_approval pending_approval
+  ✅ approval reset happened exactly once n=1
+  ✅ one edited activity per success edited=2 ok=2
+  ✅ one audit per success audit=2 ok=2
+  ✅ reconciled against pending — no new active capacity active=4 was 4
+  ✅ no duplicate seat_no
+
+— 3. concurrent updates to DIFFERENT requests —
+  ✅ all four succeeded — no global serialization 4/4
+  ✅ each committed its own headcount
+  ✅ each has correct active capacity 5,5,5,5
+  ✅ each has exactly one edited activity and one audit
+  ✅ no duplicate seat_no anywhere
+
+— hygiene —
+  ✅ no idle-in-transaction connection remains n=0
+  ✅ no orphan child process remains
+
+✓ headcount race: 31 passed, 0 failed
+
