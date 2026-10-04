@@ -23,12 +23,34 @@ import { ingestIntake } from '../lib/cv-intake/auto-ingest.js';
 import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
+import { hasBroadCandidateAccess, visibleCandidateIds, canSeeCandidate, applicationScopeFilter } from '../lib/candidate-scope.js';
 import { importInboxFile, inboxDirectory, isInboxFile } from '../lib/cv-import.js';
 import { interpretSearch } from '../lib/ai/recruiter-ai.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const router = Router();
+
+// Every /candidates/:id route — read, write, documents, notes, privacy — is
+// limited to candidates in the caller's assignment scope (AR-01). Literal paths
+// such as /intakes are not numeric ids and pass through untouched.
+router.param('id', (req, res, next, id) => {
+  const raw = String(id);
+  if (!/^\d+$/.test(raw)) {
+    // Literal paths (/intakes, /meta, /smart-search…) are words. Anything that
+    // Number() would still read as a number (2e0, 0x2, +2, " 2", 2.0) is a
+    // non-canonical spelling of an id: refuse it rather than let a handler's
+    // Number(req.params.id) resolve it past this check.
+    if (raw.trim() !== '' && Number.isFinite(Number(raw))) return res.status(400).json({ error: 'Invalid candidate id.' });
+    return next();
+  }
+  if (!req.user) return res.status(401).json({ error: 'Authentication required.' }); // fail closed
+  if (!canSeeCandidate(req.user, Number(id))) return res.status(403).json({ error: 'You can only view candidates assigned to you.' });
+  next();
+});
+// The CV intake queue holds people who are not candidates yet; it is for the
+// roles that build the Talent Pool, never for scoped viewers.
+const requireBroadCandidates = (req, res, next) => (hasBroadCandidateAccess(req.user) ? next() : res.status(403).json({ error: 'Insufficient permissions.' }));
 router.use(requireAuth);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -48,7 +70,9 @@ function serialize(c, user, { withDetail = false } = {}) {
   // Read once and derive both the count and the compact link summary below.
   // The count already cost this query; the summary is what the Talent Pool
   // needs to show WHICH request a candidate is on without opening the profile.
-  const applications = Applications.forCandidate(c.id);
+  // Nested request/application metadata is limited to the caller's scope (AR-01).
+  const inScope = applicationScopeFilter(user);
+  const applications = Applications.forCandidate(c.id).filter(inScope);
   // Phase 2 Talent Pool — returning/rehire signal, filled during the links pass below (no extra queries).
   const _hist = { returning: false, rehire: false, priorApplications: 0, lastOutcome: null, lastSeenAt: null };
   const out = {
@@ -123,8 +147,12 @@ function serialize(c, user, { withDetail = false } = {}) {
   };
   if (withDetail) {
     out.documents = CandidateDocuments.forCandidate(c.id);
-    out.notes = CandidateNotes.forCandidate(c.id);
-    out.activity = CandidateActivity.forCandidate(c.id);
+    // A note or activity tied to an application outside the caller's scope
+    // would reveal that application/request; candidate-level ones stay.
+    const appInScope = new Set(applications.map((a) => Number(a.id)));
+    const ownLevel = (row) => !row.application_id || appInScope.has(Number(row.application_id));
+    out.notes = CandidateNotes.forCandidate(c.id).filter(ownLevel);
+    out.activity = CandidateActivity.forCandidate(c.id).filter(ownLevel);
     // Interviews for this candidate (scoped: full-view roles see all; others see only theirs).
     const seeAllIv = user.permissions.includes('interview.view_all');
     const seeAssignedIv = user.permissions.includes('interview.view_assigned');
@@ -146,7 +174,8 @@ function serialize(c, user, { withDetail = false } = {}) {
     // Offers for this candidate (offer-salary masked unless offer.salary_view).
     if (user.permissions.includes('offer.view')) {
       const seeOfferSalary = user.permissions.includes('offer.salary_view');
-      out.offers = Offers.forCandidate(c.id).map((o) => {
+      // Standalone offers carry a request too; they are filtered by it, not passed through.
+      out.offers = Offers.forCandidate(c.id).filter((o) => inScope({ id: o.application_id, request_id: o.request_id })).map((o) => {
         const req = o.request_id ? Requests.byId(o.request_id) : null;
         return { id: o.id, offerNo: o.offer_no, applicationId: o.application_id, requestId: o.request_id,
           ticketNo: req?.ticket_no, positionTitle: o.position_title, status: o.status,
@@ -154,7 +183,7 @@ function serialize(c, user, { withDetail = false } = {}) {
           salaryOffered: seeOfferSalary ? o.salary_offered : null, currency: o.currency, createdAt: o.created_at };
       });
     } else { out.offers = []; }
-    out.applications = Applications.forCandidate(c.id).map((a) => {
+    out.applications = applications.map((a) => {
       const req = a.request_id ? Requests.byId(a.request_id) : null;
       const proj = req?.project_id ? Projects.byId(req.project_id) : null;
       const rec = a.recruiter_id ? Users.byId(a.recruiter_id) : null;
@@ -190,6 +219,8 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
     qualityFlag: q.qualityFlag, flagged: q.flagged,
     sort: q.sort, dir: q.dir,
   };
+  const idsIn = visibleCandidateIds(req.user);
+  if (idsIn) filters.idsIn = idsIn;
   const total = Candidates.count(filters);
   const rows = Candidates.list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
   res.json({
@@ -198,7 +229,7 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
     // tabs do not change as you page or filter. Dropped by accident when this
     // handler gained pagination; `Candidates.screeningCounts()` was left with
     // no caller.
-    screeningCounts: Candidates.screeningCounts(),
+    screeningCounts: Candidates.screeningCounts(idsIn),
     pagination: {
       page, pageSize, total,
       totalPages: Math.max(Math.ceil(total / pageSize), 1),
@@ -242,8 +273,9 @@ router.get('/smart-search', requirePermission('candidate.view'), async (req, res
 
   const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 1), 200);
   const filters = outcome.filters;
-  const total = Candidates.count(filters);
-  const rows = Candidates.list({ ...filters, limit: pageSize, offset: 0 });
+  const idsIn = visibleCandidateIds(req.user);
+  const total = Candidates.count(idsIn ? { ...filters, idsIn } : filters);
+  const rows = Candidates.list({ ...filters, ...(idsIn ? { idsIn } : {}), limit: pageSize, offset: 0 });
 
   res.json({
     candidates: rows.map((c) => serialize(c, req.user)),
@@ -267,7 +299,7 @@ router.get('/:id', requirePermission('candidate.view'), (req, res, next) => {
 });
 
 /* ---------------- DUPLICATE CHECK ---------------- */
-router.post('/check-duplicate', requirePermission('candidate.view'), (req, res) => {
+router.post('/check-duplicate', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const { email, phone, linkedinUrl, excludeId } = req.body || {};
   const dups = Candidates.findDuplicates({ email, phone, linkedinUrl, excludeId: excludeId ? Number(excludeId) : null });
   res.json({ duplicates: dups.map((c) => ({ id: c.id, candidateNo: c.candidate_no, fullName: c.full_name, email: c.email, phone: c.phone, currentCompany: c.current_company })) });
@@ -570,11 +602,11 @@ router.get('/parse-cv-async/:jobId', requirePermission('candidate.add'), (req, r
 
 /* ---------------- PRE-CANDIDATE INTAKES (review before creation) ---------------- */
 
-router.get('/intakes', requirePermission('candidate.view'), (req, res) => {
+router.get('/intakes', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   res.json({ intakes: pendingIntakes() });
 });
 
-router.get('/intakes/:iid', requirePermission('candidate.view'), (req, res) => {
+router.get('/intakes/:iid', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const intake = intakeById(Number(req.params.iid));
   if (!intake) return res.status(404).json({ error: 'Intake not found.' });
   res.json({ intake });
@@ -597,7 +629,7 @@ async function sendDocxPreview(storedName, fallbackName, res) {
   }
 }
 
-router.get('/intakes/:iid/document', requirePermission('candidate.view'), (req, res) => {
+router.get('/intakes/:iid/document', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const intake = intakeById(Number(req.params.iid));
   if (!intake) return res.status(404).json({ error: 'Intake not found.' });
   if (!intake.storedName) return res.status(404).json({ error: 'No document on file.' });

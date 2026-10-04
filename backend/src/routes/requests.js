@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { visibleCandidateIds } from '../lib/candidate-scope.js';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
   Projects, Sites, Departments, Designations, BusinessUnits, Users, SystemSettings, Posts, Applications, Workflows,
@@ -757,7 +758,9 @@ router.post('/:id/suggest-candidates', requirePermission('candidate.view'), asyn
   // roughly 12k tokens of candidates — well inside the window, and honest about
   // being a cap rather than silently reading the first N rows.
   const POOL_CEILING = 300;
-  const pool = Candidates.list({ limit: POOL_CEILING, sort: 'created', dir: 'desc' })
+  // Suggestions come only from candidates the caller may already see (AR-01).
+  const scopedIds = visibleCandidateIds(req.user);
+  const pool = Candidates.list({ limit: POOL_CEILING, sort: 'created', dir: 'desc', ...(scopedIds ? { idsIn: scopedIds } : {}) })
     .filter((c) => !linked.has(c.id) && c.candidate_state !== 'merged')
     .map((c) => ({
       id: c.id,

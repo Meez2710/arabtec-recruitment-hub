@@ -23,6 +23,7 @@ const SUITES = [
   'connections_audit_test.mjs', // every action lands in its designed path
   'assessment_pdf_test.mjs',  // PDF-faithful assessment: scores, lifecycle, scope, audit, preview
   'assessment_policy_test.mjs', // field policy: resolver, API filtering, field-level writes, preview, settings
+  'candidate_scope_test.mjs', // AR-01: candidate visibility follows assignment scope (API, nested data, ids, assistant tools)
   'ui_assessment_test.mjs',   // assessment UI: PDF document, policy-driven views, draft/submit/edit, settings
   'hardening_test.mjs',       // security hardening gate items
   'production_hardening_test.mjs', // destructive migration must fail closed before wiping data

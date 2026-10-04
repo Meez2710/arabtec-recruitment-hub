@@ -960,6 +960,11 @@ export const Candidates = {
     if (f.qualityFlag) { sql += ' AND quality_flags LIKE ?'; p.push(`%"${f.qualityFlag}"%`); }
     if (f.flagged === 'yes') { sql += " AND quality_flags IS NOT NULL AND quality_flags <> ''"; }
     if (f.flagged === 'no') { sql += " AND (quality_flags IS NULL OR quality_flags = '')"; }
+    // Assignment scope (lib/candidate-scope.js): an explicit id allow-list.
+    if (Array.isArray(f.idsIn)) {
+      if (!f.idsIn.length) sql += ' AND 1=0';
+      else { sql += ` AND id IN (${f.idsIn.map(() => '?').join(',')})`; p.push(...f.idsIn.map(Number)); }
+    }
     return { sql, p };
   },
 
@@ -995,8 +1000,9 @@ export const Candidates = {
     return this.byId(id);
   },
   // Counts per screening bucket for the Talent Pool tabs.
-  screeningCounts() {
-    const rows = all("SELECT screening_status s, COUNT(*) c FROM candidate WHERE candidate_state != 'merged' GROUP BY screening_status");
+  screeningCounts(idsIn = null) {
+    const scope = Array.isArray(idsIn) ? (idsIn.length ? ` AND id IN (${idsIn.map(() => '?').join(',')})` : ' AND 1=0') : '';
+    const rows = all(`SELECT screening_status s, COUNT(*) c FROM candidate WHERE candidate_state != 'merged'${scope} GROUP BY screening_status`, Array.isArray(idsIn) ? idsIn.map(Number) : []);
     const out = { new: 0, screening: 0, fit: 0, unfit: 0 };
     for (const r of rows) out[r.s] = Number(r.c);
     return out;
