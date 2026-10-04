@@ -131,7 +131,9 @@ const ctxAll = { fullName: '<b>Ali</b>', position: 'Site Engineer', department: 
 const bundleOf = (over = {}) => ({ unlocked: true, canEdit: true, hr: null, technical: null, finalDecision: null, permissions: perms(), context: ctxAll, ...over });
 
 // Mount the real panel against a stubbed API and return helpers to drive it.
-async function openPanel(bundle, { canFeedback = true } = {}) {
+async function openPanel(bundle, { canFeedback = true, keepUnsaved = false } = {}) {
+  // Each test starts from a clean unsaved-edits store unless it is testing restore.
+  if (!keepUnsaved) get('ASSESS_UNSAVED').clear();
   const posts = [];
   let next = bundle;
   api.get = async (p) => (p.endsWith('/meta') ? META : { assessment: next });
@@ -509,38 +511,112 @@ await check('interviewer route: an assigned interview offers "Open assessment", 
   viewer.dispose(); api.get = realGet;
 });
 
-await check('settings: the matrix shows each audience, toggles cascade, and Save sends the overrides the server will enforce', async () => {
-  const policy = {
-    audiences: [{ key: 'hr', label: 'HR / Recruitment' }, { key: 'technical', label: 'Technical Interviewer' }],
-    sections: [
-      { key: 'assessment.candidate', label: 'Candidate Personal Information', editable: false, fields: [{ key: 'assessment.candidate.currentSalary', label: 'Current Salary' }] },
-      { key: 'assessment.behavioral', label: 'HR Assessment — Behavioral', editable: true, fields: [{ key: 'assessment.behavioral.openness', label: 'Openness' }] },
-    ],
-    defaults: { hr: { 'assessment.candidate.currentSalary': { view: true, edit: false }, 'assessment.behavioral': { view: true, edit: true } }, technical: { 'assessment.candidate.currentSalary': { view: false, edit: false }, 'assessment.behavioral': { view: false, edit: false } } },
-    overrides: {},
-  };
-  const puts = [];
+// Stand-in for the server's policy resolver (routes/assessments.js
+// /policy/preview + lib/assessment-policy.js): the page must render what this
+// returns and never work the policy out itself.
+const POLICY_SECTIONS = [
+  { key: 'assessment.candidate', label: 'Candidate Personal Information', editable: false, gatesView: false, gatesEdit: false, fields: [{ key: 'assessment.candidate.currentSalary', label: 'Current Salary' }] },
+  { key: 'assessment.behavioral', label: 'HR Assessment — Behavioral', editable: true, gatesView: true, gatesEdit: true, fields: [{ key: 'assessment.behavioral.openness', label: 'Openness' }] },
+  { key: 'assessment.finalRecommendation', label: 'Final Recommendation', editable: true, gatesView: true, gatesEdit: false, fields: [{ key: 'assessment.finalRecommendation.technicalJustification', label: 'Technical Justification' }] },
+];
+const POLICY_DEFAULTS = {
+  hr: { 'assessment.candidate.currentSalary': { view: true, edit: false }, 'assessment.behavioral': { view: true, edit: true }, 'assessment.finalRecommendation': { view: true, edit: true }, 'assessment.finalRecommendation.technicalJustification': { view: true, edit: false } },
+  technical: { 'assessment.candidate.currentSalary': { view: false, edit: false }, 'assessment.behavioral': { view: false, edit: false }, 'assessment.finalRecommendation': { view: true, edit: false }, 'assessment.finalRecommendation.technicalJustification': { view: true, edit: true } },
+};
+function serverEffective(overrides) {
+  const raw = (a, k, sec) => overrides[a]?.[k] || POLICY_DEFAULTS[a]?.[k] || (sec && (overrides[a]?.[sec.key] || POLICY_DEFAULTS[a]?.[sec.key])) || { view: false, edit: false };
+  const out = {};
+  for (const a of ['hr', 'technical']) {
+    out[a] = {};
+    for (const sec of POLICY_SECTIONS) {
+      const p = raw(a, sec.key);
+      out[a][sec.key] = { ...p, configured: { ...p } };
+      for (const f of sec.fields) {
+        const own = raw(a, f.key, sec);
+        const view = own.view && (!sec.gatesView || p.view);
+        out[a][f.key] = { view, edit: view && own.edit && (!sec.gatesEdit || p.edit), configured: { ...own } };
+      }
+    }
+  }
+  return out;
+}
+
+await check('settings: the matrix shows server-resolved permissions; toggles cascade; Save sends what the server will enforce', async () => {
+  const policy = { audiences: [{ key: 'hr', label: 'HR / Recruitment' }, { key: 'technical', label: 'Technical Interviewer' }], sections: POLICY_SECTIONS, defaults: POLICY_DEFAULTS, overrides: {}, effective: serverEffective({}) };
+  const puts = [], previews = [];
   api.get = async () => ({ policy });
-  api.put = async (p, body) => { puts.push({ p, body }); return { policy: { ...policy, overrides: body.overrides } }; };
+  api.post = async (p, body) => { previews.push({ p, body }); return { valid: true, effective: serverEffective(body.overrides) }; };
+  api.put = async (p, body) => { puts.push({ p, body }); return { policy: { ...policy, overrides: body.overrides, effective: serverEffective(body.overrides) } }; };
   const page = mount(AssessmentPolicyPage, { user: {} }); page.render(); await flush(); let t = page.render();
+  const settle = async () => { t = page.render(); await flush(); t = page.render(); t = page.render(); };
   const box = (name) => nodes(t).find((n) => n.type === 'input' && n.props['aria-label'] === name);
   assert.equal(box('Technical Interviewer: view Current Salary').props.checked, false);
   assert.equal(box('Technical Interviewer: edit Current Salary'), undefined, 'candidate details are never editable here');
   assert.equal(box('Technical Interviewer: view HR Assessment — Behavioral').props.checked, false);
-  box('Technical Interviewer: view HR Assessment — Behavioral').props.onChange({ target: { checked: true } }); t = page.render();
+  box('Technical Interviewer: view HR Assessment — Behavioral').props.onChange({ target: { checked: true } }); await settle();
+  assert.equal(previews.at(-1).p, '/assessments/policy/preview', 'unsaved change resolved by the server');
   assert.equal(box('Technical Interviewer: view HR Assessment — Behavioral').props.checked, true);
   assert.equal(box('Technical Interviewer: edit HR Assessment — Behavioral').props.checked, false, 'read-only, not editable');
-  box('HR / Recruitment: view HR Assessment — Behavioral').props.onChange({ target: { checked: false } }); t = page.render();
+  box('HR / Recruitment: view HR Assessment — Behavioral').props.onChange({ target: { checked: false } }); await settle();
   assert.equal(box('HR / Recruitment: edit HR Assessment — Behavioral').props.checked, false, 'hiding also removes edit');
   const headBtn = (tree, label) => nodes(nodes(tree).find((n) => n.props && 'actions' in n.props)?.props.actions).find((n) => n.type === 'button' && text(n) === label);
   assert.equal(headBtn(t, 'Save changes').props.disabled, false, 'unsaved changes enable Save');
-  await headBtn(t, 'Save changes').props.onClick(); await flush();
+  await headBtn(t, 'Save changes').props.onClick(); await settle();
   eq(puts[0], { p: '/assessments/policy', body: { overrides: { technical: { 'assessment.behavioral': { view: true, edit: false } }, hr: { 'assessment.behavioral': { view: false, edit: false } } } } });
-  t = page.render();
   assert.equal(headBtn(t, 'Save changes').props.disabled, true, 'saved state is clean');
-  confirmAnswer = true; await headBtn(t, 'Restore defaults').props.onClick(); await flush(); confirmAnswer = false;
+  confirmAnswer = true; await headBtn(t, 'Restore defaults').props.onClick(); await settle(); confirmAnswer = false;
   eq(puts[1].body, { overrides: {} });
-  page.dispose(); api.get = realGet; api.put = realPut;
+  page.dispose(); api.get = realGet; api.put = realPut; api.post = realPost;
+});
+
+await check('settings (AR-03): hiding Final Recommendation shows its justification as enforced — unticked and locked; an invalid draft cannot be saved', async () => {
+  const policy = { audiences: [{ key: 'hr', label: 'HR / Recruitment' }, { key: 'technical', label: 'Technical Interviewer' }], sections: POLICY_SECTIONS, defaults: POLICY_DEFAULTS, overrides: {}, effective: serverEffective({}) };
+  let answer = null;
+  api.get = async () => ({ policy });
+  api.post = async (p, body) => answer || { valid: true, effective: serverEffective(body.overrides) };
+  const page = mount(AssessmentPolicyPage, { user: {} }); page.render(); await flush(); let t = page.render();
+  const settle = async () => { t = page.render(); await flush(); t = page.render(); t = page.render(); };
+  const box = (name) => nodes(t).find((n) => n.type === 'input' && n.props['aria-label'] === name);
+  assert.equal(box('Technical Interviewer: view Technical Justification').props.checked, true, 'default: technical justification visible');
+  assert.equal(box('Technical Interviewer: edit Technical Justification').props.checked, true);
+  box('Technical Interviewer: view Final Recommendation').props.onChange({ target: { checked: false } }); await settle();
+  const v = box('Technical Interviewer: view Technical Justification'), e = box('Technical Interviewer: edit Technical Justification');
+  assert.equal(v.props.checked, false, 'shown as the server enforces it: hidden');
+  assert.equal(e.props.checked, false);
+  assert.ok(v.props.disabled && e.props.disabled, 'locked while its section is hidden');
+  assert.match(v.props.title, /Hidden because “Final Recommendation” is hidden/);
+  const headBtn = (tree, label) => nodes(nodes(tree).find((n) => n.props && 'actions' in n.props)?.props.actions).find((n) => n.type === 'button' && text(n) === label);
+  answer = { valid: false, error: '“Openness” cannot be visible while “HR Assessment — Behavioral” is hidden for this audience.' };
+  box('Technical Interviewer: view Final Recommendation').props.onChange({ target: { checked: true } }); await settle();
+  assert.ok(nodes(t).some((n) => n.props?.role === 'alert' && /cannot be visible/.test(text(n))), 'server explanation shown');
+  assert.equal(headBtn(t, 'Save changes').props.disabled, true, 'an invalid draft cannot be saved');
+  page.dispose(); api.get = realGet; api.post = realPost;
+});
+
+await check('AR-06: unsaved assessment edits survive the drawer being unmounted (shell breakpoint) and are restored on reopen', async () => {
+  const first = await openPanel(bundleOf());
+  notesOf(rowOf(section(first.view(), 'HR Assessment — Behavioral (Big Five Model)'), 'Openness')).props.onChange({ target: { value: 'UNSAVED RESIZE PROBE' } });
+  first.view();
+  first.panel.dispose(); // what the shell swap does to an open drawer
+  const second = await openPanel(bundleOf(), { keepUnsaved: true });
+  const t = second.view();
+  assert.equal(notesOf(rowOf(section(t, 'HR Assessment — Behavioral (Big Five Model)'), 'Openness')).props.value, 'UNSAVED RESIZE PROBE');
+  assert.ok(nodes(t).some((n) => n.props?.['data-restored'] === 'true'), 'the user is told the edits were restored');
+  await byAria(t, 'Save behavioral draft').props.onClick(); await flush(); second.view();
+  second.panel.dispose();
+  const third = await openPanel(bundleOf(), { keepUnsaved: true });
+  assert.equal(nodes(third.view()).some((n) => n.props?.['data-restored'] === 'true'), false, 'nothing restored after a save');
+  third.dispose();
+  // A confirmed discard (closing the drawer) wipes parked edits for good.
+  get('ASSESS_UNSAVED').set('7:hr', { form: {}, base: {}, editing: true });
+  let closed = 0;
+  const qv = mount(CandidateQuickView, { app: { id: 7, candidate: { id: 1, fullName: 'C' }, status: 'interviewing' }, user: { permissions: ['interview.feedback'] }, onClose: () => { closed++; }, onChanged() {} });
+  let qt = qv.render();
+  nodes(qt).find((n) => n.type === 'button' && text(n) === 'Interview Assessment').props.onClick(); qt = qv.render();
+  nodes(qt).find((n) => n.type === AssessmentPanel).props.onDirtyChange(true);
+  confirmAnswer = true; nodes(qt).find((n) => n.props?.['aria-label'] === 'Close candidate details').props.onClick(); confirmAnswer = false;
+  assert.equal(closed, 1); assert.equal(get('ASSESS_UNSAVED').has('7:hr'), false, 'discarded edits are not restored later');
+  qv.dispose();
 });
 
 console.log(`\n=== UI ASSESSMENT: ${passed} passed ===\n`);

@@ -369,7 +369,10 @@ ${can(justKey) ? `<p class="sub">Justification / Key Strengths: <span class="lin
   const signer = (show, title, name, line) => show
     ? `<div>${esc(title)}<br><strong>${esc(name || NOT_RECORDED)}</strong><div class="line">${esc(line)}</div></div>` : '';
 
+  // The document carries its own no-script policy: the UI opens it as a blob,
+  // where the route's CSP header no longer applies (AR-07).
   return `<!doctype html><html dir="ltr" lang="en"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <title>Interview Assessment${can('assessment.candidate.fullName') && ctx.fullName ? ' — ' + esc(ctx.fullName) : ''}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
@@ -434,11 +437,11 @@ ${showTech ? section('Technical Assessment — Role Competency', TECHNICAL_CRITE
 
 ${can('assessment.criticalFlags') && (showHr || showTech) ? `<h2>Critical Flags — Review if Any Are True</h2>${flagsHtml()}` : ''}
 
-${showFinal ? `<h2>Final Recommendation</h2>
-<p><strong>Decision:</strong> ${DECISIONS.map((d) => box(fd?.decision === d.value, d.label)).join(' ')}</p>
+${showFinal || showHr || showTech ? `<h2>Final Recommendation</h2>
+${showFinal ? `<p><strong>Decision:</strong> ${DECISIONS.map((d) => box(fd?.decision === d.value, d.label)).join(' ')}</p>
 ${finalHistorical}
 <p class="muted">${fd ? `Recorded by ${esc(fd.decidedByName || NOT_RECORDED)} · ${esc(fmtUtc(fd.decidedAt) || NOT_RECORDED)}` : 'No final decision recorded'}</p>
-${fd?.notes ? `<p><strong>Notes:</strong> ${esc(fd.notes)}</p>` : ''}
+${fd?.notes ? `<p><strong>Notes:</strong> ${esc(fd.notes)}</p>` : ''}` : ''}
 ${showHr ? fitLine('Behavioral Fit', hr, 'assessment.finalRecommendation.behavioralJustification') : ''}
 ${showTech ? fitLine('Technical Fit', tech, 'assessment.finalRecommendation.technicalJustification') : ''}` : ''}
 

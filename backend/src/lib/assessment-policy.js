@@ -130,6 +130,19 @@ export function validatePolicyOverrides(input) {
       out[aud][key] = { view: rule.view, edit: rule.edit };
     }
   }
+  // A field may not grant what its section withholds; refuse instead of
+  // storing a setting that would silently have no effect (AR-03).
+  for (const aud of Object.keys(out)) {
+    for (const [key, rule] of Object.entries(out[aud])) {
+      const section = SECTION_OF.get(key);
+      if (!section || !GATING_SECTIONS.has(section)) continue;
+      const parent = rawRule(aud, section, out);
+      const label = FIELD_DEF.get(key).label;
+      const sectionLabel = FIELD_DEF.get(section).label;
+      if (rule.view && !parent.view) return { error: `“${label}” cannot be visible while “${sectionLabel}” is hidden for this audience.` };
+      if (rule.edit && EVALUATION_SECTIONS.has(section) && !parent.edit) return { error: `“${label}” cannot be editable while “${sectionLabel}” is read-only for this audience.` };
+    }
+  }
   return { overrides: out };
 }
 
@@ -144,13 +157,36 @@ export function storedOverrides() {
   } catch { return {}; }
 }
 
-/** Effective rule for one audience and key: override → default; field → section. */
-function ruleFor(audience, key, overrides) {
+// Sections whose children are parts of one evaluator's record: writing any
+// child requires being able to write the section.
+const EVALUATION_SECTIONS = new Set(['assessment.behavioral', 'assessment.technical']);
+// Sections that are themselves configurable and therefore gate their fields.
+// "Candidate Personal Information" is only a grouping: each of its fields is
+// configured on its own.
+const GATING_SECTIONS = new Set(['assessment.behavioral', 'assessment.technical', 'assessment.criticalFlags', 'assessment.finalRecommendation']);
+
+/** Configured (ungated) rule for one audience and key: override → default; field → section. */
+function rawRule(audience, key, overrides) {
   const own = overrides[audience]?.[key] ?? DEFAULT_POLICY[audience]?.[key];
   if (own) return own;
   const section = SECTION_OF.get(key);
   if (section) return overrides[audience]?.[section] ?? DEFAULT_POLICY[audience]?.[section] ?? H;
   return H;
+}
+
+/**
+ * Effective rule — THE parent/child semantics, used by every consumer (AR-03):
+ * a field is visible only if its section is visible, and a part of an
+ * evaluation is editable only if that evaluation section is editable.
+ */
+function ruleFor(audience, key, overrides) {
+  const own = rawRule(audience, key, overrides);
+  const section = SECTION_OF.get(key);
+  if (!section || !GATING_SECTIONS.has(section)) return own;
+  const parent = rawRule(audience, section, overrides);
+  const view = own.view && parent.view;
+  const edit = view && own.edit && (!EVALUATION_SECTIONS.has(section) || parent.edit);
+  return { view, edit };
 }
 
 /** Effective matrix for the settings screen: { audience: { key: {view, edit, overridden} } } */
@@ -160,7 +196,11 @@ export function effectivePolicy(overrides = storedOverrides()) {
     out[a] = {};
     for (const key of POLICY_KEYS) {
       const r = ruleFor(a, key, overrides);
-      out[a][key] = { view: r.view, edit: r.edit, overridden: !!overrides[a]?.[key], explicit: !!(overrides[a]?.[key] || DEFAULT_POLICY[a]?.[key]) };
+      const configured = rawRule(a, key, overrides);
+      // view/edit are what the server enforces; `configured` is what is set,
+      // so the settings screen can show a grant its section blocks (AR-03).
+      out[a][key] = { view: r.view, edit: r.edit, configured: { view: configured.view, edit: configured.edit },
+        overridden: !!overrides[a]?.[key], explicit: !!(overrides[a]?.[key] || DEFAULT_POLICY[a]?.[key]) };
     }
   }
   return out;
@@ -234,6 +274,8 @@ export function policyDefinition() {
     audiences: AUDIENCES.map(({ key, label }) => ({ key, label })),
     sections: POLICY_SECTIONS.map((s) => ({
       key: s.key, label: s.label, editable: s.editable,
+      // Structure only: whether the section's own setting limits its fields.
+      gatesView: GATING_SECTIONS.has(s.key), gatesEdit: EVALUATION_SECTIONS.has(s.key),
       fields: s.fields.map((f) => ({ key: f.key, label: f.label, confidential: !!f.confidential })),
     })),
   };

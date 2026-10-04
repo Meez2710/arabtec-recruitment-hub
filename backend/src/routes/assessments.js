@@ -243,7 +243,8 @@ function parseEvaluationBody(body) {
   if (just !== undefined && just !== null && typeof just !== 'string') return { error: 'Justification must be text.' };
   if (typeof just === 'string' && just.length > JUSTIFICATION_MAX) return { error: `Justification exceeds ${JUSTIFICATION_MAX} characters.` };
   return {
-    type, submitted: body.submitted === true, rows: scores.rows, provided: scores.provided,
+    // Absent `submitted` means "keep the current state" (AR-02); only an explicit false withdraws.
+    type, submitted: body.submitted === undefined ? undefined : body.submitted, rows: scores.rows, provided: scores.provided,
     flags: flags ? flags.flags : undefined,
     recommendation: rec === undefined ? undefined : (rec || null),
     justification: just === undefined ? undefined : (typeof just === 'string' ? just : ''),
@@ -287,14 +288,15 @@ router.post('/application/:applicationId', requirePermission('interview.feedback
   const justification = p.justification !== undefined ? p.justification : (prev?.justification || '');
   const recommendation = p.recommendation !== undefined ? p.recommendation : (prev?.recommendation || null);
   const summary = summarize(rows, sec.criteria);
+  const submitted = p.submitted !== undefined ? p.submitted : !!prev?.submitted;
 
-  if (p.submitted) {
+  if (submitted) {
     const missing = sec.criteria.filter((c) => rows[c.key].score == null).map((c) => c.label);
     if (missing.length) return res.status(400).json({ error: `Answer every criterion (a score or N/A) before submitting. Missing: ${missing.join(', ')}.`, missing });
     if (!recommendation) return res.status(400).json({ error: 'Choose a recommendation before submitting.' });
   }
 
-  const action = p.submitted
+  const action = submitted
     ? (prev?.submitted ? 'assessment.updated' : 'assessment.submitted')
     : (prev?.submitted ? 'assessment.updated' : 'assessment.draft_saved');
 
@@ -307,7 +309,7 @@ router.post('/application/:applicationId', requirePermission('interview.feedback
       recommendation,
       [sec.fitCol]: summary.fit,
       [sec.justification]: justification,
-      submitted: p.submitted,
+      submitted,
     });
     writeAudit(req, {
       action, entityType: 'application', entityId: app.id,
@@ -369,6 +371,18 @@ function policyPayload() {
 }
 
 router.get('/policy', requirePermission(POLICY_MANAGE_PERMISSION), (req, res) => res.json({ policy: policyPayload() }));
+
+// Effective result of UNSAVED overrides, computed by the same resolver that
+// enforces them, so the settings screen never interprets the policy itself.
+router.post('/policy/preview', requirePermission(POLICY_MANAGE_PERMISSION), (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((k) => k !== 'overrides')) {
+    return res.status(400).json({ error: 'Send { overrides }.' });
+  }
+  const v = validatePolicyOverrides(body.overrides);
+  if (v.error) return res.json({ valid: false, error: v.error });
+  res.json({ valid: true, effective: effectivePolicy(v.overrides) });
+});
 
 // Replaces the stored overrides (an empty object restores the defaults).
 router.put('/policy', requirePermission(POLICY_MANAGE_PERMISSION), (req, res) => {

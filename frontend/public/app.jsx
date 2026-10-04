@@ -6714,9 +6714,12 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   // Unsaved assessment edits must not vanish with the drawer: closing asks first.
   const assessDirty = useRef(false);
   const requestClose = useCallback(() => {
-    if (assessDirty.current && !window.confirm('Discard unsaved assessment changes?')) return;
+    if (assessDirty.current) {
+      if (!window.confirm('Discard unsaved assessment changes?')) return;
+      discardAssessUnsaved(app.id);
+    }
     onClose();
-  }, [onClose]);
+  }, [onClose, app.id]);
   const { dialogRef, onDialogKeyDown } = useDialogFocus(requestClose);
   const [tab, setTab] = useState('profile'); // profile | assessment
   // Once opened, the assessment stays mounted (hidden) so switching to the
@@ -6746,7 +6749,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
     catch (err) { toast(err.message, 'error'); } finally { setResumeBusy(false); e.target.value = ''; }
   }
 
-  return (
+  return toPageLevel(
     // The assessment tab gets a wider drawer: the form is a document laid out like the A4 sheet.
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
       <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}
@@ -6837,6 +6840,15 @@ const ASSESS_CANDIDATE_FIELDS = [
 ].map(([policy, label, key]) => ({ policy, label, key }));
 const ASSESS_FIT_RANGE = { strong: '4.2+', acceptable: '3.5–4.1', borderline: '3.0–3.4', weak: '<3.0' };
 const assessCriterionKey = (type, key) => `${ASSESS_SECTIONS[type].policy}.${key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())}`;
+// Unsaved assessment edits, kept outside the React tree. The app swaps its
+// whole shell at the 900px breakpoint, which unmounts any open drawer; edits
+// parked here are restored when the same evaluation is reopened, as long as
+// the saved record has not changed meanwhile (AR-06). Cleared on save/discard.
+const ASSESS_UNSAVED = new Map();
+// A deliberate "discard" (confirmed close or navigation) must not come back later.
+function discardAssessUnsaved(appId) {
+  for (const key of [...ASSESS_UNSAVED.keys()]) if (key.startsWith(`${appId}:`)) ASSESS_UNSAVED.delete(key);
+}
 
 // Form state from a saved evaluation (or blank). Scores are kept as strings:
 // '' unanswered, '1'..'5', 'na'.
@@ -6884,8 +6896,15 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   const busyRef = useRef(false);
   const [error, setError] = useState(null); // { text, submit, retry }
   const [stale, setStale] = useState(false);
+  const [restored, setRestored] = useState(false);
   const dirty = JSON.stringify(form) !== JSON.stringify(base);
   useEffect(() => { onDirtyChange && onDirtyChange(type, dirty); }, [dirty]);
+  const unsavedKey = `${appId}:${type}`;
+  const synced = useRef(false); // true once the form reflects the server record
+  useEffect(() => {
+    if (dirty) ASSESS_UNSAVED.set(unsavedKey, { form, base, editing });
+    else if (synced.current) ASSESS_UNSAVED.delete(unsavedKey); // never before the first sync
+  }, [form, base, editing, dirty]);
 
   // A refreshed evaluation (or the form metadata arriving) replaces the form
   // only when nothing is unsaved; otherwise the edits stay and the user is told
@@ -6895,7 +6914,13 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
     if (seen.current.existing === existing && seen.current.n === criteria.length) return;
     seen.current = { existing, n: criteria.length };
     const next = assessFormState(existing, criteria, flagsMeta);
-    if (!dirty) { setForm(next); setBase(next); setEditing(!existing?.submitted); setStale(false); }
+    if (criteria.length) synced.current = true;
+    if (!dirty) {
+      const parked = ASSESS_UNSAVED.get(unsavedKey);
+      if (parked && criteria.length && JSON.stringify(parked.base) === JSON.stringify(next)) {
+        setForm(parked.form); setBase(next); setEditing(parked.editing); setRestored(true); setStale(false);
+      } else { setForm(next); setBase(next); setEditing(!existing?.submitted); setStale(false); }
+    }
     else if (JSON.stringify(next) !== JSON.stringify(base)) setStale(true);
   }, [existing, criteria.length]);
 
@@ -6930,7 +6955,7 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
     if (perm(s.justPolicy).canEdit) body[s.just] = sent.justification;
     try {
       const r = await api.post('/assessments/application/' + appId, body);
-      setBase(sent); setStale(false); setEditing(!submit);
+      setBase(sent); setStale(false); setEditing(!submit); setRestored(false);
       toast(submit ? 'Evaluation submitted' : 'Draft saved');
       onSaved(r && r.assessment);
     } catch (e) {
@@ -6941,9 +6966,9 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   }
   function cancelEdit() {
     if (dirty && !window.confirm('Discard your unsaved changes to this evaluation?')) return;
-    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false);
+    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false); setRestored(false);
   }
-  return { type, criteria, visibleCriteria, form, dirty, editing, setEditing, editable, locked, busy, error, stale, summary, existing,
+  return { type, criteria, visibleCriteria, form, dirty, editing, setEditing, editable, locked, busy, error, stale, restored, summary, existing,
     setRow, setFlag, setRecommendation, setJustification, save, cancelEdit };
 }
 
@@ -6991,7 +7016,7 @@ function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
   useEffect(() => {
     if (!dirty) return;
     const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
-    const navigate = (e) => { if (!window.confirm('Discard unsaved assessment changes?')) e.preventDefault(); };
+    const navigate = (e) => { if (!window.confirm('Discard unsaved assessment changes?')) e.preventDefault(); else discardAssessUnsaved(app.id); };
     window.addEventListener('beforeunload', warn);
     window.addEventListener('ats:before-navigate', navigate);
     return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('ats:before-navigate', navigate); };
@@ -7089,6 +7114,7 @@ function EvaluationForm({ type, meta, draft, perm, appId, readOnly }) {
         {assessStatusLine(ev)}{readOnly ? ' · View only' : ''}{draft.dirty ? ' · Unsaved changes' : ''}
       </p>
       {draft.stale && <div className="assess-note assess-warn" role="status">This evaluation was saved by someone else while you were editing. Your edits are kept; saving will replace their version.</div>}
+      {draft.restored && draft.dirty && <div className="assess-note" role="status" data-restored="true">Your unsaved changes were restored. Save or submit to keep them.</div>}
       {type === 'hr' && meta.behavioralInstruction && <p className="assess-instruction">{meta.behavioralInstruction}</p>}
       <table className="assess-table">
         <colgroup><col className="assess-col-crit" /><col className="assess-col-desc" /><col className="assess-col-score" /><col className="assess-col-notes" /></colgroup>
@@ -7252,14 +7278,20 @@ function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved, onDirtyCh
   const choices = meta.finalDecisions || meta.decisions || [];
   // A historical value (e.g. "hired") is shown as such, never pre-selected.
   const savedOf = (f) => ({ decision: f && choices.some((d) => d.value === f.decision) ? f.decision : '', notes: f?.notes || '' });
+  const parkedFinal = ASSESS_UNSAVED.get(`${appId}:final`);
   const [base, setBase] = useState(() => savedOf(fd));
-  const [decision, setDecision] = useState(base.decision);
-  const [notes, setNotes] = useState(base.notes);
+  const restoreFinal = parkedFinal && JSON.stringify(parkedFinal.base) === JSON.stringify(savedOf(fd));
+  const [decision, setDecision] = useState(restoreFinal ? parkedFinal.decision : base.decision);
+  const [notes, setNotes] = useState(restoreFinal ? parkedFinal.notes : base.notes);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState(null);
   const dirty = decision !== base.decision || notes !== base.notes;
   useEffect(() => { onDirtyChange && onDirtyChange('final', dirty); }, [dirty]);
+  useEffect(() => {
+    if (dirty) ASSESS_UNSAVED.set(`${appId}:final`, { decision, notes, base });
+    else ASSESS_UNSAVED.delete(`${appId}:final`);
+  }, [decision, notes, base, dirty]);
   // Adopt a refreshed decision unless the user has an unsaved one.
   const seen = useRef(fd);
   useEffect(() => {
@@ -7320,15 +7352,22 @@ function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved, onDirtyCh
 
 // Opens the assessment from an interview the user is assigned to — the
 // Technical Interviewer's way in, without access to the hiring request.
+// Assessment drawers render at page level so no page container's stacking
+// context can put them under the phone top bar (AR-05).
+const toPageLevel = (node) => (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal && typeof document !== 'undefined' && document.body
+  ? ReactDOM.createPortal(node, document.body) : node);
 function InterviewAssessmentDrawer({ applicationId, title, user, onClose }) {
   const titleId = useId();
   const assessDirty = useRef(false);
   const requestClose = useCallback(() => {
-    if (assessDirty.current && !window.confirm('Discard unsaved assessment changes?')) return;
+    if (assessDirty.current) {
+      if (!window.confirm('Discard unsaved assessment changes?')) return;
+      discardAssessUnsaved(applicationId);
+    }
     onClose();
-  }, [onClose]);
+  }, [onClose, applicationId]);
   const { dialogRef, onDialogKeyDown } = useDialogFocus(requestClose);
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
       <div ref={dialogRef} className="modal assess-drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex="-1" onKeyDown={onDialogKeyDown}>
         <div className="modal-head">
@@ -7353,13 +7392,26 @@ function AssessmentPolicyPage({ user }) {
   const [draft, setDraft] = useState(null); // overrides being edited
   const [busy, setBusy] = useState(false);
   const [showCriteria, setShowCriteria] = useState(false);
+  // What the server would enforce for the current draft. The screen never
+  // works the policy out itself (AR-03/AR-08): every unsaved change is
+  // resolved by the same server code that enforces saved settings.
+  const [preview, setPreview] = useState(null); // { valid, error?, effective? }
+  const previewGen = useRef(0);
   const load = useCallback(async () => {
     setLoadError(null);
-    try { const r = await api.get('/assessments/policy'); setData(r.policy); setDraft(r.policy.overrides); }
+    try { const r = await api.get('/assessments/policy'); setData(r.policy); setDraft(r.policy.overrides); setPreview({ valid: true, effective: r.policy.effective }); }
     catch (e) { setLoadError(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
   const dirty = !!data && JSON.stringify(draft) !== JSON.stringify(data.overrides);
+  useEffect(() => {
+    if (!data || !draft) return;
+    const mine = ++previewGen.current;
+    if (!dirty) { setPreview({ valid: true, effective: data.effective }); return; }
+    api.post('/assessments/policy/preview', { overrides: draft })
+      .then((r) => { if (mine === previewGen.current) setPreview(r); })
+      .catch((e) => { if (mine === previewGen.current) setPreview({ valid: false, error: e.message }); });
+  }, [draft, data]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
@@ -7372,23 +7424,29 @@ function AssessmentPolicyPage({ user }) {
   if (loadError) return <LoadError title="Could not load assessment permissions" text={loadError} onRetry={load} />;
   if (!data || !draft) return <Skeleton rows={8} />;
 
-  // Unsaved preview of the server rule (field → its own entry, else its
-  // section's). Saving returns the server's authoritative result.
-  const sectionOf = {};
-  data.sections.forEach((s) => s.fields.forEach((f) => { sectionOf[f.key] = s.key; }));
-  const ruleOf = (aud, key) => draft[aud]?.[key] || data.defaults[aud]?.[key]
-    || (sectionOf[key] && (draft[aud]?.[sectionOf[key]] || data.defaults[aud]?.[sectionOf[key]])) || { view: false, edit: false };
+  // Last server answer (valid previews only); while one is in flight the
+  // previous answer stays on screen.
+  const effective = (preview?.valid && preview.effective) || data.effective;
+  const cell = (aud, key) => effective[aud]?.[key] || { view: false, edit: false, configured: { view: false, edit: false } };
+  const parentOf = {};
+  data.sections.forEach((s) => s.fields.forEach((f) => { parentOf[f.key] = s; }));
   const setRule = (aud, key, patch) => setDraft((d) => {
-    const next = { ...ruleOf(aud, key), ...patch };
+    const next = { ...(cell(aud, key).configured || cell(aud, key)), ...patch };
     if (patch.view === false) next.edit = false;
     if (patch.edit === true) next.view = true;
-    return { ...d, [aud]: { ...(d[aud] || {}), [key]: next } };
+    const a = { ...(d[aud] || {}), [key]: { view: !!next.view, edit: !!next.edit } };
+    // A section switched off takes its fields' own grants with it, so the
+    // draft never holds a grant the server would refuse.
+    const section = data.sections.find((s) => s.key === key);
+    if (section && (section.gatesView && !next.view)) for (const f of section.fields) delete a[f.key];
+    if (section && section.gatesEdit && !next.edit) for (const f of section.fields) if (a[f.key]?.edit) a[f.key] = { ...a[f.key], edit: false };
+    return { ...d, [aud]: a };
   });
   const clearRule = (aud, key) => setDraft((d) => { const a = { ...(d[aud] || {}) }; delete a[key]; return { ...d, [aud]: a }; });
 
   async function save(overrides, message) {
     setBusy(true);
-    try { const r = await api.put('/assessments/policy', { overrides }); setData(r.policy); setDraft(r.policy.overrides); toast(message); }
+    try { const r = await api.put('/assessments/policy', { overrides }); setData(r.policy); setDraft(r.policy.overrides); setPreview({ valid: true, effective: r.policy.effective }); toast(message); }
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
 
@@ -7396,16 +7454,24 @@ function AssessmentPolicyPage({ user }) {
     <tr key={key} className={depth ? 'assess-pol-field' : 'assess-pol-section'}>
       <th scope="row">{label}{hint && <span className="assess-muted"> · follows its section unless changed</span>}</th>
       {data.audiences.map((a) => {
-        const r = ruleOf(a.key, key);
+        const r = cell(a.key, key);
         const set = draft[a.key]?.[key];
+        const parent = depth ? parentOf[key] : null;
+        const parentRule = parent ? cell(a.key, parent.key) : null;
+        // Shown exactly as enforced: a field its section blocks is unticked and locked.
+        const viewLocked = !!(parent?.gatesView && !parentRule.view);
+        const editLocked = viewLocked || !!(parent?.gatesEdit && !parentRule.edit);
+        const lockNote = viewLocked ? `Hidden because “${parent.label}” is hidden for ${a.label}` : editLocked ? `Read-only because “${parent.label}” is read-only for ${a.label}` : undefined;
         return (
           <React.Fragment key={a.key}>
             <td className="assess-pol-cell">
-              <input type="checkbox" aria-label={`${a.label}: view ${label}`} checked={!!r.view} onChange={(e) => setRule(a.key, key, { view: e.target.checked })} />
+              <input type="checkbox" aria-label={`${a.label}: view ${label}`} title={viewLocked ? lockNote : undefined}
+                checked={!!r.view} disabled={viewLocked} onChange={(e) => setRule(a.key, key, { view: e.target.checked })} />
             </td>
             <td className="assess-pol-cell">
               {editable
-                ? <input type="checkbox" aria-label={`${a.label}: edit ${label}`} checked={!!r.edit} onChange={(e) => setRule(a.key, key, { edit: e.target.checked })} />
+                ? <input type="checkbox" aria-label={`${a.label}: edit ${label}`} title={editLocked ? lockNote : undefined}
+                  checked={!!r.edit} disabled={editLocked} onChange={(e) => setRule(a.key, key, { edit: e.target.checked })} />
                 : <span className="assess-muted" aria-label="Not editable from the assessment">—</span>}
               {set && <button type="button" className="assess-pol-reset" title="Reset to default" aria-label={`${a.label}: reset ${label} to default`} onClick={() => clearRule(a.key, key)}>↺</button>}
             </td>
@@ -7418,12 +7484,13 @@ function AssessmentPolicyPage({ user }) {
   return (
     <div>
       <PageHead crumb="Administration / Interview Settings / Assessment Form" title="Assessment Visibility & Permissions"
-        sub="Who may view or edit each part of the interview assessment. These rules apply to the form, the API and the printable form alike. They can only narrow existing access — salary always also requires the salary permission."
+        sub="Who may view or edit each part of the interview assessment. These rules apply to the form, the API and the printable form alike. They can only narrow existing access — salary always also requires the salary permission. A field cannot be shown while its section is hidden."
         actions={<>
           <button type="button" className="btn btn-ghost" disabled={busy || !dirty} onClick={() => setDraft(data.overrides)}>Discard</button>
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => { if (window.confirm('Restore the default assessment permissions?')) save({}, 'Defaults restored'); }}>Restore defaults</button>
-          <button type="button" className="btn" disabled={busy || !dirty} onClick={() => save(draft, 'Assessment permissions saved')}>{busy ? 'Saving…' : 'Save changes'}</button>
+          <button type="button" className="btn" disabled={busy || !dirty || preview?.valid === false} onClick={() => save(draft, 'Assessment permissions saved')}>{busy ? 'Saving…' : 'Save changes'}</button>
         </>} />
+      {preview?.valid === false && <div className="error-banner" role="alert">{preview.error}</div>}
       <div className="card card-pad assess-pol">
         <table className="assess-pol-table">
           <thead>

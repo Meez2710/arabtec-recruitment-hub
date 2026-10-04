@@ -1194,7 +1194,8 @@ tr.row-pending td { pointer-events: none; }
 .assess-info dt { background: var(--assess-red); color: #fff; font-weight: 700; font-size: 12.5px; padding: 4px 8px; }
 .assess-info dd { margin: 0; padding: 8px; font-size: 13px; min-height: 32px; overflow-wrap: anywhere; }
 .assess-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12.5px; }
-.assess-col-crit { width: 17%; } .assess-col-desc { width: 31%; } .assess-col-score { width: 20%; } .assess-col-notes { width: 32%; }
+/* The score column is sized for its six buttons at every width; Notes takes the rest (AR-05). */
+.assess-col-crit { width: 18%; } .assess-col-desc { width: 32%; } .assess-col-score { width: 176px; }
 .assess-table thead th { background: var(--assess-red); color: #fff; text-align: left; font-weight: 700; font-size: 13px; text-transform: none; letter-spacing: normal; padding: 4px 8px; border: 1px solid var(--assess-line); }
 .assess-table td, .assess-table tbody th { border: 1px solid var(--assess-line); padding: 4px 8px; vertical-align: middle; text-align: left; }
 .assess-table tbody th { font-weight: 500; }

@@ -1116,11 +1116,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 /* Bare legacy tables own their horizontal overflow instead of being clipped by
    body overflow-x:hidden. Responsive tables keep their stacked mobile rules. */
-.card:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table)),
-.card-pad:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table)),
-.modal-body:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table)) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.card table:not(.responsive-table):not(.review-table):not(.parse-review-table),
-.modal-body table:not(.responsive-table):not(.review-table):not(.parse-review-table) { min-width: 680px; }
+.card:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table)),
+.card-pad:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table)),
+.modal-body:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table)) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.card table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table),
+.modal-body table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table) { min-width: 680px; }
 
 /* CV intake belongs to the same readable product as the rest of the ATS. */
 .intake-queue { border-top-color: var(--at-action); }
