@@ -501,7 +501,7 @@ function Empty({ art, text, title, action, tone = 'neutral' }) {
   const kicker = EMPTY_KICKER[mark] || EMPTY_KICKER['none-yet'];
   return <div className={'empty empty-' + tone} role={tone === 'error' ? 'alert' : undefined}>
     <div className="ico" aria-hidden="true"><EmptyArt name={mark} /></div>
-    {title && <div className="empty-kicker"><span aria-hidden="true">{EMOJI[kicker[0]]}</span> {kicker[1]}</div>}
+    {title && <div className="empty-kicker">{kicker[1]}</div>}
     {title && <h4 className="empty-title">{title}</h4>}<p>{text}</p>
     {action && <div className="empty-action">{action}</div>}
   </div>;
@@ -564,7 +564,6 @@ const EMOJI = {
    does, where a switch lives, what a number means. Never an opinion. */
 function Hint({ emoji = 'hint', children, action }) {
   return <aside className="hint" role="note">
-    <span className="hint-emoji" aria-hidden="true">{EMOJI[emoji] || EMOJI.hint}</span>
     <span className="hint-text">{children}</span>
     {action && <span className="hint-action">{action}</span>}
   </aside>;
@@ -597,7 +596,6 @@ function KnowledgeLine({ seed }) {
   const line = useMemo(() => pickKnowledgeLine(seed), [seed]);
   if (!line) return null;
   return <footer className="knowledge-line" aria-label="A line worth keeping">
-    {EMOJI[line.t] && <span className="kl-emoji" aria-hidden="true">{EMOJI[line.t]}</span>}
     <span className="kl-dash" aria-hidden="true" />
     <span className="kl-quote">{line.q}</span>
     <span className="kl-by">{line.by}</span>
@@ -1505,7 +1503,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const EmailSettingsPage = window.ArabtecEmailSettingsPage;
   const CvIntakePage = window.ArabtecCvIntakePage;
   const Page = {
-    dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} />,
+    dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} initialFilters={route === 'requests' ? routeParams : null} />,
     candidates: <CandidatesPage user={user} onNavigate={go} initialFilters={route === 'candidates' ? routeParams : null} />,
@@ -1546,7 +1544,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? <AssessmentPolicyPage user={user} />
       : <Forbidden what="Assessment Settings" need="System Admin" />,
     audit: <AuditPage user={user} />,
-  }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} />;
+  }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />;
 
   // What anyhelp is looking at. Kept deliberately small: the dock never claims
   // more context than the page actually has. RequestDetail publishes the open
@@ -1705,12 +1703,12 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
           <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
             <Icon name="sidebar" size={18} />
           </button>
-          <div className="tb-brand">
+          {collapsed && <div className="tb-brand">
             <span className="bn">
               <strong>Recruitment Hub</strong>
               <span>{branding?.company_name || 'Arabtec Construction'}</span>
             </span>
-          </div>
+          </div>}
           {/* Global search. Opens the Ctrl+K palette — no longer a dead placeholder. */}
           <button type="button" className="gsearch" onClick={() => setPaletteOpen(true)}
             title="Search candidates (Ctrl K)">
@@ -2100,7 +2098,7 @@ function RoleRow({ r, onOpen }) {
         <span className="cell-meta">{r.headcountFilled} of {r.headcount} seats · {(r.pipeline || {}).total || 0} in pipeline</span>
       </div>
       <div className="role-row-end">
-        <span className="idle">{days == null ? '—' : `Open ${days} ${days === 1 ? 'day' : 'days'}`}</span>
+        <span className="idle">{days == null ? '—' : awaiting ? `Waiting ${days} ${days === 1 ? 'day' : 'days'} for approval` : `Open ${days} ${days === 1 ? 'day' : 'days'}`}</span>
         {onOpen && <button className="btn btn-ghost btn-sm" tabIndex={-1} onClick={(e) => { e.stopPropagation(); onOpen(r); }}>Open</button>}
       </div>
     </div>
@@ -2658,93 +2656,184 @@ function PlanTable({ rows, unit }) {
 }
 
 /* --------------------------------- HR DIRECTOR ---------------------------- */
-function DirectorDashboard({ user, data, onNavigate, notice, figures }) {
-  const { d, requests } = data;
+// Director: the full picture first, ordered by what needs her. 1) decisions and
+// risks that need action now, 2) the whole hiring position in one row of
+// figures, the pipeline funnel and the plan, 3) detail on demand. Every figure
+// can be narrowed by project, department or recruiter (owner review, 4 Oct 2026).
+const DASH_FILTER_KEY = 'arabtec_dash_filter';
+const FUNNEL = [[1, 'Sourced'], [2, 'Screening'], [3, 'Interview'], [4, '2nd interview'], [5, 'Offer'], [6, 'Hired']];
+function readDashFilter() {
+  try { const v = JSON.parse(localStorage.getItem(DASH_FILTER_KEY) || '{}'); return { projectId: v.projectId || '', departmentId: v.departmentId || '', ownerId: v.ownerId || '' }; }
+  catch { return { projectId: '', departmentId: '', ownerId: '' }; }
+}
+function DirectorDashboard({ user, data, onNavigate, notice, figures, intakes }) {
+  const { d: shared, requests: allRequests } = data;
+  const [f, setF] = useState(readDashFilter);
+  const [meta, setMeta] = useState(null);
+  const [narrowed, setNarrowed] = useState(null);
+  const [details, setDetails] = useState(false);
+  const isNarrowed = !!(f.projectId || f.departmentId || f.ownerId);
+  useEffect(() => { api.get('/requests/meta/form').then(setMeta).catch(() => setMeta({ projects: [], departments: [], recruiters: [] })); }, []);
+  useEffect(() => {
+    try { localStorage.setItem(DASH_FILTER_KEY, JSON.stringify(f)); } catch { /* per-device convenience */ }
+    if (!isNarrowed) { setNarrowed(null); return undefined; }
+    let live = true;
+    const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+    api.get('/dashboard?' + qs).then((r) => { if (live) setNarrowed(r); }).catch(() => { if (live) setNarrowed(null); });
+    return () => { live = false; };
+  }, [f.projectId, f.departmentId, f.ownerId]);
+  const d = isNarrowed ? narrowed : shared;
+  const match = (r) => (!f.projectId || Number(r.projectId) === Number(f.projectId))
+    && (!f.departmentId || Number(r.departmentId) === Number(f.departmentId))
+    && (!f.ownerId || Number(r.ownerId) === Number(f.ownerId));
+  const requests = (allRequests || []).filter(match);
   const k = (d && d.kpis) || {};
-  const open = requests.filter(isOpenReq);
-  const awaitingApproval = requests.filter((r) => ['pending_approval', 'draft', 'budget_validation'].includes(r.status));
-  const pendingOffers = d ? (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((s, o) => s + o.count, 0) : 0;
-  const overdue = (d ? (d.aging['61-90'] || 0) + (d.aging['90+'] || 0) : 0);
+
+  // 1 — needs action now
+  const awaiting = requests.filter((r) => ['pending_approval', 'draft', 'budget_validation'].includes(r.status))
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  const pendingOffers = d ? (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((n, o) => n + o.count, 0) : 0;
+  const running = requests.filter((r) => isOpenReq(r) && !awaiting.includes(r));
+  const sev = (r) => (r.health || {}).level === 'red' ? 3 : r.priority === 'critical' ? 2 : (r.health || {}).level === 'amber' ? 1 : 0;
+  const atRisk = running.filter((r) => sev(r) > 0).sort((a, b) => sev(b) - sev(a) || ((b.health || {}).daysOpen ?? 0) - ((a.health || {}).daysOpen ?? 0));
+  const cvWaiting = !isNarrowed && intakes ? intakes : 0;
+  const waitDays = (r) => { const t = new Date(r.createdAt).getTime(); return isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000); };
+  const riskWhy = (r) => {
+    const h = r.health || {};
+    if (h.daysToTarget != null && h.daysToTarget < 0) return `Past target join date by ${Math.ceil(-h.daysToTarget)} days`;
+    if (h.level === 'red') return `Open ${h.daysOpen} days — overdue`;
+    if (r.priority === 'critical') return 'Critical priority, still open';
+    return `Open ${h.daysOpen} days — needs attention`;
+  };
+  const decisionsCount = awaiting.length + pendingOffers;
+
+  // 2 — the whole position
+  const apps = (d && d.applicationsByStatus) || [];
+  const byColumn = (col) => apps.filter((a) => (APP_STATUS[a.status] || {}).column === col).reduce((n, a) => n + a.count, 0);
+  const inPipeline = [1, 2, 3, 4, 5].reduce((n, c) => n + byColumn(c), 0);
+  const offersOut = d ? (d.offersByStatus || []).filter((o) => ['pending_approval', 'approved', 'sent'].includes(o.status)).reduce((n, o) => n + o.count, 0) : 0;
+  const nameOf = (list, id) => ((list || []).find((x) => Number(x.id) === Number(id)) || {}).name || ((list || []).find((x) => Number(x.id) === Number(id)) || {}).title;
+  const scopeText = isNarrowed
+    ? [f.projectId && nameOf(meta?.projects, f.projectId), f.departmentId && nameOf(meta?.departments, f.departmentId), f.ownerId && nameOf(meta?.recruiters, f.ownerId)].filter(Boolean).join(' · ')
+    : 'All projects, departments and recruiters';
+  const planBy = f.projectId ? 'department' : 'project';
+  const setFilter = (key) => (e) => setF((x) => ({ ...x, [key]: e.target.value }));
 
   return (
     <div>
       <PageHead crumb="Hiring plan and governance" title="Hiring plan and recruitment health"
-        sub="Demand against delivery, and the decisions that are waiting on you."
+        sub="What needs your decision, what is at risk, and where hiring stands against the plan."
         actions={<>
           <button className="btn btn-secondary" onClick={() => onNavigate('reports')}>Reports</button>
-          {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers', { status: 'pending_approval' })}>Offer approvals</button>}
+          {decisionsCount > 0 && (awaiting.length
+            ? <button className="btn" onClick={() => onNavigate('requests', { status: 'pending_approval' })}>Review approvals ({decisionsCount})</button>
+            : can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers', { status: 'pending_approval' })}>Review offers ({pendingOffers})</button>)}
         </>} />
       {notice}
 
-      <div className="dash-kpi-row kpi-4">
-        <KpiCard label="Waiting on a decision" value={awaitingApproval.length + pendingOffers}
-          tone={(awaitingApproval.length + pendingOffers) ? 'kpi-attn' : ''}
-          meta={`${awaitingApproval.length} request${awaitingApproval.length === 1 ? '' : 's'} · ${pendingOffers} offer${pendingOffers === 1 ? '' : 's'}`} />
-        <KpiCard label="Overdue roles" value={d ? overdue : '—'} tone={overdue ? 'kpi-risk' : ''} meta="Open longer than 60 days" />
-        <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of ${k.headcountTotal ?? 0} planned`} />
-        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.timeToFillDays == null ? 'No role filled yet' : 'Average, request opened to filled'} />
+      <div className="dash-filter" role="group" aria-label="Narrow the dashboard">
+        <label><span>Project</span>
+          <select value={f.projectId} onChange={setFilter('projectId')}><option value="">All projects</option>{(meta?.projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <label><span>Department</span>
+          <select value={f.departmentId} onChange={setFilter('departmentId')}><option value="">All departments</option>{(meta?.departments || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label><span>Recruiter</span>
+          <select value={f.ownerId} onChange={setFilter('ownerId')}><option value="">All recruiters</option>{(meta?.recruiters || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <span className="dash-filter-scope">{isNarrowed ? <>Showing <strong>{scopeText}</strong></> : scopeText}</span>
+        {isNarrowed && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF({ projectId: '', departmentId: '', ownerId: '' })}>Clear</button>}
       </div>
 
-      <div className="dash-grid-2">
-        <section className="card">
-          <div className="card-head"><div><h3>Waiting on your decision</h3></div><span className="dash-headnote">Requests and offers held for approval</span></div>
-        {!awaitingApproval.length && !pendingOffers
-          ? <Empty art="all-clear" title="Nothing is waiting on you" text="No hiring request or offer is held for a decision." />
+      <section className="card dash-attention">
+        <div className="card-head"><div><h3>Needs your attention</h3></div><span className="dash-headnote">Decisions first, then risks</span></div>
+        {!decisionsCount && !atRisk.length && !cvWaiting
+          ? <div className="dash-allclear">Nothing is waiting on you and no role is at risk.</div>
           : <div className="action-list">
-            {awaitingApproval.slice(0, 6).map((r) => (
-              <ActionItem key={r.id} tone="warn" title={`Approve ${shortReqCode(r.ticketNo)} — ${r.title}`}
-                meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}`}
+            {awaiting.slice(0, 5).map((r) => (
+              <ActionItem key={'a' + r.id} tone="warn" title={`Approve ${shortReqCode(r.ticketNo)} — ${r.title}`}
+                meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}${waitDays(r) != null ? ` · waiting ${waitDays(r)} day${waitDays(r) === 1 ? '' : 's'}` : ''}`}
                 why="Sourcing cannot start until this is approved" cta="Open request" onCta={() => openRequest(r.id, onNavigate)} />
             ))}
+            {awaiting.length > 5 && <button type="button" className="btn btn-ghost btn-sm dash-more" onClick={() => onNavigate('requests', { status: 'pending_approval' })}>All {awaiting.length} requests awaiting approval</button>}
             {pendingOffers > 0 && (
               <ActionItem tone="warn" title={`${pendingOffers} offer${pendingOffers === 1 ? '' : 's'} awaiting approval`}
                 meta="Offers held pending a decision" why="Candidates are waiting" cta="Open offers" onCta={() => onNavigate('offers', { status: 'pending_approval' })} />
             )}
+            {atRisk.slice(0, 5).map((r) => (
+              <ActionItem key={'r' + r.id} tone="risk" title={`${shortReqCode(r.ticketNo)} — ${r.title}`}
+                meta={`${(r.project || {}).name || 'No project'} · ${r.headcountFilled} of ${r.headcount} filled · ${(r.pipeline || {}).total || 0} in pipeline`}
+                why={riskWhy(r)} cta="Open request" onCta={() => openRequest(r.id, onNavigate)} />
+            ))}
+            {atRisk.length > 5 && <button type="button" className="btn btn-ghost btn-sm dash-more" onClick={() => setDetails(true)}>All {atRisk.length} roles at risk</button>}
+            {cvWaiting > 0 && (
+              <ActionItem tone="warn" title={`${cvWaiting} CV${cvWaiting === 1 ? '' : 's'} waiting in Candidate Review`}
+                meta="Received CVs not yet accepted into the Talent Pool" why="Candidates are not in any pipeline until reviewed" cta="Open Candidate Review" onCta={() => onNavigate('candidateReview')} />
+            )}
           </div>}
-        </section>
+      </section>
 
-        <FiguresToggle figures={figures} />
-        <section className="card dash-figure">
-          <div className="card-head"><div><h3>Open roles by age</h3></div><span className="dash-headnote">Where time is being lost</span></div>
+      <div className="dash-kpi-row dash-kpi-6">
+        <KpiCard label="Open roles" value={running.length} meta={awaiting.length ? `+ ${awaiting.length} awaiting approval` : 'Approved and recruiting'} onClick={() => onNavigate('requests')} />
+        <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of ${k.headcountTotal ?? 0} planned`} onClick={() => onNavigate('requests')} />
+        <KpiCard label="In pipeline" value={d ? inPipeline : '—'} meta="Candidates on open roles" onClick={() => onNavigate('candidates')} />
+        <KpiCard label="Interviews ahead" value={k.upcomingInterviews ?? '—'} meta="Scheduled from today" onClick={() => onNavigate('interviews')} />
+        <KpiCard label="Offers out" value={d ? offersOut : '—'} meta={pendingOffers ? `${pendingOffers} awaiting approval` : 'Awaiting approval, approved or sent'} tone={pendingOffers ? 'kpi-attn' : ''} onClick={() => onNavigate('offers')} />
+        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.timeToFillDays == null ? 'No role filled yet' : 'Average, approval to filled'} />
+      </div>
+
+      <FiguresToggle figures={figures} />
+      <div className="dash-grid-2 dash-figure">
+        <section className="card">
+          <div className="card-head"><div><h3>Hiring funnel</h3></div><span className="dash-headnote">Candidates by stage</span></div>
           <div className="card-pad">
             {!d ? <Empty art="none-yet" text="No data." /> : (
-              <DashBars empty="No open roles." rows={[
-                { label: 'On track · 0–30 days', count: d.aging['0-30'] || 0, color: 'var(--green)' },
-                { label: 'At risk · 31–60 days', count: d.aging['31-60'] || 0, color: 'var(--warning)' },
-                { label: 'Overdue · 61–90 days', count: d.aging['61-90'] || 0, color: 'var(--brand)' },
-                { label: 'Overdue · 90+ days', count: d.aging['90+'] || 0, color: 'var(--brand-dark)' },
-              ]} />
+              <DashBars empty="No candidates in any pipeline yet." rows={FUNNEL.map(([col, label]) => ({ label, count: byColumn(col), color: col === 6 ? 'var(--green-700)' : col === 5 ? 'var(--warning)' : 'var(--green)' }))} />
             )}
           </div>
         </section>
-      </div>
-
-      <div className="dash-grid-2 dash-figure" style={{ marginTop: 12 }}>
-        <section className="card dash-figure">
-          <div className="card-head"><div><h3>Requests by status</h3></div><span className="dash-headnote">Every request in scope</span></div>
-          <div className="card-pad">
-            <DashBars empty="No hiring requests yet." rows={((d && d.requestsByStatus) || []).filter((r) => r.count > 0).map((r) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status.replace(/_/g, ' '), count: r.count, color: r.status === 'pending_approval' ? 'var(--warning)' : ['closed', 'cancelled', 'rejected'].includes(r.status) ? 'var(--muted)' : 'var(--green-700)' }))} />
-          </div>
-        </section>
-        <section className="card dash-figure">
-          <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
-          <div className="card-pad">
-            <DashBars empty="No recruiter owns an open request yet." rows={((d && d.recruiterLoad) || []).map((r) => ({ label: r.name, count: r.c ?? r.count ?? 0, color: 'var(--green-700)' }))} />
-          </div>
+        <section className="card">
+          <div className="card-head"><div><h3>Hiring plan by {planBy}</h3></div><span className="dash-headnote">Planned versus filled</span></div>
+          <div className="card-pad"><PlanTable rows={planBy === 'project' ? planRows(requests, 'project') : planRows(requests.map((r) => ({ ...r, department: { name: nameOf(meta?.departments, r.departmentId) || 'No department' } })), 'department')} unit={planBy === 'project' ? 'Project' : 'Department'} /></div>
         </section>
       </div>
 
-      <section className="card dash-figure" style={{ marginTop: 12 }}>
-        <div className="card-head"><div><h3>Hiring plan by project</h3></div><span className="dash-headnote">Planned versus filled</span></div>
-        <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
-      </section>
-
-      <section className="card" style={{ marginTop: 16 }}>
-        <div className="card-head"><div><h3>Open roles</h3></div><span className="dash-headnote">{open.length} in scope</span></div>
-        {!open.length ? <Empty art="none-yet" text="No open hiring requests." />
-          : <div className="role-health">{open.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
-      </section>
-            <Hint emoji="focus">Requests and offers wait here for your decision alone. Both approval steps can be switched off in Control center › Workflows; records approved that way are marked in their activity.</Hint>
+      <button type="button" className="btn btn-secondary dash-details-toggle" aria-expanded={details} onClick={() => setDetails((v) => !v)}>
+        {details ? 'Hide details' : 'Show details'} — roles by age, requests by status, recruiter workload, every open role
+        <Icon name="chevronDown" size={16} />
+      </button>
+      {details && <>
+        <div className="dash-grid-2">
+          <section className="card">
+            <div className="card-head"><div><h3>Open roles by age</h3></div><span className="dash-headnote">Days since approval</span></div>
+            <div className="card-pad">
+              {!d ? <Empty art="none-yet" text="No data." /> : (
+                <DashBars empty="No approved role is open." rows={[
+                  { label: 'On track · 0–30 days', count: d.aging['0-30'] || 0, color: 'var(--green)' },
+                  { label: 'At risk · 31–60 days', count: d.aging['31-60'] || 0, color: 'var(--warning)' },
+                  { label: 'Overdue · 61–90 days', count: d.aging['61-90'] || 0, color: 'var(--brand)' },
+                  { label: 'Overdue · 90+ days', count: d.aging['90+'] || 0, color: 'var(--brand-dark)' },
+                ]} />
+              )}
+              {d && d.awaitingApproval && d.awaitingApproval.count > 0 && <p className="dash-note">Not counted: {d.awaitingApproval.count} request{d.awaitingApproval.count === 1 ? '' : 's'} awaiting approval (oldest waiting {d.awaitingApproval.oldestDays} day{d.awaitingApproval.oldestDays === 1 ? '' : 's'}).</p>}
+            </div>
+          </section>
+          <section className="card">
+            <div className="card-head"><div><h3>Requests by status</h3></div><span className="dash-headnote">Every request in view</span></div>
+            <div className="card-pad">
+              <DashBars empty="No hiring requests yet." rows={((d && d.requestsByStatus) || []).filter((r) => r.count > 0).map((r) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status.replace(/_/g, ' '), count: r.count, color: r.status === 'pending_approval' ? 'var(--warning)' : ['closed', 'cancelled', 'rejected'].includes(r.status) ? 'var(--muted)' : 'var(--green-700)' }))} />
+            </div>
+          </section>
+        </div>
+        {((d && d.recruiterLoad) || []).length > 0 && (
+          <section className="card" style={{ marginTop: 12 }}>
+            <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
+            <div className="card-pad"><DashBars rows={d.recruiterLoad.map((r) => ({ label: r.name, count: r.c ?? r.count ?? 0, color: 'var(--green-700)' }))} /></div>
+          </section>
+        )}
+        <section className="card" style={{ marginTop: 12 }}>
+          <div className="card-head"><div><h3>Every open role</h3></div><span className="dash-headnote">{running.length + awaiting.length} in view</span></div>
+          {!(running.length + awaiting.length) ? <Empty art="none-yet" text="No open hiring requests." />
+            : <div className="role-health">{[...atRisk, ...running.filter((r) => !atRisk.includes(r)), ...awaiting].map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
+        </section>
+      </>}
     </div>
   );
 }
@@ -2887,15 +2976,18 @@ function FiguresToggle({ figures }) {
     <Icon name="chevronDown" size={16} />
   </button>;
 }
-function Dashboard({ user, onNavigate, dash }) {
+function Dashboard({ user, onNavigate, dash, intakes }) {
   const isAdmin = (user.roles || []).includes('system_admin');
   const [figuresOpen, setFiguresOpen] = useState(false);
   const [view, setView] = useState(() => { try { const v = localStorage.getItem(DASH_VIEW_KEY); return DASH_VIEWS.some(([k]) => k === v) ? v : 'director'; } catch { return 'director'; } });
   const persona = isAdmin ? view : personaFor(user);
   const data = useDashboardData(user, persona, dash);
   const choose = (k) => { setView(k); try { localStorage.setItem(DASH_VIEW_KEY, k); } catch { /* per-device convenience only */ } };
-  const viewTabs = isAdmin ? <div className="control-tabs dash-view-tabs" role="tablist" aria-label="Dashboard view">
-    {DASH_VIEWS.map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={persona === k} className={'control-tab' + (persona === k ? ' active' : '')} onClick={() => choose(k)}>{label}</button>)}
+  const viewTabs = isAdmin ? <div className="dash-view-switch">
+    <div className="control-tabs dash-view-tabs" role="tablist" aria-label="Preview the dashboard as">
+      {DASH_VIEWS.map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={persona === k} className={'control-tab' + (persona === k ? ' active' : '')} onClick={() => choose(k)}>{label}</button>)}
+    </div>
+    <p className="dash-view-note">Preview what each role sees on their dashboard. Figures use your own access as System Administrator.</p>
   </div> : null;
 
   if (!can(user, 'dashboard.view') && persona !== 'interviewer') {
@@ -2936,7 +3028,7 @@ function Dashboard({ user, onNavigate, dash }) {
   // On a phone the charts fold behind one "Show hiring figures" button, so the
   // screen leads with what needs a decision (FiguresToggle, .dash-figure).
   const figures = { open: figuresOpen, toggle: () => setFiguresOpen((v) => !v) };
-  const props = { user, data, onNavigate, notice, figures };
+  const props = { user, data, onNavigate, notice, figures, intakes };
   const personaView = persona === 'manager' ? <ManagerDashboard {...props} />
     : persona === 'director' ? <DirectorDashboard {...props} />
     : persona === 'executive' ? <ExecutiveDashboard {...props} />
@@ -3919,7 +4011,7 @@ function KlRowForm({ value, onChange, error, onSave, onCancel, saveLabel }) {
       <div className="field"><label htmlFor="kl-t">Topic</label>
         <select id="kl-t" value={value.t || ''} onChange={set('t')}>
           <option value="">No topic</option>
-          {KL_TOPICS.map((t) => <option key={t} value={t}>{EMOJI[t] ? EMOJI[t] + ' ' : ''}{t[0].toUpperCase() + t.slice(1)}</option>)}
+          {KL_TOPICS.map((t) => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
         </select>
       </div>
       {error && value.q.trim() && <div className="kl-form-error" role="alert">{error}</div>}
@@ -4018,7 +4110,7 @@ function KnowledgeLinesPanel() {
               <tr key={i}>
                 <td className="kl-q">{r.q}</td>
                 <td className="kl-by">{r.by}</td>
-                <td className="kl-t">{r.t ? <>{EMOJI[r.t] ? <span aria-hidden="true">{EMOJI[r.t]} </span> : null}{r.t}</> : <span className="muted">—</span>}</td>
+                <td className="kl-t">{r.t || <span className="muted">—</span>}</td>
                 <td className="kl-actions">
                   <button type="button" className="btn btn-ghost btn-sm" disabled={!!edit || bulk != null} aria-label={`Edit: ${r.q}`} onClick={() => setEdit({ index: i, row: { q: r.q, by: r.by, t: r.t || '' } })}>Edit</button>
                   <button type="button" className="btn btn-ghost btn-sm kl-remove" disabled={!!edit || bulk != null} aria-label={`Remove: ${r.q}`} onClick={() => remove(i)}>Remove</button>

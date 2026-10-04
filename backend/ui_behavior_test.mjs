@@ -725,13 +725,15 @@ await check('quality labels render through the canonical Badge, never in the rej
     const calls = [];
     const director = { id: 2, roles: ['hr_director'], permissions: ['dashboard.view', 'request.view_all', 'request.approve', 'offer.approve'] };
     const data = { d: { kpis: {}, aging: {}, offersByStatus: [{ status: 'pending_approval', count: 1 }] }, requests: [{ id: 44, ticketNo: 'REQ-2026-0044', title: 'Site Engineer', status: 'pending_approval', headcount: 1 }], interviews: [], unavailable: {}, sectionErrors: {}, loaded: {}, reload() {} };
-    const tree = get('DirectorDashboard')({ user: director, data, onNavigate: (...a) => calls.push(a) });
+    window.ARABTEC_API.get = async () => ({ projects: [], departments: [], recruiters: [] });
+    const dash = mount(get('DirectorDashboard'), { user: director, data, onNavigate: (...a) => calls.push(a) }); const tree = dash.render();
     const items = nodes(tree).filter((n) => n.type === ActionItem);
     items.find((n) => n.props.cta === 'Open request').props.onCta();
     assert.equal(window.__atsPendingRequestId, 44, 'the request awaiting approval is opened by id');
     items.find((n) => n.props.cta === 'Open offers').props.onCta();
     // Objects born inside the vm realm have a different prototype, so compare by shape.
     assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['offers', { status: 'pending_approval' }]), 'the offers queue is filtered to those held for a decision');
+    dash.dispose();
     const iv = get('InterviewerDashboard')({ user: { id: 9, roles: ['interviewer'], permissions: [] }, data: { interviews: [{ id: 77, interviewNo: 'INT-77', status: 'completed', overallOutcome: null, scheduledAt: new Date().toISOString(), candidate: { fullName: 'C' }, request: { title: 'R' } }], unavailable: {} }, onNavigate: (...a) => calls.push(a) });
     nodes(iv).find((n) => n.type === ActionItem && n.props.cta === 'Open interview').props.onCta();
     assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['interviews', { openId: 77 }]), 'the interview needing feedback is opened by id');

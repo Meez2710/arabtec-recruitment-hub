@@ -57,13 +57,13 @@ rule('R8 a disabled control uses the product\'s one opacity, never a local value
     assert.equal(local.length, 0, `${file} declares disabled opacity ${local.join(', ')}`);
   }
 });
-rule('R10 emoji reach the screen only through the EMOJI map, in a Hint or the knowledge line (never a button, title, badge or cell)', () => {
+rule('R10 no pictographic emoji reach the screen (owner review, 4 Oct 2026: no emoji icons) — the EMOJI map is data only', () => {
   // Pictographic emoji only: ✓ and ○ are typographic marks and stay allowed.
   const emoji = /[\u{1F300}-\u{1FAFF}]|✅/u;
   const offenders = jsx.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => emoji.test(l) && !/^\s*(hint|leadership): '/.test(l));
   assert.deepEqual(offenders.map(([n]) => n), [], `emoji outside the EMOJI map on lines ${offenders.map(([n]) => n).join(', ')}`);
   assert.match(jsx, /function Hint\(\{ emoji = 'hint', children, action \}\)/);
-  assert.match(jsx, /EMOJI\[line\.t\] && <span className="kl-emoji"/);
+  assert.equal(/EMOJI\[/.test(jsx), false, 'nothing renders an EMOJI-map entry: hints, empty states, footer quotes and the quote editor are emoji-free');
 });
 rule('R11 every page title carries its eyebrow with the brand dash, tracked and muted (the crumb is the eyebrow)', () => {
   const b = block('arabtec-design-system.css', '.page-head .breadcrumb::before, .dash-eyebrow::before {');

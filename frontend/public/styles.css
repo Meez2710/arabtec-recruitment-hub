@@ -1357,3 +1357,24 @@ tr.row-pending td { pointer-events: none; }
   .kl-form { grid-template-columns: minmax(0, 1fr); }
   .kl-table .kl-by, .kl-table .kl-t { white-space: normal; }
 }
+
+/* Director dashboard (owner review, 4 Oct 2026): narrow-down bar, attention
+   list first, six figures, details on demand. */
+.dash-view-switch { margin: 0 0 16px; }
+.dash-view-note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.dash-filter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin: 0 0 16px; }
+.dash-filter label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); min-width: 180px; }
+.dash-filter select { min-width: 180px; }
+.dash-filter-scope { font-size: 13px; color: var(--ink-soft); padding-bottom: 8px; }
+.dash-attention { margin-bottom: 16px; }
+.dash-allclear { padding: 16px 24px; font-size: 14px; color: var(--ink-soft); }
+.dash-more { margin: 4px 16px 12px; }
+.dash-kpi-row.dash-kpi-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.dash-details-toggle { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: center; margin: 16px 0; }
+.dash-details-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.dash-note { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+@media (max-width: 1100px) { .dash-kpi-row.dash-kpi-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .dash-filter label, .dash-filter select { min-width: 0; width: 100%; }
+  .dash-kpi-row.dash-kpi-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
