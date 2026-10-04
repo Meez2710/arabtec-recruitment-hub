@@ -73,3 +73,12 @@ Rollback: `ATS_SHA=6bd501a1acfe507a6fad7351e92a3354f9c1485e ATS_BUNDLE=$HOME/ara
 Verification (`evidence/verify-facce8b/`): build 0, typecheck 0, `npm test` 78/78, PostgreSQL 7/7 + behaviour 9/9; domain first run 797/1/9 (`api.test.ts` "refuses to overfill a requisition" timed out at 5 s — transient; CSS-only change), rerun 798/0/9.
 Backup `pre-release-20261004-112535-facce8b.dump`. Post-deploy: HEAD = DEPLOYED_SHA = `facce8b`, active, health/ready 200, token `20261004f`; live computed colours sidebar rgb(232,234,237), canvas rgb(244,245,247).
 Rollback: `ATS_SHA=4504ecf76fd56c372685b49b9d02d5999efa5398 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-c.bundle bash ./09-safe-release.sh`.
+
+---
+
+# Deployment 5 — 4 October 2026, 11:49 UTC
+
+**Deployed:** `bae6912e001d07e84caa5a647390430ea2452481` (was `facce8b`). Director dashboard rebuilt by priority with project/department/recruiter narrowing; age from approval only; no emoji icons; top-bar brand only when the sidebar is collapsed.
+Verification (`evidence/verify-bae6912/`): build 0, typecheck 0, `npm test` 79/79, domain 798/0/9, PostgreSQL 7/7 + behaviour 10/10 (new `dashboard_director_test` 13/0).
+Backup `pre-release-20261004-114936-bae6912.dump`. Post-deploy: HEAD = DEPLOYED_SHA = `bae6912`, active, health/ready 200, token `20261004g`, unauthenticated filtered dashboard → 401. Live view: "Approve RQ-26-001 — waiting 20 days", "3 CVs waiting in Candidate Review", primary "Review approvals (1)", Open roles 0 (+1 awaiting approval).
+Rollback: `ATS_SHA=facce8b26d4e5ea7dd9f27eae29db461d23c9654 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-d.bundle bash ./09-safe-release.sh`.
