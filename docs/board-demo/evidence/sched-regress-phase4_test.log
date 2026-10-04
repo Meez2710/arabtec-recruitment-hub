@@ -1,0 +1,159 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:64011) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4150 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4150/api/health
+
+{"level":"info","msg":"request","requestId":"8ecc4805-d0db-4533-803e-c1f474483d9d","method":"POST","path":"/api/auth/login","status":200,"ms":234,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8472801d-e52e-432b-86e2-85aaaa8a8514","method":"POST","path":"/api/auth/change-password","status":200,"ms":508,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a31276d1-1cd0-4e8f-ae08-5bc2460c83cb","method":"POST","path":"/api/auth/login","status":200,"ms":253,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"17c366d2-6bb0-4f7a-8853-1209ed97f7ea","method":"POST","path":"/api/auth/login","status":200,"ms":186,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"290f3b68-4488-4125-8ca1-714c96891ecd","method":"POST","path":"/api/auth/login","status":200,"ms":194,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a12a6327-65d4-4fad-8ec7-cb65bb5e5d32","method":"POST","path":"/api/auth/login","status":200,"ms":215,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"48c4772e-24be-44b7-89ac-4fe791dda21f","method":"POST","path":"/api/auth/login","status":200,"ms":244,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7ebd5b3a-9640-46b5-88ca-7fbb465d4057","method":"POST","path":"/api/auth/login","status":200,"ms":238,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"eac484b0-7899-4a6e-a1f3-e2ba88239b5f","method":"POST","path":"/api/auth/login","status":200,"ms":215,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ab79991b-4d64-4674-9547-fa02e9b46db6","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"97019623-3c5d-4c08-8175-d63762865373","method":"GET","path":"/api/requests/meta/form","status":200,"ms":3,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d11f04de-2610-486c-bf22-c854c26b2d9f","method":"POST","path":"/api/requests","status":201,"ms":7,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ec0279ef-bcdf-498b-9271-8cb9ed75f2c6","method":"POST","path":"/api/requests/1/submit","status":200,"ms":19,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ded08389-b25d-4f46-8561-75f2fc9a7716","method":"POST","path":"/api/requests/1/approve","status":200,"ms":7,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — IV Role","messageId":"<44e8e573-a31a-eef2-568d-160ebb23cab2@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — IV Role","messageId":"<a106fd91-190d-43a5-e7dc-63fa1bda76db@localhost>"}
+{"level":"warn","msg":"request","requestId":"dc44fe96-7319-4abf-b167-d165d14139ac","method":"POST","path":"/api/requests/1/approve","status":409,"ms":1,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — IV Role","messageId":"<23c5fe90-379b-9c18-2c57-796c0bd153c0@localhost>"}
+{"level":"warn","msg":"request","requestId":"6d73ab7b-9b6a-4112-a202-6a8e29ab7436","method":"POST","path":"/api/requests/1/approve","status":409,"ms":1,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bdaf985c-ed7e-494c-ae3e-9fc7c7caad2f","method":"POST","path":"/api/requests/1/assign","status":200,"ms":8,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5471caa0-d584-473e-99a2-958455431d23","method":"POST","path":"/api/candidates","status":201,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — IV Role","messageId":"<2aef300c-27f8-f237-c4e3-3cafa7ef6e4d@localhost>"}
+{"level":"info","msg":"request","requestId":"d59b9430-ca57-4d0c-a955-7cec2097c5ef","method":"POST","path":"/api/applications","status":201,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3511cc9a-b809-4d2b-96ec-a5fb7487f733","method":"POST","path":"/api/applications/1/move","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8dcadcdc-54c5-42ce-aaa6-8962e6319863","method":"GET","path":"/api/applications/1","status":200,"ms":2,"userId":5,"ip":"::1"}
+
+— Schedule + links (application+candidate+request) —
+{"level":"info","msg":"request","requestId":"b8d63e44-4e38-4fc4-aed2-d01e035c9f6a","method":"POST","path":"/api/interviews","status":201,"ms":46,"userId":5,"ip":"::1"}
+  ✅ recruiter schedules interview (201) got 201
+  ✅ interview has INT id INT-00001
+  ✅ interview links to application 
+  ✅ interview links to candidate 
+  ✅ interview links to request 
+  ✅ interview has its own status (scheduled) 
+  ✅ panel has 2 members 
+
+— Interview status does NOT replace application status —
+{"level":"info","msg":"request","requestId":"ce0b9c5e-f612-440f-a482-9ce5a5b84776","method":"GET","path":"/api/applications/1","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ application status unchanged after scheduling interviewing vs interviewing
+{"level":"info","msg":"request","requestId":"10b16e74-7ac8-4ce4-8b70-b8adb3ae568e","method":"POST","path":"/api/interviews/1/status","status":200,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation — Engineer","messageId":"<b4f78827-a935-db31-eeab-fcb96fdf5c66@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hiring.manager@arabtec.com","subject":"Interview invitation — Engineer","messageId":"<ee1b198f-fb6b-bb50-5978-e50eec5b3cf7@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"ivc@x.com","subject":"Interview invitation — Engineer","messageId":"<39fb25c4-3e77-78a4-0c55-ecfd62c6b193@localhost>"}
+{"level":"info","msg":"request","requestId":"b18b73f7-82f3-47eb-a200-ea5f467146e9","method":"GET","path":"/api/applications/1","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ completing interview does NOT change application status 
+{"level":"info","msg":"request","requestId":"c783d367-212f-418e-a429-99202812a105","method":"GET","path":"/api/interviews/1","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ interview status is completed (separate lifecycle) 
+  ✅ interview detail still shows application status separately 
+
+— Validation —
+{"level":"warn","msg":"request","requestId":"3e7eaaf0-e8fe-4d36-8e22-74e14b85b78b","method":"POST","path":"/api/interviews","status":400,"ms":2,"userId":5,"ip":"::1"}
+  ✅ past date rejected (400) got 400
+{"level":"warn","msg":"request","requestId":"6b3a45aa-fed0-4875-976f-7a1ba095b3f7","method":"POST","path":"/api/interviews","status":400,"ms":1,"userId":5,"ip":"::1"}
+  ✅ empty panel rejected (400) got 400
+
+— Feedback: permission + panel scope —
+{"level":"info","msg":"request","requestId":"668f4965-d899-4e7a-84ab-45c6b373c8f8","method":"POST","path":"/api/interviews/1/feedback","status":201,"ms":6,"userId":8,"ip":"::1"}
+  ✅ panelist interviewer submits feedback (201) got 201
+{"level":"info","msg":"request","requestId":"936d36d7-5942-4e0c-ae4a-9c3dedaf1d37","method":"POST","path":"/api/interviews/1/feedback","status":201,"ms":4,"userId":6,"ip":"::1"}
+  ✅ panelist hiring manager submits feedback (201) got 201
+{"level":"warn","msg":"request","requestId":"269beb1e-961d-4a66-950a-119821d67572","method":"POST","path":"/api/interviews/1/feedback","status":403,"ms":1,"userId":9,"ip":"::1"}
+  ✅ viewer cannot submit feedback (403) got 403
+  ✅ aggregate outcome derived (positive) positive
+
+— Scope: HM / interviewer only see assigned interviews —
+{"level":"info","msg":"request","requestId":"9071abad-78f9-4474-b83a-ada3fdce5163","method":"POST","path":"/api/candidates","status":201,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7bd75db7-5eaf-45a2-bbd3-bf771247d546","method":"POST","path":"/api/applications","status":201,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c18d6c6a-46c0-4b58-9551-8d82ff08e092","method":"POST","path":"/api/applications/2/move","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"be77270c-df8d-43a7-87d0-823e5dc5a151","method":"POST","path":"/api/interviews","status":201,"ms":12,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0f048ad6-775d-47e8-9240-39fb92bcdfc5","method":"GET","path":"/api/interviews","status":200,"ms":3,"userId":8,"ip":"::1"}
+  ✅ interviewer list is scoped 
+  ✅ interviewer sees their interview 
+  ✅ interviewer does NOT see unassigned interview 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"viewer@arabtec.com","subject":"Interview invitation","messageId":"<e9e1e352-a121-9b24-92bc-c985b8e01bd4@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"ivc2@x.com","subject":"Interview invitation","messageId":"<84b8e8d4-6b49-bfc5-d81c-33fca5020118@localhost>"}
+{"level":"warn","msg":"request","requestId":"defe34a3-bfd3-4118-8a6c-f9929d014c41","method":"GET","path":"/api/interviews/2","status":403,"ms":2,"userId":8,"ip":"::1"}
+  ✅ interviewer blocked from unassigned interview detail (403) got 403
+{"level":"info","msg":"request","requestId":"08554a5a-47ef-46f1-97da-d59d718242a5","method":"GET","path":"/api/interviews","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ✅ hiring manager sees assigned interview 
+  ✅ hiring manager does NOT see unassigned interview 
+{"level":"info","msg":"request","requestId":"a3d07c74-486b-4917-8755-6b67aaa4d518","method":"GET","path":"/api/interviews","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ recruiter (view_all) sees both interviews 
+
+— RBAC: schedule/cancel permissions —
+{"level":"warn","msg":"request","requestId":"c52594a8-6c97-46d3-8b60-8f39d52e80e6","method":"POST","path":"/api/interviews","status":403,"ms":1,"userId":8,"ip":"::1"}
+  ✅ interviewer cannot schedule (403) got 403
+{"level":"warn","msg":"request","requestId":"8ed8e520-f9c2-4a26-8119-05c7b727672b","method":"POST","path":"/api/interviews","status":403,"ms":1,"userId":6,"ip":"::1"}
+  ✅ hiring manager cannot schedule (403) got 403
+{"level":"warn","msg":"request","requestId":"e61ab2a8-d397-4214-a2f9-8bf573980dc1","method":"POST","path":"/api/interviews/2/status","status":400,"ms":1,"userId":5,"ip":"::1"}
+  ✅ cancel without reason rejected (400) got 400
+{"level":"info","msg":"request","requestId":"6ce80e43-b0c0-4984-a789-f33a02b4d5a4","method":"POST","path":"/api/interviews/2/status","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ cancel with reason ok 
+
+— Candidate profile interviews tab (scoped) —
+{"level":"info","msg":"request","requestId":"f486b5b4-86dc-47d5-b93c-40ca9c4ff51a","method":"GET","path":"/api/candidates/1","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ recruiter sees interview on candidate profile 
+
+— Standalone interview (no application / request) —
+{"level":"info","msg":"request","requestId":"55fef218-3113-4b46-959d-87e99ebe4661","method":"POST","path":"/api/candidates","status":201,"ms":3,"userId":5,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"77bd4f1c-7882-47eb-bdfb-6aee825c58e7","method":"POST","path":"/api/interviews","status":400,"ms":1,"userId":5,"ip":"::1"}
+  ✅ standalone without a candidate → 400 got 400
+{"level":"warn","msg":"request","requestId":"b81398c9-ba2a-4e82-96e3-5a198868f0a0","method":"POST","path":"/api/interviews","status":404,"ms":1,"userId":5,"ip":"::1"}
+  ✅ standalone with an unknown candidate → 404 got 404
+{"level":"info","msg":"request","requestId":"c5a1f5d9-eff6-418a-ad77-193c4be1d0b0","method":"POST","path":"/api/interviews","status":201,"ms":6,"userId":5,"ip":"::1"}
+  ✅ standalone interview scheduled (201) got 201 {"interview":{"id":3,"interviewNo":"INT-00003","applicationId":null,"candidateId":3,"requestId":null,"round":2,"interviewType":"hr","mode":"video","scheduledAt":"2026-10-05T02:36:33.206Z","durationMin":45,"locationOrLink":"https://teams.example/solo","status":"scheduled","cancelReason":null,"overallOutcome":null,"organizer":{"id":5,"name":"Karim Adel"},"candidate":{"id":3,"candidateNo":"CAN-00003","fullName":"Solo Interviewee","currentPosition":null},"request":null,"application":null,"panel":[{"id":8,"name":"Mona Sami","isLead":true}],"createdAt":"2026-10-04T02:36:33.383Z","feedback":[],"myFeedback":false,"activity":[{"id":7,"interview_id":3,"actor_id":5,"actor_name":"Karim Adel","type":"scheduled","note":"hr interview scheduled","occurred_at":"2026-10-04T02:36:33.384Z"}]}}
+  ✅ standalone interview has no application or request 
+  ✅ standalone interview keeps every field 
+{"level":"warn","msg":"request","requestId":"a43e8768-67d7-4af6-b924-719f0f692bdf","method":"POST","path":"/api/interviews","status":404,"ms":1,"userId":5,"ip":"::1"}
+  ✅ standalone with an unknown request → 404 got 404
+{"level":"warn","msg":"request","requestId":"7f6bf6db-5ac6-4816-8d76-3f18431f84f1","method":"POST","path":"/api/interviews","status":403,"ms":1,"userId":6,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<b8d0c271-9d01-bb20-4b82-8a7d7723180d@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"solo.iv@example.com","subject":"Interview invitation","messageId":"<6c1c3c1b-0247-4264-4e03-583a48541dfc@localhost>"}
+  ✅ HM cannot schedule standalone either (403) got 403
+{"level":"info","msg":"request","requestId":"7b74eb68-8125-4423-bc9f-7dfc497efaea","method":"GET","path":"/api/interviews","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ standalone interview is listed 
+{"level":"info","msg":"request","requestId":"b71d5bee-600d-494c-a44f-c341079beee3","method":"GET","path":"/api/interviews/3","status":200,"ms":1,"userId":8,"ip":"::1"}
+  ✅ panelist sees the standalone interview got 200
+
+— Audit —
+{"level":"info","msg":"request","requestId":"d5df834a-4494-4e27-af43-fc770d750edc","method":"GET","path":"/api/audit","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ audit has interview.scheduled 
+  ✅ audit has interview.status_changed 
+  ✅ audit has interview.feedback_submitted 
+
+=== PHASE 4: 41 passed, 0 failed ===
+

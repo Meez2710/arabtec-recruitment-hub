@@ -1,0 +1,22 @@
+{
+ "tablet": {
+  "headTop": 61.953125,
+  "barBottom": 56,
+  "closeClickable": true,
+  "segRight": 566.59375,
+  "notesLeft": 581.984375,
+  "segOverlapsNotes": false
+ },
+ "resize": {
+  "typed": "UNSAVED RESIZE PROBE"
+ },
+ "afterResize": {
+  "drawerStayedOpen": false,
+  "notesNow": "UNSAVED RESIZE PROBE",
+  "restoredNote": true
+ },
+ "csp": {
+  "metaCsp": false,
+  "canaryBlocked": false
+ }
+}

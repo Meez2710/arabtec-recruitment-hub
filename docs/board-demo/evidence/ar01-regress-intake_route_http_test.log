@@ -1,0 +1,63 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:57938) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4102 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+
+  ============================================================
+   FIRST-RUN ADMIN PASSWORD (shown once — must be changed at login):
+     email:    admin@arabtec.com
+     password: Arb-R90jJEfWlZqo!9
+   Set SEED_ADMIN_PASSWORD to control this. Rotate immediately.
+  ============================================================
+
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4102/api/health
+
+{"level":"info","msg":"request","requestId":"e7803956-8177-43a6-9613-96a33d808d31","method":"POST","path":"/api/auth/login","status":200,"ms":268,"ip":"::ffff:127.0.0.1"}
+  PASS  the seeded reviewer holds candidate view and add
+{"level":"info","msg":"request","requestId":"12f543b9-b9b5-4ef1-be84-70e09a33cf48","method":"GET","path":"/api/candidates/intakes","status":200,"ms":8,"userId":5,"ip":"::ffff:127.0.0.1"}
+  PASS  GET /api/candidates/intakes answers 200
+  PASS  the response carries an intakes array
+  PASS  it is NOT served by the /:id handler
+{"level":"warn","msg":"request","requestId":"bc71846b-b354-43c4-b4d3-e8677ef2537e","method":"GET","path":"/api/candidates/999999","status":404,"ms":5,"userId":5,"ip":"::ffff:127.0.0.1"}
+  PASS  the /:id handler is still live for a real numeric id
+{"level":"info","msg":"request","requestId":"e432835d-3e15-44b6-9eec-91a7a62fe27c","method":"GET","path":"/api/candidates","status":200,"ms":3,"userId":5,"ip":"::ffff:127.0.0.1"}
+{"level":"info","msg":"request","requestId":"c4f0a3b7-495d-4117-a184-36d6fb5056cd","method":"POST","path":"/api/candidates/parse-cv","status":200,"ms":947,"userId":5,"ip":"::ffff:127.0.0.1"}
+
+  ⊘ No CV reader is configured — the three parse assertions below are SKIPPED.
+    This is NOT a pass. Set ANTHROPIC_API_KEY to make them a real check.
+
+  SKIP  POST /api/candidates/parse-cv accepts the upload — no CV reader configured (not a pass)
+  SKIP  the returned intake is PENDING and holds nothing decided — no CV reader configured (not a pass)
+{"level":"info","msg":"request","requestId":"1b6765f3-77e4-4d16-a175-57bae79d490f","method":"GET","path":"/api/candidates","status":200,"ms":6,"userId":5,"ip":"::ffff:127.0.0.1"}
+  PASS  parsing created NO candidate
+{"level":"info","msg":"request","requestId":"967842ff-bdea-4f51-a740-e96f1849fcf1","method":"GET","path":"/api/candidates/intakes","status":200,"ms":6,"userId":5,"ip":"::ffff:127.0.0.1"}
+  SKIP  the new intake appears in GET /api/candidates/intakes — no CV reader configured (not a pass)
+
+ALL PASS — 6 passed, 0 failed, 3 skipped (no CV reader — not a pass)

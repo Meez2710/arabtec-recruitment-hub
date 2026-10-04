@@ -1,0 +1,293 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:64080) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4391 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"778b0d42-1a9a-41ce-a880-fe69a46189ec","method":"GET","path":"/api/auth/me","status":503,"ms":4,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"26402e73-92b4-4ac8-91f7-e648df732954","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4391/api/health
+
+{"level":"warn","msg":"request","requestId":"02c073d5-bf20-46c1-871f-404175308dc1","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+
+— Average rounding and fit bands —
+  ✅ raw 4.15 → 4.2 strong
+  ✅ raw 4.14 → 4.1 acceptable
+  ✅ raw 3.45 → 3.5 acceptable
+  ✅ raw 3.44 → 3.4 borderline
+  ✅ raw 2.95 → 3 borderline
+  ✅ raw 2.94 → 2.9 weak
+  ✅ raw 5 → 5 strong
+  ✅ raw 1 → 1 weak
+  ✅ no numeric score → average and fit null
+  ✅ all-N/A summary is Not rated, never Weak
+  ✅ average counts only numeric rows
+  ✅ averageScore accepts {score} objects (old scalar-only defect)
+  ✅ legacy read: {score:null} → N/A, scalar 4 → 4, invalid → unanswered, missing → unanswered
+  ✅ canonical unanswered-with-notes row is not read as N/A
+{"level":"info","msg":"request","requestId":"d171e199-cd75-49b4-9f07-2957480a6719","method":"POST","path":"/api/auth/login","status":200,"ms":193,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"586ce3a4-fd20-4774-9fb0-b3c2ed2129a8","method":"POST","path":"/api/auth/change-password","status":200,"ms":522,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"73edd9af-3ad8-4bc0-ba3c-b265f8aed07b","method":"PUT","path":"/api/assessments/policy","status":200,"ms":8,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a7b195c8-c36b-49c3-911a-49a3ba4e0589","method":"POST","path":"/api/auth/login","status":200,"ms":241,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"13ef37d7-4c6a-4564-8c99-8926aca48356","method":"POST","path":"/api/auth/login","status":200,"ms":254,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"64906089-2ee8-48c7-bfa6-9d7011a9fd44","method":"POST","path":"/api/auth/login","status":200,"ms":247,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b1ce831f-7f20-4ec5-83a8-fc4f7b1d2907","method":"POST","path":"/api/auth/login","status":200,"ms":188,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f4fb3306-49ce-4321-8da7-3d6337d8228d","method":"POST","path":"/api/auth/login","status":200,"ms":177,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e03e1d08-4835-47c0-a953-bf6186caac34","method":"POST","path":"/api/auth/login","status":200,"ms":175,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f3f8c09d-a75d-4bb4-85df-51cc4b4a910d","method":"POST","path":"/api/auth/login","status":200,"ms":224,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b639eaa6-b921-4a0a-a6d0-f1386c95d040","method":"POST","path":"/api/auth/login","status":200,"ms":254,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c2435bba-6759-48e5-a52f-a47352aafe08","method":"GET","path":"/api/requests/meta/form","status":200,"ms":4,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"62a9384a-09c7-4dc7-aa3d-302bfcefd335","method":"POST","path":"/api/requests","status":201,"ms":8,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"678a5ad9-a3cb-4baf-aeb5-225fca36d282","method":"POST","path":"/api/requests/1/submit","status":200,"ms":22,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"113f9f8c-4acd-4960-805a-b1899aa3f026","method":"POST","path":"/api/requests/1/approve","status":200,"ms":8,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Site Engineer","messageId":"<2f092817-4a53-5373-a544-4f871c385f52@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Site Engineer","messageId":"<ef37e308-00f6-1512-3ce3-7c1bb8f6bdf8@localhost>"}
+{"level":"info","msg":"request","requestId":"df2bf4b8-e9d5-42c0-91b3-827bada7a744","method":"POST","path":"/api/requests/1/assign","status":200,"ms":5,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Site Engineer","messageId":"<08eac527-ef8b-dad3-46c9-6d6c9a34057d@localhost>"}
+{"level":"info","msg":"request","requestId":"d927d84d-9785-4aa6-9b46-e798803dc724","method":"POST","path":"/api/candidates","status":201,"ms":6,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Site Engineer","messageId":"<ea68d1ee-5367-218f-d213-4707f8b11a33@localhost>"}
+{"level":"info","msg":"request","requestId":"e8454b13-1d26-4912-9f92-4bbe384b254e","method":"POST","path":"/api/candidates","status":201,"ms":6,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"610009f6-75d8-4246-a842-e43343c6fa29","method":"POST","path":"/api/candidates","status":201,"ms":3,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"cd0e646f-1d3a-463e-88ba-64c932f314f6","method":"POST","path":"/api/applications","status":201,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"edcfe290-ed06-4c97-99cf-faedb4195023","method":"POST","path":"/api/applications","status":201,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e2a39ec0-36e5-4a49-85ae-f8012a594973","method":"POST","path":"/api/applications","status":201,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4c04f6c7-866a-4b04-a503-980bfd43d308","method":"POST","path":"/api/applications/1/move","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"adff4f77-0137-40cd-a0d6-3e45574832f4","method":"POST","path":"/api/applications/2/move","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2c3a1eaf-3015-435f-ab82-645a8ebc44fb","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e4b4ae5c-5c75-4478-aacd-217546462837","method":"POST","path":"/api/interviews","status":201,"ms":45,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"270003e5-a7d3-47c7-88c8-abd692da5d03","method":"POST","path":"/api/interviews","status":201,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"18e7fde6-c7a6-499f-9ad2-f06b7164f215","method":"POST","path":"/api/interviews/2/status","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<cd7fe45c-a7dc-727e-f9d4-23b62859f903@localhost>"}
+{"level":"info","msg":"request","requestId":"64ff57d0-90cc-4ea4-999e-48be5edae958","method":"POST","path":"/api/interviews","status":201,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<d46b5a6d-9f19-515b-1b00-600f6e0efbec@localhost>"}
+
+— PDF metadata —
+{"level":"info","msg":"request","requestId":"7665c3b6-8027-44a9-823c-0d4ed1b141bf","method":"GET","path":"/api/assessments/meta","status":200,"ms":2,"userId":8,"ip":"::1"}
+  ✅ five behavioral rows, exact labels/descriptions
+  ✅ five technical rows, exact labels/descriptions
+  ✅ behavioral instruction text
+  ✅ score guide + N/A
+  ✅ critical flags exact
+  ✅ evaluator decisions are the PDF choices
+  ✅ final decisions are the PDF choices (no Hired)
+
+— Context from real linked records —
+{"level":"info","msg":"request","requestId":"a8578adb-d9db-486d-8e76-d5004b1154ee","method":"GET","path":"/api/assessments/application/1","status":200,"ms":4,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hiring.manager@arabtec.com","subject":"Interview invitation","messageId":"<2e16f7b2-403d-64fa-bb11-bbd9c5b58eb1@localhost>"}
+  ✅ full name / position / department resolved by id
+  ✅ interview date = latest NON-cancelled interview with reference
+  ✅ zero years of experience preserved
+  ✅ education, employer, notice from candidate
+  ✅ current salary has no source → null
+  ✅ salary.view holder sees expected salary
+{"level":"info","msg":"request","requestId":"2c1ef66a-054e-4448-92df-f086f1ca2de6","method":"GET","path":"/api/assessments/application/1","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ without salary.view: salary withheld from JSON, not just hidden
+{"level":"info","msg":"request","requestId":"59cabd56-5e92-4ce1-b303-67e7922588ba","method":"GET","path":"/api/assessments/application/3","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ missing data stays missing (no interview, no invented values)
+
+— Strict server validation —
+{"level":"warn","msg":"request","requestId":"5164387e-1966-48cf-bc17-2ce87bb5aac2","method":"POST","path":"/api/assessments/application/1","status":400,"ms":2,"userId":8,"ip":"::1"}
+  ✅ rejects score 0 (400)
+{"level":"warn","msg":"request","requestId":"e17ca73a-3372-41f6-bf5d-72b22c0e2ad0","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects score 6 (400)
+{"level":"warn","msg":"request","requestId":"f4b93c09-9303-4a89-a9f3-a34631a800ef","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects fractional (400)
+{"level":"warn","msg":"request","requestId":"e555646c-47d9-4978-adac-660ac4d19dd9","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects numeric string (400)
+{"level":"warn","msg":"request","requestId":"7a95adc2-d06e-4494-8bf7-a37fcd702dd4","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects scalar row (400)
+{"level":"warn","msg":"request","requestId":"3f254ca2-a1c5-4573-b2a6-a57a10f7fe05","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects array section (400)
+{"level":"warn","msg":"request","requestId":"dae28435-d269-4e7f-9c3c-bd9607cfc35d","method":"POST","path":"/api/assessments/application/1","status":400,"ms":2,"userId":8,"ip":"::1"}
+  ✅ rejects array row (400)
+{"level":"warn","msg":"request","requestId":"64ebcf72-8d7f-4a7e-80ed-4ad890e27b8e","method":"POST","path":"/api/assessments/application/1","status":400,"ms":3,"userId":8,"ip":"::1"}
+  ✅ rejects unknown criterion (400)
+{"level":"warn","msg":"request","requestId":"f0b5d798-6bf8-410f-929b-ee67e54dec5d","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects technical key in HR section (400)
+{"level":"warn","msg":"request","requestId":"b02fdca4-c174-439b-aff9-c446dc1a57ba","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects unknown row field (400)
+{"level":"warn","msg":"request","requestId":"9817e318-a5d3-416e-80c0-2cd59138b328","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects non-string notes (400)
+{"level":"warn","msg":"request","requestId":"fa61f890-0d4b-48aa-b728-b782608f0537","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects oversized notes (400)
+{"level":"warn","msg":"request","requestId":"45957615-585a-4dfe-a8ae-6d68006261aa","method":"POST","path":"/api/assessments/application/1","status":400,"ms":2,"userId":8,"ip":"::1"}
+  ✅ rejects unknown flag (400)
+{"level":"warn","msg":"request","requestId":"5c26a3da-9945-420e-9e15-92d5cd2949bf","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects non-boolean flag (400)
+{"level":"warn","msg":"request","requestId":"738a68d8-7d57-49d2-b4c5-0aa496c2b8ac","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects invalid recommendation (400)
+{"level":"warn","msg":"request","requestId":"1fae509c-7f16-4b1b-bd4d-7cac955e2c33","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects submitted not boolean (400)
+{"level":"warn","msg":"request","requestId":"d0ad6491-aec0-4f24-9523-ce499bf7c4eb","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects other section on HR (400)
+{"level":"warn","msg":"request","requestId":"1d7596ab-dc5b-426b-ba32-41b866622bbe","method":"POST","path":"/api/assessments/application/1","status":400,"ms":2,"userId":8,"ip":"::1"}
+  ✅ rejects bad evaluatorType (400)
+  ✅ no record created by rejected writes
+
+— Identity and target cannot be overridden —
+{"level":"warn","msg":"request","requestId":"1775c6a9-20f8-4932-93b2-818f4f60dc1f","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects client applicationId (400)
+{"level":"warn","msg":"request","requestId":"0d6ebf7d-85a3-4467-a650-fa4da52fb88a","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects client evaluatorId (400)
+{"level":"warn","msg":"request","requestId":"4803d223-376b-47dc-8292-4aae066df38c","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects client evaluatorName (400)
+{"level":"warn","msg":"request","requestId":"7fe3c5b1-493a-406a-92f0-1b5d293f3705","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects client updatedAt (400)
+{"level":"warn","msg":"request","requestId":"15991115-5974-40fd-9f6a-3ef885922ef3","method":"POST","path":"/api/assessments/application/1","status":400,"ms":1,"userId":8,"ip":"::1"}
+  ✅ rejects client id (400)
+  ✅ target application B untouched by tampering
+
+— Scope: assigned vs unrelated actors —
+{"level":"info","msg":"request","requestId":"0dd904b4-049e-499a-84d8-c1c9021fa1b0","method":"GET","path":"/api/assessments/application/1","status":200,"ms":2,"userId":8,"ip":"::1"}
+  ✅ panel interviewer reads assigned app (200)
+{"level":"info","msg":"request","requestId":"9b1696a9-2043-4efd-b9dc-8a7475cf397a","method":"GET","path":"/api/assessments/application/1","status":200,"ms":2,"userId":9,"ip":"::1"}
+  ✅ viewer (view_all) reads (200)
+{"level":"warn","msg":"request","requestId":"43d6e4ea-e2cc-423b-9fb0-2953fadd8afb","method":"GET","path":"/api/assessments/application/1","status":403,"ms":1,"userId":6,"ip":"::1"}
+  ✅ unrelated scoped actor: read denied (403)
+{"level":"warn","msg":"request","requestId":"42cafff7-1feb-4f71-b3f0-c59b542b1149","method":"POST","path":"/api/assessments/application/1","status":403,"ms":1,"userId":6,"ip":"::1"}
+  ✅ unrelated scoped actor: write denied (403)
+{"level":"warn","msg":"request","requestId":"228a5c95-9679-4edc-9191-d4a1910424ae","method":"POST","path":"/api/assessments/application/1/final","status":403,"ms":2,"userId":6,"ip":"::1"}
+  ✅ unrelated scoped actor: final denied (403)
+{"level":"warn","msg":"request","requestId":"6d73b75f-c824-49cd-baba-69cf25aba933","method":"GET","path":"/api/assessments/application/1/preview","status":403,"ms":2,"userId":6,"ip":"::1"}
+  ✅ unrelated scoped actor: preview denied (403)
+{"level":"warn","msg":"request","requestId":"a995cef5-2953-40f1-b098-fcca19c8ab9c","method":"GET","path":"/api/assessments/application/1","status":403,"ms":2,"userId":7,"ip":"::1"}
+  ✅ candidate.view without interview scope: read denied (403)
+{"level":"warn","msg":"request","requestId":"91567c02-506e-4ed8-92ae-f529bf46546b","method":"POST","path":"/api/assessments/application/1","status":403,"ms":1,"userId":9,"ip":"::1"}
+  ✅ viewer without interview.feedback: write denied (403)
+{"level":"info","msg":"request","requestId":"b43ff33c-e827-4f0e-bb95-3656730762a1","method":"GET","path":"/api/assessments/application/2","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ✅ second scoped actor reads own assigned app (200)
+{"level":"info","msg":"request","requestId":"73c670ca-5ecf-4e99-b727-137e700409d8","method":"POST","path":"/api/assessments/application/2","status":201,"ms":4,"userId":6,"ip":"::1"}
+  ✅ second scoped actor writes own assigned app (201)
+{"level":"warn","msg":"request","requestId":"4167e7d9-d827-475d-ad94-e5a2ff9bc362","method":"GET","path":"/api/assessments/application/2","status":403,"ms":1,"userId":8,"ip":"::1"}
+  ✅ first scoped actor cannot read the other app (403)
+{"level":"warn","msg":"request","requestId":"0cffc089-53d5-446c-a7cd-62f1f236a27b","method":"POST","path":"/api/assessments/application/1","status":403,"ms":1,"userId":6,"ip":"::1"}
+  ✅ unrelated actor still cannot write by naming its own app in the body
+
+— HR draft with N/A and notes, reload, submit —
+{"level":"info","msg":"request","requestId":"95ad8a59-35a9-4067-a942-7a0da87f1638","method":"POST","path":"/api/assessments/application/1","status":201,"ms":3,"userId":8,"ip":"::1"}
+  ✅ partial HR draft saved (201)
+  ✅ stored JSON is canonical: N/A string, unanswered has no score property
+{"level":"info","msg":"request","requestId":"825c1a71-d520-431a-9caf-a759d817cefa","method":"GET","path":"/api/assessments/application/1","status":200,"ms":3,"userId":8,"ip":"::1"}
+  ✅ reload: status Draft
+  ✅ reload: score, N/A and notes round-trip
+  ✅ reload: summary counts
+{"level":"info","msg":"request","requestId":"a37bc391-52e5-45f5-bf7e-2dfde2e7043a","method":"GET","path":"/api/applications/1","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ flag → review required (no auto reject)
+  ✅ actual saver + UTC timestamp
+{"level":"info","msg":"request","requestId":"17c30328-23dc-4d67-9411-a4c966198d03","method":"GET","path":"/api/assessments/application/1","status":200,"ms":3,"userId":8,"ip":"::1"}
+  ✅ HR and technical are independent
+{"level":"warn","msg":"request","requestId":"a43550e1-9f26-49dd-8747-129e9597774f","method":"POST","path":"/api/assessments/application/1","status":400,"ms":2,"userId":8,"ip":"::1"}
+  ✅ submit with unanswered rows rejected (400) and names them
+{"level":"warn","msg":"request","requestId":"8344be17-d38c-4b9e-bbce-3cc78001d749","method":"POST","path":"/api/assessments/application/1","status":400,"ms":2,"userId":8,"ip":"::1"}
+  ✅ submit without recommendation rejected (400)
+  ✅ failed submits left the draft intact
+{"level":"info","msg":"request","requestId":"7c969c58-052e-40d7-87af-ce682906cc10","method":"POST","path":"/api/assessments/application/1","status":201,"ms":4,"userId":8,"ip":"::1"}
+  ✅ HR submitted (201) with submitted:true
+  ✅ average from numeric rows only: (4+5+4+5)/4 = 4.5 Strong
+  ✅ conflicting client fit ignored; server-derived fit stored
+{"level":"info","msg":"request","requestId":"78c9142b-74de-44ed-9ec7-957577913957","method":"GET","path":"/api/applications/1","status":200,"ms":1,"userId":5,"ip":"::1"}
+  ✅ recommendation saved; application stage unchanged
+
+— Technical evaluation, all-N/A, multiple editors —
+{"level":"info","msg":"request","requestId":"84830006-adfe-4a17-b132-8d34d15a1081","method":"POST","path":"/api/assessments/application/1","status":201,"ms":3,"userId":5,"ip":"::1"}
+  ✅ all-N/A technical submit allowed (201)
+  ✅ all-N/A is Not rated (null average and fit)
+  ✅ HR untouched by technical write
+{"level":"info","msg":"request","requestId":"d04976fd-2530-4a5d-82ce-0bf17df8c0d8","method":"POST","path":"/api/assessments/application/1","status":201,"ms":3,"userId":3,"ip":"::1"}
+  ✅ edit by second actor updates last-saved identity
+  ✅ (4+4+3+4)/4 = 3.75 → 3.8 Acceptable
+{"level":"info","msg":"request","requestId":"cfd45834-a40f-437b-90a1-bf4da7811822","method":"POST","path":"/api/assessments/application/1","status":201,"ms":3,"userId":5,"ip":"::1"}
+  ✅ HR edited by another authorized actor → editor recorded
+
+— Audit trail —
+{"level":"info","msg":"request","requestId":"74b9ec3a-2937-4632-a1c5-e0574b71bcef","method":"GET","path":"/api/audit","status":200,"ms":3,"userId":1,"ip":"::1"}
+  ✅ draft audited as assessment.draft_saved with state
+  ✅ submission audited as assessment.submitted with previous draft
+  ✅ edits audited as assessment.updated with previous author
+  ✅ no assessment audit payload carries salary
+
+— Atomic persistence + audit —
+{"level":"error","msg":"unhandled","requestId":"a0570e9e-ebbd-4a2f-94fc-1ec86ee225bd","error":"simulated audit failure"}
+{"level":"error","msg":"request","requestId":"a0570e9e-ebbd-4a2f-94fc-1ec86ee225bd","method":"POST","path":"/api/assessments/application/1","status":500,"ms":3,"userId":5,"ip":"::1"}
+  ✅ audit failure fails the request
+  ✅ …and leaves no unaudited change
+{"level":"error","msg":"unhandled","requestId":"e92a4a6c-05ab-4b08-ab4b-f13ab377a9f8","error":"simulated audit failure"}
+{"level":"error","msg":"request","requestId":"e92a4a6c-05ab-4b08-ab4b-f13ab377a9f8","method":"POST","path":"/api/assessments/application/1/final","status":500,"ms":3,"userId":3,"ip":"::1"}
+  ✅ final decision rolls back with its audit
+
+— Shared final decision —
+{"level":"warn","msg":"request","requestId":"7fd23a12-6969-4ab4-8c2e-ace43957f1b3","method":"POST","path":"/api/assessments/application/3","status":409,"ms":1,"userId":3,"ip":"::1"}
+  ✅ locked stage: evaluation write denied (409)
+{"level":"warn","msg":"request","requestId":"1ac87df3-1083-48cb-9f65-bf40ee25eb53","method":"POST","path":"/api/assessments/application/3/final","status":409,"ms":1,"userId":3,"ip":"::1"}
+  ✅ locked stage: final decision denied (409)
+{"level":"warn","msg":"request","requestId":"faeade8f-a6ba-402c-9fd8-5d750c2dffa2","method":"POST","path":"/api/assessments/application/1/final","status":400,"ms":2,"userId":3,"ip":"::1"}
+  ✅ new final write of historical "hired" rejected (400)
+{"level":"warn","msg":"request","requestId":"d796de68-f0fe-445c-bee0-559635645741","method":"POST","path":"/api/assessments/application/1/final","status":400,"ms":1,"userId":3,"ip":"::1"}
+  ✅ final decision cannot carry identity (400)
+{"level":"info","msg":"request","requestId":"b006100d-b101-4898-b09a-b5304ff3fab4","method":"POST","path":"/api/assessments/application/1/final","status":201,"ms":3,"userId":3,"ip":"::1"}
+  ✅ Proceed with Conditions recorded (201)
+{"level":"info","msg":"request","requestId":"ad4128e9-01dd-4178-b342-1200616a7936","method":"GET","path":"/api/applications/1","status":200,"ms":1,"userId":5,"ip":"::1"}
+  ✅ final decision does not move the application
+{"level":"info","msg":"request","requestId":"4cc7f8f8-0eaa-4a3c-b5b6-8fbd33a0a270","method":"POST","path":"/api/assessments/application/1/final","status":201,"ms":4,"userId":8,"ip":"::1"}
+  ✅ CV Pool accepted for a scoped panel member
+{"level":"info","msg":"request","requestId":"bcbbe234-2630-4f98-a469-fb4ab8802345","method":"POST","path":"/api/assessments/application/1/final","status":201,"ms":3,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"551b4a9e-2dfd-4aa5-b9b8-ffe3a5cd2654","method":"GET","path":"/api/audit","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ final decision audited with previous value and actor
+
+— Legacy records —
+{"level":"info","msg":"request","requestId":"5181ee1c-523f-441f-83dd-3fe29e8a0192","method":"GET","path":"/api/assessments/application/2","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ legacy {score:null} reads as N/A; scalar 4 reads as 4
+  ✅ legacy summary: (4+3)/2 = 3.5 Acceptable, 1 N/A
+  ✅ manual historical fit kept visible as historical
+  ✅ legacy SQLite timestamp served as UTC ISO
+  ✅ historical final "hired" shown as historical, unconverted
+  ✅ viewing never rewrote stored history
+
+— Escaped, masked, scoped preview —
+{"level":"info","msg":"request","requestId":"589614dc-ce64-468f-9995-0680374486b2","method":"GET","path":"/api/assessments/application/1/preview","status":200,"ms":4,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d0dfc94f-2c53-454a-a412-6c1cba8310d0","method":"GET","path":"/api/assessments/application/1/preview","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ preview served as HTML with a no-script CSP
+  ✅ candidate name escaped
+  ✅ notes / justification escaped, never executed
+  ✅ real department + interview reference, never render-time date
+  ✅ salary shown to salary.view holder
+  ✅ salary omitted from preview without salary.view (no "Restricted" placeholder)
+  ✅ N/A, notes, counts, flags, recommendation, actor shown
+  ✅ PDF section titles and justification label
+  ✅ no overall score or suggested pipeline move
+  ✅ both submitted → not labelled draft
+{"level":"info","msg":"request","requestId":"5132f12b-e947-47f0-b2d1-da2f114e5c87","method":"POST","path":"/api/assessments/application/1","status":201,"ms":3,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2aaf1756-e2c8-42d2-a798-5b32fde48b1b","method":"GET","path":"/api/assessments/application/1/preview","status":200,"ms":2,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fbf8cf3f-09d9-431e-ab56-1a9dbb66844b","method":"GET","path":"/api/assessments/application/1","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ editing back to draft is truthful in JSON and preview
+{"level":"info","msg":"request","requestId":"42af8e27-674e-4048-a903-27df4ec18ca7","method":"GET","path":"/api/assessments/application/3/preview","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ no interview → "Not recorded", not today
+  ✅ no fabricated signatures
+
+=== ASSESSMENT PDF: 121 passed, 0 failed ===
+

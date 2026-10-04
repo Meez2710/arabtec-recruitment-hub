@@ -1,0 +1,29 @@
+  ✓ the resolver reads the real cascade, and reports absence as absence
+  ✓ the resolver honours specificity, not just source order
+  ✓ nothing but the panel itself can style a .cvrev-* element
+  ✓ the panel can never be wider than the viewport, at any width
+  ✓ the overlay releases its centring padding so the panel hugs the edge
+  ✓ neither grid track can be widened by its own content
+  ✓ desktop: two columns, each owning its own scroller
+  ✓ stacked: ONE scroller, and neither pane may collapse under its content
+  ✓ the CV pane keeps a real height when stacked, so it is never a blank strip
+  ✓ the reused CvFilePreview is told to fill the cell rather than being re-implemented
+  ✓ the note sits outside the scroller and is pinned to the bottom
+  ✓ the composer button never drops under the touch floor
+  ✓ the stacked parse review is one scroller with content-sized panes
+  ✓ above 900 the parse review is unchanged — each column still scrolls itself
+  ✓ claude-system.css declares no paint for the panel, and the design system does
+  ✓ the panel introduces no new hue — every colour is an existing token
+  ✓ META: the guards fail when the fix is undone, however it is undone
+  ✓ no view path downloads the résumé any more, and download still exists elsewhere
+  ✓ every named entry point opens the panel
+  ✓ Download survives as a secondary action, in the panel and beside it
+  ✓ the panel is mounted once, at the shell, not per page
+  ✓ the object URL the preview uses is revoked on close and on switch
+  ✓ a Word CV renders in a frame with an empty sandbox
+  ✓ the note saves through the endpoint that already exists
+  ✓ the composer is absent, not broken, without candidate.note
+  ✓ the new panel is a real dialog on the shared hook
+  ✓ the picker re-anchors on scroll and resize, which is why it was not changed
+
+=== UI OVERLAYS: 27 passed, 0 failed ===

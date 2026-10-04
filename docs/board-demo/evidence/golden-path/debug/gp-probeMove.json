@@ -1,0 +1,46 @@
+{
+ "stage": "probeMove",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "0": "View candidate",
+   "1": "Review CV",
+   "2": "Move to Screening",
+   "3": "Move to Interview",
+   "4": "Move to Offer",
+   "5": "Move to Hired",
+   "6": "Set Next Action",
+   "7": "Put On Hold",
+   "8": "Schedule Interview",
+   "9": "Generate Offer",
+   "10": "Disqualify",
+   "s": "menu"
+  },
+  {
+   "s": "screenshot gp-probe-menu.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

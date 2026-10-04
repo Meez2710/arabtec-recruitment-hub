@@ -1,0 +1,52 @@
+[BABEL] Note: The code generator has deoptimised the styling of undefined as it exceeds the max of 500KB.
+  ✓ all board transitions are forward-only; hired, joined and disqualified cards are locked
+  ✓ folded and unknown stages retain their specific status information
+  ✓ card menu is a keyboard/touch alternative with only forward targets
+  ✓ list cards show a stage without requiring a board column header
+  ✓ drop handlers reject backward, hired, pending, foreign, and unauthorized drops
+  ✓ guarded writes map API stages and roll back only the failed card
+  ✓ mobile navigation follows persona order and never adds an unauthorized item
+  ✓ dirty Roles edits survive cancelled role picks, internal navigation and page exit; save clears the guard
+  ✓ hash links use the dirty guard once, route to email, and retain the permission gate
+  ✓ shared filter disclosure keeps the same controlled inputs and state when closed
+  ✓ request detail failure renders a retry and does not return markup from an effect
+  ✓ email saves omit stored credentials and failed draft tests never save
+  ✓ organization navigation renders its module and a missing-module preview
+  ✓ offers empty, populated and invalid responses always produce visible states
+  ✓ organization empty and failed loads show actionable content without endless loading
+  ✓ an org unit or project is never labelled a vacancy
+  ✓ an empty seat is still a vacancy, and a filled one shows the person
+  ✓ the location line never repeats itself
+  ✓ a fully expanded chart still frames its root at scale 1
+  ✓ collapsing to a single card re-frames instead of stranding it
+  ✓ Fit resolves to a readable scale and frames the root
+  ✓ a tree that already fits is not scaled down by Fit
+  ✓ framing degrades safely before the canvas has been measured
+  ✓ below the breakpoint the desktop chrome is not rendered at all — not merely hidden
+  ✓ above the breakpoint the phone chrome is not rendered at all, and the desktop shell is untouched
+  ✓ exactly one primary navigation exists in either presentation
+  ✓ the phone chrome is driven by the same permission-filtered nav, the same counts and the same user
+  ✓ the phone chrome adds no request of its own and keeps the same route on the same page component
+  ✓ a phone tab navigates through the shell's own guarded go(), and the drawer opens only on request
+  ✓ the closed drawer renders nothing, so nothing behind it is focusable
+  ✓ quality labels render through the canonical Badge, never in the rejection red
+  ✓ dashboard: requests fail, interviews load — the failure is named in place, interviews stay usable, no "all clear"
+  ✓ dashboard: interviews fail, requests load — roles render, the interview-dependent figures are withheld
+  ✓ dashboard: both lists failing takes the page with one retry; a genuinely empty result is still "all clear"
+  ✓ dashboard: a failed refresh keeps the loaded rows, marks them stale, and a superseded reload cannot overwrite a newer one
+  ✓ candidate profile: a failed first load shows a retry (never an endless skeleton) and retry recovers
+  ✓ candidate profile: opening A then B shows B, even when A answers last
+  ✓ assessment panel: metadata, bundle and malformed-bundle failures each end in a retry, never a stuck skeleton
+  ✓ assessment panel: a locked application says so even when the form metadata failed
+  ✓ director and interviewer dashboards deep-link to the record needing a decision
+  ✓ offer page: one approval layer — submit on draft, approve/reject only for the director, send only once approved
+  ✓ bulk move summary: hidden rows are counted, only reachable stages are offered, only eligible rows move
+  ✓ candidate header names the current application, never a disqualified one, and shows no dead link
+  ✓ system admin: director view by default, with tabs into every role's dashboard
+  ✓ standalone interview/offer: a typed candidate is created first, a picked one is used as is
+  ✓ Interviews and Offers offer a create button only with the create permission
+  ✓ knowledge lines: the owner list is parsed, and it wins over the bundled list when non-empty
+  ✓ record links: every record page keeps #<route>/<id> in the address bar, and the router opens it
+
+=== UI BEHAVIOR: 48 passed ===
+

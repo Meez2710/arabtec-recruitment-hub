@@ -1,0 +1,62 @@
+{
+ "stage": "probeOffer",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "open #interviews/1"
+  },
+  {
+   "0": "Interviews",
+   "1": "Open assessment",
+   "2": "Add Feedback",
+   "3": "Mark Completed",
+   "4": "Mark No-Show",
+   "5": "Cancel",
+   "s": "interview buttons"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "s": "click \"Generate Offer\""
+  },
+  {
+   "s": "offer form",
+   "title": "Generate Offer — Omar Hassan (BOARD DEMO)",
+   "fields": [
+    "Position Title <text>",
+    "Salary Offered <number>",
+    "Currency <text>",
+    "Joining Date <date>",
+    "Offer expiry <date>",
+    "Benefits <text>",
+    "Notes <textarea>"
+   ],
+   "buttons": [
+    "",
+    "Cancel",
+    "Create Offer"
+   ]
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

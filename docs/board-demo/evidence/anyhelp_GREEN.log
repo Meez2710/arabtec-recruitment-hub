@@ -1,0 +1,36 @@
+(node:57712) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# Subtest: request tools scope database results and deny a guessed private ID
+ok 1 - request tools scope database results and deny a guessed private ID
+  ---
+  duration_ms: 18.23625
+  type: 'test'
+  ...
+# Subtest: candidate retrieval omits salary, contact information and erased records
+ok 2 - candidate retrieval omits salary, contact information and erased records
+  ---
+  duration_ms: 9.056083
+  type: 'test'
+  ...
+# Subtest: conversation passes tool results to Anthropic and returns bounded text with citations
+ok 3 - conversation passes tool results to Anthropic and returns bounded text with citations
+  ---
+  duration_ms: 7.30725
+  type: 'test'
+  ...
+# Subtest: endless tool requests are bounded and cancellation prevents provider work
+ok 4 - endless tool requests are bounded and cancellation prevents provider work
+  ---
+  duration_ms: 6.607875
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 68.054334

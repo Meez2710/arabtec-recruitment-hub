@@ -1,0 +1,38 @@
+  ✓ all deployed UI assets share one cache version
+  ✓ phone stylesheet is the last product CSS linked, reflow immediately before it
+  ✓ authenticated shell has a render recovery boundary
+  ✓ shared modal binds dialog semantics and keyboard handler
+  ✓ candidate drawer binds dialog semantics and keyboard handler
+  ✓ dialog hook traps Tab, closes on Escape, and restores focus
+  ✓ dialogs expose labelled close controls
+  ✓ saved primary color is contrast-guarded before driving action tokens
+  ✓ action color defaults green and migrates only the legacy red default
+  ✓ readiness mobile rules keep all buttons at 44px
+  ✓ four KPI layouts collapse to two columns before tablet width
+  ✓ legacy tables receive a horizontal overflow owner
+  ✓ empty states use the four shared schematic marks
+  ✓ email module loads before the shell
+  ✓ intake review body copy meets the release size
+  ✓ RoleRow found and is non-empty
+  ✓ role-row Open button carries no inline margin-top hack
+  ✓ role-row age label + Open button share a dedicated stacking class
+  ✓ .role-row-end actually stacks its children with a real gap, not an inline nudge
+  ✓ RequestsPage refetch does not blank its list before fetching
+  ✓ RequestsPage refetch guards both write paths against a stale response
+  ✓ RequestsPage declares the loadSeq ticket it uses
+  ✓ InterviewsPage refetch does not blank its list before fetching
+  ✓ InterviewsPage refetch guards both write paths against a stale response
+  ✓ InterviewsPage declares the loadSeq ticket it uses
+  ✓ OffersPage refetch does not blank its list before fetching
+  ✓ OffersPage refetch guards both write paths against a stale response
+  ✓ OffersPage declares the loadSeq ticket it uses
+  ✓ UsersPage refetch does not blank its list before fetching
+  ✓ UsersPage refetch guards both write paths against a stale response
+  ✓ UsersPage declares the loadSeq ticket it uses
+  ✓ Users search refetches only /users, not its reference data
+  ✓ a failed refetch reports without replacing usable content
+  ✓ no control carries an inline font-size
+  ✓ ghost buttons are not shrunk relative to their action row
+
+=== UI READINESS: 35 passed, 0 failed ===
+

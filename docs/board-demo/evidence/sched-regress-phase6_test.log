@@ -1,0 +1,109 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:64038) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4185 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4185/api/health
+
+{"level":"info","msg":"request","requestId":"bd6a8d1b-6d94-4015-a2ac-f689ed3c9f10","method":"POST","path":"/api/auth/login","status":200,"ms":216,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"57803565-2a98-4b8f-a13d-01f9390c16e7","method":"POST","path":"/api/auth/login","status":200,"ms":306,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"dd6638cb-5fed-478f-b306-c0295c6122a5","method":"POST","path":"/api/auth/login","status":200,"ms":268,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0ca07691-9dd2-4d80-8e73-5f22e4f3b711","method":"POST","path":"/api/auth/login","status":200,"ms":312,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0ccea3d1-a65b-4c95-9c61-9f8eca885982","method":"POST","path":"/api/auth/login","status":200,"ms":268,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6adff493-2461-4cdb-8903-567ee2a921ac","method":"POST","path":"/api/auth/login","status":200,"ms":257,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"74bd6cee-6052-4f34-a92c-06da7927b0e8","method":"POST","path":"/api/auth/login","status":200,"ms":213,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"53e9ca76-0191-400c-9d8a-4e2794c9831f","method":"POST","path":"/api/auth/login","status":200,"ms":229,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"367cca13-fea1-4047-9ae3-7cead7d208e7","method":"GET","path":"/api/requests/meta/form","status":200,"ms":10,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fcacb271-e7d3-4a7b-abb6-4190784b6020","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ad8418ab-c5bb-4800-8ea5-de42c6588423","method":"POST","path":"/api/requests/1/submit","status":200,"ms":55,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0d4fbf74-d786-4b15-ba94-01466803fcad","method":"POST","path":"/api/requests/1/approve","status":200,"ms":12,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Dash Role","messageId":"<8b2abbfe-04bf-9fd5-517d-da443503e0a3@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Dash Role","messageId":"<d69fc425-e9a0-c864-de6e-d47cc8240fca@localhost>"}
+{"level":"info","msg":"request","requestId":"274a8445-bb0d-4ff7-91fb-721050bc7b71","method":"POST","path":"/api/requests/1/assign","status":200,"ms":13,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Dash Role","messageId":"<4463a09b-84ac-b46e-2c4a-f526ec94f351@localhost>"}
+{"level":"info","msg":"request","requestId":"a2f5d099-87d9-44fb-abfb-17e5d5c70c3f","method":"POST","path":"/api/candidates","status":201,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Dash Role","messageId":"<c50218c0-ff3e-6b09-4dfd-6903fb70fa11@localhost>"}
+{"level":"info","msg":"request","requestId":"0da13ada-f199-4239-a037-fd9065ee1b88","method":"POST","path":"/api/applications","status":201,"ms":10,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e83b6203-0883-4803-8237-9b04b7e18d9a","method":"POST","path":"/api/applications/1/move","status":200,"ms":9,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fa9d41bf-b0ef-43a5-b194-ccf8e5151241","method":"POST","path":"/api/interviews","status":201,"ms":70,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"aefbf53d-218a-45b2-8b7d-66fd7d2ebe87","method":"POST","path":"/api/offers","status":201,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"da62e06e-33d7-401f-b149-dea5d887b1ab","method":"POST","path":"/api/offers/1/submit","status":200,"ms":12,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<72009c22-88fa-4875-b129-f1d30e65739c@localhost>"}
+{"level":"info","msg":"request","requestId":"8ca64180-a9da-45d8-880b-d52639453b6c","method":"POST","path":"/api/offers/1/approve","status":200,"ms":10,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00001","messageId":"<3e011ddd-37a2-85b7-3e9c-88f5bd9ef69c@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00001","messageId":"<726d612d-ee04-4aec-c5a7-6e68f50349c5@localhost>"}
+{"level":"info","msg":"request","requestId":"26d35c0b-d200-4332-86d4-213f366601c8","method":"POST","path":"/api/offers/1/send","status":200,"ms":16,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00001 Dash Cand","messageId":"<d0f1ac33-8910-0a56-ba53-e3625d05e4c7@localhost>"}
+{"level":"info","msg":"request","requestId":"3d3507e2-184e-4731-9615-6ed17e679fbc","method":"POST","path":"/api/offers/1/result","status":200,"ms":10,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ee0f1b75-8329-490e-ac7b-210d27deeb9c","method":"POST","path":"/api/offers/1/result","status":200,"ms":12,"userId":5,"ip":"::1"}
+
+— RBAC: dashboard.view required —
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Offer accepted — Dash Cand","messageId":"<945d232e-0f48-c045-57e7-3c519a2d0d17@localhost>"}
+{"level":"warn","msg":"request","requestId":"1d8a999a-b0c6-4377-919b-3465c424fdba","method":"GET","path":"/api/dashboard","status":401,"ms":1,"ip":"::1"}
+  ✅ no token → 401 got 401
+
+— Org-wide scope (HR Manager) —
+{"level":"info","msg":"request","requestId":"f282724b-0dba-444d-b27a-43fd66f37b1d","method":"GET","path":"/api/dashboard","status":200,"ms":6,"userId":3,"ip":"::1"}
+  ✅ hrMgr scope = all 
+  ✅ KPIs present 
+  ✅ fill rate computed (1 of 2 = 50%) got 50
+  ✅ joined count = 1 got 1
+  ✅ request → partially_filled present 
+  ✅ applications funnel present 
+  ✅ offers breakdown present (joined) 
+  ✅ recruiter load present (org-wide) 
+  ✅ upcoming interviews ≥ 1 
+
+— No salary / restricted data leakage —
+  ✅ payload contains no "salary" 
+  ✅ payload contains no "expected" 
+  ✅ payload contains no "benefit" 
+
+— Own-scope (recruiter sees only own requests) —
+{"level":"info","msg":"request","requestId":"96f4b7d3-6690-4c70-a6ab-93571dd31144","method":"GET","path":"/api/dashboard","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ recruiter scope = own 
+  ✅ recruiter recruiterLoad hidden (own scope) 
+{"level":"info","msg":"request","requestId":"41438b2a-14a7-4ca1-87da-15e20781fad7","method":"GET","path":"/api/dashboard","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ✅ hiring manager scope = own 
+
+— Read-only: no mutation endpoints under dashboard —
+{"level":"warn","msg":"request","requestId":"0de9509b-71e9-4d31-8303-eae364394737","method":"POST","path":"/api/dashboard","status":404,"ms":6,"userId":3,"ip":"::1"}
+  ✅ POST /dashboard not allowed (404/405) got 404
+
+— My Work widget —
+  ✅ myWork present with myOpenRequests 
+  ✅ hrMgr sees pending offer approvals count 
+  ✅ recruiter has null pending approvals (no offer.approve) 
+
+— No new audit noise: dashboard is read-only (no dashboard.* audit) —
+{"level":"warn","msg":"request","requestId":"fd22c5b8-2ed4-49c1-bdcf-411e1c784036","method":"GET","path":"/api/audit","status":403,"ms":2,"userId":1,"ip":"::1"}
+  ✅ no dashboard.* audit entries written 
+
+=== PHASE 6: 21 passed, 0 failed ===
+

@@ -1,0 +1,137 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"development","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:57840) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4130 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4130/api/health
+
+{"level":"info","msg":"request","requestId":"53049fad-6630-4278-98b0-6a2b2e612b66","method":"POST","path":"/api/auth/login","status":200,"ms":298,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"160ec56a-d17e-4548-b612-cfa4cf95e5df","method":"POST","path":"/api/auth/change-password","status":200,"ms":512,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b70e40cb-7afa-49fb-a801-9fa1c7eaa174","method":"POST","path":"/api/auth/login","status":200,"ms":248,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2aeea05d-77a9-428b-aae2-e643aec9b4c7","method":"POST","path":"/api/auth/login","status":200,"ms":241,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b0139e33-2b23-4fdc-af6d-93ae1d714fb2","method":"POST","path":"/api/auth/login","status":200,"ms":284,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"901c350c-77fe-417d-8dbe-9b239d55b8a8","method":"POST","path":"/api/auth/login","status":200,"ms":242,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"56eb87b2-eb64-4f1a-94cd-cc8a7c7387a2","method":"POST","path":"/api/auth/login","status":200,"ms":205,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"880b59d8-220c-4f0d-b470-e4605d56c88c","method":"POST","path":"/api/auth/login","status":200,"ms":258,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"95b1951c-93e5-4f42-ae5a-c0f80f4c0e70","method":"POST","path":"/api/auth/login","status":200,"ms":708,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bd54fb50-d1c1-434a-b16f-21682859eb92","method":"GET","path":"/api/requests/meta/form","status":200,"ms":15,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"48dc8bdd-2bac-49c5-bdfb-37b67cecb0c9","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7fa79a24-b466-425a-b22e-97a1ae158a40","method":"POST","path":"/api/requests/1/submit","status":200,"ms":46,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"070fddfc-226a-4113-b66b-bb5bf8d707af","method":"POST","path":"/api/requests/1/approve","status":200,"ms":13,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Site Engineer","messageId":"<413870a3-8e01-aa8e-1f4f-e60cadc9c7a8@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Site Engineer","messageId":"<bd8df942-4c40-02e4-6b64-3d451153772b@localhost>"}
+{"level":"info","msg":"request","requestId":"f607f86b-abf3-42f0-af2c-2f4ba593bcb0","method":"POST","path":"/api/requests/1/assign","status":200,"ms":14,"userId":4,"ip":"::1"}
+
+— Candidate create + separation —
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Site Engineer","messageId":"<17e61b82-1d16-d382-9313-adfed9059e5a@localhost>"}
+{"level":"info","msg":"request","requestId":"79d6fc4d-ec16-429f-bff4-ef9d5aa06d51","method":"POST","path":"/api/candidates","status":201,"ms":19,"userId":5,"ip":"::1"}
+  ✅ recruiter creates candidate (201) got 201
+  ✅ candidate has CAN id CAN-00001
+  ✅ candidate object has NO status field 
+
+— Validation + dedup —
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Site Engineer","messageId":"<2f33944b-5296-0a05-6791-58c21990d2d4@localhost>"}
+{"level":"warn","msg":"request","requestId":"22e16450-bad8-4bee-a313-076d41ef6c30","method":"POST","path":"/api/candidates","status":400,"ms":2,"userId":5,"ip":"::1"}
+  ✅ no email/phone rejected (400) got 400
+{"level":"warn","msg":"request","requestId":"845a8a1b-4e57-4bf7-ae18-13f623bcdd01","method":"POST","path":"/api/candidates","status":409,"ms":4,"userId":5,"ip":"::1"}
+  ✅ duplicate email detected (409) got 409
+  ✅ duplicate response lists the match 
+{"level":"warn","msg":"request","requestId":"d339f5be-d9e4-43d6-ad21-9b087e8ffe31","method":"POST","path":"/api/candidates","status":403,"ms":2,"userId":5,"ip":"::1"}
+  ✅ recruiter without merge perm cannot override (403) got 403
+{"level":"info","msg":"request","requestId":"1a035672-3b14-4408-be37-9d3c07296660","method":"POST","path":"/api/candidates","status":201,"ms":7,"userId":3,"ip":"::1"}
+  ✅ merge-perm role can override with reason (201) got 201
+
+— Salary field-level visibility —
+{"level":"info","msg":"request","requestId":"09440d7a-140c-414d-85f7-84c873c2560f","method":"GET","path":"/api/candidates/1","status":200,"ms":7,"userId":5,"ip":"::1"}
+  ✅ recruiter: salaryVisible false 
+{"level":"info","msg":"request","requestId":"184f9f19-85f6-4b45-9b51-51d330c3b2d7","method":"GET","path":"/api/candidates/1","status":200,"ms":4,"userId":3,"ip":"::1"}
+  ✅ HR manager: salaryVisible true 
+
+— Application: link candidate ↔ request (separation) —
+{"level":"info","msg":"request","requestId":"7bd69944-26e8-49d1-b6a6-d1e99f23e43a","method":"POST","path":"/api/applications","status":201,"ms":14,"userId":5,"ip":"::1"}
+  ✅ link creates application (201) got 201
+  ✅ application has APP id + status sourced 
+{"level":"warn","msg":"request","requestId":"f7b4123c-fa0c-4634-936b-e45f3ddae8a3","method":"POST","path":"/api/applications","status":409,"ms":6,"userId":5,"ip":"::1"}
+  ✅ duplicate application to same request blocked (409) got 409
+{"level":"info","msg":"request","requestId":"a3b3f2b0-32b6-41d3-b1be-cedfbebc1fe5","method":"POST","path":"/api/requests","status":201,"ms":12,"userId":3,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"d0dddf30-663e-41e1-a1e9-ca3713791bad","method":"POST","path":"/api/applications","status":409,"ms":13,"userId":5,"ip":"::1"}
+  ✅ 2nd non-terminal link blocked by one-active-link rule (409) got 409
+  ✅ 409 names the blocking request {"id":1,"ticketNo":"REQ-2026-00001","title":"Site Engineer"}
+
+— Candidate profile shows its single active application —
+{"level":"info","msg":"request","requestId":"d2103847-9c06-405f-b6f1-a3fc8e4e38d6","method":"GET","path":"/api/candidates/1","status":200,"ms":12,"userId":5,"ip":"::1"}
+  ✅ candidate linked to 1 application got 1
+  ✅ application carries status sourced sourced
+
+— Stage movement + reason rules —
+{"level":"info","msg":"request","requestId":"8224f645-c4fe-4042-85f0-78eabeb8d358","method":"POST","path":"/api/applications/1/move","status":200,"ms":41,"userId":5,"ip":"::1"}
+  ✅ recruiter moves stage (sourced→shortlisted) 
+{"level":"warn","msg":"request","requestId":"f08de3e8-e4cc-4382-a2f4-dbd09709de95","method":"POST","path":"/api/applications/1/move","status":400,"ms":2,"userId":5,"ip":"::1"}
+  ✅ reject without reason blocked (400) got 400
+{"level":"warn","msg":"request","requestId":"00a25b2c-fe75-4269-8d3e-924d8e0627d5","method":"POST","path":"/api/applications/1/move","status":403,"ms":8,"userId":8,"ip":"::1"}
+  ✅ interviewer cannot move pipeline (403) got 403
+{"level":"warn","msg":"request","requestId":"a7b1e092-bcc0-4a58-88aa-cf240f9c86c3","method":"POST","path":"/api/applications/1/move","status":403,"ms":2,"userId":6,"ip":"::1"}
+  ✅ hiring manager cannot move pipeline (403) got 403
+{"level":"info","msg":"request","requestId":"62fc5457-706e-4436-8f5c-60e977500ab7","method":"GET","path":"/api/applications/request/1","status":200,"ms":9,"userId":9,"ip":"::1"}
+  ✅ viewer can read pipeline (200) 
+
+— Joined → vacancy automation —
+{"level":"info","msg":"request","requestId":"8644e766-8b8b-43c2-8f86-81b74e55436b","method":"POST","path":"/api/applications/1/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"26312207-961a-4962-9463-933166507fe5","method":"POST","path":"/api/applications/1/move","status":200,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6dbfdd59-234c-4066-ab82-7354fa01a06a","method":"POST","path":"/api/applications/1/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bcb8b48b-0ad3-40f5-8e9e-93b4e0966ecf","method":"POST","path":"/api/applications/1/move","status":200,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a6cfd540-fd40-497b-9481-3dfa056ecfed","method":"GET","path":"/api/requests/1","status":200,"ms":4,"userId":3,"ip":"::1"}
+  ✅ headcount_filled incremented to 1 got 1
+  ✅ request → partially_filled (1 of 2) partially_filled
+
+— Bulk action —
+{"level":"info","msg":"request","requestId":"f8982849-f179-4cbb-aa4d-6553f90e3215","method":"POST","path":"/api/candidates","status":201,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bb13a1ad-5840-480c-b454-a5d4abf4e0cb","method":"POST","path":"/api/applications","status":201,"ms":9,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"61d5ff1a-e6f7-4306-813c-97017faab0f9","method":"POST","path":"/api/applications/bulk","status":200,"ms":9,"userId":5,"ip":"::1"}
+  ✅ bulk move (200, affected 1) {"ok":true,"affected":1,"skipped":[]}
+{"level":"warn","msg":"request","requestId":"d5fe84dd-1826-41ee-ad11-4cdc5a677965","method":"POST","path":"/api/applications/bulk","status":400,"ms":2,"userId":5,"ip":"::1"}
+  ✅ bulk reject without reason blocked (400) got 400
+
+— Notes + RBAC —
+{"level":"info","msg":"request","requestId":"d92c0ee8-4da2-4300-93de-e183e315c0e2","method":"POST","path":"/api/candidates/1/notes","status":201,"ms":10,"userId":5,"ip":"::1"}
+  ✅ recruiter adds note (201) 
+{"level":"warn","msg":"request","requestId":"c7a7d3ca-3858-4eda-83bc-f4b528dacce4","method":"POST","path":"/api/candidates","status":403,"ms":2,"userId":9,"ip":"::1"}
+  ✅ viewer cannot create candidate (403) got 403
+
+— Audit —
+{"level":"info","msg":"request","requestId":"f3649f13-d7b5-41b2-a14d-6c2c7774078d","method":"GET","path":"/api/audit","status":200,"ms":7,"userId":1,"ip":"::1"}
+  ✅ audit has candidate.created 
+  ✅ audit has application.created 
+  ✅ audit has application.status_changed 
+  ✅ audit has request.seat_filled 
+  ✅ audit has candidate.note_added 
+  ✅ audit has application.bulk_action 
+
+=== PHASE 3: 34 passed, 0 failed ===
+

@@ -1,0 +1,468 @@
+
+> arabtec-recruitment-hub-backend@1.0.0 test:pg:required
+> node pg_tx_test.mjs --required && node pg_appnumber_race_test.mjs && node pg_sequence_test.mjs && node pg_reopen_race_test.mjs && node reconciliation_test.mjs && node pg_headcount_race_test.mjs && node pg_join_race_test.mjs
+
+
+Using PG_TEST_URL (external disposable PostgreSQL).
+  ✅ driver is postgres (not sqlite, not pglite) postgres
+
+— 1. commit: multiple writes persist together —
+  ✅ all three rows persisted n=3
+
+— 2. rollback: injected failure persists nothing —
+  ✅ the failure propagated to the caller
+  ✅ no row from the failed transaction persisted 3 -> 3
+  ✅ rolled-back values are absent
+
+— 3. affinity: BEGIN, writes and COMMIT share one backend —
+  ✅ three statements recorded
+  ✅ all statements ran on ONE backend pid pids=118
+
+— 4. two overlapping transactions do not contaminate —
+  ✅ raw transaction primitives available on postgres
+  ✅ two transactions got distinct ids tx4 / tx5
+  ✅ they hold DIFFERENT backend connections 118 vs 119
+  ✅ A cannot see B uncommitted row
+  ✅ B cannot see A uncommitted row
+  ✅ an outside pooled read sees neither yet
+  ✅ A committed and survived
+  ✅ B rolled back and left nothing
+
+— 4b. settled ids are rejected, unknown ids are rejected —
+  ✅ committing an already-settled transaction is refused
+  ✅ an unknown transaction id is refused
+  ✅ a query after settle is refused, not silently pooled
+  ✅ and wrote nothing
+
+— 5. more transactions than the pool size (max: 4) —
+  ✅ 12 sequential transactions on a pool of 4 all completed
+  ✅ every one committed
+
+— 6. no connection left idle in transaction —
+  ✅ no idle-in-transaction backends after commits and rollbacks n=0
+
+— 7. failure paths release the client —
+  ✅ a query failure inside a transaction propagates
+  ✅ and rolls the whole thing back
+  ✅ still no idle-in-transaction backend
+  ✅ the pool still works afterwards
+
+— 7b. nesting, and use after settle —
+  ✅ nested tx joins the outer one and both rows commit
+  ✅ an outer failure rolls back the inner writes too
+  ✅ no transaction is left open on the process
+
+— 7c. tx() enforces a synchronous callback —
+  ✅ an async callback is rejected
+  ✅ and its write was rolled back
+  ✅ no transaction context survives the rejection
+  ✅ a bare thenable is rejected too
+  ✅ no context survives that either
+  ✅ an async callback nested in a sync tx is rejected
+  ✅ and the outer transaction rolled back
+  ✅ no context survives the nested rejection
+
+— 7d. non-transactional queries never join an open transaction —
+  ✅ a plain read does not see the open transaction row
+  ✅ inTransaction() is false — the raw primitive did not touch the public stack
+  ✅ after rollback the row is still absent
+
+— 7e. context is clean after every settle path —
+  ✅ clean after commit
+  ✅ clean after callback failure
+  ✅ clean after query failure
+  ✅ a later transaction still works
+
+— 8. an abandoned transaction is reclaimed —
+  ✅ orphan transaction is open and holding a connection
+  ✅ reclaimed: no idle-in-transaction backend remains
+  ✅ its uncommitted write was rolled back
+  ✅ the reclaimed id is no longer usable
+
+✓ PostgreSQL transactions: 48 passed, 0 failed
+
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✅ logged in through the cluster
+  ✅ 24 candidates prepared
+
+— 24 overlapping creates across 3 processes —
+  ✅ every request settled
+  (24 created, 0 rejected)
+  ✅ at least most requests succeeded — the race really ran 24/24
+  ✅ the load was spread across multiple processes pids=3
+
+— persisted state, not response order —
+  ✅ every application number is unique 24 rows, 24 distinct
+  ✅ no duplicate application row per candidate
+  ✅ exactly one application row per successful create 0 + 24 vs 24
+  ✅ exactly one stage-history row per application 0 with more than one
+  ✅ exactly one candidate-activity row per application
+  ✅ exactly one audit record per successful create audit=24 created=24
+
+— the counter advanced only for committed creates —
+  ✅ counter advanced by exactly the number of successful creates 0 -> 24, created=24
+
+— a rolled-back attempt consumes no number —
+  ⊘ header-based injection not wired into the running child — using the counter check only
+
+— connection hygiene —
+  ✅ no idle-in-transaction connection remains n=0
+
+✓ application-number race: 13 passed, 0 failed
+
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✅ concurrent startup creates every feature flag exactly once
+  ✅ reinitialization preserves administrator flag values
+
+— nextSequence() semantics —
+  ✅ advances by exactly one each call 1,2,3
+  ✅ the stored value matches the last issued
+  ✅ an unrelated counter is untouched
+  ✅ and still advances from its own value
+
+— failing closed —
+  ✅ a missing counter throws rather than minting 1
+  ✅ a malformed counter fails closed and does not reset to 1 threw=true value=not-a-number
+
+— rollback restores the counter inside a transaction —
+  ✅ a rolled-back allocation consumes no number 5
+  ✅ outside a transaction the number is committed immediately (gaps possible)
+
+— the formatted number of all five entity types —
+  ✅ requisition number keeps its format REQ-2026-00001
+  ✅ candidate number keeps its format CAN-00001
+  ✅ application number keeps its format APP-00001
+  ✅ interview number keeps its format INT-00001
+  ✅ interview numbering advances
+  ✅ offer number keeps its format OFR-2026-00001
+
+— sequential allocation advances per entity —
+  ✅ the next requisition number is the next value REQ-2026-00001 -> REQ-2026-00002
+
+— concurrent allocation across 3 processes, per entity —
+  ✅ concurrent requisition numbers are unique 9 created, 9 distinct
+  ✅ every concurrent requisition succeeded 9/9
+  ✅ concurrent candidate numbers are unique 12 created, 12 distinct
+  ✅ every concurrent candidate succeeded 12/12
+  ✅ no duplicate ticket numbers exist in the database
+  ✅ no duplicate candidate numbers exist in the database
+  ✅ no idle-in-transaction connection remains
+
+✓ shared sequence: 24 passed, 0 failed
+
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+
+— A. six overlapping reopens of the SAME requisition —
+  ✅ exactly one reopen succeeded 1 succeeded
+  ✅ every other attempt returned the standard conflict 5 conflicts of 5 failures
+  ✅ the race really spanned processes
+  ✅ exactly one reopened activity entry n=1
+  ✅ exactly one reopened audit entry
+  ✅ no duplicate seats were created 4 -> 4
+  ✅ final capacity equals approved headcount available=4
+  ✅ final status is reopened
+  ✅ no duplicate seat identities
+
+— B. simultaneous reopens of DIFFERENT requisitions —
+  ✅ all four unrelated reopens succeeded — no unnecessary serialization 4/4
+  ✅ each has exactly its own capacity restored 2,2,2,2
+  ✅ no cross-requisition seat changes
+  ✅ each got exactly one activity entry
+
+— hygiene —
+  ✅ no idle-in-transaction connection remains n=0
+  ✅ no orphan child process remains
+
+✓ BL-04 concurrency: 15 passed, 0 failed
+
+{"level":"info","msg":"config.summary","env":"test","db":"postgres","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+
+🏗️  Arabtec Recruitment Hub listening on 4134 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+   ✓ Ready. API health: http://localhost:4134/api/health
+
+{"level":"warn","msg":"request","requestId":"e71984c1-6817-4ea3-adff-8ef0f4e9fa56","method":"POST","path":"/api/auth/login","status":401,"ms":14,"ip":"::ffff:127.0.0.1"}
+
+Engine: real PostgreSQL (PG_TEST_URL)
+
+— fixture guard —
+  ✅ an absent seed row fails cleanly and names the table fixture bootstrap failed: no empty_probe row — the seed did not run
+
+— increase on a recruiting requisition —
+  ✅ increase by one creates exactly one seat {"restored":0,"created":1,"retired":0,"deferred":false}
+  ✅ active capacity matches the new headcount active=3
+  ✅ increase by multiple creates the exact shortfall {"restored":0,"created":4,"retired":0,"deferred":false}
+
+— restore before create —
+  ✅ restore-only: reuses cancelled seats, creates nothing {"restored":2,"created":0,"retired":0,"deferred":false}
+  ✅ no new rows were added
+  ✅ restored seats keep their identities
+  ✅ mixed: restores one then creates the rest {"restored":1,"created":2,"retired":0,"deferred":false}
+  ✅ new seat numbers append after the historical maximum
+
+— a linked cancelled seat is NEVER reused —
+  ✅ the linked seat stays cancelled and linked
+  ✅ a new seat was created instead {"restored":0,"created":1,"retired":0,"deferred":false}
+
+— decrease —
+  ✅ retires exactly the excess {"restored":0,"created":0,"retired":2,"deferred":false}
+  ✅ active capacity is now the new headcount
+  ✅ retirement takes the HIGHEST seat numbers first
+  ✅ no seat row was deleted
+  ✅ decrease exactly to the filled count is allowed {"restored":0,"created":0,"retired":2,"deferred":false}
+  ✅ filled seats are untouched
+  ✅ their links survive
+  ✅ decrease below filled commitments is a conflict
+  ✅ and nothing changed
+
+— no-op and validation —
+  ✅ repeating the same headcount writes nothing
+  ✅ headcount 0 is rejected
+  ✅ headcount -1 is rejected
+  ✅ headcount 1.5 is rejected
+  ✅ headcount 10000 is rejected
+  ✅ headcount x is rejected
+
+— closed requisition gains INVENTORY, not capacity —
+  ✅ future seats are created {"restored":0,"created":2,"retired":0,"deferred":true}
+  ✅ but NO active capacity is exposed active=0
+  ✅ they are reusable by a later reopen
+  ✅ the filled seat is untouched
+
+— reconciliation issue codes —
+  ✅ ACTIVE_CAPACITY_SHORTAGE
+  ✅ ACTIVE_CAPACITY_EXCESS
+  ✅ FILLED_EXCEEDS_HEADCOUNT
+  ✅ FILLED_SEAT_WITHOUT_LINK
+  ✅ LINKED_SEAT_IN_AVAILABLE_STATUS
+  ✅ CLOSED_REQUEST_HAS_ACTIVE_CAPACITY
+  ✅ MISSING_FUTURE_CAPACITY
+  ✅ IMPOSSIBLE_SEAT_STATE
+  ✅ DUPLICATE_SEAT_NUMBER
+
+— the deferred BL-01/BL-13 lifecycle finding —
+  ✅ a pending requisition with open seats is REPORTED
+  ✅ cross-referenced to BL-01 and BL-13
+  ✅ reported as a warning, not auto-repaired
+
+— output carries no PII —
+  ✅ issues contain ids and counts only [{"code":"FILLED_EXCEEDS_HEADCOUNT","requestId":17,"filled":2,"headcount":1}]
+
+— rollback inside a transaction —
+  ✅ a rolled-back reconciliation leaves seats untouched
+
+✓ reconciliation: 44 passed, 0 failed
+
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+
+— 1. six overlapping PUTs on ONE reopened request —
+  ✅ fixture is reopened reopened
+  ✅ every request settled 2+4
+  ✅ at least one stale writer was rejected 4 conflicts
+  ✅ conflicts name the stale write
+  ✅ the race spanned processes
+  ✅ active capacity matches the COMMITTED headcount active=10 hc=10
+  ✅ the committed headcount is one of the requested targets hc=10
+  ✅ status stayed reopened reopened
+  ✅ no duplicate seat_no
+  ✅ no linked/filled seat changed
+  ✅ seat rows only grew by the winner amount
+  ✅ one edited activity per success — no duplicates, none lost edited=2 ok=2
+  ✅ one audit per success audit=2 ok=2
+  ✅ no reapproval on reopened
+
+— 2. six overlapping PUTs on ONE sourcing request —
+  ✅ fixture is sourcing sourcing
+  ✅ every request settled 2+4
+  ✅ at least one stale writer was rejected 4 conflicts
+  ✅ committed headcount is one of the requested targets hc=10
+  ✅ final status is pending_approval pending_approval
+  ✅ approval reset happened exactly once n=1
+  ✅ one edited activity per success edited=2 ok=2
+  ✅ one audit per success audit=2 ok=2
+  ✅ reconciled against pending — no new active capacity active=4 was 4
+  ✅ no duplicate seat_no
+
+— 3. concurrent updates to DIFFERENT requests —
+  ✅ all four succeeded — no global serialization 4/4
+  ✅ each committed its own headcount
+  ✅ each has correct active capacity 5,5,5,5
+  ✅ each has exactly one edited activity and one audit
+  ✅ no duplicate seat_no anywhere
+
+— hygiene —
+  ✅ no idle-in-transaction connection remains n=0
+  ✅ no orphan child process remains
+
+✓ headcount race: 31 passed, 0 failed
+
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+
+— 0. the invariant exists in PostgreSQL —
+  ✅ the partial unique index was created
+  ✅ it is UNIQUE and partial on joined CREATE UNIQUE INDEX ux_application_one_joined_per_candidate ON public.application USING btree (candidate_id) WHERE (status = 'joined'::text)
+
+— 1. one candidate joining two requisitions at once —
+  ✅ every request settled 200,409
+  ✅ exactly one join succeeded 1 succeeded
+  ✅ the other is a deterministic 409 1 conflicts
+  ✅ the loser carries the stable code CANDIDATE_ALREADY_JOINED
+  ✅ no SQL detail leaked to the client This candidate already has a joined application and cannot join another.
+  ✅ the race spanned processes
+  ✅ the candidate holds exactly ONE joined application n=1
+  ✅ exactly one seat is filled by that candidate n=1
+  ✅ the winner is fully written history=1 seat=1 act=1 audit=1
+  ✅ the winner requisition counted exactly one fill {"status":"partially_filled","headcount":2,"headcount_filled":1}
+  ✅ the loser application did not move offer_sent
+  ✅ the loser took no seat
+  ✅ the loser requisition is byte-identical {"status":"sourcing","headcount":2,"headcount_filled":0}
+  ✅ no partial history/activity/audit on the loser history=0 act=0 audit=0 cand=0
+  ✅ exactly ONE join history/activity/audit set exists for the candidate history=1 cand=1 audit=1
+  · a retry after the race is still refused
+  ✅ the loser stays refused on retry got 409
+  ✅ with the same stable code
+  ✅ and still holds exactly one joined application
+
+— 2. one candidate, three overlapping joins —
+  ✅ exactly one of three succeeded 1 succeeded (200,409,409)
+  ✅ the other two are 409 with the stable code
+  ✅ one joined application n=1
+  ✅ one filled seat n=1
+  ✅ exactly one requisition moved its counter 1,0,0
+  ✅ exactly one stage-history row across all three applications
+  ✅ exactly one seat_filled activity across all three requisitions
+
+— 3. different candidates joining concurrently —
+  ✅ all four independent joins succeeded 4/4 (200,200,200,200)
+  ✅ each candidate holds exactly one joined application
+  ✅ each filled exactly one seat
+  ✅ each requisition counted exactly one fill 1,1,1,1
+  ✅ each has exactly one history row, activity and audit
+  ✅ no seat carries two commitments
+
+— 4. two candidates racing for the last seat —
+  ✅ exactly one candidate took the last seat 1 succeeded (200,409)
+  ✅ the other was refused, not overfilled 200,409
+  ✅ exactly one seat is filled
+  ✅ the seat carries exactly one commitment
+  ✅ headcount_filled is 1, not 2 {"status":"filled","headcount":1,"headcount_filled":1}
+  ✅ only one application is joined
+  ✅ one seat_filled activity, not two n=1
+
+— 5. whole-database consistency —
+  ✅ no candidate anywhere holds two joined applications []
+  ✅ every filled seat points at a joined application
+  ✅ headcount_filled matches filled seats everywhere
+
+— hygiene —
+  ✅ no idle-in-transaction connection remains n=0
+  ✅ no orphan child process remains
+
+✓ join race: 45 passed, 0 failed
+

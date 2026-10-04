@@ -1,0 +1,94 @@
+
+— findPanelClashes (pure) —
+  ✅ an overlap inside an interview is a clash [{"interviewerId":7,"name":"Mona Sami","interviewId":1,"start":"2031-01-06T10:00:00.000Z","end":"2031-01-06T11:00:00.000Z"}]
+  ✅ the clash carries the interviewer name and ISO start/end 
+  ✅ a proposal wrapping an interview is a clash 
+  ✅ back-to-back after is NOT a clash (11:00 after 10:00–11:00) 
+  ✅ back-to-back before is NOT a clash (09:00–10:00 before 10:00) 
+  ✅ a rescheduled interview still occupies its slot 
+  ✅ cancelled and completed interviews free the slot 
+  ✅ only proposed panel members are reported 
+  ✅ two panel members on one interview → two entries 
+  ✅ someone not on the proposed panel never clashes 
+  ✅ editing an interview does not clash with itself 
+  ✅ an unusable start yields no clashes, not a throw 
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:63993) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4178 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4178/api/health
+
+{"level":"info","msg":"request","requestId":"5a6ebee5-1c87-43ef-98e2-9f00b4462eb3","method":"POST","path":"/api/auth/login","status":200,"ms":304,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"770bcaa5-ad48-42eb-8d7a-942d8889eda2","method":"POST","path":"/api/auth/change-password","status":200,"ms":482,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"65073b45-a42a-4ad8-9e85-4d809416c940","method":"POST","path":"/api/auth/login","status":200,"ms":236,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b1547ef6-f615-452a-9253-64a6482a3241","method":"POST","path":"/api/auth/login","status":200,"ms":200,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8782dddc-7d94-4de6-a435-95799b9bb3b0","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7110ff5c-ed57-4871-8042-00f168512db8","method":"POST","path":"/api/candidates","status":201,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"72f56d60-59e1-42c1-8b25-2a2c838c41cd","method":"POST","path":"/api/interviews","status":201,"ms":46,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f380c4d9-d0af-483e-a701-3ac403f9f0f0","method":"POST","path":"/api/interviews","status":201,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d7894d6b-c7bd-4888-9d62-aa8c008bed46","method":"POST","path":"/api/interviews","status":201,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<8501461c-1d7e-464d-b7e6-3d4e12d7ecc4@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"cal@x.com","subject":"Interview invitation","messageId":"<7ba766e6-aa40-9909-9c9b-24bc06239908@localhost>"}
+  ✅ three interviews scheduled 
+
+— GET /interviews?from&to —
+{"level":"info","msg":"request","requestId":"2be23359-db37-41a4-981b-040c694662b2","method":"GET","path":"/api/interviews","status":200,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<692bd598-0070-10d6-168d-a0ffff8102a4@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"cal@x.com","subject":"Interview invitation","messageId":"<3afb50ab-6b66-aeb2-f033-87a583454841@localhost>"}
+  ✅ the range returns the day's interviews got 200 2,1
+  ✅ the range leaves out interviews after `to` 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<79a99ab7-f916-9bf8-8ba7-a9bf762d72db@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"cal@x.com","subject":"Interview invitation","messageId":"<d156b79a-38fe-2450-f4c2-82fd13a4c624@localhost>"}
+{"level":"info","msg":"request","requestId":"dd879aae-4d1f-4080-99d4-3abc97dd47ae","method":"GET","path":"/api/interviews","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ without from/to the list is unchanged (all interviews) 
+{"level":"warn","msg":"request","requestId":"8a23703a-7b0f-473a-b0c8-15f08cb6b786","method":"GET","path":"/api/interviews","status":400,"ms":2,"userId":5,"ip":"::1"}
+  ✅ a malformed `from` is a 400, not an empty week got 400
+
+— GET /interviews/clashes —
+{"level":"info","msg":"request","requestId":"214ad03f-2457-4a05-a562-97dc98de4579","method":"GET","path":"/api/interviews/clashes","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ /clashes is routed (not shadowed by /:id) got 200 {"clashes":[{"interviewerId":8,"name":"Mona Sami","start":"2026-10-05T10:00:00.000Z","end":"2026-10-05T11:00:00.000Z"}]}
+  ✅ an overlapping panel member is reported {"clashes":[{"interviewerId":8,"name":"Mona Sami","start":"2026-10-05T10:00:00.000Z","end":"2026-10-05T11:00:00.000Z"}]}
+  ✅ the answer names who and when, and nothing about the candidate [{"interviewerId":8,"name":"Mona Sami","start":"2026-10-05T10:00:00.000Z","end":"2026-10-05T11:00:00.000Z"}]
+{"level":"info","msg":"request","requestId":"ffd0864b-d031-4e43-b302-7e8d755ca997","method":"GET","path":"/api/interviews/clashes","status":200,"ms":1,"userId":5,"ip":"::1"}
+  ✅ back-to-back after the last interview is free {"clashes":[]}
+{"level":"info","msg":"request","requestId":"c644ea51-3d55-41d7-b5c5-f04d204b9e1e","method":"GET","path":"/api/interviews/clashes","status":200,"ms":1,"userId":5,"ip":"::1"}
+  ✅ someone free at that time has no clash 
+{"level":"info","msg":"request","requestId":"07117035-06ba-40d0-867c-b64b9808e817","method":"GET","path":"/api/interviews/clashes","status":200,"ms":1,"userId":5,"ip":"::1"}
+  ✅ excludeId keeps an edit from clashing with itself {"clashes":[]}
+{"level":"info","msg":"request","requestId":"1eb758c2-5399-4614-b2c5-0dffc4126f72","method":"POST","path":"/api/interviews/1/status","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e0ad773e-1103-4331-b289-dc65f614a987","method":"GET","path":"/api/interviews/clashes","status":200,"ms":1,"userId":5,"ip":"::1"}
+  ✅ cancelling an interview frees the slot {"clashes":[]}
+{"level":"warn","msg":"request","requestId":"205f916c-a174-404e-bf10-ded6947e1f24","method":"GET","path":"/api/interviews/clashes","status":400,"ms":1,"userId":5,"ip":"::1"}
+  ✅ a malformed start is a 400 got 400
+{"level":"warn","msg":"request","requestId":"79348ee4-0d7d-4e3d-a6ae-b8110015ebde","method":"GET","path":"/api/interviews/clashes","status":403,"ms":1,"userId":8,"ip":"::1"}
+  ✅ an interviewer (no schedule/edit permission) is refused got 403
+
+=== INTERVIEW CALENDAR: 26 passed, 0 failed ===
+

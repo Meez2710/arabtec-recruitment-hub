@@ -1,0 +1,7 @@
+  ✓ intake-review.jsx compiles with the production Babel runtime
+  ✓ email-settings.jsx compiles with the production Babel runtime
+  ✓ org-structure.jsx compiles with the production Babel runtime
+  ✓ app.jsx compiles with the production Babel runtime
+
+=== UI COMPILE: 4 passed, 0 failed ===
+

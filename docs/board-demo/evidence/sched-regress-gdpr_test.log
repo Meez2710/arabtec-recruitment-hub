@@ -1,0 +1,79 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:64088) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4898 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"df16838e-591e-4c71-a26a-85bd1ee307c4","method":"GET","path":"/api/auth/me","status":503,"ms":6,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"cd4aaf8e-d96b-4c96-8c65-7a7ce6a9edaf","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4898/api/health
+
+{"level":"warn","msg":"request","requestId":"d32dce27-4bcc-491f-b7df-ce2ad48da3c2","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"62bc61d6-5c22-4d17-82dd-d66020b68657","method":"POST","path":"/api/auth/login","status":200,"ms":147,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b11f3e69-21fd-4d7a-b0f2-c9b5c20daa1a","method":"POST","path":"/api/auth/login","status":200,"ms":224,"ip":"::1"}
+
+— Create + retention stamp —
+{"level":"info","msg":"request","requestId":"82680e52-e958-44b1-941c-5d92431d1b4b","method":"POST","path":"/api/candidates","status":201,"ms":20,"userId":3,"ip":"::1"}
+  ✅ candidate created 
+  ✅ retention_until stamped on create 2028-10-04T02:37:13.234Z
+  ✅ consent defaults to unknown 
+
+— Consent —
+{"level":"info","msg":"request","requestId":"9d5ea8fd-218f-4108-a56a-34ae11f3d9e7","method":"POST","path":"/api/candidates/1/consent","status":200,"ms":7,"userId":3,"ip":"::1"}
+  ✅ consent recorded as given 
+  ✅ consent timestamp set 
+{"level":"warn","msg":"request","requestId":"b77e9740-5712-4a43-ba2b-756dd6d44305","method":"POST","path":"/api/candidates/1/consent","status":400,"ms":3,"userId":3,"ip":"::1"}
+  ✅ invalid consent value rejected (400) 
+
+— Subject Access export —
+{"level":"info","msg":"request","requestId":"f67af3e5-f117-47dd-bb41-ca9769ac4816","method":"GET","path":"/api/candidates/1/export","status":200,"ms":7,"userId":3,"ip":"::1"}
+  ✅ export returns a JSON attachment 
+  ✅ export includes candidate + related arrays 
+{"level":"warn","msg":"request","requestId":"819610b5-1440-483c-8377-aa9843210794","method":"GET","path":"/api/candidates/1/export","status":403,"ms":3,"userId":5,"ip":"::1"}
+  ✅ recruiter without candidate.privacy blocked from export (403) 
+
+— Right to erasure —
+{"level":"warn","msg":"request","requestId":"07610e27-3ab8-4f53-8e98-72c458ca962d","method":"POST","path":"/api/candidates/1/erase","status":400,"ms":3,"userId":3,"ip":"::1"}
+  ✅ erase without confirm is refused (400) 
+{"level":"warn","msg":"request","requestId":"1bc8bc77-33d6-47af-985e-1a6aa13da90c","method":"POST","path":"/api/candidates/1/erase","status":403,"ms":3,"userId":5,"ip":"::1"}
+  ✅ recruiter blocked from erase (403) 
+{"level":"info","msg":"request","requestId":"a17cd1af-4002-4616-b4e9-4ceac58a5916","method":"POST","path":"/api/candidates/1/erase","status":200,"ms":8,"userId":3,"ip":"::1"}
+  ✅ erase with confirm succeeds 
+  ✅ PII anonymised (name = [Erased]) 
+  ✅ email cleared after erase 
+  ✅ candidate_state = erased 
+{"level":"warn","msg":"request","requestId":"09a29a73-866e-4c77-937e-532e4047faff","method":"POST","path":"/api/candidates/1/erase","status":409,"ms":4,"userId":3,"ip":"::1"}
+  ✅ double-erase blocked (409) 
+
+— Retention report —
+{"level":"info","msg":"request","requestId":"9bf857f0-2e17-452b-9dc5-cab71722a88e","method":"GET","path":"/api/candidates/privacy/retention","status":200,"ms":3,"userId":3,"ip":"::1"}
+  ✅ retention report returns config + list 
+{"level":"warn","msg":"request","requestId":"1a4a60e7-b99a-4207-be33-ee157eb103ab","method":"GET","path":"/api/candidates/privacy/retention","status":403,"ms":2,"userId":5,"ip":"::1"}
+  ✅ recruiter blocked from retention report (403) 
+
+=== GDPR/PDPL: 18 passed, 0 failed ===

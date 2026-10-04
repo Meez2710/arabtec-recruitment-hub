@@ -1,0 +1,70 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:64056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4866 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"3ca2fbc1-3ee3-489e-9139-23e06fe835fb","method":"GET","path":"/api/auth/me","status":503,"ms":5,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"3f47a6ff-f036-4db6-ba1c-588f4e583126","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4866/api/health
+
+{"level":"warn","msg":"request","requestId":"a9561e13-f23d-494a-a94b-1acb8abbbfbf","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4db2303a-6750-4a70-bd7b-9430bdfc802c","method":"POST","path":"/api/auth/login","status":200,"ms":194,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4e67856a-b2f2-44d9-8801-8b6055ae37d1","method":"POST","path":"/api/auth/login","status":200,"ms":239,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"298209e2-0caf-4cdc-81bc-8da7941817a9","method":"POST","path":"/api/auth/login","status":200,"ms":250,"ip":"::1"}
+
+— Submit → approvers notified —
+{"level":"info","msg":"request","requestId":"a6125dd9-f85d-40b3-aa2f-e9ab1d4ba3aa","method":"GET","path":"/api/requests/meta/form","status":200,"ms":6,"userId":6,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"744da76b-9f5f-4c74-a3ef-da3cbe254caf","method":"POST","path":"/api/requests","status":201,"ms":12,"userId":6,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b01cf719-e675-4d3a-a60e-6237b5567568","method":"POST","path":"/api/requests/1/submit","status":200,"ms":28,"userId":6,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"295d8b5a-bd2b-4012-b76c-9317a86450b6","method":"GET","path":"/api/notifications","status":200,"ms":3,"userId":2,"ip":"::1"}
+  ✅ approver has an approval_needed notification 1
+  ✅ unread count > 0 for approver count=1
+
+— Approve + assign → recruiter notified —
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Notif Test Role","messageId":"<a9028d2a-eb3d-0b91-0aa1-eca07658d93d@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Notif Test Role","messageId":"<108bb65c-f5f7-2d05-f57e-06e6fb2ba5f9@localhost>"}
+{"level":"info","msg":"request","requestId":"9515120d-dcaa-46a1-a2bd-353d89cc273a","method":"POST","path":"/api/requests/1/approve","status":200,"ms":17,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c7ca8ae9-1de8-4707-bbe2-881acd23f254","method":"POST","path":"/api/requests/1/assign","status":200,"ms":49,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hiring.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Notif Test Role","messageId":"<f1e76c73-a872-f692-1453-3fd99275b2c3@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Notif Test Role","messageId":"<fbcc6c7b-936e-4b55-0657-f3a531acdab8@localhost>"}
+{"level":"info","msg":"request","requestId":"221397e9-d8e4-4709-8d4b-97c89af0f98b","method":"POST","path":"/api/auth/login","status":200,"ms":262,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6cbc3e9e-8ec5-4531-a15a-cf8101947e50","method":"GET","path":"/api/auth/me","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6fa87d90-0c56-450a-a238-ed59e07e7e37","method":"GET","path":"/api/notifications","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ recruiter gets an assignment notification (if assigned to them) 0
+
+— Scoping & mark-read —
+{"level":"info","msg":"request","requestId":"772a2e87-b32d-4da5-9d84-590e221fd948","method":"GET","path":"/api/notifications","status":200,"ms":5,"userId":6,"ip":"::1"}
+  ✅ notifications are per-user (HM has none of the approver’s) 
+{"level":"info","msg":"request","requestId":"affad33a-374e-4deb-84a5-d034e8a9c79c","method":"GET","path":"/api/notifications","status":200,"ms":3,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2e16c7d3-5f6d-4769-b2cd-fdf10e709dcd","method":"POST","path":"/api/notifications/2/read","status":200,"ms":5,"userId":2,"ip":"::1"}
+  ✅ mark-one-read lowers unread count 
+{"level":"info","msg":"request","requestId":"82f80171-603b-4e6f-b46a-e08b9bfd1e3b","method":"POST","path":"/api/notifications/read-all","status":200,"ms":2,"userId":2,"ip":"::1"}
+  ✅ mark-all-read → unread 0 count=0
+
+=== NOTIFICATIONS: 6 passed, 0 failed ===

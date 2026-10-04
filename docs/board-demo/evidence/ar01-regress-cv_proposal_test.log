@@ -1,0 +1,5 @@
+
+⊘ SKIPPED — no ANTHROPIC_API_KEY, so no CV reader is wired.
+  This is NOT a pass. Most of this suite asserts on a real parse.
+  Set ANTHROPIC_API_KEY locally, or as a repository secret, to run it.
+

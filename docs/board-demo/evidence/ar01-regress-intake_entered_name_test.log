@@ -1,0 +1,61 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"development","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:57949) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4179 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4179/api/health
+
+
+Candidate Review — a CV without a readable name
+
+  ✓ REPORTED: Accept all on a name-less CV is still refused without a name
+  ✓ Accept all + a typed name converts the CV into a candidate
+  ✓ a blank typed name is no name
+  ✓ an absurdly long typed name is refused
+  ✓ accepting the proposed name AND typing one is refused, not guessed
+  ✓ rejecting a wrong proposed name and typing the right one works
+  ✓ rejecting every field but typing a name creates a name-only candidate
+  ✓ rejecting every field with no name still rejects the CV (unchanged)
+{"level":"info","msg":"request","requestId":"10135890-3a82-47e4-ad43-2fe9fafce3ba","method":"POST","path":"/api/auth/login","status":200,"ms":300,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4c8003d5-2c9e-4882-9622-e68a7d412f81","method":"POST","path":"/api/auth/change-password","status":200,"ms":943,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ac9e1a4a-0099-465f-b1db-8160720cd253","method":"POST","path":"/api/auth/login","status":200,"ms":390,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6356de81-f455-4ecc-9e80-2ad6e72a4aed","method":"POST","path":"/api/candidates/intakes/9/review","status":201,"ms":19,"userId":5,"ip":"::1"}
+  ✓ HTTP: the review endpoint takes the typed name as `fullName`
+{"level":"info","msg":"request","requestId":"fc544fff-99e9-4ff4-aa18-f8e5434abaac","method":"GET","path":"/api/audit","status":200,"ms":7,"userId":1,"ip":"::1"}
+  ✓ HTTP: the audit trail says the name was entered by the reviewer
+{"level":"warn","msg":"request","requestId":"a66f4fc4-332b-4846-84c5-6d95dcf2f839","method":"POST","path":"/api/candidates/intakes/10/review","status":400,"ms":4,"userId":5,"ip":"::1"}
+  ✓ HTTP: a non-string fullName is ignored, not trusted
+  ✓ UI: the screen asks for the name when the CV has none or it was rejected
+  ✓ UI: the typed name is sent as `fullName` with the review
+  ✓ UI: Submit waits for the name instead of failing after it
+  ✓ UI: Talent Pool → Parse CV asks for the name too, and sends it
+  ✓ UI: View CV opens a side panel beside the review, not a new page
+
+✓ 16 passed, 0 failed
+

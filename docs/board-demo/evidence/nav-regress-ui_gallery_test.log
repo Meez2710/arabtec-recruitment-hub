@@ -1,0 +1,65 @@
+  ✓ the gallery file exists
+  ✓ index.html itself still loads exactly the six expected stylesheets, in order (fixture sanity)
+  ✓ the gallery loads exactly the six production stylesheets, in the same order as index.html
+  ✓ every gallery stylesheet link carries the SAME ?v= token index.html uses
+  ✓ the gallery carries the mobile-correct viewport meta tag
+  ✓ the gallery renders inside the real shell/sidebar/main/content structure
+  ✓ the gallery includes "btn-secondary"
+  ✓ the gallery includes "btn-ghost"
+  ✓ the gallery includes "btn-danger"
+  ✓ the gallery includes "btn-sm"
+  ✓ the gallery includes "btn-xs"
+  ✓ the gallery includes "btn-block"
+  ✓ the gallery includes "icon-btn"
+  ✓ the gallery includes "is-hover"
+  ✓ the gallery includes "is-focus"
+  ✓ the gallery includes "is-active"
+  ✓ the gallery includes "class="field""
+  ✓ the gallery includes "class="toolbar""
+  ✓ the gallery includes "class="chip""
+  ✓ the gallery includes "badge-success"
+  ✓ the gallery includes "badge-info"
+  ✓ the gallery includes "badge-critical"
+  ✓ the gallery includes "badge-soft"
+  ✓ the gallery includes "chip-filter"
+  ✓ the gallery includes "count-pill"
+  ✓ the gallery includes "tag-toggle"
+  ✓ the gallery includes "score-badge"
+  ✓ the gallery includes "tabbar-btn"
+  ✓ the gallery includes "profile-tab"
+  ✓ the gallery includes "seg-tab"
+  ✓ the gallery includes "control-tab"
+  ✓ the gallery includes "view-toggle-btn"
+  ✓ the gallery includes "anyhelp-tabs"
+  ✓ the gallery includes "class="card""
+  ✓ the gallery includes "card-pad"
+  ✓ the gallery includes "card-head"
+  ✓ the gallery includes "dash-kpi"
+  ✓ the gallery includes "pcard"
+  ✓ the gallery includes "class="modal""
+  ✓ the gallery includes "max-width:760px"
+  ✓ the gallery includes "cvrev-panel"
+  ✓ the gallery includes "filter-toolbar"
+  ✓ the gallery includes "toolbar-secondary"
+  ✓ the gallery includes "toolbar-count"
+  ✓ the gallery includes "table responsive-table candidates-table"
+  ✓ the gallery includes "table-busy"
+  ✓ the gallery includes "empty empty-neutral"
+  ✓ the gallery includes "class="skeleton""
+  ✓ the gallery includes "list-skel"
+  ✓ the gallery's own <style> block declares no font-family
+  ✓ the gallery's own <style> block declares no font-size
+  ✓ the gallery's own <style> block introduces no colour literal that is foreign to the product stylesheets
+  ✓ every component class the gallery shows still exists in the product JSX
+
+=== UI COMPONENT GALLERY: 53 passed, 0 failed ===
+NOTE: this suite proves the gallery's markup/link/style CONTRACT. It does
+NOT prove pixel geometry, real :hover/:focus/:active rendering, or that no
+component overflows a real viewport — that was verified once by hand in a
+browser and is not re-checked by this process. That check, at
+1440/768/390: all six product stylesheets loaded at the same ?v=
+token; page horizontal overflow 0 at every width (scrollWidth ===
+clientWidth); buttons 40px on desktop and 44px on mobile. The only
+boxes wider than the viewport are the data table and the CV table,
+both inside their own scroll containers — the local-overflow
+ownership the product intends.

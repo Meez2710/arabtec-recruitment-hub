@@ -1,0 +1,117 @@
+{
+ "before": {
+  "finalView": {
+   "checked": true,
+   "disabled": false,
+   "title": null
+  },
+  "justView": [
+   {
+    "label": "Technical Interviewer: view Behavioral Justification",
+    "checked": false,
+    "disabled": false,
+    "title": null
+   },
+   {
+    "label": "Technical Interviewer: view Technical Justification",
+    "checked": true,
+    "disabled": false,
+    "title": null
+   }
+  ],
+  "saveDisabled": true,
+  "alert": null
+ },
+ "afterToggleUnsaved": {
+  "finalView": {
+   "checked": false,
+   "disabled": false,
+   "title": null
+  },
+  "justView": [
+   {
+    "label": "Technical Interviewer: view Behavioral Justification",
+    "checked": false,
+    "disabled": true,
+    "title": "Hidden because “Final Recommendation” is hidden for Technical Interviewer"
+   },
+   {
+    "label": "Technical Interviewer: view Technical Justification",
+    "checked": false,
+    "disabled": true,
+    "title": "Hidden because “Final Recommendation” is hidden for Technical Interviewer"
+   }
+  ],
+  "saveDisabled": false,
+  "alert": null
+ },
+ "saveResp": true,
+ "afterReload": {
+  "finalView": {
+   "checked": false,
+   "disabled": false,
+   "title": null
+  },
+  "justView": [
+   {
+    "label": "Technical Interviewer: view Behavioral Justification",
+    "checked": false,
+    "disabled": true,
+    "title": "Hidden because “Final Recommendation” is hidden for Technical Interviewer"
+   },
+   {
+    "label": "Technical Interviewer: view Technical Justification",
+    "checked": false,
+    "disabled": true,
+    "title": "Hidden because “Final Recommendation” is hidden for Technical Interviewer"
+   }
+  ],
+  "saveDisabled": true,
+  "alert": null
+ },
+ "serverEffective": {
+  "final": {
+   "view": false,
+   "edit": false,
+   "configured": {
+    "view": false,
+    "edit": false
+   },
+   "overridden": true,
+   "explicit": true
+  },
+  "just": {
+   "view": false,
+   "edit": false,
+   "configured": {
+    "view": true,
+    "edit": true
+   },
+   "overridden": false,
+   "explicit": true
+  }
+ },
+ "afterRestore": {
+  "finalView": {
+   "checked": true,
+   "disabled": false,
+   "title": null
+  },
+  "justView": [
+   {
+    "label": "Technical Interviewer: view Behavioral Justification",
+    "checked": false,
+    "disabled": false,
+    "title": null
+   },
+   {
+    "label": "Technical Interviewer: view Technical Justification",
+    "checked": true,
+    "disabled": false,
+    "title": null
+   }
+  ],
+  "saveDisabled": true,
+  "alert": null
+ }
+}

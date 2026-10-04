@@ -1,0 +1,11 @@
+import { openChrome, tokenFor } from './cdp.mjs';
+const B = 'http://localhost:4400'; const c = await openChrome(9336);
+const token = await tokenFor(B, 'interviewer@arabtec.com', process.env.DEMO_PW);
+await c.size(768, 1024); await c.go(B + '/'); await c.ev(`localStorage.setItem('arabtec_token', ${JSON.stringify(token)}); return 1;`);
+await c.go(B + '/#interviews/1'); await c.send('Page.reload'); await c.sleep(3000);
+console.log(JSON.stringify(await c.ev(`(await until(() => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Open assessment'))).click();
+  await until(() => document.querySelector('.assess-doc')); await wait(700);
+  const doc = document.querySelector('.assess-doc'), t = document.querySelector('.assess-table'), sec = t.closest('.assess-sec');
+  const cs = getComputedStyle(t); const cols = [...t.querySelectorAll('thead th')].map(th => Math.round(th.getBoundingClientRect().width));
+  return { docW: doc.clientWidth, secW: sec.clientWidth, tableW: Math.round(t.getBoundingClientRect().width), layout: cs.tableLayout, width: cs.width, minWidth: cs.minWidth, cols,  };`), null, 1));
+await c.close();
