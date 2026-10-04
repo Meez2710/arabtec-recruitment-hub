@@ -82,3 +82,13 @@ Rollback: `ATS_SHA=4504ecf76fd56c372685b49b9d02d5999efa5398 ATS_BUNDLE=$HOME/ara
 Verification (`evidence/verify-bae6912/`): build 0, typecheck 0, `npm test` 79/79, domain 798/0/9, PostgreSQL 7/7 + behaviour 10/10 (new `dashboard_director_test` 13/0).
 Backup `pre-release-20261004-114936-bae6912.dump`. Post-deploy: HEAD = DEPLOYED_SHA = `bae6912`, active, health/ready 200, token `20261004g`, unauthenticated filtered dashboard → 401. Live view: "Approve RQ-26-001 — waiting 20 days", "3 CVs waiting in Candidate Review", primary "Review approvals (1)", Open roles 0 (+1 awaiting approval).
 Rollback: `ATS_SHA=facce8b26d4e5ea7dd9f27eae29db461d23c9654 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-d.bundle bash ./09-safe-release.sh`.
+
+---
+
+# Deployment 6 — 4 October 2026, 12:33 UTC
+
+**Deployed:** `6818227a3e48ac1a4ad7aa27088d81fa3a47642d` (was `bae6912`). Hiring Requests role views; only Recruitment Manager + System Administrator control requests; recruiters see every request; unassign; recruiter status.
+Verification (`evidence/verify-6818227/`): build 0, typecheck 0, `npm test` 80/80, domain 798/0/9, PostgreSQL 7/7 + behaviour 11/11 (new `request_control_test` 25/0). On `336e8e7` the PG race suites failed because their fixtures closed/reopened as the HR Manager (now refused) — fixed in `6818227`.
+Backup `pre-release-20261004-123254-6818227.dump`. Post-deploy: HEAD = DEPLOYED_SHA = `6818227`, active, health/ready 200, token `20261004h`, unauthenticated recruiter-status → 401.
+**Role migration on production (read-only check of its record):** applied 12:33:22 UTC once; removed request control grants — HR Director: assign, hold, cancel, close; HR Manager: assign, hold, cancel, close, reopen; Recruiter: hold, close, reopen. Granted 0 (Recruitment Manager already held all five). Now held only by recruitment_manager and system_admin; recruiter holds request.view_team. Reversible in Roles & Permissions; the migration never re-applies.
+Rollback (code): `ATS_SHA=bae6912e001d07e84caa5a647390430ea2452481 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-e.bundle bash ./09-safe-release.sh`. Note: a code rollback does not restore the removed role grants; re-grant them in Roles & Permissions if needed.
