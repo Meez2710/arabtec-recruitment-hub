@@ -151,5 +151,27 @@ rule('R17 one button spec: no page-scoped .btn height or padding outside claude-
   assert.match(jsx, /<button className="btn btn-secondary" onClick=\{\(\) => setCreating\(true\)\} title="Enter a candidate by hand/, 'Add manually is a secondary, not a ghost');
   assert.doesNotMatch(jsx, /className="upload-cta"/, 'no wrapper box around Bulk Upload');
 });
+rule('R20 no surface carries a thick side bar (the notice "bracket" on Talent Pool, owner review 4 Oct 2026)', () => {
+  // A 2px+ left/right edge on a rounded box bends into a bracket and matches no
+  // other surface. Tone is a tint and a border colour, never an edge. Named
+  // exceptions only: calendar event chips (the colour edge is the calendar
+  // convention) and the legacy nav item's transparent 2px placeholder.
+  const ALLOWED = new Set(['.cal-ev', '.cal-mev', '.nav-item']);
+  const sheets = { ...css, 'arabtec-approved-ui.css': fs.readFileSync(pub + 'arabtec-approved-ui.css', 'utf8') };
+  const SIDE = /border-(?:left|right|inline-start|inline-end)(?:-width)?\s*:\s*([0-9.]+)px/g;
+  const offenders = [];
+  for (const [file, text] of Object.entries(sheets)) {
+    const clean = text.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = m[1].trim().split('\n').pop().trim();
+      for (const d of m[2].matchAll(SIDE)) {
+        if (Number(d[1]) < 2) continue;
+        const first = selector.split(',')[0].trim();
+        if (!ALLOWED.has(first)) offenders.push(`${file} | ${selector} | ${d[0]}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], 'side bars found:\n        ' + offenders.join('\n        '));
+});
 console.log(`\n=== UI LAYOUT RULES: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);
