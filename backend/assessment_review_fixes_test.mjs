@@ -6,11 +6,12 @@
 //   AR-04 hidden Final Recommendation hides its justifications in API AND print;
 //         printed Fit lines follow their evaluation section
 //   AR-07 the printable document carries its own no-script CSP
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'arabtec-arfix-'));
-process.env.DATABASE_URL = 'file:' + path.join(TMP, 'arfix.db');
+process.env.DATABASE_URL = suiteDatabaseUrl('file:' + path.join(TMP, 'arfix.db'));
 process.env.UPLOAD_DIR = path.join(TMP, 'uploads');
 process.env.PORT = process.env.ARFIX_TEST_PORT || '4395';
 process.env.SEED_DEMO_DATA ||= 'true';

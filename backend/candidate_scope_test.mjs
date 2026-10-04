@@ -5,11 +5,12 @@
 // only the request/application metadata that is itself in scope. HR,
 // recruitment and full-view roles keep the whole Talent Pool. Real HTTP routes,
 // disposable SQLite database.
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'arabtec-candscope-'));
-process.env.DATABASE_URL = 'file:' + path.join(TMP, 'scope.db');
+process.env.DATABASE_URL = suiteDatabaseUrl('file:' + path.join(TMP, 'scope.db'));
 process.env.UPLOAD_DIR = path.join(TMP, 'uploads');
 process.env.PORT = process.env.CANDSCOPE_TEST_PORT || '4394';
 process.env.SEED_DEMO_DATA ||= 'true';

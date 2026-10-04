@@ -3,11 +3,12 @@
 //   date or a non-positive / oversized duration, store one canonical instant,
 //   and never half-apply a refused update.
 //   Intentional panel overlap stays a warning (GET /clashes), not a block.
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'arabtec-sched-'));
-process.env.DATABASE_URL = 'file:' + path.join(TMP, 'sched.db');
+process.env.DATABASE_URL = suiteDatabaseUrl('file:' + path.join(TMP, 'sched.db'));
 process.env.UPLOAD_DIR = path.join(TMP, 'uploads');
 process.env.PORT = process.env.SCHED_TEST_PORT || '4396';
 process.env.SEED_DEMO_DATA ||= 'true';

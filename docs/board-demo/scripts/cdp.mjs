@@ -15,7 +15,7 @@ export async function openChrome(port = 9335) {
   const size = (w, h) => send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 });
   const shot = async (file, clip) => { const s = await send('Page.captureScreenshot', clip ? { format: 'png', clip: { ...clip, scale: 1 } } : { format: 'png' }); fs.writeFileSync(file, Buffer.from(s.data, 'base64')); };
   const go = async (url) => { await send('Page.navigate', { url }); await sleep(2500); };
-  const close = async () => { ws.close(); chrome.kill('SIGTERM'); await sleep(400); fs.rmSync(profile, { recursive: true, force: true }); };
+  const close = async () => { ws.close(); chrome.kill('SIGTERM'); await sleep(400); /* temp profile left in os.tmpdir(); no recursive deletion */ };
   return { send, ev, size, shot, go, close, events, sleep };
 }
 export async function tokenFor(base, email, password) {

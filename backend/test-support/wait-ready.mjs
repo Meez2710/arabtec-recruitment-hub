@@ -20,15 +20,20 @@
  * Poll until the API stops returning 503, or throw.
  *
  * @param {string} base      e.g. 'http://localhost:4404'
- * @param {number} timeoutMs give up after this long (default 20s)
+ * @param {number} timeoutMs give up after this long (default 20s, or READY_TIMEOUT_MS —
+ *                  a fresh PostgreSQL bootstrap is slower than SQLite)
  */
-export async function waitForReady(base, timeoutMs = 20000) {
-  const deadline = Date.now() + timeoutMs;
+export async function waitForReady(base, timeoutMs = Number(process.env.READY_TIMEOUT_MS) || 20000) {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   let last = 'no response';
   while (Date.now() < deadline) {
     try {
       const r = await fetch(`${base}/api/auth/me`);
-      if (r.status !== 503) return;          // gate open (401 unauthenticated)
+      if (r.status !== 503) {                 // gate open (401 unauthenticated)
+        if (process.env.READY_TIMEOUT_MS) console.log(`ready after ${Date.now() - started}ms`);
+        return;
+      }
       last = `HTTP ${r.status}`;
     } catch (e) {
       last = e.message;                       // port not listening yet

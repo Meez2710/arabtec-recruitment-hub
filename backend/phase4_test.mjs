@@ -1,5 +1,6 @@
 // Phase 4 — Interviews & Feedback tests.
-process.env.DATABASE_URL = 'file:/tmp/arabtec_p4.db';
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
+process.env.DATABASE_URL = suiteDatabaseUrl('file:/tmp/arabtec_p4.db');
 process.env.PORT = '4150';
 import fs from 'node:fs';
 import { adminToken, ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';

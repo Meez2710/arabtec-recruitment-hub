@@ -1,6 +1,7 @@
 // Interview calendar — the visible-range filter on GET /interviews and the
 // panel clash warning (GET /interviews/clashes + findPanelClashes).
-process.env.DATABASE_URL = 'file:/tmp/arabtec_ivcal.db';
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
+process.env.DATABASE_URL = suiteDatabaseUrl('file:/tmp/arabtec_ivcal.db');
 process.env.PORT = '4178';
 import fs from 'node:fs';
 import { adminToken, ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';

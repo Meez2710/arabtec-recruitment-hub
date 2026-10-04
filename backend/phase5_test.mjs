@@ -1,5 +1,6 @@
 // Phase 5 — Offers & Joining tests.
-process.env.DATABASE_URL = 'file:/tmp/arabtec_p5.db';
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
+process.env.DATABASE_URL = suiteDatabaseUrl('file:/tmp/arabtec_p5.db');
 process.env.PORT = '4170';
 import fs from 'node:fs';
 import { adminToken, ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';

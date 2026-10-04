@@ -1,11 +1,12 @@
 // Packet 01 — PDF-faithful assessment lifecycle and server trust.
 // Exercises the real legacy HTTP routes (/api/assessments/*) and model against a
 // disposable SQLite database and upload directory. Never touches a shared DB.
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'arabtec-assess-'));
-process.env.DATABASE_URL = 'file:' + path.join(TMP, 'assess.db');
+process.env.DATABASE_URL = suiteDatabaseUrl('file:' + path.join(TMP, 'assess.db'));
 process.env.UPLOAD_DIR = path.join(TMP, 'uploads');
 process.env.PORT = process.env.ASSESS_TEST_PORT || '4391';
 process.env.SEED_DEMO_DATA ||= 'true';

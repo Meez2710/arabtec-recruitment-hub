@@ -5,8 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 const REPO = '/Users/moutazadly/Documents/Codex/2026-10-01/referenced-chatgpt-conversation-this-is-an-3/work/repo/backend';
 const HERE = path.dirname(new URL(import.meta.url).pathname);
-const DIR = path.join(HERE, 'board-demo-db');
-fs.rmSync(DIR, { recursive: true, force: true }); fs.mkdirSync(DIR, { recursive: true });
+// A NEW directory per run; nothing is deleted.
+const DIR = path.join(HERE, process.env.DEMO_DB_DIR || ('board-demo-db-' + Date.now()));
+if (fs.existsSync(DIR)) throw new Error('refusing to reuse ' + DIR);
+fs.mkdirSync(DIR, { recursive: true });
+console.log('DB_DIR ' + DIR);
 Object.assign(process.env, {
   DATABASE_URL: 'file:' + path.join(DIR, 'board-demo.db'), UPLOAD_DIR: path.join(DIR, 'uploads'),
   PORT: process.env.PREVIEW_PORT || '4410', SEED_DEMO_DATA: 'true', SMTP_TRANSPORT: 'json', SEED_ADMIN_PASSWORD: 'Admin@12345',
