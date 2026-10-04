@@ -558,7 +558,7 @@ function pickKnowledgeLine(seed) {
    a badge, a table cell or a notification. One per element, leading it. */
 const EMOJI = {
   hint: '💡', focus: '🎯', lock: '🔏', clock: '⏱️', check: '✅', calendar: '📅', people: '👥', chart: '📊', inbox: '📭', search: '🔍', attention: '📌', build: '🏗️',
-  leadership: '🧭', teams: '🤝', psychology: '🧠', science: '🔬', engineering: '🏗️', wisdom: '🌿',
+  leadership: '🧭', teams: '🤝', psychology: '🧠', science: '🔬', engineering: '🏗️', wisdom: '🌿', history: '📜',
 };
 /* One fact the product can vouch for, beside or under the work: what a rule
    does, where a switch lives, what a number means. Never an opinion. */
@@ -3894,50 +3894,146 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
 // --- Knowledge lines panel ---
 // The owner's own list for the line at the foot of every page. Saved as the
 // `knowledge_lines` system setting; empty means the bundled list is used.
+const KL_TOPICS = ['leadership', 'teams', 'psychology', 'science', 'engineering', 'wisdom', 'history'];
+// The same rules the server applies on save (lib/knowledge-lines.js), per row.
+function klRowError(row, rows, skip) {
+  const q = (row.q || '').trim(); const by = (row.by || '').trim();
+  if (q.length < 3) return 'Write the quote.';
+  if (q.length > 160) return `The quote is ${q.length} characters; keep it to 160.`;
+  if (/\s[—–]\s/.test(q)) return 'Take out the spaced dash ( — ) from the quote; it separates the author.';
+  if (!by) return 'Add the author.';
+  if (/\s[—–]\s/.test(by)) return 'Take out the spaced dash ( — ) from the author.';
+  if (rows.some((r, i) => i !== skip && r.q.trim().toLowerCase() === q.toLowerCase())) return 'This quote is already on the list.';
+  return null;
+}
+function KlRowForm({ value, onChange, error, onSave, onCancel, saveLabel }) {
+  const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
+  return (
+    <div className="kl-form">
+      <div className="field kl-form-quote">
+        <label htmlFor="kl-q">Quote</label>
+        <textarea id="kl-q" rows="2" value={value.q} onChange={set('q')} autoFocus />
+        <span className={'kl-count' + (value.q.trim().length > 160 ? ' error' : '')}>{value.q.trim().length} / 160</span>
+      </div>
+      <div className="field"><label htmlFor="kl-by">Author</label><input id="kl-by" value={value.by} onChange={set('by')} /></div>
+      <div className="field"><label htmlFor="kl-t">Topic</label>
+        <select id="kl-t" value={value.t || ''} onChange={set('t')}>
+          <option value="">No topic</option>
+          {KL_TOPICS.map((t) => <option key={t} value={t}>{EMOJI[t] ? EMOJI[t] + ' ' : ''}{t[0].toUpperCase() + t.slice(1)}</option>)}
+        </select>
+      </div>
+      {error && value.q.trim() && <div className="kl-form-error" role="alert">{error}</div>}
+      <div className="kl-form-actions">
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn btn-secondary" disabled={!!error} onClick={onSave}>{saveLabel}</button>
+      </div>
+    </div>
+  );
+}
+// The owner's footer quotes: add, edit, remove or replace any line, then save.
+// Saved as the `knowledge_lines` system setting; empty means the built-in list.
 function KnowledgeLinesPanel() {
   const toast = useToast();
-  const [text, setText] = useState(null);
-  const [saved, setSaved] = useState('');
-  const [shown, setShown] = useState('');   // what the box held when loaded or last saved
+  const [rows, setRows] = useState(null);
+  const [savedText, setSavedText] = useState('');
+  const [baseline, setBaseline] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [filter, setFilter] = useState('');
+  const [edit, setEdit] = useState(null); // { index: number | 'new', row }
+  const [bulk, setBulk] = useState(null); // text while "Paste a list" is open
+  const builtIn = () => (window.ARABTEC_KNOWLEDGE_LINES || []).map((l) => ({ q: l.q, by: l.by, ...(l.t ? { t: l.t } : {}) }));
   const load = useCallback(() => {
     setLoadError(null);
     api.get('/settings/system').then((r) => {
       const own = r.settings?.knowledge_lines || '';
-      const initial = own || knowledgeLinesAsText(window.ARABTEC_KNOWLEDGE_LINES);
-      setSaved(own); setShown(initial); setText(initial);
+      const list = own ? parseKnowledgeText(own).lines : builtIn();
+      setSavedText(own); setRows(list); setBaseline(knowledgeLinesAsText(list));
     }).catch((e) => setLoadError(e.message));
   }, []);
   useEffect(() => { load(); }, [load]);
+  const dirty = !!rows && knowledgeLinesAsText(rows) !== baseline;
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
   if (loadError) return <LoadError title="Could not load footer quotes" text={loadError} onRetry={load} />;
-  if (text == null) return <Skeleton rows={5} />;
-  const { lines, errors } = parseKnowledgeText(text);
-  const usingOwn = !!saved.trim();
+  if (!rows) return <Skeleton rows={5} />;
+  const usingOwn = !!savedText.trim();
   async function persist(value, message) {
     setBusy(true);
     try {
       await api.put('/settings/system', { settings: { knowledge_lines: value } });
-      const next = value || knowledgeLinesAsText(window.ARABTEC_KNOWLEDGE_LINES);
-      setSaved(value); applyOwnKnowledgeLines(value); setShown(next); setText(next);
+      const list = value ? parseKnowledgeText(value).lines : builtIn();
+      setSavedText(value); applyOwnKnowledgeLines(value); setRows(list); setBaseline(knowledgeLinesAsText(list)); setEdit(null);
       toast(message);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+  const commitEdit = () => {
+    const r = edit.row; const clean = { q: r.q.trim(), by: r.by.trim(), ...(r.t ? { t: r.t } : {}) };
+    setRows(edit.index === 'new' ? [clean, ...rows] : rows.map((x, i) => (i === edit.index ? clean : x)));
+    setEdit(null);
+  };
+  const remove = (i) => { if (window.confirm(`Remove this quote?\n\n“${rows[i].q}” — ${rows[i].by}\n\nIt leaves the footer when you save.`)) { setRows(rows.filter((_, j) => j !== i)); if (edit && edit.index === i) setEdit(null); } };
+  const term = filter.trim().toLowerCase();
+  const visible = rows.map((r, i) => ({ r, i })).filter(({ r }) => !term || `${r.q} ${r.by} ${r.t || ''}`.toLowerCase().includes(term));
+  const bulkParsed = bulk != null ? parseKnowledgeText(bulk) : null;
+  const editError = edit ? klRowError(edit.row, rows, edit.index === 'new' ? -1 : edit.index) : null;
   return (
     <div className="card kl-editor">
       <div className="card-head">
-        <div><h3>Footer quotes</h3><div className="muted">The quotes shown at the foot of every page. One line per entry: <code>Quote — Author</code>. An optional third field sets the topic (<code>— leadership</code>).</div></div>
-        <span className="dash-headnote">{usingOwn ? 'Your list is in use' : 'Built-in list in use'}</span>
+        <div><h3>Footer quotes</h3><div className="muted">One quote is shown at the foot of every page. Add, edit or remove quotes, then save. Each quote needs an author; up to 160 characters.</div></div>
+        <span className="dash-headnote">{usingOwn ? 'Your list is in use' : 'Built-in list in use'} · {rows.length} {rows.length === 1 ? 'quote' : 'quotes'}</span>
       </div>
       <div className="card-pad">
-        <textarea aria-label="Footer quotes, one per line" rows="16" value={text} onChange={(e) => setText(e.target.value)} spellCheck="true" />
-        <div className="kl-editor-foot">
-          <span className={errors.length ? 'kl-editor-count error' : 'kl-editor-count'} role="status">
-            {lines.length} {lines.length === 1 ? 'line' : 'lines'}{errors.length ? ` · ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}` : ''}
-          </span>
+        <div className="kl-toolbar">
+          <input type="search" aria-label="Search quotes" placeholder="Search quote, author or topic…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <button type="button" className="btn btn-secondary" disabled={!!edit || bulk != null} onClick={() => setEdit({ index: 'new', row: { q: '', by: '', t: '' } })}>Add quote</button>
+          <button type="button" className="btn btn-ghost" disabled={!!edit} onClick={() => setBulk(bulk == null ? knowledgeLinesAsText(rows) : null)}>{bulk == null ? 'Paste a list' : 'Close paste'}</button>
+        </div>
+        {bulk != null && (
+          <div className="kl-bulk">
+            <label htmlFor="kl-bulk">Paste or edit the whole list — one per line: <code>Quote — Author — topic</code> (topic optional). Applying replaces the list below; nothing is saved until you press Save changes.</label>
+            <textarea id="kl-bulk" rows="12" value={bulk} onChange={(e) => setBulk(e.target.value)} spellCheck="true" />
+            <div className="kl-editor-foot">
+              <span className={bulkParsed.errors.length ? 'kl-editor-count error' : 'kl-editor-count'} role="status">
+                {bulkParsed.lines.length} {bulkParsed.lines.length === 1 ? 'line' : 'lines'}{bulkParsed.errors.length ? ` · ${bulkParsed.errors[0]}${bulkParsed.errors.length > 1 ? ` (+${bulkParsed.errors.length - 1} more)` : ''}` : ''}
+              </span>
+              <span className="kl-editor-actions">
+                <button type="button" className="btn btn-ghost" onClick={() => setBulk(null)}>Cancel</button>
+                <button type="button" className="btn btn-secondary" disabled={bulkParsed.errors.length > 0 || !bulkParsed.lines.length} onClick={() => { setRows(bulkParsed.lines); setBulk(null); }}>Apply to the list</button>
+              </span>
+            </div>
+          </div>
+        )}
+        {edit && edit.index === 'new' && <KlRowForm value={edit.row} onChange={(row) => setEdit({ ...edit, row })} error={editError} onSave={commitEdit} onCancel={() => setEdit(null)} saveLabel="Add to the list" />}
+        <table className="kl-table">
+          <thead><tr><th scope="col">Quote</th><th scope="col">Author</th><th scope="col">Topic</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+            {visible.map(({ r, i }) => (edit && edit.index === i ? (
+              <tr key={'e' + i}><td colSpan="4"><KlRowForm value={edit.row} onChange={(row) => setEdit({ ...edit, row })} error={editError} onSave={commitEdit} onCancel={() => setEdit(null)} saveLabel="Update quote" /></td></tr>
+            ) : (
+              <tr key={i}>
+                <td className="kl-q">{r.q}</td>
+                <td className="kl-by">{r.by}</td>
+                <td className="kl-t">{r.t ? <>{EMOJI[r.t] ? <span aria-hidden="true">{EMOJI[r.t]} </span> : null}{r.t}</> : <span className="muted">—</span>}</td>
+                <td className="kl-actions">
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={!!edit || bulk != null} aria-label={`Edit: ${r.q}`} onClick={() => setEdit({ index: i, row: { q: r.q, by: r.by, t: r.t || '' } })}>Edit</button>
+                  <button type="button" className="btn btn-ghost btn-sm kl-remove" disabled={!!edit || bulk != null} aria-label={`Remove: ${r.q}`} onClick={() => remove(i)}>Remove</button>
+                </td>
+              </tr>
+            )))}
+            {visible.length === 0 && <tr><td colSpan="4" className="muted">{term ? 'No quote matches that search.' : 'The list is empty — add a quote, or reset to the built-in list.'}</td></tr>}
+          </tbody>
+        </table>
+        <div className="kl-editor-foot kl-savebar">
+          <span className="kl-editor-count" role="status">{dirty ? 'Unsaved changes' : (usingOwn ? 'Saved' : 'Showing the built-in list')}</span>
           <span className="kl-editor-actions">
-            <button className="btn btn-ghost" disabled={busy || !usingOwn} onClick={() => persist('', 'Built-in list restored')}>Reset to the built-in list</button>
-            <button className="btn" disabled={busy || errors.length > 0 || !lines.length || text.trim() === shown.trim()} onClick={() => persist(text.trim(), 'Knowledge lines saved')}>{busy ? 'Saving…' : 'Save'}</button>
+            <button type="button" className="btn btn-ghost" disabled={busy || !dirty} onClick={() => { setRows(parseKnowledgeText(baseline).lines); setEdit(null); }}>Discard changes</button>
+            <button type="button" className="btn btn-ghost" disabled={busy || !usingOwn} onClick={() => { if (window.confirm('Reset to the built-in list? Your saved list will be replaced.')) persist('', 'Built-in list restored'); }}>Reset to the built-in list</button>
+            <button type="button" className="btn" disabled={busy || !dirty || !rows.length || !!edit || bulk != null} onClick={() => persist(knowledgeLinesAsText(rows), 'Footer quotes saved')}>{busy ? 'Saving…' : 'Save changes'}</button>
           </span>
         </div>
       </div>

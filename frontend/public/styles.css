@@ -1328,3 +1328,32 @@ tr.row-pending td { pointer-events: none; }
   .signin-footer { flex-direction: column; padding: 16px; }
   .signin-watermark { display: none; }
 }
+
+/* Footer quotes editor (Control Center › Footer quotes). */
+.kl-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.kl-toolbar input[type=search] { flex: 1 1 240px; min-width: 0; }
+.kl-bulk { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: var(--surface-2, #f4f5f7); }
+.kl-bulk label { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+.kl-editor .kl-bulk textarea { width: 100%; min-height: 240px; }
+.kl-form { display: grid; grid-template-columns: minmax(0, 1fr) 200px 160px; gap: 12px 16px; align-items: start; border: 1px solid var(--green-border, #b7dcd3); background: var(--green-50, #e6f4f0); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.kl-form .field { margin: 0; }
+.kl-form textarea, .kl-form input, .kl-form select { width: 100%; }
+.kl-editor .kl-form textarea { min-height: 64px; }
+.kl-form-quote { position: relative; }
+.kl-count { display: block; text-align: right; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.kl-count.error, .kl-form-error { color: var(--critical, #c0392b); }
+.kl-form-error { grid-column: 1 / -1; font-size: 13px; }
+.kl-form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.kl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kl-table thead th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 12px 8px; border-bottom: 1px solid var(--border); }
+.kl-table td { padding: 12px; border-bottom: 1px solid var(--border-soft, #f0f2f5); vertical-align: top; }
+.kl-table .kl-q { color: var(--ink); line-height: 1.5; }
+.kl-table .kl-by { color: var(--ink-soft); white-space: nowrap; }
+.kl-table .kl-t { color: var(--ink-soft); white-space: nowrap; text-transform: capitalize; }
+.kl-table .kl-actions { white-space: nowrap; text-align: right; }
+.kl-table .kl-form { margin: 0; }
+.kl-savebar { position: sticky; bottom: 0; background: #fff; border-top: 1px solid var(--border); padding-top: 12px; }
+@media (max-width: 640px) {
+  .kl-form { grid-template-columns: minmax(0, 1fr); }
+  .kl-table .kl-by, .kl-table .kl-t { white-space: normal; }
+}
