@@ -92,3 +92,20 @@ Verification (`evidence/verify-6818227/`): build 0, typecheck 0, `npm test` 80/8
 Backup `pre-release-20261004-123254-6818227.dump`. Post-deploy: HEAD = DEPLOYED_SHA = `6818227`, active, health/ready 200, token `20261004h`, unauthenticated recruiter-status → 401.
 **Role migration on production (read-only check of its record):** applied 12:33:22 UTC once; removed request control grants — HR Director: assign, hold, cancel, close; HR Manager: assign, hold, cancel, close, reopen; Recruiter: hold, close, reopen. Granted 0 (Recruitment Manager already held all five). Now held only by recruitment_manager and system_admin; recruiter holds request.view_team. Reversible in Roles & Permissions; the migration never re-applies.
 Rollback (code): `ATS_SHA=bae6912e001d07e84caa5a647390430ea2452481 ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-e.bundle bash ./09-safe-release.sh`. Note: a code rollback does not restore the removed role grants; re-grant them in Roles & Permissions if needed.
+
+# Deployment 7 — 5 October 2026, 07:37 UTC
+
+**Deployed:** `2beef22243082d4fdba0065b16b684d191a6a5c1` (was `6818227`). Row rules R19 (one 40px control height, 8/16px gaps, equal-column filter grid, stacked candidate cards) on Talent Pool and Hiring Requests; R20 (no side bars: the Talent Pool notice "bracket" and 13 other edge-styled surfaces are now hairline boxes). CSS token `20261004j`.
+
+**Verification** (`evidence/verify-2beef22/`):
+- Results: build 0; typecheck 0; `npm test` 80/80; PostgreSQL 7/7; behaviour 11/11.
+- Domain: the first run had 4 vitest timeouts ("Test timed out in 5000ms") in unrelated files (talent search, intake cancel, interview filter, offer money) at load average ~46. Each file took 130–140s and collection took 120s. The cause was the Docker VM, three Node test processes and iCloud sync running together. That log is kept as `final-domain.log`. Re-run alone at load 8.5: 798/0/9 (`final-domain-rerun.log`). No timeout was raised.
+- An earlier attempt stalled inside `ui_form_controls_test` (a pure CPU check) when the host most likely slept. Its logs are kept in `stalled-run-1/`, and the suite passes alone (22/0 in 18s). Keep-awake was enabled for the rerun.
+- Superseded candidates: `80e243a` failed `ui_form_controls` (R17: page-scoped `.btn` height) and was fixed in `ec124f2` by using a standard `.btn`. `ec124f2` was fully verified (`verify-ec124f2/`) and then extended with R20 at the owner's request.
+- HawkScan: skipped (no `HAWK_API_KEY`).
+
+**Backup:** `pre-release-20261005-073656-2beef22.dump` (59M, 53 table-data entries, sha256 `44e790c8914922c5…`). Release script on the host is identical to the repo copy (sha256 `fdbf6fd3…`).
+
+**Post-deploy:** HEAD = DEPLOYED_SHA = `2beef22`; service active, new pid 29752; health/ready 200; token `20261004j` served; the served design-system CSS has no `border-left-width: 4px`; unauthenticated recruiter-status → 401. Owner-session visual check is pending: the browser pane was signed out overnight.
+
+**Rollback (code):** `ATS_SHA=6818227a3e48ac1a4ad7aa27088d81fa3a47642d ATS_BUNDLE=$HOME/arabtec-release/arabtec-release-f.bundle bash ./09-safe-release.sh`. CSS-only release; no schema or permission change.
