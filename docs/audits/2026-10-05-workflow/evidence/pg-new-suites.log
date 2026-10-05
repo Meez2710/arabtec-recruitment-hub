@@ -1,0 +1,866 @@
+
+──────── workflow_integrity_test.mjs (PostgreSQL arabtec_scratch_test_20261005085558_workflow_integrity) ────────
+  • Schema: added 59 new permission(s) [dashboard.view, request.view_all, request.view_own, request.view_team, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"postgres","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+
+🏗️  Arabtec Recruitment Hub listening on 4397 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 59 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"info","msg":"schema.request_control_policy","removed":[],"granted":0}
+{"level":"error","msg":"request","requestId":"6093c98c-c108-499e-ae7e-3983cbd36d7a","method":"GET","path":"/api/auth/me","status":503,"ms":3,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"3c4d5f53-fdd0-4b55-99ef-f8b8e8833a8e","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4397/api/health
+
+{"level":"warn","msg":"request","requestId":"21fde972-f59f-4449-9694-bd2cbd30a4f2","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+ready after 1873ms
+{"level":"info","msg":"request","requestId":"ba6a230b-dbb9-4d62-8a19-da1bd902f02e","method":"POST","path":"/api/auth/login","status":200,"ms":156,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8d9fb789-2209-4352-a47e-cc8d81aff2c4","method":"POST","path":"/api/auth/login","status":200,"ms":181,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"27ba9a73-66b3-45b3-b86f-11278e5fb57e","method":"POST","path":"/api/auth/login","status":200,"ms":225,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"05fa8d52-7017-4a22-b194-d9b9eebe5541","method":"POST","path":"/api/auth/login","status":200,"ms":196,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a10c56be-62ab-40a8-8f8f-8417d645f4a0","method":"GET","path":"/api/requests/meta/form","status":200,"ms":37,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5603f9cc-89bd-4031-a010-e596b7775477","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":11,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"75a85e5f-b828-4133-ac18-3cf5d558f6a1","method":"POST","path":"/api/requests","status":201,"ms":58,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c9cbda40-9ecc-47c8-8038-7518c9cbcc45","method":"POST","path":"/api/requests/1/approve","status":200,"ms":98,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"67b6cf88-7a74-4d30-95e4-b82b7e6c0b03","method":"POST","path":"/api/requests/1/assign","status":200,"ms":34,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Workflow Audit 1","messageId":"<90588f94-f659-4fec-1c1b-f125b93c7561@localhost>"}
+{"level":"info","msg":"request","requestId":"a8cce5dc-b167-45fe-8490-dfa21658c5a4","method":"POST","path":"/api/candidates","status":201,"ms":36,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Workflow Audit 1","messageId":"<0a3bf77b-09ca-863f-2456-291aad7a1ef2@localhost>"}
+{"level":"info","msg":"request","requestId":"d6939f42-da0c-4b63-88b1-def7859d1769","method":"POST","path":"/api/applications","status":201,"ms":36,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1d492bb7-abc7-468f-a6b6-7e13367506ca","method":"POST","path":"/api/applications/1/move","status":200,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d3b39fbb-2a9d-41c0-9e2b-44c8fcf54701","method":"POST","path":"/api/offers","status":201,"ms":38,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d9169496-7d1c-45e1-a99c-288aa62fc868","method":"POST","path":"/api/offers/1/submit","status":200,"ms":36,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"58180739-6c0e-4c8e-b23e-6e79c9001d22","method":"POST","path":"/api/offers/1/approve","status":200,"ms":28,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00001","messageId":"<84f63ef8-07f8-3577-be76-f4a1821a796f@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00001","messageId":"<2e925764-8777-f608-b670-31687b589c20@localhost>"}
+{"level":"info","msg":"request","requestId":"c818258d-d9b1-4a4d-b81f-090bd4148b3c","method":"POST","path":"/api/applications/1/move","status":200,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00001 Synthetic Workflow 1","messageId":"<f4ec64a7-4515-1685-bcd2-6137fb2bf9c0@localhost>"}
+{"level":"warn","msg":"request","requestId":"1ba6b834-7372-4c30-9416-f474915a492a","method":"POST","path":"/api/offers/1/send","status":409,"ms":7,"userId":3,"ip":"::1"}
+PASS send refuses rejected application HTTP 409
+{"level":"info","msg":"request","requestId":"723b21a0-a080-4a52-8583-ea2268820a15","method":"GET","path":"/api/applications/1","status":200,"ms":10,"userId":5,"ip":"::1"}
+PASS send preserves stopped application rejected 
+{"level":"info","msg":"request","requestId":"7e2637f2-af5f-45e6-9cd1-670b7531a0ae","method":"GET","path":"/api/offers/1","status":200,"ms":14,"userId":3,"ip":"::1"}
+PASS refused send preserves approved offer 
+{"level":"info","msg":"request","requestId":"7a76c5ae-c6d7-4089-99be-30f810a1fe50","method":"POST","path":"/api/requests","status":201,"ms":27,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f99f04b1-ae72-4266-ae89-acd357589bdb","method":"POST","path":"/api/requests/2/approve","status":200,"ms":33,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c9ae777b-ec78-4d29-8aa5-ed4a0ff829b7","method":"POST","path":"/api/requests/2/assign","status":200,"ms":38,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00002 Approved: REQ-2026-00002 — Workflow Audit 2","messageId":"<649baeaa-4bac-476a-1bc5-08f2ecac6f50@localhost>"}
+{"level":"info","msg":"request","requestId":"79a6f90f-5087-4378-bbff-ead702e5227d","method":"POST","path":"/api/candidates","status":201,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00002 You’ve been assigned: REQ-2026-00002 — Workflow Audit 2","messageId":"<d7808f5d-9551-ef35-c4c7-fe10439a7dbf@localhost>"}
+{"level":"info","msg":"request","requestId":"16249e7e-586a-4408-b864-17dfa9209c1a","method":"POST","path":"/api/applications","status":201,"ms":34,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"58acd98c-3010-4694-b489-f0bf08587e50","method":"POST","path":"/api/applications/2/move","status":200,"ms":34,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"15182def-c80e-40ef-a4c4-25fcddc45af6","method":"POST","path":"/api/offers","status":201,"ms":42,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"80fb4210-191d-4669-ab1f-e00039f8925a","method":"POST","path":"/api/offers/2/submit","status":200,"ms":44,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d959bfa1-e15c-4d03-9db5-4abf4a5f591d","method":"POST","path":"/api/offers/2/approve","status":200,"ms":40,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00002","messageId":"<b57b0a88-616b-3e80-40d6-656ec16b186f@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00002","messageId":"<4552d76b-13a1-ba13-054b-58007877e703@localhost>"}
+{"level":"info","msg":"request","requestId":"b50c890d-bef1-4575-9ab0-9b35c4b7eb15","method":"POST","path":"/api/applications/2/move","status":200,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00002 Synthetic Workflow 2","messageId":"<cf6783a0-5834-d391-1728-bf94c86858a9@localhost>"}
+{"level":"warn","msg":"request","requestId":"b7d36b29-9221-48bf-86a3-b9bf8a25d18e","method":"POST","path":"/api/offers/2/send","status":409,"ms":10,"userId":3,"ip":"::1"}
+PASS send refuses on_hold application HTTP 409
+{"level":"info","msg":"request","requestId":"65132c5b-f9b6-4a81-9c5a-48575edfb16d","method":"GET","path":"/api/applications/2","status":200,"ms":11,"userId":5,"ip":"::1"}
+PASS send preserves stopped application on_hold 
+{"level":"info","msg":"request","requestId":"f2344271-ee25-41ff-b0ca-ff7dcca363c4","method":"GET","path":"/api/offers/2","status":200,"ms":13,"userId":3,"ip":"::1"}
+PASS refused send preserves approved offer 
+{"level":"info","msg":"request","requestId":"c3b69c0c-d9d9-4c72-ae41-8e56d0841290","method":"POST","path":"/api/requests","status":201,"ms":34,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a0635623-e24e-4f02-8a81-b0c0c4cfca90","method":"POST","path":"/api/requests/3/approve","status":200,"ms":36,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"87dc06a2-c6d8-46a5-9f84-f0a50b89675d","method":"POST","path":"/api/requests/3/assign","status":200,"ms":37,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00003 Approved: REQ-2026-00003 — Workflow Audit 3","messageId":"<387ed35c-b71d-2b7d-b874-46ebfafd3926@localhost>"}
+{"level":"info","msg":"request","requestId":"734935a7-c066-42a1-a212-63e8c86a4302","method":"POST","path":"/api/candidates","status":201,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00003 You’ve been assigned: REQ-2026-00003 — Workflow Audit 3","messageId":"<1a0c7e3b-90ba-ebc5-d7f9-d31b74e6645e@localhost>"}
+{"level":"info","msg":"request","requestId":"6c048b84-c3d1-4302-bfe4-8a4f56f7ae28","method":"POST","path":"/api/applications","status":201,"ms":27,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b09b1308-f2e1-41e7-a563-3a7b8036e39a","method":"POST","path":"/api/applications/3/move","status":200,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ef4a5072-329a-4d16-8c1a-9bd3ef5415e4","method":"POST","path":"/api/offers","status":201,"ms":27,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4cffbd74-6c10-4ceb-be00-e178c0ffda2b","method":"POST","path":"/api/offers/3/submit","status":200,"ms":30,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f88caf9e-f972-435a-92f9-89e21516a3d6","method":"POST","path":"/api/offers/3/approve","status":200,"ms":30,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00003","messageId":"<a45dfcb1-acc7-884b-5d26-2d05952a99d2@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00003","messageId":"<1a91e331-908d-a9ec-dce8-618f377fb2f0@localhost>"}
+{"level":"info","msg":"request","requestId":"9262a524-ff87-4f7b-ad1e-6adf2df0ecf5","method":"POST","path":"/api/applications/3/move","status":200,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00003 Synthetic Workflow 3","messageId":"<0fe2e25f-734b-106e-d8bd-a4676ed496bc@localhost>"}
+{"level":"warn","msg":"request","requestId":"66dbaf0b-2297-462f-961b-47dae581af57","method":"POST","path":"/api/offers/3/send","status":409,"ms":8,"userId":3,"ip":"::1"}
+PASS send refuses offer_declined application HTTP 409
+{"level":"info","msg":"request","requestId":"7708822a-7c55-451f-8b40-6e51aec9363b","method":"GET","path":"/api/applications/3","status":200,"ms":11,"userId":5,"ip":"::1"}
+PASS send preserves stopped application offer_declined 
+{"level":"info","msg":"request","requestId":"6de3f508-e7db-495a-8a43-0c787c7ac094","method":"GET","path":"/api/offers/3","status":200,"ms":15,"userId":3,"ip":"::1"}
+PASS refused send preserves approved offer 
+{"level":"info","msg":"request","requestId":"f0590434-5831-46a1-8ead-84659f3682b2","method":"POST","path":"/api/requests","status":201,"ms":40,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6874f535-b1c6-4ddf-8e80-aba91475f011","method":"POST","path":"/api/requests/4/approve","status":200,"ms":35,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d030f9fa-96ab-48a8-9ddd-a2952f0d2d3c","method":"POST","path":"/api/requests/4/assign","status":200,"ms":32,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00004 Approved: REQ-2026-00004 — Workflow Audit 4","messageId":"<4d1193c2-4bcc-a4c9-4eb3-0ed4d6fd0906@localhost>"}
+{"level":"info","msg":"request","requestId":"3bc6ce9a-adc3-49c6-abdd-258b5acfb795","method":"POST","path":"/api/candidates","status":201,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00004 You’ve been assigned: REQ-2026-00004 — Workflow Audit 4","messageId":"<b9b68b13-14ea-ef33-eca3-9802306ce255@localhost>"}
+{"level":"info","msg":"request","requestId":"d22f3d0a-9e4b-48a1-ab75-d6f2dc55abdb","method":"POST","path":"/api/applications","status":201,"ms":31,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6ebbd2e9-bc01-4099-8055-61eb28e96e14","method":"POST","path":"/api/applications/4/move","status":200,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"743d7569-826f-4487-af64-818ebf3c64ca","method":"POST","path":"/api/offers","status":201,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0b0704f4-b8da-466d-9868-e09d2371c3f4","method":"POST","path":"/api/offers/4/submit","status":200,"ms":29,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b64112d8-2c27-4d3a-b309-d0c691bbb7c0","method":"POST","path":"/api/offers/4/approve","status":200,"ms":32,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<89697d2e-2b98-a35d-8d9c-a07f9dc90ea5@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<a27724e1-130b-7489-2c32-3c6776d875ad@localhost>"}
+{"level":"info","msg":"request","requestId":"f86eff92-5930-4248-9915-241e468b547e","method":"PUT","path":"/api/offers/4","status":200,"ms":40,"userId":5,"ip":"::1"}
+PASS currency change requires approval again 
+PASS currency change clears approvedBy 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00004 Synthetic Workflow 4","messageId":"<d12ee9da-9712-1621-0d99-1e25c20dff0d@localhost>"}
+{"level":"warn","msg":"request","requestId":"b66d6c1f-e62f-4c1c-a1c0-26de7905f5a4","method":"POST","path":"/api/offers/4/send","status":409,"ms":6,"userId":3,"ip":"::1"}
+PASS currency cannot be sent before reapproval 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<11df43ee-795a-5d33-d1af-663cf92a3dd3@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<84ec0a45-f108-085c-4c77-2130d24ade38@localhost>"}
+{"level":"info","msg":"request","requestId":"409d67fa-b8ae-4a22-ac97-a26b9a91423e","method":"POST","path":"/api/requests","status":201,"ms":26,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"01454538-f9a7-4fa3-a106-3ae799a82b91","method":"POST","path":"/api/requests/5/approve","status":200,"ms":30,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d4225d9e-47a2-48bc-bf96-e6180cfc9204","method":"POST","path":"/api/requests/5/assign","status":200,"ms":31,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00005 Approved: REQ-2026-00005 — Workflow Audit 5","messageId":"<a770cfe5-cbba-0d70-6672-a813083839c1@localhost>"}
+{"level":"info","msg":"request","requestId":"3b26ca07-c3af-4b3b-8a53-fd6757f5705d","method":"POST","path":"/api/candidates","status":201,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00005 You’ve been assigned: REQ-2026-00005 — Workflow Audit 5","messageId":"<13f93248-d35d-2660-7882-e45fc4e57e60@localhost>"}
+{"level":"info","msg":"request","requestId":"ddc27238-3bae-4f9b-96cd-a1c2a0b1b2fb","method":"POST","path":"/api/applications","status":201,"ms":25,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"247ea71b-abf7-4523-a437-7a8e39237db9","method":"POST","path":"/api/applications/5/move","status":200,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b976dcd1-bc28-4e8c-832a-132c2637f244","method":"POST","path":"/api/offers","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9bfd4415-e2de-4fe3-9761-9d0134740902","method":"POST","path":"/api/offers/5/submit","status":200,"ms":34,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"812445c6-5ec3-4e7c-88a6-2923b602ab2b","method":"POST","path":"/api/offers/5/approve","status":200,"ms":45,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<45f35b2b-f99f-00a9-8c91-0038ba945f8f@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<64cedf50-2dc9-595a-0dca-176055d53ff5@localhost>"}
+{"level":"info","msg":"request","requestId":"0d463b2b-80bb-49fd-b9d0-69ce20e86e15","method":"PUT","path":"/api/offers/5","status":200,"ms":50,"userId":5,"ip":"::1"}
+PASS benefits change requires approval again 
+PASS benefits change clears approvedBy 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00005 Synthetic Workflow 5","messageId":"<6a47aa2a-9577-6607-186b-45f2e0dd935a@localhost>"}
+{"level":"warn","msg":"request","requestId":"c4ddfe66-2fb7-4680-aa90-be689f735cd0","method":"POST","path":"/api/offers/5/send","status":409,"ms":7,"userId":3,"ip":"::1"}
+PASS benefits cannot be sent before reapproval 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<1cd316ce-dfdc-c312-f95f-dcc4e4e7aafa@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<56ee3c90-0d39-bbb9-b550-0cb9f8a1516e@localhost>"}
+{"level":"info","msg":"request","requestId":"3f49d2a1-d73b-404a-8ebb-460dfddb4a6d","method":"POST","path":"/api/requests","status":201,"ms":27,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"35ee49de-59e2-47f2-869c-b5bd47c789f3","method":"POST","path":"/api/requests/6/approve","status":200,"ms":32,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a0764440-d0da-4d9a-924d-a2f7f5cf6c37","method":"POST","path":"/api/requests/6/assign","status":200,"ms":36,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00006 Approved: REQ-2026-00006 — Workflow Audit 6","messageId":"<87afb389-d7e5-f6eb-718a-954747cde320@localhost>"}
+{"level":"info","msg":"request","requestId":"8264e0d1-2cfa-460c-b023-2536fc427273","method":"POST","path":"/api/candidates","status":201,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00006 You’ve been assigned: REQ-2026-00006 — Workflow Audit 6","messageId":"<52e302c2-8296-f675-935f-cbcedaa78388@localhost>"}
+{"level":"info","msg":"request","requestId":"c747777e-cf19-4ffc-982c-255fd8464ea0","method":"POST","path":"/api/applications","status":201,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"527c6d16-b60a-4ef1-8abe-83c51190661a","method":"POST","path":"/api/applications/6/move","status":200,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c35a8d5e-d914-4ceb-88ef-631db594cd44","method":"POST","path":"/api/offers","status":201,"ms":34,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"dac5ab77-b7e5-47fc-a2de-d750385699bb","method":"POST","path":"/api/offers/6/submit","status":200,"ms":28,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a83bdb69-f97b-4796-aafc-ec85ba593c64","method":"POST","path":"/api/offers/6/approve","status":200,"ms":26,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00006","messageId":"<60d56fb0-5d2e-b7e5-d78d-69399141bda9@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00006","messageId":"<46ead739-2617-6a6c-3019-636dc6e5f85b@localhost>"}
+{"level":"info","msg":"request","requestId":"daedd910-8ad9-40c2-809b-dcd7aa7ec683","method":"PUT","path":"/api/offers/6","status":200,"ms":41,"userId":5,"ip":"::1"}
+PASS positionTitle change requires approval again 
+PASS positionTitle change clears approvedBy 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00006 Synthetic Workflow 6","messageId":"<9738b95f-7472-6b47-ede9-02d38d576d50@localhost>"}
+{"level":"warn","msg":"request","requestId":"717f0537-f3ad-4280-8047-03cba3500ed1","method":"POST","path":"/api/offers/6/send","status":409,"ms":9,"userId":3,"ip":"::1"}
+PASS positionTitle cannot be sent before reapproval 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00006","messageId":"<d89b8d64-f7da-edac-e9b6-9480a0f8efd0@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00006","messageId":"<83ae9ec6-5ac4-e91b-f930-cdbd7b9a9155@localhost>"}
+{"level":"info","msg":"request","requestId":"8ae6efe8-d78a-472d-bd85-d999e3e2830b","method":"POST","path":"/api/requests","status":201,"ms":32,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"aa50a7c7-4c48-4e0f-923f-c7730434395d","method":"POST","path":"/api/requests/7/approve","status":200,"ms":32,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a9b171df-96e5-406b-9d25-dfff747357cd","method":"POST","path":"/api/requests/7/assign","status":200,"ms":33,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00007 Approved: REQ-2026-00007 — Workflow Audit 7","messageId":"<b3f4f67f-fe75-09a7-c24b-3198e1cde0e0@localhost>"}
+{"level":"info","msg":"request","requestId":"e5910d58-50d4-42f3-8735-0853f319a4e7","method":"POST","path":"/api/candidates","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00007 You’ve been assigned: REQ-2026-00007 — Workflow Audit 7","messageId":"<ca3382b9-e629-7ee0-0be0-cef0a5a4cb68@localhost>"}
+{"level":"info","msg":"request","requestId":"886fcddb-72ea-45ac-85ce-90b08b42df1a","method":"POST","path":"/api/applications","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"frontend.compiled","ms":3198}
+{"level":"info","msg":"request","requestId":"156598e7-47b7-4874-945a-94f849ba1877","method":"POST","path":"/api/applications/7/move","status":200,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2caac1c2-1474-4f6d-8c32-c52889d986d1","method":"POST","path":"/api/offers","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4469cbbc-11ec-40da-b8f9-668be4e4d7e7","method":"POST","path":"/api/offers/7/submit","status":200,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"078e2a45-e2d4-497e-890b-8189da8acb90","method":"POST","path":"/api/offers/7/approve","status":200,"ms":26,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00007","messageId":"<9bde5c89-03da-5c95-8eff-80a1fa31b790@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00007","messageId":"<a0b12094-f18a-94a5-4871-2ece4739229c@localhost>"}
+{"level":"info","msg":"request","requestId":"b8bc668f-8d13-4567-ab48-a875f634546b","method":"POST","path":"/api/offers/7/send","status":200,"ms":72,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00007 Synthetic Workflow 7","messageId":"<8884748d-69e0-5d62-3bc2-22c142f2aa41@localhost>"}
+{"level":"warn","msg":"request","requestId":"ebea151f-1f89-4f17-ab1a-91dff4c9ee8c","method":"PUT","path":"/api/offers/7","status":409,"ms":4,"userId":5,"ip":"::1"}
+PASS sent offer is immutable HTTP 409
+{"level":"info","msg":"request","requestId":"a4718377-62fb-4977-9223-1a2ccb84e861","method":"GET","path":"/api/offers/7","status":200,"ms":10,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"workflow-7@example.invalid","subject":"Job Offer — Workflow Audit 7 — Re 26/HR/DM/MH-ofr/00007","messageId":"<e654f8b5-0629-c341-459a-3706e983c4d0@localhost>"}
+PASS issued salary remains approved amount 
+{"level":"info","msg":"request","requestId":"6c70b7be-cad7-41f9-bdae-8013bfc8e33d","method":"POST","path":"/api/requests","status":201,"ms":20,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"97e843ef-605d-4d08-ac75-7cddcc14898d","method":"POST","path":"/api/requests/8/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"53af01e3-b93e-440e-a958-d33817412d08","method":"POST","path":"/api/requests/8/assign","status":200,"ms":25,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"rec.manager@arabtec.com","subject":"Approved — REQ-2026-00008 Approved: REQ-2026-00008 — Workflow Audit 8","messageId":"<3f207a88-621c-e548-8e63-ccf56141bec3@localhost>"}
+{"level":"info","msg":"request","requestId":"36643e46-751b-4451-8763-8051f0c02b0b","method":"POST","path":"/api/candidates","status":201,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00008 You’ve been assigned: REQ-2026-00008 — Workflow Audit 8","messageId":"<3fadac27-beef-793a-cfd9-6be3eef8c4d4@localhost>"}
+{"level":"info","msg":"request","requestId":"dea5fa37-e335-4c1e-a98f-6914c5359b81","method":"POST","path":"/api/applications","status":201,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"466a70ba-e42a-4ac2-8bf9-ea5807bdec06","method":"POST","path":"/api/applications/8/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f60baec5-576d-4208-9e3c-46e5083ab4ee","method":"POST","path":"/api/offers","status":201,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fb4c5e27-70b9-4948-8fbf-f713dd3531e7","method":"POST","path":"/api/offers/8/submit","status":200,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"75222f9e-8023-4bf4-b2e6-9dd900b13c4c","method":"POST","path":"/api/offers/8/approve","status":200,"ms":21,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00008","messageId":"<cc0fe607-9437-4c77-6ab1-e3836e0f3ac2@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00008","messageId":"<c537e348-bb72-707a-a085-ba66b1501e8f@localhost>"}
+{"level":"info","msg":"request","requestId":"d988c043-bdff-4bf3-ba13-d80352bdef17","method":"POST","path":"/api/applications/8/move","status":200,"ms":12,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00008 Synthetic Workflow 8","messageId":"<62b3a06c-ef88-0aa5-327f-193983d017ec@localhost>"}
+{"level":"warn","msg":"request","requestId":"f6cf80a9-de47-4dd4-8dd9-d4068a8d7241","method":"POST","path":"/api/interviews","status":409,"ms":5,"userId":5,"ip":"::1"}
+PASS declined offer blocks new interview HTTP 409
+{"level":"info","msg":"request","requestId":"de4bae40-db36-457f-903a-903944777bcf","method":"GET","path":"/api/interviews/application/8","status":200,"ms":4,"userId":5,"ip":"::1"}
+PASS refused interview creates no calendar record 
+WORKFLOW INTEGRITY: 22 passed, 0 failed
+
+──────── offer_letter_test.mjs (PostgreSQL arabtec_scratch_test_20261005085558_offer_letter) ────────
+  • Schema: added 59 new permission(s) [dashboard.view, request.view_all, request.view_own, request.view_team, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"postgres","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+
+🏗️  Arabtec Recruitment Hub listening on 4385 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 59 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"info","msg":"schema.request_control_policy","removed":[],"granted":0}
+{"level":"error","msg":"request","requestId":"fdc2c963-5c78-4d0d-8f81-5b2dae421e2d","method":"GET","path":"/api/auth/me","status":503,"ms":3,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"0d311c8e-0171-4b69-8703-08d24127d9a4","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4385/api/health
+
+{"level":"warn","msg":"request","requestId":"089cee06-1f99-44be-81aa-79e520ff1a70","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+ready after 1935ms
+{"level":"info","msg":"request","requestId":"a4b9c124-4c62-4c53-a8bd-db3357e0e3c6","method":"POST","path":"/api/auth/login","status":200,"ms":153,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ca091d8a-d8ed-4b39-9d2a-1a630a21edbb","method":"POST","path":"/api/auth/change-password","status":200,"ms":447,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c92e4acd-cf09-4f8c-853c-64c7d7eae277","method":"POST","path":"/api/auth/login","status":200,"ms":334,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"955f3451-d9b8-48dd-aeb0-045020d074eb","method":"POST","path":"/api/auth/login","status":200,"ms":231,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"07428e46-73f1-48fe-9136-171da425871c","method":"POST","path":"/api/auth/login","status":200,"ms":186,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"953452b7-f8ed-4b62-82af-57b89860bb35","method":"POST","path":"/api/auth/login","status":200,"ms":164,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d7b137c7-9fcf-4fec-b51a-20fe2df7c80e","method":"POST","path":"/api/auth/login","status":200,"ms":168,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"501a39c5-7a91-4a1a-9476-649eedf399a3","method":"GET","path":"/api/requests/meta/form","status":200,"ms":29,"userId":3,"ip":"::1"}
+
+— salary components fix the total; bad input is refused —
+{"level":"info","msg":"request","requestId":"4bf839cb-4ad4-4fb8-8a0c-e6ad1811b187","method":"POST","path":"/api/requests","status":201,"ms":70,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5f90100f-95fb-4238-83c4-cce11cfe0ed5","method":"POST","path":"/api/requests/1/submit","status":200,"ms":144,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d49c6931-462c-41f3-a660-88da7d5bba70","method":"POST","path":"/api/requests/1/approve","status":200,"ms":61,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Letter Audit 1","messageId":"<d6607ecf-07fb-283e-dec8-af6b21394532@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Letter Audit 1","messageId":"<66568340-3a20-64c2-7ea4-9af30950a54e@localhost>"}
+{"level":"info","msg":"request","requestId":"cd726ae4-9d42-4537-9a1b-c18740e53c74","method":"POST","path":"/api/requests/1/assign","status":200,"ms":50,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Letter Audit 1","messageId":"<32a1e403-c1be-f797-255f-0bd0d56ac982@localhost>"}
+{"level":"info","msg":"request","requestId":"8ab31386-e4ed-4d22-804b-6e59061eb543","method":"POST","path":"/api/candidates","status":201,"ms":52,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Letter Audit 1","messageId":"<d0a61b29-8522-870c-776f-f2e2362fd3bd@localhost>"}
+{"level":"info","msg":"request","requestId":"66d0e390-6681-4ac1-ac39-f778125cb399","method":"POST","path":"/api/applications","status":201,"ms":67,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"30d0da62-fcd8-487e-8b3b-49583d533b56","method":"POST","path":"/api/applications/1/move","status":200,"ms":27,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e4767f30-e5bd-4700-b7ef-ebae68fdc6a5","method":"POST","path":"/api/offers","status":201,"ms":48,"userId":5,"ip":"::1"}
+  ✅ created with a breakdown (201)
+  ✅ the total is the sum of the components, whatever salaryOffered said
+  ✅ the components and title come back on the record
+{"level":"warn","msg":"request","requestId":"1b958032-33b1-4804-935f-1b4bad906c02","method":"PUT","path":"/api/offers/1","status":400,"ms":13,"userId":5,"ip":"::1"}
+  ✅ an unknown component is refused (400)
+{"level":"warn","msg":"request","requestId":"3a580a9e-4041-4baf-90dd-30d213253ec6","method":"PUT","path":"/api/offers/1","status":400,"ms":9,"userId":5,"ip":"::1"}
+  ✅ a negative amount is refused (400)
+{"level":"warn","msg":"request","requestId":"f5efd5dc-575e-4ba5-a3c4-a43592d38b6d","method":"PUT","path":"/api/offers/1","status":400,"ms":11,"userId":5,"ip":"::1"}
+  ✅ a breakdown without Basic Salary is refused (400)
+{"level":"warn","msg":"request","requestId":"f6ee08ba-8afe-4c27-b594-1c12089719ee","method":"PUT","path":"/api/offers/1","status":400,"ms":9,"userId":5,"ip":"::1"}
+  ✅ an unknown title is refused (400)
+{"level":"info","msg":"request","requestId":"5356de27-3392-4118-89cb-efdb47f06d76","method":"GET","path":"/api/offers/1","status":200,"ms":15,"userId":3,"ip":"::1"}
+  ✅ nothing changed after the refusals
+
+— the letter is the original, with only the variable fields changing —
+{"level":"info","msg":"request","requestId":"353e02b3-3384-40dc-8ece-9d99810eab73","method":"GET","path":"/api/offers/1/preview","status":200,"ms":14,"userId":3,"ip":"::1"}
+  ✅ preview renders (200, HTML)
+  ✅ every fixed passage of the originals is present verbatim
+  ✅ no wording from the old template survives (HR Director / 24159266 / Fax)
+  ✅ reference follows the originals: Re YY/HR/DM/MH-ofr/NNNNN
+  ✅ addressee, salutation and position are the offer's
+  ✅ total and each component are printed
+  ✅ both conditional footnotes appear when both rows do
+  ✅ no expiry → the standard 5 days
+{"level":"info","msg":"request","requestId":"a05271e0-d2f4-44e2-9bbe-9ea5caaa565b","method":"POST","path":"/api/requests","status":201,"ms":38,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2b3ddc0b-0d2c-4cda-bd1e-d3801a232d2b","method":"POST","path":"/api/requests/2/submit","status":200,"ms":50,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"324d33f0-2a8b-439d-9dfb-b5d6f0da564e","method":"POST","path":"/api/requests/2/approve","status":200,"ms":39,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00002 Approval needed: REQ-2026-00002 — Letter Audit 2","messageId":"<f7905f9c-db7c-42d3-8e59-70716cf3f8ee@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00002 Approval needed: REQ-2026-00002 — Letter Audit 2","messageId":"<c41fa2d4-70e3-1de9-b0e5-94f11433e4cd@localhost>"}
+{"level":"info","msg":"request","requestId":"753704a7-cb94-462f-a8e8-ae825f01faac","method":"POST","path":"/api/requests/2/assign","status":200,"ms":36,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00002 Approved: REQ-2026-00002 — Letter Audit 2","messageId":"<d29c8df2-8fbc-376c-ff8c-39f124e77b40@localhost>"}
+{"level":"info","msg":"request","requestId":"1e1359d7-470a-48b8-9db4-cdbcbaa0aa71","method":"POST","path":"/api/candidates","status":201,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00002 You’ve been assigned: REQ-2026-00002 — Letter Audit 2","messageId":"<16451d0a-2dd5-3d45-b502-749f65d142ac@localhost>"}
+{"level":"info","msg":"request","requestId":"7a1eb92b-cb3d-4b7a-bb01-59b1e49ed605","method":"POST","path":"/api/applications","status":201,"ms":32,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bb8260af-7c6e-49ef-a429-42ccd2b1c359","method":"POST","path":"/api/applications/2/move","status":200,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6a53c374-6bd8-4d44-a413-4acd37bddd64","method":"POST","path":"/api/offers","status":201,"ms":44,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b79bd7a7-232d-4c94-a338-d2380d7e0897","method":"GET","path":"/api/offers/2/preview","status":200,"ms":9,"userId":3,"ip":"::1"}
+  ✅ without an Area Allowance row, its footnote is absent
+  ✅ validity follows the expiry date (10 days)
+
+— salary permission and escaping —
+{"level":"warn","msg":"request","requestId":"89cc83c6-153d-49e3-846d-f92f694d6cd4","method":"GET","path":"/api/offers/1/preview","status":403,"ms":10,"userId":6,"ip":"::1"}
+  ✅ a role without offer salary view cannot open the letter (403)
+{"level":"info","msg":"request","requestId":"2b085980-b88f-4280-84e4-044cc6cd945c","method":"POST","path":"/api/requests","status":201,"ms":45,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"54716d46-a8c2-42de-b469-304869e9a1c0","method":"POST","path":"/api/requests/3/submit","status":200,"ms":84,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1ef11338-ac6f-4025-995b-bd8beca1abee","method":"POST","path":"/api/requests/3/approve","status":200,"ms":57,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00003 Approval needed: REQ-2026-00003 — Letter Audit 3","messageId":"<c2acd90f-5748-8be6-3379-1342829293ad@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00003 Approval needed: REQ-2026-00003 — Letter Audit 3","messageId":"<17a60cc3-7029-0c9a-3b09-636876038f20@localhost>"}
+{"level":"info","msg":"request","requestId":"96eb8d6f-5a4f-40d3-8b15-7f590dc39f08","method":"POST","path":"/api/requests/3/assign","status":200,"ms":43,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00003 Approved: REQ-2026-00003 — Letter Audit 3","messageId":"<473799b2-1af2-71d8-070c-9914744b9fad@localhost>"}
+{"level":"info","msg":"request","requestId":"17fbb5ec-1fbe-4746-a60d-0cb456c5a4c0","method":"POST","path":"/api/candidates","status":201,"ms":28,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00003 You’ve been assigned: REQ-2026-00003 — Letter Audit 3","messageId":"<f834601f-ceb4-ef10-cd55-94c7060c1265@localhost>"}
+{"level":"info","msg":"request","requestId":"4fe25adc-58cb-48ef-86d4-237c6487789d","method":"POST","path":"/api/applications","status":201,"ms":40,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0ce062e5-b64e-44f8-a976-d29280eb96e9","method":"POST","path":"/api/applications/3/move","status":200,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"106c27bf-abbc-4307-8291-de5833e5bacd","method":"POST","path":"/api/offers","status":201,"ms":32,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ab858665-8b59-4c84-842a-6a051f977b0b","method":"GET","path":"/api/offers/3/preview","status":200,"ms":8,"userId":3,"ip":"::1"}
+  ✅ variable text is HTML-escaped in the letter
+
+— the live Create-offer letter —
+{"level":"info","msg":"request","requestId":"47463612-805d-4490-82c5-524e2ed13a1c","method":"POST","path":"/api/offers/letter-draft","status":200,"ms":7,"userId":5,"ip":"::1"}
+  ✅ renders blanks for what is not entered yet
+  ✅ …and the entered amount
+{"level":"info","msg":"request","requestId":"347b5d15-8e8b-42d9-b229-54e3117658b8","method":"POST","path":"/api/offers/letter-draft","status":200,"ms":9,"userId":5,"ip":"::1"}
+  ✅ from an application it fills the candidate and the request's position
+  ✅ nothing is saved by the live letter
+{"level":"warn","msg":"request","requestId":"25bd5f24-fa2a-4046-90c3-3589647af02b","method":"POST","path":"/api/offers/letter-draft","status":403,"ms":6,"userId":6,"ip":"::1"}
+  ✅ a role without offer.create cannot use it (403)
+{"level":"info","msg":"request","requestId":"9ae39d2c-50f5-4966-8149-19228460ad01","method":"POST","path":"/api/auth/login","status":200,"ms":194,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"e09b6920-8dde-4d6e-893a-cea202eef0c4","method":"POST","path":"/api/offers/letter-draft","status":403,"ms":7,"userId":5,"ip":"::1"}
+  ✅ without salary view the live letter is refused (403)
+{"level":"warn","msg":"request","requestId":"f2e2e301-b493-47b2-bd1f-9378d3832a7e","method":"PUT","path":"/api/offers/1","status":403,"ms":10,"userId":5,"ip":"::1"}
+  ✅ without salary edit components are refused (403)
+{"level":"warn","msg":"request","requestId":"cf6dbbb2-1e5a-4c5a-928d-a1ef317124c4","method":"PUT","path":"/api/offers/1","status":403,"ms":7,"userId":5,"ip":"::1"}
+  ✅ …and benefits they cannot see cannot be changed (403)
+
+— re-approval: every contractual term, no administrative field —
+{"level":"info","msg":"request","requestId":"40d6e1f2-310a-419c-890e-32fb5c18f58b","method":"POST","path":"/api/requests","status":201,"ms":56,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1f0d08be-3a1e-49ec-a4a8-187e56e41850","method":"POST","path":"/api/requests/4/submit","status":200,"ms":60,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d59700e2-5dce-4339-a277-c1b6dc4d5c28","method":"POST","path":"/api/requests/4/approve","status":200,"ms":61,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00004 Approval needed: REQ-2026-00004 — Letter Audit 4","messageId":"<edfddf5f-c06b-edfa-cbe3-b1c76328be9c@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00004 Approval needed: REQ-2026-00004 — Letter Audit 4","messageId":"<d3c008c3-7fa7-2fb8-4e0d-b3fccd69c264@localhost>"}
+{"level":"info","msg":"request","requestId":"139e9db1-257b-4f61-ac74-10d634284741","method":"POST","path":"/api/requests/4/assign","status":200,"ms":39,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00004 Approved: REQ-2026-00004 — Letter Audit 4","messageId":"<a4a1bd15-e08c-bd62-c9c0-2290f39187cb@localhost>"}
+{"level":"info","msg":"request","requestId":"bfad4447-3d14-4f50-b06c-083afa1f611d","method":"POST","path":"/api/candidates","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00004 You’ve been assigned: REQ-2026-00004 — Letter Audit 4","messageId":"<58b27a20-ebca-5cbf-ad68-1931c1f5b722@localhost>"}
+{"level":"info","msg":"request","requestId":"d79b1607-b0a1-4092-a3f9-7ac7a4396661","method":"POST","path":"/api/applications","status":201,"ms":32,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4ea6cccf-e663-493a-8b67-c3875899edc0","method":"POST","path":"/api/applications/4/move","status":200,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3f88a490-5857-4ac3-b25f-f830bda440dc","method":"POST","path":"/api/offers","status":201,"ms":37,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3a14291b-824e-47e0-acb9-b266cea88683","method":"POST","path":"/api/offers/4/submit","status":200,"ms":57,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c391bb3d-d8d2-4f87-b318-fd982f496c8c","method":"POST","path":"/api/offers/4/approve","status":200,"ms":48,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<58909942-d92b-d198-29d6-b5ece4bb75fa@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<ff65a7f2-ea94-f456-b715-8aa35abb4505@localhost>"}
+{"level":"info","msg":"request","requestId":"856ab729-b90a-440b-bc7b-377f68201b42","method":"PUT","path":"/api/offers/4","status":200,"ms":53,"userId":5,"ip":"::1"}
+  ✅ salary breakdown change → back to approval
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00004 Synthetic Letter 4","messageId":"<867a13f1-d3c6-2c14-dc60-4a3d6ef0f455@localhost>"}
+{"level":"info","msg":"request","requestId":"bab6bf55-2858-4759-90af-9e38d615da47","method":"POST","path":"/api/requests","status":201,"ms":37,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<15f688c5-4c07-6a70-72ff-d0bfe301ce67@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00004","messageId":"<ca0f2dae-9504-f6fa-1526-5c42be71ffc0@localhost>"}
+{"level":"info","msg":"request","requestId":"7b95120d-472c-47ac-b0e5-9a2f28f9043b","method":"POST","path":"/api/requests/5/submit","status":200,"ms":59,"userId":3,"ip":"::1"}
+{"level":"info","msg":"frontend.compiled","ms":4029}
+{"level":"info","msg":"request","requestId":"046d631a-8f05-4ee1-86ba-88d52ee46a28","method":"POST","path":"/api/requests/5/approve","status":200,"ms":36,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00005 Approval needed: REQ-2026-00005 — Letter Audit 5","messageId":"<366ee14b-de46-d6b6-0908-840fcee7e80f@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00005 Approval needed: REQ-2026-00005 — Letter Audit 5","messageId":"<f3a07a67-48f5-4967-0ffb-b460b2c4a71c@localhost>"}
+{"level":"info","msg":"request","requestId":"bf89bc7b-fcf7-459d-8b4c-a0ebde2f6501","method":"POST","path":"/api/requests/5/assign","status":200,"ms":39,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00005 Approved: REQ-2026-00005 — Letter Audit 5","messageId":"<b59c4232-4b5d-99c0-8e35-f99d3fe5292d@localhost>"}
+{"level":"info","msg":"request","requestId":"470a710e-91fc-42fc-b0fa-eb1635d78143","method":"POST","path":"/api/candidates","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00005 You’ve been assigned: REQ-2026-00005 — Letter Audit 5","messageId":"<6390988f-5dbe-cdae-8a65-a2f7fe913680@localhost>"}
+{"level":"info","msg":"request","requestId":"4d7db291-e3c6-42f6-96f2-7df936ca541e","method":"POST","path":"/api/applications","status":201,"ms":35,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"de9a25fd-f95c-423d-9e46-4622c9bf5818","method":"POST","path":"/api/applications/5/move","status":200,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e9e74a6a-87ce-48fc-854d-e137ae9bc567","method":"POST","path":"/api/offers","status":201,"ms":34,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c641315a-cc6c-40b4-ab8b-dd79dfdcc30a","method":"POST","path":"/api/offers/5/submit","status":200,"ms":35,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"582340bf-c0cf-4e29-9adf-e79935799205","method":"POST","path":"/api/offers/5/approve","status":200,"ms":32,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<4296fd82-2b58-f088-6f7f-f74fe3c52a4c@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<82f6003f-8c0a-20eb-c2a9-b97cf15a3732@localhost>"}
+{"level":"info","msg":"request","requestId":"fc264b8b-b1d8-4777-a662-24ebf9f9c0e9","method":"PUT","path":"/api/offers/5","status":200,"ms":38,"userId":5,"ip":"::1"}
+  ✅ joining date change → back to approval
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00005 Synthetic Letter 5","messageId":"<e04eb63b-4300-595d-cc46-4747e54ade71@localhost>"}
+{"level":"info","msg":"request","requestId":"f069a464-f8b4-4099-b690-042af6a1d471","method":"POST","path":"/api/requests","status":201,"ms":27,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<50a7f147-2650-80c6-f350-2a3a71a1116b@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00005","messageId":"<4cad13f7-89b5-17dc-64df-d0dd2a3e0fef@localhost>"}
+{"level":"info","msg":"request","requestId":"c72236ff-13b5-4715-942b-f48d1cf445a9","method":"POST","path":"/api/requests/6/submit","status":200,"ms":33,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1b7caf96-0a4a-4996-9dbf-2d166463071d","method":"POST","path":"/api/requests/6/approve","status":200,"ms":26,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00006 Approval needed: REQ-2026-00006 — Letter Audit 6","messageId":"<1ddbeada-6bb7-c418-4fa7-234391df3b73@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00006 Approval needed: REQ-2026-00006 — Letter Audit 6","messageId":"<0fcb110e-014e-5880-4b57-d5bd613e334c@localhost>"}
+{"level":"info","msg":"request","requestId":"a3423434-1854-4265-b18b-a331bcdbcb51","method":"POST","path":"/api/requests/6/assign","status":200,"ms":30,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00006 Approved: REQ-2026-00006 — Letter Audit 6","messageId":"<44927f2c-5623-f6fd-e14a-b86ac2a9a880@localhost>"}
+{"level":"info","msg":"request","requestId":"c468f394-8dd7-40c5-a115-07baf5444b56","method":"POST","path":"/api/candidates","status":201,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00006 You’ve been assigned: REQ-2026-00006 — Letter Audit 6","messageId":"<0915e116-98ed-1b0e-c56f-8460904d0b4b@localhost>"}
+{"level":"info","msg":"request","requestId":"6b5478ed-8f23-4997-822f-5ad5cbc1ab6b","method":"POST","path":"/api/applications","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ef713d22-95b6-4cf4-a8ce-950b4aeabffc","method":"POST","path":"/api/applications/6/move","status":200,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"dbff87c2-adde-4eba-8415-c2088d96cd7d","method":"POST","path":"/api/offers","status":201,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b8423ee2-455e-4c38-90ea-332ff754c95e","method":"POST","path":"/api/offers/6/submit","status":200,"ms":27,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b57caba4-2ee9-48f9-9d9d-3d8d0ae562fb","method":"POST","path":"/api/offers/6/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00006","messageId":"<c3df680d-8ab6-d9ed-7e99-977a9288fab2@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00006","messageId":"<c93b956e-9410-25c0-a31b-258f289172d1@localhost>"}
+{"level":"info","msg":"request","requestId":"e60014c8-68fd-4c75-b19f-9f427d1c2d66","method":"PUT","path":"/api/offers/6","status":200,"ms":14,"userId":5,"ip":"::1"}
+  ✅ title change keeps the approval
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00006 Synthetic Letter 6","messageId":"<e8bc2085-028d-0265-b127-23abe924ff69@localhost>"}
+{"level":"info","msg":"request","requestId":"bfcd4387-f23b-4a30-96d3-30128077a553","method":"POST","path":"/api/requests","status":201,"ms":20,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f213034e-b254-4637-86c5-87d7d6d27038","method":"POST","path":"/api/requests/7/submit","status":200,"ms":28,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b1469f15-4814-4898-9419-8f32b8d0e403","method":"POST","path":"/api/requests/7/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00007 Approval needed: REQ-2026-00007 — Letter Audit 7","messageId":"<9a59895f-38a2-8d16-0fdc-d40f053863bc@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00007 Approval needed: REQ-2026-00007 — Letter Audit 7","messageId":"<0f5bc7aa-a5a0-ccdc-df54-4e92f3268698@localhost>"}
+{"level":"info","msg":"request","requestId":"c1a6ea56-0110-4b95-8207-06c4d793fbcd","method":"POST","path":"/api/requests/7/assign","status":200,"ms":24,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00007 Approved: REQ-2026-00007 — Letter Audit 7","messageId":"<399c2b53-c931-1519-b05c-983cd24b7724@localhost>"}
+{"level":"info","msg":"request","requestId":"5ec711ce-32ab-44c1-802f-15f359433b3b","method":"POST","path":"/api/candidates","status":201,"ms":16,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00007 You’ve been assigned: REQ-2026-00007 — Letter Audit 7","messageId":"<bab89dd2-0ee9-c82b-3bbf-51c4f22afcd7@localhost>"}
+{"level":"info","msg":"request","requestId":"43058656-7e72-46d5-a912-f6be747873b2","method":"POST","path":"/api/applications","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c3894848-5f74-4a2e-8ee2-2834bbf20383","method":"POST","path":"/api/applications/7/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b505b121-59df-497d-b856-5dbacc7c7a68","method":"POST","path":"/api/offers","status":201,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"52e4b77b-ef42-4c72-b1ee-cde7b10a9f1e","method":"POST","path":"/api/offers/7/submit","status":200,"ms":28,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6292e185-7b76-4646-9be8-272cb70a4233","method":"POST","path":"/api/offers/7/approve","status":200,"ms":24,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00007","messageId":"<04554e96-ac5c-01ec-d9f6-f71522c95486@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00007","messageId":"<96946e48-a9ce-8c75-2ba8-feabea221fa0@localhost>"}
+{"level":"info","msg":"request","requestId":"10e0ebee-b65b-427b-a098-cf122dc75389","method":"PUT","path":"/api/offers/7","status":200,"ms":13,"userId":5,"ip":"::1"}
+  ✅ salutation change keeps the approval
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00007 Synthetic Letter 7","messageId":"<ce82dbda-7d46-69a7-f34c-f4b1c37c76be@localhost>"}
+{"level":"info","msg":"request","requestId":"b156954b-8bfb-44e0-9fa9-14ac2c2c48c9","method":"POST","path":"/api/requests","status":201,"ms":20,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f4b96dec-d40b-4bbf-b243-62330371bd21","method":"POST","path":"/api/requests/8/submit","status":200,"ms":27,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6032b55b-074e-4ed5-a1bb-25ca0d16b588","method":"POST","path":"/api/requests/8/approve","status":200,"ms":22,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00008 Approval needed: REQ-2026-00008 — Letter Audit 8","messageId":"<6d7faae3-14fa-cfd2-d2d1-f8b09da2fb39@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00008 Approval needed: REQ-2026-00008 — Letter Audit 8","messageId":"<4fe8b88c-6538-ef3d-1b99-9c7672342020@localhost>"}
+{"level":"info","msg":"request","requestId":"37c661fe-e494-4629-bf91-2f71e7569620","method":"POST","path":"/api/requests/8/assign","status":200,"ms":23,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00008 Approved: REQ-2026-00008 — Letter Audit 8","messageId":"<7a2bfcea-ed50-4c61-85c2-551baef95ac4@localhost>"}
+{"level":"info","msg":"request","requestId":"1e0638e7-3339-4110-b254-e4702404a366","method":"POST","path":"/api/candidates","status":201,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00008 You’ve been assigned: REQ-2026-00008 — Letter Audit 8","messageId":"<787b1fb0-3b07-ce6f-e973-8c4a64037d81@localhost>"}
+{"level":"info","msg":"request","requestId":"d491fbed-7b00-4701-8793-74f3c8616ef7","method":"POST","path":"/api/applications","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"cddd3178-33b0-44d2-a036-e40fe54f1780","method":"POST","path":"/api/applications/8/move","status":200,"ms":12,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e6f43207-95b4-4aee-bf69-d16f1c030e90","method":"POST","path":"/api/offers","status":201,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ee1aa787-d5e0-4dfc-b881-85542bf9bf25","method":"POST","path":"/api/offers/8/submit","status":200,"ms":27,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"67636359-f09c-4c40-aba8-fada2d1f2d60","method":"POST","path":"/api/offers/8/approve","status":200,"ms":28,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00008","messageId":"<d28b25c2-0ffe-c0a5-fe3b-b440750b42f3@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00008","messageId":"<02820649-e9da-e004-ef07-f8d4854fa735@localhost>"}
+{"level":"info","msg":"request","requestId":"63e11e87-0afb-410b-b652-b7bfd9bff6e1","method":"PUT","path":"/api/offers/8","status":200,"ms":14,"userId":5,"ip":"::1"}
+  ✅ expiry change keeps the approval
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00008 Synthetic Letter 8","messageId":"<8d01e0b5-1023-7903-b43e-b32851f3586c@localhost>"}
+{"level":"info","msg":"request","requestId":"3554fe27-c233-46f4-88d9-984c4140526e","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0c097da7-17c1-42e6-8a4e-09db5591153e","method":"POST","path":"/api/requests/9/submit","status":200,"ms":29,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"065e012b-d8da-47c8-a851-e960eef73970","method":"POST","path":"/api/requests/9/approve","status":200,"ms":22,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00009 Approval needed: REQ-2026-00009 — Letter Audit 9","messageId":"<b9d776bd-0cdf-b37f-aaf7-00cf3bf7cdc0@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00009 Approval needed: REQ-2026-00009 — Letter Audit 9","messageId":"<29c0eced-5fe6-4637-b3b9-8fc481f1ced0@localhost>"}
+{"level":"info","msg":"request","requestId":"c5da360e-9564-4e4e-a7ea-ca676214ccfc","method":"POST","path":"/api/requests/9/assign","status":200,"ms":23,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00009 Approved: REQ-2026-00009 — Letter Audit 9","messageId":"<8568c591-4c3c-6411-4958-74e00739b230@localhost>"}
+{"level":"info","msg":"request","requestId":"a587d5d2-f8ec-4883-8d00-d5fe8691dfb7","method":"POST","path":"/api/candidates","status":201,"ms":16,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00009 You’ve been assigned: REQ-2026-00009 — Letter Audit 9","messageId":"<ba777c26-9466-3be0-c677-6ad0f2af16e6@localhost>"}
+{"level":"info","msg":"request","requestId":"11da5c47-6adf-4b71-8078-c5f18898de94","method":"POST","path":"/api/applications","status":201,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"76b8f896-3c84-415b-affa-1c024d7540c9","method":"POST","path":"/api/applications/9/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0a1267d6-6923-46b4-b55e-e967ed28f973","method":"POST","path":"/api/offers","status":201,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0d8adcec-9cea-46ad-b871-e523baec86d6","method":"POST","path":"/api/offers/9/submit","status":200,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9bb5a3dd-e93b-41a0-aa74-7242a6b5697c","method":"POST","path":"/api/offers/9/approve","status":200,"ms":24,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00009","messageId":"<0752feee-331e-7468-fd8b-b7452a75473b@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00009","messageId":"<c6210574-f9da-1de6-5bd7-923bb16a9bf5@localhost>"}
+{"level":"info","msg":"request","requestId":"79889a46-0762-4518-86d9-79bae04fe8f1","method":"PUT","path":"/api/offers/9","status":200,"ms":14,"userId":5,"ip":"::1"}
+  ✅ notes change keeps the approval
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00009 Synthetic Letter 9","messageId":"<ffb15888-ab66-27bc-1349-19d8c9c00ee1@localhost>"}
+{"level":"info","msg":"request","requestId":"3f35c719-149d-4c8a-9177-9c617d15d06e","method":"POST","path":"/api/requests","status":201,"ms":20,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9203f906-f7ef-497e-8015-646045152c1b","method":"POST","path":"/api/requests/10/submit","status":200,"ms":29,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5e6df724-c93f-43ab-a1e3-146557f726c0","method":"POST","path":"/api/requests/10/approve","status":200,"ms":22,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00010 Approval needed: REQ-2026-00010 — Letter Audit 10","messageId":"<c04de679-c131-1e36-0cc6-41d267c2356d@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00010 Approval needed: REQ-2026-00010 — Letter Audit 10","messageId":"<bcefa1fd-fab3-a17f-5937-c48b434a54ca@localhost>"}
+{"level":"info","msg":"request","requestId":"7afe4530-8a9a-4a86-8264-c2b47ce211ee","method":"POST","path":"/api/requests/10/assign","status":200,"ms":22,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00010 Approved: REQ-2026-00010 — Letter Audit 10","messageId":"<69f57e9a-b796-647a-ee17-b95dedb60120@localhost>"}
+{"level":"info","msg":"request","requestId":"d470cc7a-4741-4fc7-8a60-5ba7e4b5d1e8","method":"POST","path":"/api/candidates","status":201,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00010 You’ve been assigned: REQ-2026-00010 — Letter Audit 10","messageId":"<23579002-87b6-1c86-51a8-0dc15d7cc8ef@localhost>"}
+{"level":"info","msg":"request","requestId":"af8a54f6-fb63-421d-8a7c-c9f0e10fb59c","method":"POST","path":"/api/applications","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4794c9dd-d2a2-44c7-8367-9115865e25e5","method":"POST","path":"/api/applications/10/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8cb5947d-3026-4f35-be0d-a7088c2ce208","method":"POST","path":"/api/offers","status":201,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ca867850-1c1b-4624-9690-16f17e32b012","method":"POST","path":"/api/offers/10/submit","status":200,"ms":78,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"727010dd-6aeb-4d68-888b-72122fd7c19a","method":"POST","path":"/api/offers/10/approve","status":200,"ms":25,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00010","messageId":"<b72715a2-c0a8-342d-5e94-b97bb8365bf4@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00010","messageId":"<fa8ec88c-d05f-4008-d7f1-fdeb9e189e1e@localhost>"}
+{"level":"info","msg":"request","requestId":"be8d5758-a2ff-45ac-a9b2-64b71fdeaf6c","method":"PUT","path":"/api/offers/10","status":200,"ms":16,"userId":5,"ip":"::1"}
+  ✅ unchanged total resent change keeps the approval
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00010 Synthetic Letter 10","messageId":"<b3db8938-8585-7ab8-1248-73031a56161c@localhost>"}
+{"level":"info","msg":"request","requestId":"4b7ffdcf-07ca-4934-8caa-383b937e444e","method":"PUT","path":"/api/settings/system","status":200,"ms":8,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6e8d6f23-19a9-46f5-afea-7258c8e3ab54","method":"POST","path":"/api/requests","status":201,"ms":22,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"02529bb4-faf8-4ecb-bf05-d975b4cd4be4","method":"POST","path":"/api/requests/11/submit","status":200,"ms":29,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"52c30f54-94ca-470b-8898-c5f216f258bc","method":"POST","path":"/api/requests/11/approve","status":200,"ms":22,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00011 Approval needed: REQ-2026-00011 — Letter Audit 11","messageId":"<f3849126-ee04-1a95-6e5d-a392772fe793@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00011 Approval needed: REQ-2026-00011 — Letter Audit 11","messageId":"<94399f7e-a8a2-bbe6-7b37-491cce7568ed@localhost>"}
+{"level":"info","msg":"request","requestId":"b959af7c-e9a8-4aa5-849a-640b6daf1860","method":"POST","path":"/api/requests/11/assign","status":200,"ms":22,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00011 Approved: REQ-2026-00011 — Letter Audit 11","messageId":"<e8300525-1ef4-3fa0-2972-09e3d91110ea@localhost>"}
+{"level":"info","msg":"request","requestId":"b7c90449-af06-4d24-9d8b-2c6d76b47b90","method":"POST","path":"/api/candidates","status":201,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00011 You’ve been assigned: REQ-2026-00011 — Letter Audit 11","messageId":"<bbd04abf-cec8-5b7c-7540-f5ac0a6cc9eb@localhost>"}
+{"level":"info","msg":"request","requestId":"982d9c77-cd51-4e52-b5ec-091f860b3ff8","method":"POST","path":"/api/applications","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"48e3c6b7-a38b-4155-82b5-4bebda2c8e99","method":"POST","path":"/api/applications/11/move","status":200,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"95635de3-113a-4b5e-a6fd-ee60c1bbcd18","method":"POST","path":"/api/offers","status":201,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9c664cdc-4218-4021-ae1e-d8d2beab7ac4","method":"POST","path":"/api/offers/11/submit","status":200,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"36bc97c6-5af0-43ec-966c-1feceb5a4d76","method":"PUT","path":"/api/offers/11","status":200,"ms":16,"userId":5,"ip":"::1"}
+  ✅ with the approval step switched off, a terms change stays approved
+{"level":"info","msg":"request","requestId":"cd18593e-6c2d-4cd5-bf84-ca74fdb32404","method":"PUT","path":"/api/settings/system","status":200,"ms":7,"userId":1,"ip":"::1"}
+
+— send: issued and emailed are separate facts —
+{"level":"info","msg":"request","requestId":"cf888e08-0bd0-4cd1-943d-ab2ef0348334","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"98a14a96-0a9a-4a6a-95f6-1e1f5d342de2","method":"POST","path":"/api/requests/12/submit","status":200,"ms":28,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b7397307-5d93-4e49-b35e-05f60546e498","method":"POST","path":"/api/requests/12/approve","status":200,"ms":24,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00012 Approval needed: REQ-2026-00012 — Letter Audit 12","messageId":"<f98c9684-dbd5-37e1-ecb1-f17ed71d027c@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00012 Approval needed: REQ-2026-00012 — Letter Audit 12","messageId":"<0d99d6c2-7a8e-0a6c-68ef-ed2aebb1cb7d@localhost>"}
+{"level":"info","msg":"request","requestId":"cee30e3b-b258-49be-b99e-802dec4f4252","method":"POST","path":"/api/requests/12/assign","status":200,"ms":22,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00012 Approved: REQ-2026-00012 — Letter Audit 12","messageId":"<a1e01bc3-e82d-e72b-ae23-73a8fdf917f9@localhost>"}
+{"level":"info","msg":"request","requestId":"ad13f74c-d3fb-477b-b99e-958d1d218ed9","method":"POST","path":"/api/candidates","status":201,"ms":16,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00012 You’ve been assigned: REQ-2026-00012 — Letter Audit 12","messageId":"<d976527c-7636-cdd8-d9c9-023404bf47ca@localhost>"}
+{"level":"info","msg":"request","requestId":"0ff7f317-d97d-47f8-b861-ee2bd967ae88","method":"POST","path":"/api/applications","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"45191730-d214-4985-a85b-15ab41bbfe0b","method":"POST","path":"/api/applications/12/move","status":200,"ms":12,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ac79bcf6-541f-444f-bac3-a95d568d0647","method":"POST","path":"/api/offers","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8802ad46-6c3f-4590-bb84-7e93f6696d46","method":"POST","path":"/api/offers/12/submit","status":200,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0e1fa323-3ece-4fc1-b0c5-25f262618cd2","method":"POST","path":"/api/offers/12/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00012","messageId":"<550fd768-fbe0-1229-02dd-c26f5b569a1e@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00012","messageId":"<8b031755-d5a3-3410-b584-7c02b5830d04@localhost>"}
+{"level":"warn","msg":"request","requestId":"2284e0ef-cb00-4454-abba-4e0cd5069199","method":"POST","path":"/api/offers/12/send","status":409,"ms":8,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00012 Synthetic Letter 12","messageId":"<422c5886-c2f4-cedf-4d3c-91b0e55d67f7@localhost>"}
+{"level":"info","msg":"request","requestId":"d80043ad-b73a-4f61-bdd6-b6a2539720f6","method":"GET","path":"/api/offers/12","status":200,"ms":10,"userId":3,"ip":"::1"}
+  ✅ an expiry already passed is refused (409), nothing moves
+{"level":"info","msg":"request","requestId":"9b59e88e-f3f6-460b-8f3e-f062980d1625","method":"POST","path":"/api/requests","status":201,"ms":22,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2ac5d747-9f28-44aa-8d5a-e00ba32d1d14","method":"POST","path":"/api/requests/13/submit","status":200,"ms":33,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fc695bbc-e7dc-4a74-87ce-8873a9914ded","method":"POST","path":"/api/requests/13/approve","status":200,"ms":22,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00013 Approval needed: REQ-2026-00013 — Letter Audit 13","messageId":"<19028d6b-0385-cc17-3590-547b9bfc2a9f@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00013 Approval needed: REQ-2026-00013 — Letter Audit 13","messageId":"<ac929180-42b5-3fbc-0b77-cad1814e9e33@localhost>"}
+{"level":"info","msg":"request","requestId":"e9f0c279-03ab-4893-8061-661a0f0d5149","method":"POST","path":"/api/requests/13/assign","status":200,"ms":27,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00013 Approved: REQ-2026-00013 — Letter Audit 13","messageId":"<55ccdd17-3638-cf06-3126-c9b58eb62e39@localhost>"}
+{"level":"info","msg":"request","requestId":"dfd47cf2-4eae-4ed1-891b-9cf00abe01f2","method":"POST","path":"/api/candidates","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00013 You’ve been assigned: REQ-2026-00013 — Letter Audit 13","messageId":"<6c7b91b8-fa4a-fed2-ceee-996f25124d1b@localhost>"}
+{"level":"info","msg":"request","requestId":"8324f977-d031-4a30-b114-3a41e42a1215","method":"POST","path":"/api/applications","status":201,"ms":29,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c8af53fa-4299-4ca2-b4e6-35ec1fd8457f","method":"POST","path":"/api/applications/13/move","status":200,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7bf715b9-f24c-4873-8ad2-584eb4c89421","method":"POST","path":"/api/offers","status":201,"ms":25,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8807c10e-631b-4960-8bd8-8362498aa44a","method":"POST","path":"/api/offers/13/submit","status":200,"ms":25,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1924190f-4362-48a2-bbb8-4b212dec3915","method":"POST","path":"/api/offers/13/approve","status":200,"ms":25,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00013","messageId":"<f2dec9e8-6a9b-da67-d48c-fae0f280098c@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00013","messageId":"<1b96a21e-8a07-8b79-8af1-cb2715cc9348@localhost>"}
+{"level":"info","msg":"request","requestId":"67761ad3-b3fc-44ee-930e-064204ddc45e","method":"POST","path":"/api/offers/13/send","status":200,"ms":27,"userId":3,"ip":"::1"}
+  ✅ send succeeds (200) and reports an email queued, not delivered
+  ✅ no expiry → the record gets the 5-day expiry the letter states
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00013 Synthetic Letter 13","messageId":"<ada6e9c1-eb69-7c23-6884-a4db3f2050c1@localhost>"}
+{"level":"info","msg":"request","requestId":"cf382e68-4fb0-4536-b53e-1030818ddbb8","method":"GET","path":"/api/offers/13/preview","status":200,"ms":6,"userId":3,"ip":"::1"}
+  ✅ the issued letter is marked issued and still says 5 days
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"letter-13@example.invalid","subject":"Job Offer — Senior Document Controller — Re 26/HR/DM/MH-ofr/00013","messageId":"<bfa7899a-6013-8c93-8603-c3e6bcc6de52@localhost>"}
+  ✅ the candidate activity records the real outcome once the mailer finished
+{"level":"info","msg":"request","requestId":"c77e43eb-fa97-425a-a4d2-57324047ef44","method":"POST","path":"/api/requests","status":201,"ms":24,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b1378b08-46f8-4cf7-b326-02aa61eb682d","method":"POST","path":"/api/requests/14/submit","status":200,"ms":28,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"795dcc16-d1c1-4630-b29e-1c28ee8957fc","method":"POST","path":"/api/requests/14/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00014 Approval needed: REQ-2026-00014 — Letter Audit 14","messageId":"<3542fe61-b3ed-9ec4-459a-03c9daf920ce@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00014 Approval needed: REQ-2026-00014 — Letter Audit 14","messageId":"<e2521ab6-861a-2c67-5fd1-2ad78c0afc4e@localhost>"}
+{"level":"info","msg":"request","requestId":"8982f949-172c-4cb4-ba24-0358d3ea98aa","method":"POST","path":"/api/requests/14/assign","status":200,"ms":23,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00014 Approved: REQ-2026-00014 — Letter Audit 14","messageId":"<c79efb8e-5356-68c0-eb63-7275b1f09ff5@localhost>"}
+{"level":"info","msg":"request","requestId":"e72e65f3-463e-458d-86b4-6acbd66a74dc","method":"POST","path":"/api/candidates","status":201,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00014 You’ve been assigned: REQ-2026-00014 — Letter Audit 14","messageId":"<5a7dda6d-a14f-f75a-bdbc-327d13c343f0@localhost>"}
+{"level":"info","msg":"request","requestId":"0443262e-d2da-4b22-992f-4005b4ed7448","method":"POST","path":"/api/applications","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6743b914-9829-4482-bb58-3a92dbc33052","method":"POST","path":"/api/applications/14/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"50f6fca1-a2a8-4b39-a229-506339394ef2","method":"POST","path":"/api/offers","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"198d674d-ce96-44da-827f-b58c06d65265","method":"POST","path":"/api/offers/14/submit","status":200,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"28cf065d-e137-4475-aa61-ce76f89ad7eb","method":"POST","path":"/api/offers/14/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00014","messageId":"<a33f40e7-308b-035d-57b8-17f19857f1c9@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00014","messageId":"<0f352310-6e4c-5d7d-b721-cfb0413494c7@localhost>"}
+{"level":"info","msg":"request","requestId":"034f6d83-f176-456a-bd7d-f91c6a95519f","method":"POST","path":"/api/offers/14/send","status":200,"ms":26,"userId":3,"ip":"::1"}
+  ✅ a candidate without an email: issued, and the response says no email went
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00014 Synthetic Letter 14","messageId":"<d713855a-4ae7-0b8d-9850-375fb1660ae3@localhost>"}
+  ✅ …and nothing claims an email was sent
+{"level":"info","msg":"request","requestId":"d90ac6d0-8412-45cf-b2d1-8ce553910dde","method":"GET","path":"/api/offers/14","status":200,"ms":24,"userId":3,"ip":"::1"}
+  ✅ the offer activity records "No email sent" with the reason
+
+— a sent offer is corrected by withdrawal and a new offer —
+{"level":"warn","msg":"request","requestId":"f934a475-a66e-478d-83cd-cd11c028798f","method":"PUT","path":"/api/offers/13","status":409,"ms":9,"userId":5,"ip":"::1"}
+  ✅ the sent offer cannot be edited (409)
+{"level":"info","msg":"request","requestId":"dd68e917-68b3-49e6-8159-51c744f5f2d2","method":"POST","path":"/api/offers/13/result","status":200,"ms":22,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0a0a0e9f-740e-4d33-b66a-07820a62e333","method":"POST","path":"/api/offers","status":201,"ms":21,"userId":5,"ip":"::1"}
+  ✅ a new offer can be prepared for the same application
+{"level":"info","msg":"request","requestId":"1a9c375c-ffee-4a94-8887-adb22e9b6862","method":"POST","path":"/api/offers/15/submit","status":200,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"91bd127f-95d4-49ad-be96-109fb802d3cc","method":"POST","path":"/api/offers/15/approve","status":200,"ms":28,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00015","messageId":"<b21a6b47-707b-3561-e733-6650b64b434f@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00015","messageId":"<3624a662-68cd-e6bf-a009-52e208390222@localhost>"}
+{"level":"info","msg":"request","requestId":"7d44ab2a-5859-4762-b560-66e6a2c704d3","method":"POST","path":"/api/offers/15/send","status":200,"ms":24,"userId":3,"ip":"::1"}
+  ✅ …approved and sent as the corrected offer
+
+— a declined offer never overwrites a rejected application —
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00015 Synthetic Letter 13","messageId":"<9bf958b5-0c77-29b5-555c-1ee9bc0ff7ed@localhost>"}
+{"level":"info","msg":"request","requestId":"1d8c8136-b2be-4287-ac88-841b6c0018f3","method":"POST","path":"/api/requests","status":201,"ms":23,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"letter-13@example.invalid","subject":"Job Offer — Letter Audit 13 — Re 26/HR/DM/MH-ofr/00015","messageId":"<3d11ac81-f091-9b57-1f3a-1fde5806d51a@localhost>"}
+{"level":"info","msg":"request","requestId":"7d904f0d-61c2-42e5-8246-e2c91dd2ae4b","method":"POST","path":"/api/requests/15/submit","status":200,"ms":34,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7a37785e-0849-4a27-ade0-15c33b23f942","method":"POST","path":"/api/requests/15/approve","status":200,"ms":25,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00015 Approval needed: REQ-2026-00015 — Letter Audit 15","messageId":"<9c1a5123-b24d-b8af-5c92-42c333b30605@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00015 Approval needed: REQ-2026-00015 — Letter Audit 15","messageId":"<73bc62ab-b728-a087-5923-bf1a75c45a42@localhost>"}
+{"level":"info","msg":"request","requestId":"321022ed-4c2a-435a-ae27-6425cb9d31b0","method":"POST","path":"/api/requests/15/assign","status":200,"ms":24,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00015 Approved: REQ-2026-00015 — Letter Audit 15","messageId":"<2551c8db-6ffe-f8ab-5212-ea799ff64c1e@localhost>"}
+{"level":"info","msg":"request","requestId":"02bdef78-eeaf-4a80-829d-491d89ff3141","method":"POST","path":"/api/candidates","status":201,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00015 You’ve been assigned: REQ-2026-00015 — Letter Audit 15","messageId":"<4126cb69-3c40-e083-fd49-3e9205978b04@localhost>"}
+{"level":"info","msg":"request","requestId":"fc61ef1e-7f0e-4d7c-840d-78f1ceb6ecc4","method":"POST","path":"/api/applications","status":201,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"04f8f943-26e7-4fb7-900b-f643ae164558","method":"POST","path":"/api/applications/15/move","status":200,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e52633a7-64af-4172-b163-1c8aac8d7ae5","method":"POST","path":"/api/offers","status":201,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"90fad997-12a2-4f61-a4e5-81e49a2991c9","method":"POST","path":"/api/offers/16/submit","status":200,"ms":25,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"16a0592b-f7f5-4c55-a8e3-695f3dfcaa6d","method":"POST","path":"/api/offers/16/approve","status":200,"ms":24,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00016","messageId":"<72245e77-67c8-f5b0-926e-eb90151d485b@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00016","messageId":"<82e7dd5b-51e8-7f66-bcf0-161cbd62508a@localhost>"}
+{"level":"info","msg":"request","requestId":"2d6a8128-30e2-44d3-9302-c6e4df5cf41f","method":"POST","path":"/api/offers/16/send","status":200,"ms":24,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00016 Synthetic Letter 15","messageId":"<559f0496-a78d-d963-fecf-bad692e79538@localhost>"}
+{"level":"info","msg":"request","requestId":"fe88ba00-0963-4949-9db4-2994ae870a98","method":"POST","path":"/api/applications/15/move","status":200,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d7587c45-637c-4ba9-947d-10566048dd54","method":"POST","path":"/api/offers/16/result","status":200,"ms":18,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"letter-15@example.invalid","subject":"Job Offer — Senior Document Controller — Re 26/HR/DM/MH-ofr/00016","messageId":"<a6c96a67-12cb-694a-df0e-5c13da14cd6b@localhost>"}
+{"level":"info","msg":"request","requestId":"2f67ec64-b2d3-48a8-b61c-4e2baebbe1d9","method":"GET","path":"/api/applications/15","status":200,"ms":9,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer declined — Synthetic Letter 15","messageId":"<d5b00459-762f-24d6-dc1a-2e3724d19124@localhost>"}
+  ✅ the application stays Rejected
+
+— interviews: canonical terminals, legacy aliases, override kept —
+{"level":"info","msg":"request","requestId":"f61cb02f-a62a-4e6a-987a-e9be47c25a5b","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d8df80aa-7dd4-4fc5-868d-068925badf1d","method":"POST","path":"/api/requests/16/submit","status":200,"ms":28,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"34d093bd-9e63-4bc5-9906-985386cb38d0","method":"POST","path":"/api/requests/16/approve","status":200,"ms":25,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00016 Approval needed: REQ-2026-00016 — Letter Audit 16","messageId":"<1f433e44-fda0-7c60-5659-93e7245f3e57@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00016 Approval needed: REQ-2026-00016 — Letter Audit 16","messageId":"<a32bc6cf-4b65-5889-6ac6-d0c1fcda55e3@localhost>"}
+{"level":"info","msg":"request","requestId":"474e682d-79b8-44bd-ab0d-55b1c4f9a6da","method":"POST","path":"/api/requests/16/assign","status":200,"ms":24,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00016 Approved: REQ-2026-00016 — Letter Audit 16","messageId":"<85bd286d-9144-f4a8-033f-b3bf76edb980@localhost>"}
+{"level":"info","msg":"request","requestId":"c3880a0c-092a-4440-bc5a-c75b8c7e5bac","method":"POST","path":"/api/candidates","status":201,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00016 You’ve been assigned: REQ-2026-00016 — Letter Audit 16","messageId":"<02fe052d-a7a6-9c96-65f1-0982874349d7@localhost>"}
+{"level":"info","msg":"request","requestId":"891855d6-0bcf-4c01-b110-1ba0ae79a263","method":"POST","path":"/api/applications","status":201,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1e58cd50-04e2-4120-ab46-3f8d7668cb31","method":"POST","path":"/api/applications/16/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e70e8527-9545-401c-896a-a7ba796d4b2b","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":6,"userId":5,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"7190124f-d180-4e9e-bdc1-fd9808148d15","method":"POST","path":"/api/interviews","status":409,"ms":6,"userId":5,"ip":"::1"}
+  ✅ a legacy "withdrawn" application is treated as Rejected (409)
+{"level":"warn","msg":"request","requestId":"b966140c-b6db-4069-9044-5e96ba076526","method":"POST","path":"/api/interviews","status":403,"ms":17,"userId":5,"ip":"::1"}
+  ✅ override without candidate.merge is refused (403)
+{"level":"warn","msg":"request","requestId":"ba71e414-033a-42ca-8bf8-8684316304d3","method":"POST","path":"/api/interviews","status":400,"ms":12,"userId":3,"ip":"::1"}
+  ✅ override without a reason is refused (400)
+{"level":"info","msg":"request","requestId":"dbcd91e2-7a5b-4816-b0fa-56af7162bae9","method":"POST","path":"/api/interviews","status":201,"ms":77,"userId":3,"ip":"::1"}
+  ✅ authorized override with a reason still schedules (201)
+
+— a closed or cancelled request has no position to offer —
+{"level":"info","msg":"request","requestId":"607821d5-eb21-4589-a603-710422556427","method":"POST","path":"/api/requests","status":201,"ms":34,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Interview invitation","messageId":"<91bf1982-b1ad-76e9-01f2-db617c92fed5@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"letter-16@example.invalid","subject":"Interview invitation","messageId":"<6611fac5-cf54-4d9b-7ace-0a1978cce2d0@localhost>"}
+{"level":"info","msg":"request","requestId":"e5de298e-73fe-4c33-8630-6b23829619cd","method":"POST","path":"/api/requests/17/submit","status":200,"ms":38,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"37157008-3fec-4b0b-8668-a1d72eadd060","method":"POST","path":"/api/requests/17/approve","status":200,"ms":25,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00017 Approval needed: REQ-2026-00017 — Letter Audit 17","messageId":"<c99762aa-d8d7-6b38-c745-ca1b54552e00@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00017 Approval needed: REQ-2026-00017 — Letter Audit 17","messageId":"<856a4efb-7ad6-679c-e315-688273d01765@localhost>"}
+{"level":"info","msg":"request","requestId":"57566d4b-4413-483f-b4b3-67d18db62a2a","method":"POST","path":"/api/requests/17/assign","status":200,"ms":30,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00017 Approved: REQ-2026-00017 — Letter Audit 17","messageId":"<4ee6832a-1175-1988-da74-8de8001e23fa@localhost>"}
+{"level":"info","msg":"request","requestId":"2fbd3621-f443-4108-bf72-0ad7eb970da4","method":"POST","path":"/api/candidates","status":201,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00017 You’ve been assigned: REQ-2026-00017 — Letter Audit 17","messageId":"<1077bea8-cc44-9977-0a36-6ce3afbea5d6@localhost>"}
+{"level":"info","msg":"request","requestId":"3612ceb9-c977-4e7a-8fcc-c03d1b0791aa","method":"POST","path":"/api/applications","status":201,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bf90a3ec-142f-4974-9690-7bca5c54e27d","method":"POST","path":"/api/applications/17/move","status":200,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8c3050f6-4af2-44db-9cfa-9f4b8a18d2f9","method":"POST","path":"/api/offers","status":201,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b8241574-217c-4e4b-bd3a-32d87657347d","method":"POST","path":"/api/offers/17/submit","status":200,"ms":23,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"db4f5ab5-b73d-4ad8-a6be-15fabfaec96f","method":"POST","path":"/api/offers/17/approve","status":200,"ms":22,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00017","messageId":"<f781411c-91e3-f56b-1930-89af357e3b8d@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00017","messageId":"<a17451d6-65a7-4ceb-e858-3e026f7f45e4@localhost>"}
+{"level":"info","msg":"request","requestId":"22259836-98cf-4701-acfc-3dbfb68d6eab","method":"POST","path":"/api/requests/17/cancel","status":200,"ms":24,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00017 Synthetic Letter 17","messageId":"<c1e9481e-a763-842d-aea7-b4cfcd13b826@localhost>"}
+{"level":"warn","msg":"request","requestId":"04693214-50c4-4a00-bb49-6876b7f130b4","method":"POST","path":"/api/offers/17/send","status":409,"ms":5,"userId":3,"ip":"::1"}
+  ✅ sending an approved offer on a cancelled request is refused (409)
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Cancelled — REQ-2026-00017 Cancelled: REQ-2026-00017 — Letter Audit 17","messageId":"<660227e9-575d-a0c9-3115-e4cf07dfd440@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Cancelled — REQ-2026-00017 Cancelled: REQ-2026-00017 — Letter Audit 17","messageId":"<a9dd7cc5-ef6e-f4b5-c427-fbfad4b20f51@localhost>"}
+{"level":"info","msg":"request","requestId":"3f78981d-568f-4a7b-bd51-c4701648ee35","method":"GET","path":"/api/offers/17","status":200,"ms":9,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a5335ba3-4ca4-487b-b8a6-d249a21a9a73","method":"GET","path":"/api/applications/17","status":200,"ms":8,"userId":5,"ip":"::1"}
+  ✅ …the offer stays approved and the application unchanged
+{"level":"info","msg":"request","requestId":"0b13f951-d061-49ef-ad7b-72cc50a80778","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ca532dae-c21c-4347-806d-76c99a181638","method":"POST","path":"/api/requests/18/submit","status":200,"ms":45,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b06efad8-7a5d-4fe8-a25b-0822463f6d22","method":"POST","path":"/api/requests/18/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00018 Approval needed: REQ-2026-00018 — Letter Audit 18","messageId":"<e8b6679c-a895-c93c-99d3-58433336f4a9@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00018 Approval needed: REQ-2026-00018 — Letter Audit 18","messageId":"<cbf09116-e891-a1a9-da07-5b23c811cb72@localhost>"}
+{"level":"info","msg":"request","requestId":"36415223-d0f0-4f55-8b36-7f2a8ca5e94e","method":"POST","path":"/api/requests/18/assign","status":200,"ms":25,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00018 Approved: REQ-2026-00018 — Letter Audit 18","messageId":"<9f1bcd1d-f52e-9776-fa13-a2d9335d6357@localhost>"}
+{"level":"info","msg":"request","requestId":"ce680979-a8ab-4486-b871-2f398b4199e3","method":"POST","path":"/api/candidates","status":201,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00018 You’ve been assigned: REQ-2026-00018 — Letter Audit 18","messageId":"<be579fce-8f09-768c-2345-63fdacedfc5f@localhost>"}
+{"level":"info","msg":"request","requestId":"5ed8df08-6208-403d-8f84-7379ef1bccba","method":"POST","path":"/api/applications","status":201,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7d6554e8-3bff-49c5-aef1-6a687f4fad9c","method":"POST","path":"/api/applications/18/move","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0aad778d-1368-4200-979d-18c6da4c8ec5","method":"POST","path":"/api/offers","status":201,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ef06f8f5-e492-4e6e-8eb1-3935a138f155","method":"POST","path":"/api/offers/18/submit","status":200,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"17aa7b32-11b1-4f3c-8c0e-6f226896df90","method":"POST","path":"/api/offers/18/approve","status":200,"ms":23,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00018","messageId":"<a0569912-f2d6-3239-4ad2-1fee9eb900c1@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00018","messageId":"<200b6ffa-0a72-6ad4-9c10-177a6a3ba46e@localhost>"}
+{"level":"info","msg":"request","requestId":"f690fd94-a184-4f9f-8d96-27ad419b0ddb","method":"POST","path":"/api/requests/18/close","status":200,"ms":23,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00018 Synthetic Letter 18","messageId":"<5a85192a-2aad-7907-60f4-80d93f3ef31a@localhost>"}
+{"level":"warn","msg":"request","requestId":"5b27dc74-1b44-4209-90dc-df6bf2b7e2f1","method":"POST","path":"/api/offers/18/send","status":409,"ms":6,"userId":3,"ip":"::1"}
+  ✅ sending an approved offer on a closed request is refused (409)
+{"level":"info","msg":"request","requestId":"580ce95c-6084-4d48-81ca-e39190239c8e","method":"GET","path":"/api/offers/18","status":200,"ms":10,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"480ed4f8-4eac-4e12-951a-e4cafdc22382","method":"GET","path":"/api/applications/18","status":200,"ms":7,"userId":5,"ip":"::1"}
+  ✅ …the offer stays approved and the application unchanged
+{"level":"info","msg":"request","requestId":"ecc67348-f89d-43d8-ba7a-a4df187ef1a2","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6bec43e8-23fa-4c1f-92eb-a86e73168fc7","method":"POST","path":"/api/requests/19/submit","status":200,"ms":30,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"797c2d36-ff37-4d22-8703-488fcf913ca3","method":"POST","path":"/api/requests/19/approve","status":200,"ms":28,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00019 Approval needed: REQ-2026-00019 — Letter Audit 19","messageId":"<3a78ffed-a087-386d-f372-fd5edabd30e5@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00019 Approval needed: REQ-2026-00019 — Letter Audit 19","messageId":"<ad75ca1d-0b1d-9577-f28f-a49785dac504@localhost>"}
+{"level":"info","msg":"request","requestId":"c81d9249-bef1-4b5d-98ec-c3a5357b56bb","method":"POST","path":"/api/requests/19/assign","status":200,"ms":24,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00019 Approved: REQ-2026-00019 — Letter Audit 19","messageId":"<75d3de41-b072-d2e4-ff1d-d3490902bec5@localhost>"}
+{"level":"info","msg":"request","requestId":"770636d5-06e6-4d04-ad93-61f98b3e5293","method":"POST","path":"/api/candidates","status":201,"ms":16,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00019 You’ve been assigned: REQ-2026-00019 — Letter Audit 19","messageId":"<51e549aa-0504-cb73-8fb3-39caf5842669@localhost>"}
+{"level":"info","msg":"request","requestId":"00a1f198-0c84-4b9e-8bd2-ed16f8759fb9","method":"POST","path":"/api/applications","status":201,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1def469e-0786-4042-8e2a-8f5c30720280","method":"POST","path":"/api/applications/19/move","status":200,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0037e963-f95d-42e9-ac53-57b28646e4b3","method":"POST","path":"/api/requests/19/cancel","status":200,"ms":28,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"50a8b78e-933b-4467-bb44-738cd0de718b","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Cancelled — REQ-2026-00019 Cancelled: REQ-2026-00019 — Letter Audit 19","messageId":"<25323da2-8c1d-c99b-db8c-a5fa485c8ae3@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Cancelled — REQ-2026-00019 Cancelled: REQ-2026-00019 — Letter Audit 19","messageId":"<dbbd7cf2-d45f-eab7-c7f0-fa9ca3046c06@localhost>"}
+{"level":"warn","msg":"request","requestId":"de26a87f-0f9c-4e20-b00f-3f0f5eca049a","method":"POST","path":"/api/interviews","status":409,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c783cf68-1b99-43dd-8930-14ac9b66ab66","method":"GET","path":"/api/interviews/application/19","status":200,"ms":6,"userId":5,"ip":"::1"}
+  ✅ scheduling for a cancelled request is refused (409), nothing created
+{"level":"info","msg":"request","requestId":"13fed8bb-7d78-4490-b495-32d12e698ff2","method":"POST","path":"/api/interviews","status":201,"ms":28,"userId":3,"ip":"::1"}
+  ✅ …an authorized override with a reason still schedules (201)
+{"level":"warn","msg":"request","requestId":"8cf9e0ff-a873-401d-b655-60ab132f771d","method":"POST","path":"/api/offers","status":409,"ms":6,"userId":5,"ip":"::1"}
+  ✅ creating an offer for a cancelled request is refused (409)
+{"level":"info","msg":"request","requestId":"9820cc03-642b-4156-8463-077b34873982","method":"POST","path":"/api/requests","status":201,"ms":21,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Interview invitation","messageId":"<d2b6cec1-4f45-ea1b-1dcc-4a9b96dba8a6@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"letter-19@example.invalid","subject":"Interview invitation","messageId":"<c17c940c-7bf9-20a3-3678-82d1023b3f92@localhost>"}
+{"level":"info","msg":"request","requestId":"f32847e7-9c27-4fdd-9a7f-5941dcfba9cf","method":"POST","path":"/api/requests/20/submit","status":200,"ms":33,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9a3dcc91-82dd-4349-b292-bc513b679c6c","method":"POST","path":"/api/requests/20/approve","status":200,"ms":26,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00020 Approval needed: REQ-2026-00020 — Letter Audit 20","messageId":"<554cdf3e-8be5-633c-bdfd-35a15e2d7972@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00020 Approval needed: REQ-2026-00020 — Letter Audit 20","messageId":"<4100e720-a17b-3eee-d326-25fa8aa3f2d6@localhost>"}
+{"level":"info","msg":"request","requestId":"1dd3217c-23e6-4960-8814-1eae047c82db","method":"POST","path":"/api/requests/20/assign","status":200,"ms":27,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00020 Approved: REQ-2026-00020 — Letter Audit 20","messageId":"<9411e297-160b-137f-99d4-a3682578b8d2@localhost>"}
+{"level":"info","msg":"request","requestId":"3d2c3a2b-c8cc-4349-b43e-169f5670c397","method":"POST","path":"/api/candidates","status":201,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00020 You’ve been assigned: REQ-2026-00020 — Letter Audit 20","messageId":"<6924cf01-7818-df49-90d3-aad151e89b9a@localhost>"}
+{"level":"info","msg":"request","requestId":"022a0a29-11d8-46b0-85bc-fd20eeee0687","method":"POST","path":"/api/applications","status":201,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0d880f90-967c-4cdb-8cdc-0619f283405f","method":"POST","path":"/api/applications/20/move","status":200,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8db0293b-00cd-41e6-8230-96d71869100b","method":"POST","path":"/api/offers","status":201,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a0af5cba-a0aa-4f5d-9e80-bb8caacda713","method":"POST","path":"/api/offers/19/submit","status":200,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5c50aac1-133e-4cbf-80b6-e8d09495c032","method":"POST","path":"/api/offers/19/approve","status":200,"ms":27,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00019","messageId":"<94338990-bae1-0665-93cd-8c1ad606625c@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00019","messageId":"<91c3e6d0-c1e5-6dee-0986-35948a875926@localhost>"}
+{"level":"info","msg":"request","requestId":"e3d44968-48d5-4d4b-b34e-b7c5c462ed55","method":"POST","path":"/api/requests/20/hold","status":200,"ms":22,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00019 Synthetic Letter 20","messageId":"<e0e56623-8d6b-d35b-1c7a-68bf688fa0c1@localhost>"}
+{"level":"info","msg":"request","requestId":"33d5cc14-a4eb-489d-9062-061095eee01a","method":"POST","path":"/api/offers/19/send","status":200,"ms":34,"userId":3,"ip":"::1"}
+  ✅ on hold is a policy question, not changed here: send still allowed (200)
+
+=== OFFER LETTER & HANDOFFS: 60 passed, 0 failed ===
+
+
+──────── assessment_team_edit_test.mjs (PostgreSQL arabtec_scratch_test_20261005085558_assessment_team_edit) ────────
+  • Schema: added 59 new permission(s) [dashboard.view, request.view_all, request.view_own, request.view_team, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"postgres","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+
+🏗️  Arabtec Recruitment Hub listening on 4384 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 59 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"info","msg":"schema.request_control_policy","removed":[],"granted":0}
+{"level":"error","msg":"request","requestId":"1e2cfb3b-7c47-4e9b-ae7c-4701e6394c0c","method":"GET","path":"/api/auth/me","status":503,"ms":4,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"17185264-a4fb-4d80-97b9-59dede3b4ba1","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4384/api/health
+
+{"level":"warn","msg":"request","requestId":"18f13f1f-b479-4281-912d-0544187b4ebb","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+ready after 1786ms
+{"level":"info","msg":"request","requestId":"7a418a65-5334-4430-a82c-71bc8c4ed90b","method":"POST","path":"/api/auth/login","status":200,"ms":143,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f074e0f7-c11d-43cf-9aab-6b2eda705552","method":"POST","path":"/api/auth/change-password","status":200,"ms":267,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"aa604d48-9e4f-4f5c-b8be-15a859d8f0dd","method":"POST","path":"/api/auth/login","status":200,"ms":162,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"67f3c07a-72aa-4f1e-ac31-eb12fe6b136f","method":"POST","path":"/api/auth/login","status":200,"ms":178,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"54d15cba-6df6-480c-ba34-3c18f493390c","method":"POST","path":"/api/auth/login","status":200,"ms":193,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c02d022e-5539-4b70-b269-dddd828b8246","method":"POST","path":"/api/auth/login","status":200,"ms":155,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"dda59209-e7cf-4332-97d0-a6c6b6624758","method":"POST","path":"/api/auth/login","status":200,"ms":151,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"19c40d6d-f84d-4fdd-8604-1e72c05ddd70","method":"POST","path":"/api/auth/login","status":200,"ms":187,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9c5cd6d0-45ea-47b0-8cf5-2ef350fda9a6","method":"GET","path":"/api/requests/meta/form","status":200,"ms":28,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f3b91809-2ebf-4492-84db-66f4e4a9463f","method":"POST","path":"/api/requests","status":201,"ms":90,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"abe5839b-79fb-4810-a61a-6223f486f991","method":"POST","path":"/api/requests/1/submit","status":200,"ms":96,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c3cb3603-b7da-47ee-a84b-84b50c97f88d","method":"POST","path":"/api/requests/1/approve","status":200,"ms":59,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Assessment Team Edit","messageId":"<ae2ccc7c-11be-028d-e643-6efaed1c16a4@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Assessment Team Edit","messageId":"<cbb58d4f-b443-4724-9779-94f1a5791863@localhost>"}
+{"level":"info","msg":"request","requestId":"ef8430c7-3060-46dc-bd4b-a3dd6d193297","method":"POST","path":"/api/requests/1/assign","status":200,"ms":66,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Assessment Team Edit","messageId":"<73118cf9-c1a4-37ee-a2ae-8ea05cbb4fc2@localhost>"}
+{"level":"info","msg":"request","requestId":"51767519-52d8-4a8e-8eae-4398b5068048","method":"POST","path":"/api/candidates","status":201,"ms":69,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Assessment Team Edit","messageId":"<26ee68a8-fdad-44b8-efdb-256850db756e@localhost>"}
+{"level":"info","msg":"request","requestId":"a556bd82-9185-45df-882b-191b1145c4fb","method":"POST","path":"/api/applications","status":201,"ms":53,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4dbb0e51-aca2-4d28-be47-e87ba289a08d","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":9,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"19d7f629-299e-41fd-b071-907881d5ec4c","method":"POST","path":"/api/interviews","status":201,"ms":143,"userId":5,"ip":"::1"}
+
+— each recruitment role controls the whole assessment —
+{"level":"info","msg":"request","requestId":"6fb1e548-8ab6-4487-812c-c9230a8ac677","method":"GET","path":"/api/assessments/application/1","status":200,"ms":25,"userId":5,"ip":"::1"}
+  ✅ Recruiter: both sections, both justifications, flags and final decision editable
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<ece7cae8-1770-38fa-e550-3632b7abc837@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"assess-team@example.invalid","subject":"Interview invitation","messageId":"<2c440d7c-b461-3c37-802d-69929b80c0cc@localhost>"}
+{"level":"info","msg":"request","requestId":"9d400508-e534-4f9b-948f-0bbd911053bc","method":"GET","path":"/api/assessments/application/1","status":200,"ms":16,"userId":4,"ip":"::1"}
+  ✅ Recruitment Manager: both sections, both justifications, flags and final decision editable
+{"level":"info","msg":"request","requestId":"dbddcfa4-cf71-42f3-94a6-c4147af30adf","method":"GET","path":"/api/assessments/application/1","status":200,"ms":17,"userId":3,"ip":"::1"}
+  ✅ HR Manager: both sections, both justifications, flags and final decision editable
+{"level":"info","msg":"request","requestId":"b6d4bed1-159c-4c5d-be79-6482434bc2bb","method":"GET","path":"/api/assessments/application/1","status":200,"ms":15,"userId":1,"ip":"::1"}
+  ✅ System Administrator: both sections, both justifications, flags and final decision editable
+{"level":"info","msg":"request","requestId":"f79badd7-b6db-4f12-95cc-86b37da80ef5","method":"POST","path":"/api/assessments/application/1","status":201,"ms":31,"userId":5,"ip":"::1"}
+  ✅ a recruiter saves the technical section (201)
+{"level":"info","msg":"request","requestId":"344c89c1-5dec-47cf-a501-d757cc431711","method":"POST","path":"/api/assessments/application/1","status":201,"ms":30,"userId":4,"ip":"::1"}
+  ✅ the Recruitment Manager submits the behavioral section (201)
+{"level":"info","msg":"request","requestId":"93b18fb6-8dc2-4fa5-b88b-1a3efd3bfd7d","method":"POST","path":"/api/assessments/application/1/final","status":201,"ms":34,"userId":3,"ip":"::1"}
+  ✅ the HR Manager records the final decision (201)
+
+— everyone else keeps their narrower access —
+{"level":"info","msg":"request","requestId":"b9510f1b-b751-475f-a27e-cee60fec070d","method":"GET","path":"/api/assessments/application/1","status":200,"ms":20,"userId":2,"ip":"::1"}
+  ✅ HR Director reads the assessment
+{"level":"warn","msg":"request","requestId":"045cc2e2-8022-4542-90b9-84b02e94ed6d","method":"POST","path":"/api/assessments/application/1","status":403,"ms":6,"userId":2,"ip":"::1"}
+  ✅ …but cannot write a section (403)
+{"level":"warn","msg":"request","requestId":"217aa4f6-92a8-457b-a687-ee8baceda99f","method":"POST","path":"/api/assessments/application/1/final","status":403,"ms":6,"userId":2,"ip":"::1"}
+  ✅ …nor the final decision (403)
+{"level":"info","msg":"request","requestId":"f0b20de2-2524-4356-b71a-b07b68fba903","method":"GET","path":"/api/assessments/application/1","status":200,"ms":21,"userId":8,"ip":"::1"}
+  ✅ panel interviewer: technical editable, behavioral hidden, final view-only
+{"level":"warn","msg":"request","requestId":"08ae3cb0-72d8-467b-8582-6f3cfb14b4c2","method":"POST","path":"/api/assessments/application/1","status":403,"ms":13,"userId":8,"ip":"::1"}
+  ✅ panel interviewer cannot write the behavioral section (403)
+{"level":"warn","msg":"request","requestId":"084e83dc-0070-4a1c-968d-1ee35a027cc2","method":"POST","path":"/api/assessments/application/1/final","status":403,"ms":12,"userId":8,"ip":"::1"}
+  ✅ panel interviewer cannot record the final decision (403)
+  ✅ expected salary is withheld from the interviewer
+{"level":"warn","msg":"request","requestId":"c75c7fa1-c6f0-45db-b588-02888f88a1ea","method":"GET","path":"/api/assessments/application/1","status":403,"ms":10,"userId":6,"ip":"::1"}
+  ✅ an unrelated hiring manager cannot read it (403)
+
+— a submitted evaluation is changed deliberately —
+{"level":"warn","msg":"request","requestId":"e2b2c047-f1e1-4a89-840c-f1d6f7957887","method":"POST","path":"/api/assessments/application/1/reopen","status":400,"ms":8,"userId":5,"ip":"::1"}
+  ✅ reopen needs a reason (400)
+{"level":"warn","msg":"request","requestId":"6a21a3ad-7fa0-4761-9b6e-c7e575816afc","method":"POST","path":"/api/assessments/application/1/reopen","status":400,"ms":9,"userId":5,"ip":"::1"}
+  ✅ reopen refuses unknown fields (400)
+{"level":"warn","msg":"request","requestId":"7a473ca5-5e3c-4315-ba11-be2630342a9f","method":"POST","path":"/api/assessments/application/1/reopen","status":409,"ms":11,"userId":5,"ip":"::1"}
+  ✅ a draft cannot be reopened (409)
+{"level":"warn","msg":"request","requestId":"95dd6ffc-aded-4192-8301-733b956aa3c0","method":"POST","path":"/api/assessments/application/1/reopen","status":403,"ms":13,"userId":8,"ip":"::1"}
+  ✅ the interviewer cannot reopen the behavioral section (403)
+{"level":"warn","msg":"request","requestId":"b55f2024-1780-4561-8a3e-954416732e31","method":"POST","path":"/api/assessments/application/1/reopen","status":403,"ms":6,"userId":2,"ip":"::1"}
+  ✅ the HR Director cannot reopen (403)
+{"level":"info","msg":"request","requestId":"a478f4c5-7f0d-4ae6-a649-0ed2ebf0b745","method":"POST","path":"/api/assessments/application/1/reopen","status":201,"ms":26,"userId":5,"ip":"::1"}
+  ✅ a recruiter reopens the submitted behavioral section (201) → draft, scores kept
+{"level":"info","msg":"request","requestId":"1d9cfa9e-abd8-4eab-a3cd-86a2ac62e6eb","method":"POST","path":"/api/assessments/application/1","status":201,"ms":31,"userId":4,"ip":"::1"}
+  ✅ resubmitting works as before
+{"level":"info","msg":"request","requestId":"d540c85f-3dbf-42dc-b46e-3ebfda533ccc","method":"POST","path":"/api/assessments/application/1","status":201,"ms":29,"userId":3,"ip":"::1"}
+  ✅ an edit of the submitted section carrying a reason is saved (201)
+{"level":"warn","msg":"request","requestId":"e7847119-1f9f-427e-8fb6-06805ef9eccb","method":"POST","path":"/api/assessments/application/1","status":400,"ms":8,"userId":3,"ip":"::1"}
+  ✅ an over-long edit reason is refused (400)
+{"level":"info","msg":"request","requestId":"e4b0c5cd-f339-4495-9f9a-a06cb63b0f91","method":"GET","path":"/api/audit","status":200,"ms":10,"userId":1,"ip":"::1"}
+  ✅ the reopen is audited with its reason
+  ✅ the edit is audited with its reason
+
+— history: who, when, why — only what the viewer may see —
+{"level":"info","msg":"request","requestId":"49b6e2ff-1523-4909-8d2c-ddb0ccb2b198","method":"GET","path":"/api/assessments/application/1/history","status":200,"ms":24,"userId":5,"ip":"::1"}
+  ✅ the recruiter sees behavioral, technical and final entries
+  ✅ the reopen and the edit carry their reasons
+  ✅ no scores in the history
+{"level":"info","msg":"request","requestId":"83dafd73-4581-4c43-8a83-04cd94fa77d8","method":"GET","path":"/api/assessments/application/1/history","status":200,"ms":18,"userId":8,"ip":"::1"}
+  ✅ the interviewer's history has no behavioral entries
+{"level":"warn","msg":"request","requestId":"eab02460-71e0-4621-84a4-50998c73d090","method":"GET","path":"/api/assessments/application/1/history","status":403,"ms":10,"userId":6,"ip":"::1"}
+  ✅ an unrelated user cannot read the history (403)
+
+=== ASSESSMENT TEAM EDIT: 31 passed, 0 failed ===
+
+
+════════ PG BEHAVIOUR SUMMARY ════════
+Ran 3 suites on PostgreSQL · 3 passed, 0 failed
+Databases kept: arabtec_scratch_test_20261005085558_workflow_integrity, arabtec_scratch_test_20261005085558_offer_letter, arabtec_scratch_test_20261005085558_assessment_team_edit
