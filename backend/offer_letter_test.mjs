@@ -249,7 +249,14 @@ try {
   {
     const f = await approvedOffer();
     await must(`/api/requests/${f.rid}/hold`, { method: 'POST', token: recMgr, body: { reason: 'Audit' } });
-    c('on hold is a policy question, not changed here: send still allowed (200)', (await api(`/api/offers/${f.offer.id}/send`, { method: 'POST', token: hrMgr })).status === 200);
+    const held = await api(`/api/offers/${f.offer.id}/send`, { method: 'POST', token: hrMgr });
+    c('Q-01: on hold pauses sending (409, says On Hold)', held.status === 409 && /On Hold/.test(held.json?.error || ''), held.text.slice(0, 140));
+    c('…the offer stays approved', (await must(`/api/offers/${f.offer.id}`, { token: hrMgr })).offer.status === 'approved');
+    const mona = (await must('/api/interviews/meta/form', { token: recruiter })).interviewers[0];
+    const ivHeld = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: f.aid, scheduledAt: new Date(Date.now() + 86400000).toISOString(), panel: [{ interviewerId: mona.id, isLead: true }] } });
+    c('Q-01: on hold pauses interview scheduling (409)', ivHeld.status === 409 && /On Hold/.test(ivHeld.json?.error || ''), ivHeld.text.slice(0, 140));
+    await must(`/api/requests/${f.rid}/resume`, { method: 'POST', token: recMgr });
+    c('Q-01: after resume the same offer sends (200), nothing recreated', (await api(`/api/offers/${f.offer.id}/send`, { method: 'POST', token: hrMgr })).status === 200);
   }
 } catch (e) { console.error(e); fail++; }
 finally {

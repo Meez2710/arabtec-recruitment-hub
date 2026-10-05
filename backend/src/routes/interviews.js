@@ -256,6 +256,11 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
     if (d.overrideTerminal) return res.status(400).json({ error: 'A reason is required to override and schedule for a closed request.' });
     return res.status(409).json({ error: `Hiring request ${reqRow.ticket_no || ''} is ${REQ_LABELS[reqNorm(reqRow.status)] || reqRow.status}; interviews for it are no longer scheduled.`.replace('  ', ' '), requestStatus: reqNorm(reqRow.status) });
   }
+  // Owner decision Q-01: a request on hold pauses interview scheduling;
+  // existing interviews are untouched and scheduling returns on resume.
+  if (reqRow && reqNorm(reqRow.status) === 'on_hold') {
+    return res.status(409).json({ error: `Interview scheduling is unavailable because hiring request ${reqRow.ticket_no || ''} is currently On Hold. It resumes when the request is resumed.`.replace('  ', ' '), requestStatus: 'on_hold' });
+  }
   const interviewNo = Interviews.nextNo();
   const created = Interviews.create({
     interviewNo, applicationId: app ? app.id : null, candidateId, requestId,

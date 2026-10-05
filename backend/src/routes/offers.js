@@ -456,6 +456,12 @@ router.post('/:id/send', requirePermission('offer.send'), (req, res) => {
   // reopen the request first).
   const deadReq = closedRequest(o.request_id);
   if (deadReq) return res.status(409).json({ error: `${closedRequestError(deadReq)} Reopen the request or withdraw the offer.`, requestStatus: reqNorm(deadReq.status) });
+  // Owner decision Q-01: a request on hold pauses sending. The approved offer
+  // stays approved and can be sent as soon as the request is resumed.
+  const heldReq = o.request_id ? Requests.byId(o.request_id) : null;
+  if (heldReq && reqNorm(heldReq.status) === 'on_hold') {
+    return res.status(409).json({ error: `Sending is unavailable because hiring request ${heldReq.ticket_no || ''} is currently On Hold. The offer stays approved; send it once the request is resumed.`.replace('  ', ' '), requestStatus: 'on_hold' });
+  }
   // The application must still be able to reach Offer Sent. An approved offer
   // can outlive a later decision on the candidate — rejected, put on hold, or
   // a declined offer — and sending it then would silently revive the stopped

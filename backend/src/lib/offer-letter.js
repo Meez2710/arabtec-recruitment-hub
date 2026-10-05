@@ -38,6 +38,8 @@ export const SALARY_COMPONENTS = [
 ];
 export const TITLE_PREFIXES = ['Mr.', 'Ms.', 'Mrs.', 'Eng.', 'Dr.'];
 export const DEFAULT_VALIDITY_DAYS = 5;
+// Owner decision Q-03: probation is fixed at three months (one place to change later).
+export const PROBATION_PERIOD = 'Three months.';
 
 const FOOTNOTES = {
   others: 'Others* Includes after duty hours allowance if required',
@@ -311,7 +313,7 @@ ${banner}
     ${t(3, 'Sponsorship', 'Arabtec Egypt will act as your sponsor in the country of employment. As your employer, we shall be fully responsible for your proper employment and residence documents. However, any fees incurred on authentication and /or verification of your documents, or the regularizartion of your documents as required and requested by the government authorities will be borne by you.')}
     ${t(4, 'Working Hours', 'As per the Labour Law of Egypt.')}
     ${t(5, 'Leave entitlement', 'As per the Labour Law of Egypt.')}
-    ${t(6, 'Probation Period', 'Three months.')}
+    ${t(6, 'Probation Period', esc(PROBATION_PERIOD))}
     ${t(7, 'Gratuity', 'As per the Labour Law of Egypt.')}
     ${t(8, 'Transferability', "Your service is transferable to any of the Company's locations at any time as the business demands.")}
     ${t(9, 'Laws Applicable', 'The rules of the Labour Act or Guidelines in the country of employment will apply to any matter which is not mentioned in this document.')}
