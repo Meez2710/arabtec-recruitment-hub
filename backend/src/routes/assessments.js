@@ -9,7 +9,7 @@
 // assessment a caller may see or change is decided only by
 // lib/assessment-policy.js — serialization, writes and the preview all ask it.
 import { Router } from 'express';
-import { Assessments, Applications, Candidates, Requests, Departments, Interviews, SystemSettings } from '../lib/models.js';
+import { Assessments, Applications, Candidates, Requests, Departments, Interviews, SystemSettings, Audit } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { tx } from '../lib/db.js';
@@ -226,7 +226,10 @@ function parseEvaluationBody(body) {
   const type = body.evaluatorType;
   if (!SECTION[type]) return { error: 'evaluatorType must be hr or technical.' };
   const sec = SECTION[type];
-  const allowed = new Set(['evaluatorType', 'submitted', sec.field, 'criticalFlags', 'recommendation', sec.justification, sec.fitCol]);
+  // editReason: why a SUBMITTED evaluation is being changed — recorded on the
+  // audit entry and shown in the history. The form requires it; the API keeps
+  // accepting an update without one (AR-02), so nothing that worked breaks.
+  const allowed = new Set(['evaluatorType', 'submitted', sec.field, 'criticalFlags', 'recommendation', sec.justification, sec.fitCol, 'editReason']);
   for (const k of Object.keys(body)) {
     if (CANDIDATE_BODY_FIELDS[k]) return { forbidden: CANDIDATE_BODY_FIELDS[k] };
     if (!allowed.has(k)) return { error: `Field "${k}" is not accepted on a ${type} evaluation.` };
@@ -242,7 +245,11 @@ function parseEvaluationBody(body) {
   const just = body[sec.justification];
   if (just !== undefined && just !== null && typeof just !== 'string') return { error: 'Justification must be text.' };
   if (typeof just === 'string' && just.length > JUSTIFICATION_MAX) return { error: `Justification exceeds ${JUSTIFICATION_MAX} characters.` };
+  const why = body.editReason;
+  if (why !== undefined && why !== null && typeof why !== 'string') return { error: 'editReason must be text.' };
+  if (typeof why === 'string' && why.length > JUSTIFICATION_MAX) return { error: `editReason exceeds ${JUSTIFICATION_MAX} characters.` };
   return {
+    editReason: typeof why === 'string' && why.trim() ? why.trim() : null,
     // Absent `submitted` means "keep the current state" (AR-02); only an explicit false withdraws.
     type, submitted: body.submitted === undefined ? undefined : body.submitted, rows: scores.rows, provided: scores.provided,
     flags: flags ? flags.flags : undefined,
@@ -315,6 +322,7 @@ router.post('/application/:applicationId', requirePermission('interview.feedback
       action, entityType: 'application', entityId: app.id,
       oldValue: auditView(prev),
       newValue: { ...auditView(presentEvaluation(saved, p.type)), previousState: prev ? prev.status : null },
+      comments: prev?.submitted ? p.editReason : null,
     }, { strict: true });
   });
   res.status(201).json({ assessment: bundle(app, req.user) });
@@ -345,6 +353,62 @@ router.post('/application/:applicationId/final', requirePermission('interview.fe
     }, { strict: true });
   });
   res.status(201).json({ assessment: bundle(app, req.user) });
+});
+
+/* Reopen a submitted evaluation — the explicit way to change a submission.
+   Returns the section to draft with a recorded reason. Allowed to whoever may
+   edit that section under the field policy (the same gate as saving), so no
+   one gains a right they did not have; what changes is that it is deliberate,
+   explained and audited. The scores stay as they were. */
+router.post('/application/:applicationId/reopen', requirePermission('interview.feedback'), (req, res) => {
+  const app = scopedApplication(req, res); if (!app) return;
+  if (!isAssessmentUnlocked(app)) return res.status(409).json({ error: 'Assessment is available once the candidate reaches an interview stage.' });
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return res.status(400).json({ error: 'Request body must be an object.' });
+  for (const k of Object.keys(body)) if (k !== 'evaluatorType' && k !== 'reason') return res.status(400).json({ error: `Field "${k}" is not accepted on a reopen.` });
+  const sec = SECTION[body.evaluatorType];
+  if (!sec) return res.status(400).json({ error: 'evaluatorType must be hr or technical.' });
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (!reason) return res.status(400).json({ error: 'A reason is required to reopen a submitted assessment.' });
+  if (reason.length > JUSTIFICATION_MAX) return res.status(400).json({ error: `Reason exceeds ${JUSTIFICATION_MAX} characters.` });
+  const perms = resolveAllAssessmentPermissions(req.user, app);
+  if (!perms[sec.policy].canEdit) return denied(res, sec.policy, `the ${body.evaluatorType === 'hr' ? 'behavioral' : 'technical'} assessment`);
+  const prev = presentEvaluation(Assessments.byType(app.id, body.evaluatorType), body.evaluatorType);
+  if (!prev) return res.status(404).json({ error: 'There is no saved evaluation to reopen.' });
+  if (!prev.submitted) return res.status(409).json({ error: 'This evaluation is already a draft.' });
+  tx(() => {
+    Assessments.setSubmitted(app.id, body.evaluatorType, false);
+    writeAudit(req, {
+      action: 'assessment.reopened', entityType: 'application', entityId: app.id,
+      oldValue: { evaluatorType: body.evaluatorType, state: 'submitted', evaluatorName: prev.evaluatorName, savedAt: prev.updatedAt },
+      newValue: { evaluatorType: body.evaluatorType, state: 'draft', reopenedBy: req.user.fullName },
+      comments: reason,
+    }, { strict: true });
+  });
+  res.status(201).json({ assessment: bundle(app, req.user) });
+});
+
+/* History: who saved, submitted or reopened each part, when, and why.
+   Only the parts this caller may see are listed, and never the scores. */
+const HISTORY_ACTIONS = new Set(['assessment.draft_saved', 'assessment.submitted', 'assessment.updated', 'assessment.reopened', 'assessment.final_decision']);
+router.get('/application/:applicationId/history', requirePermission('candidate.view'), (req, res) => {
+  const app = scopedApplication(req, res); if (!app) return;
+  const perms = resolveAllAssessmentPermissions(req.user, app);
+  const rows = Audit.forEntity('application', app.id).filter((l) => HISTORY_ACTIONS.has(l.action));
+  const out = [];
+  for (const l of rows) {
+    const nv = l.newValue || {}; const ov = l.oldValue || {};
+    if (l.action === 'assessment.final_decision') {
+      if (!perms[FINAL].canView) continue;
+      out.push({ at: utcIso(l.at), actor: l.actorName, action: l.action, part: 'final', decision: nv.decision ? decisionLabel(nv.decision) : null, previous: ov.decision ? decisionLabel(ov.decision) : null });
+      continue;
+    }
+    const type = nv.evaluatorType || ov.evaluatorType;
+    if (!SECTION[type] || !perms[SECTION[type].policy].canView) continue;
+    out.push({ at: utcIso(l.at), actor: l.actorName, action: l.action, part: type, state: nv.state || null, previousState: nv.previousState || ov.state || null, reason: l.comments || null });
+  }
+  out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  res.json({ history: out });
 });
 
 /* Form metadata (criteria + option lists matching the PDF) */

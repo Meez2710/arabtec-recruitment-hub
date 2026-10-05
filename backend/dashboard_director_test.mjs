@@ -10,7 +10,7 @@ import path from 'node:path';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'arabtec-dashdir-'));
 process.env.DATABASE_URL = suiteDatabaseUrl('file:' + path.join(TMP, 'dashdir.db'));
 process.env.UPLOAD_DIR = path.join(TMP, 'uploads');
-process.env.PORT = process.env.DASHDIR_TEST_PORT || '4398';
+process.env.PORT = process.env.DASHDIR_TEST_PORT || '4386';
 process.env.SEED_DEMO_DATA ||= 'true';
 process.env.SMTP_TRANSPORT = 'json';
 const { ADMIN_BOOTSTRAP_PASSWORD } = await import('./test-support/admin-session.mjs');

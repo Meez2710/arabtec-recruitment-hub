@@ -19,6 +19,8 @@ const SUITES = [
   'scheduler_validation_test.mjs', // interview date/duration contract on POST/PUT; refused updates never half-apply
   'interview_assessment_link_test.mjs', // interviews reach their assessment: link, unlock on active interview, reopen
   'phase5_test.mjs',          // offers, approval, joining
+  'workflow_integrity_test.mjs', // audit 2026-10-05: stale send, contractual re-approval, sent-offer lock, interview terminals
+  'offer_letter_test.mjs',    // audit 2026-10-05: offer letter fidelity, live letter, issued vs emailed, handoffs
   'phase6_test.mjs',          // dashboards, scope, no-leak
   'dashboard_director_test.mjs', // director dashboard: narrowing filters, approval-based aging, scope never widened
   'request_control_test.mjs', // only RM + admin control requests; recruiters see all; unassign; recruiter status; one-time migration
@@ -28,6 +30,7 @@ const SUITES = [
   'assessment_pdf_test.mjs',  // PDF-faithful assessment: scores, lifecycle, scope, audit, preview
   'assessment_policy_test.mjs', // field policy: resolver, API filtering, field-level writes, preview, settings
   'assessment_review_fixes_test.mjs', // AR-02/03/04/07: submit state, parent/child policy, print parity, document CSP
+  'assessment_team_edit_test.mjs', // audit 2026-10-05: recruitment team edits both sections; reopen/edit with reason; history
   'candidate_scope_test.mjs', // AR-01: candidate visibility follows assignment scope (API, nested data, ids, assistant tools)
   'ui_assessment_test.mjs',   // assessment UI: PDF document, policy-driven views, draft/submit/edit, settings
   'hardening_test.mjs',       // security hardening gate items

@@ -1547,3 +1547,10 @@ th.recip-external { color: var(--warning-ink); }
 th.recip-external::after { content: none; }
 td.recip-external { background: var(--warning-tint); }
 .notif-grid td:first-child, .notif-grid th:first-child { background: var(--surface); }
+
+/* Offer compose: the letter sits on the canvas grey, like paper on a desk. */
+.offer-letter-pane { background: var(--canvas, #F4F5F7); border-color: var(--line); }
+.assess-progress a { border-color: var(--line); background: #fff; color: var(--ink); }
+.assess-progress a:hover { border-color: var(--line-strong, #cfd4da); }
+.assess-history-list li { border-color: var(--line); }
+.assess-history-when, .assess-history-reason { color: var(--muted); font-size: 12.5px; }

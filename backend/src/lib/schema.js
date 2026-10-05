@@ -1061,6 +1061,13 @@ export function ensureSchema() {
   // Offer expiry: the date after which an unanswered offer lapses. Display and
   // entry only; nothing expires an offer automatically.
   addColumnIfMissing('offer', 'expiry_date', 'TEXT');
+  // Offer letter fields (lib/offer-letter.js): the addressee's title (Mr./Eng.),
+  // an optional salutation first name, and the salary breakdown the signed
+  // letters show (JSON { basic, accommodation, transportation, others,
+  // area_allowance }). salary_offered stays the total.
+  addColumnIfMissing('offer', 'title_prefix', 'TEXT');
+  addColumnIfMissing('offer', 'salutation_name', 'TEXT');
+  addColumnIfMissing('offer', 'salary_components', 'TEXT');
   relaxStandaloneLinks();
 
   migrateWorkflowStages();

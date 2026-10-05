@@ -549,6 +549,12 @@ export const Audit = {
   forActor(actorId, limit = 100) {
     return all('SELECT * FROM audit_log WHERE actor_id = ? ORDER BY occurred_at DESC, id DESC LIMIT ?', [actorId, limit]);
   },
+  /** Every entry for one record, newest first, with parsed values. */
+  forEntity(entityType, entityId, limit = 500) {
+    const parse = (v) => { if (!v) return null; try { return JSON.parse(v); } catch { return null; } };
+    return all('SELECT * FROM audit_log WHERE entity_type = ? AND entity_id = ? ORDER BY occurred_at DESC, id DESC LIMIT ?', [entityType, String(entityId), limit])
+      .map((r) => ({ id: r.id, action: r.action, actorName: r.actor_name, comments: r.comments, at: r.occurred_at, oldValue: parse(r.old_value), newValue: parse(r.new_value) }));
+  },
   facets() {
     return {
       actions: all('SELECT DISTINCT action FROM audit_log ORDER BY action').map((r) => r.action),
@@ -1173,6 +1179,11 @@ export const Assessments = {
       [d.applicationId, d.evaluatorType, d.evaluatorId, d.evaluatorName, cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted, now, now]);
     return get('SELECT * FROM application_assessment WHERE id=?', [Number(r.lastInsertRowid)]);
   },
+  /** Change only the submitted state (reopen); scores and authorship are kept. */
+  setSubmitted(appId, type, submitted) {
+    run('UPDATE application_assessment SET submitted=?, updated_at=? WHERE application_id=? AND evaluator_type=?', [submitted ? 1 : 0, nowISO(), appId, type]);
+    return this.byType(appId, type);
+  },
   finalDecision(appId) { return get('SELECT * FROM application_final_decision WHERE application_id=?', [appId]); },
   setFinalDecision(d) {
     run(`INSERT INTO application_final_decision (application_id,decision,decided_by,decided_by_name,notes,decided_at) VALUES (?,?,?,?,?,?)
@@ -1329,20 +1340,27 @@ export const Offers = {
   create(d) {
     const r = run(
       `INSERT INTO offer (offer_no,application_id,candidate_id,request_id,position_title,salary_offered,currency,
-        benefits,joining_date,expiry_date,notes,status,prepared_by,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        benefits,joining_date,expiry_date,notes,status,prepared_by,created_by,title_prefix,salutation_name,salary_components,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [d.offerNo, d.applicationId ?? null, d.candidateId, d.requestId ?? null, d.positionTitle || null, d.salaryOffered ?? null,
        d.currency || 'EGP', d.benefits || null, d.joiningDate || null, d.expiryDate || null, d.notes || null,
-       d.status || 'draft', d.preparedBy, d.createdBy, nowISO(), nowISO()],
+       d.status || 'draft', d.preparedBy, d.createdBy, d.titlePrefix || null, d.salutationName || null,
+       d.salaryComponents ? JSON.stringify(d.salaryComponents) : null, nowISO(), nowISO()],
     );
     return this.byId(Number(r.lastInsertRowid));
   },
   update(id, fields, { salaryAllowed = false } = {}) {
     const c = this.byId(id);
     const salary = salaryAllowed && fields.salaryOffered !== undefined ? fields.salaryOffered : c.salary_offered;
-    run(`UPDATE offer SET position_title=?,salary_offered=?,currency=?,benefits=?,joining_date=?,expiry_date=?,notes=?,version=version+1,updated_at=? WHERE id=?`,
+    // Salary components: only with salary rights; `null` clears, absent keeps.
+    const comps = salaryAllowed && fields.salaryComponents !== undefined
+      ? (fields.salaryComponents ? JSON.stringify(fields.salaryComponents) : null)
+      : c.salary_components;
+    run(`UPDATE offer SET position_title=?,salary_offered=?,currency=?,benefits=?,joining_date=?,expiry_date=?,notes=?,
+           title_prefix=?,salutation_name=?,salary_components=?,version=version+1,updated_at=? WHERE id=?`,
       [fields.positionTitle ?? c.position_title, salary, fields.currency ?? c.currency,
-       fields.benefits ?? c.benefits, fields.joiningDate ?? c.joining_date, fields.expiryDate ?? c.expiry_date, fields.notes ?? c.notes, nowISO(), id]);
+       fields.benefits ?? c.benefits, fields.joiningDate ?? c.joining_date, fields.expiryDate ?? c.expiry_date, fields.notes ?? c.notes,
+       fields.titlePrefix ?? c.title_prefix, fields.salutationName ?? c.salutation_name, comps, nowISO(), id]);
     return this.byId(id);
   },
   setStatus(id, status, extra = {}) {

@@ -23,6 +23,18 @@ const api = {
   post(p, body) { return this.call(p, { method: 'POST', body }); },
   put(p, body) { return this.call(p, { method: 'PUT', body }); },
   del(p) { return this.call(p, { method: 'DELETE' }); },
+  // An authenticated HTML document (the offer letter), returned as text so it
+  // can be shown in a sandboxed frame. Errors carry the server's message.
+  async html(p, { method = 'GET', body, signal } = {}) {
+    const res = await fetch('/api' + p, {
+      method, signal,
+      headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    if (!res.ok) { let msg = 'Request failed'; try { msg = JSON.parse(text).error || msg; } catch {} throw Object.assign(new Error(msg), { status: res.status }); }
+    return text;
+  },
   async upload(p, file, fields = {}) {
     const fd = new FormData(); fd.append('file', file);
     for (const [k, v] of Object.entries(fields)) fd.append(k, v);
@@ -313,14 +325,15 @@ const ToastCtx = createContext(() => {});
 function ToastProvider({ children }) {
   const [toast, setToast] = useState(null);
   const show = useCallback((msg, type = 'success') => {
-    setToast({ msg, type }); setTimeout(() => setToast(null), 3200);
+    // A warning or error carries more to read than a confirmation.
+    setToast({ msg, type }); setTimeout(() => setToast(null), type === 'success' ? 3200 : 6500);
   }, []);
   return (
     <ToastCtx.Provider value={show}>
       {children}
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 200,
-          background: toast.type === 'error' ? 'var(--critical)' : 'var(--success)',
+          background: toast.type === 'error' ? 'var(--critical)' : toast.type === 'warn' ? 'var(--warning-ink, #8a5a00)' : 'var(--success)',
           color: '#fff', padding: '12px 18px', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.2)', fontSize: 13.5, fontWeight: 600 }}>
           {toast.msg}
         </div>
@@ -7272,6 +7285,11 @@ function assessSummary(rows, criteria, fitLevels) {
   const fit = average == null ? null : (fitLevels || []).find((f) => average >= f.min) || null;
   return { average, scored, na, open, fit };
 }
+// One part's state for the progress strip, from the saved record.
+function assessStepStatus(ev) {
+  if (!ev) return { status: 'Not started', variant: 'soft' };
+  return ev.submitted ? { status: 'Submitted', variant: 'success' } : { status: 'Draft', variant: 'warning' };
+}
 function assessStatusLine(ev) {
   if (!ev) return 'Status: Not started';
   return ev.submitted
@@ -7295,6 +7313,18 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   const [error, setError] = useState(null); // { text, submit, retry }
   const [stale, setStale] = useState(false);
   const [restored, setRestored] = useState(false);
+  // Why a SUBMITTED evaluation is being changed — required by the form, sent
+  // with the save, and kept in the audit trail and the assessment history.
+  const [editReason, setEditReason] = useState('');
+  // Send a submission back to draft for its evaluator to revise — no edits of
+  // one's own, a reason on record (POST …/reopen, audited as assessment.reopened).
+  const [reopening, setReopening] = useState(false);
+  async function reopen(reason) {
+    setReopening(false);
+    try { const r = await api.post(`/assessments/application/${appId}/reopen`, { evaluatorType: type, reason }); toast(`${s.short} evaluation reopened as a draft`); onSaved(r && r.assessment); }
+    catch (e) { toast(e.message || 'Could not reopen', 'error'); }
+  }
+  const changingSubmitted = !!existing?.submitted && editing;
   const dirty = JSON.stringify(form) !== JSON.stringify(base);
   useEffect(() => { onDirtyChange && onDirtyChange(type, dirty); }, [dirty]);
   const unsavedKey = `${appId}:${type}`;
@@ -7334,6 +7364,7 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   async function save(submit) {
     if (busyRef.current) return; // one save at a time — no duplicate submissions
     setError(null);
+    if (changingSubmitted && !editReason.trim()) { setError({ text: 'Give a reason for changing a submitted evaluation.' }); return; }
     if (submit) {
       const missing = visibleCriteria.filter((cr) => !form.rows[cr.key]?.score).map((cr) => cr.label);
       if (missing.length) { setError({ text: `Answer every criterion (a score or N/A) before submitting. Missing: ${missing.join(', ')}.` }); return; }
@@ -7349,11 +7380,12 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
       section[cr.key] = { score: !r.score ? null : r.score === 'na' ? 'na' : Number(r.score), notes: r.notes };
     });
     const body = { evaluatorType: type, submitted: !!submit, recommendation: sent.recommendation || null, [s.field]: section };
+    if (changingSubmitted) body.editReason = editReason.trim();
     if (perm('assessment.criticalFlags').canEdit) body.criticalFlags = sent.flags;
     if (perm(s.justPolicy).canEdit) body[s.just] = sent.justification;
     try {
       const r = await api.post('/assessments/application/' + appId, body);
-      setBase(sent); setStale(false); setEditing(!submit); setRestored(false);
+      setBase(sent); setStale(false); setEditing(!submit); setRestored(false); setEditReason('');
       toast(submit ? 'Evaluation submitted' : 'Draft saved');
       onSaved(r && r.assessment);
     } catch (e) {
@@ -7364,10 +7396,11 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   }
   function cancelEdit() {
     if (dirty && !window.confirm('Discard your unsaved changes to this evaluation?')) return;
-    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false); setRestored(false);
+    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false); setRestored(false); setEditReason('');
   }
   return { type, criteria, visibleCriteria, form, dirty, editing, setEditing, editable, locked, busy, error, stale, restored, summary, existing,
-    setRow, setFlag, setRecommendation, setJustification, save, cancelEdit };
+    setRow, setFlag, setRecommendation, setJustification, save, cancelEdit, editReason, setEditReason, changingSubmitted,
+    appId, reopening, setReopening, reopen };
 }
 
 function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
@@ -7461,6 +7494,11 @@ function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
       {loadError && <RefetchError text={`Could not refresh this assessment: ${loadError}. Showing the last loaded evaluation.`} onRetry={load} />}
       <article className="assess-doc" aria-label="Interview assessment">
         {/* No document title here: the drawer header already names the assessment. The printed form keeps its title. */}
+        <AssessmentProgress appId={app.id} steps={[
+          ...(show.hr ? [{ key: 'hr', anchor: `assess-${app.id}-hr-title`, label: 'Behavioral (HR)', ...assessStepStatus(bundle.hr) }] : []),
+          ...(show.technical ? [{ key: 'technical', anchor: `assess-${app.id}-technical-title`, label: 'Technical', ...assessStepStatus(bundle.technical) }] : []),
+          ...(showFinal ? [{ key: 'final', anchor: `assess-${app.id}-final`, label: 'Final decision', ...(bundle.finalDecision ? { status: 'Recorded', variant: 'success' } : { status: 'Not recorded', variant: 'soft' }) }] : []),
+        ]} />
 
         {infoFields.length > 0 && (
           <section className="assess-sec" aria-labelledby={`assess-${app.id}-info`}>
@@ -7491,6 +7529,7 @@ function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
             {editableDrafts.map((d) => <AssessmentSaveRow key={d.type} draft={d} />)}
           </div>
         )}
+        <AssessmentHistory appId={app.id} refreshKey={`${bundle.hr?.updatedAt || ''}|${bundle.technical?.updatedAt || ''}|${bundle.finalDecision?.decidedAt || ''}`} />
       </article>
       <div className="assess-actions">
         <button type="button" className="btn btn-secondary" onClick={() => api.download(`/assessments/application/${app.id}/preview`).catch((e) => toast(e.message || 'Could not open the preview', 'error'))}>Preview printable form</button>
@@ -7645,9 +7684,12 @@ function AssessmentFit({ draft, meta, appId, perm }) {
 }
 
 // Save / submit controls for one evaluation the user may edit.
+// Stateless, like the other document sections: the draft hook owns the state.
 function AssessmentSaveRow({ draft }) {
   const s = ASSESS_SECTIONS[draft.type];
   const ev = draft.existing;
+  const reasonId = `assess-${draft.appId}-${draft.type}-reason`;
+  const needReason = draft.changingSubmitted && !draft.editReason.trim();
   return (
     <div className="assess-bar-row">
       <div className="assess-bar-state"><strong>{s.short} assessment</strong> <span className="assess-muted">{assessStatusLine(ev).replace('Status: ', '')}{draft.dirty ? ' · Unsaved changes' : ''}</span></div>
@@ -7657,16 +7699,81 @@ function AssessmentSaveRow({ draft }) {
           {draft.error.retry && <> <button type="button" className="btn btn-sm btn-secondary" disabled={draft.busy} onClick={() => draft.save(draft.error.submit)}>Retry</button></>}
         </div>
       )}
+      {draft.changingSubmitted && (
+        <div className="assess-reason">
+          <label htmlFor={reasonId}>Reason for changing a submitted evaluation *</label>
+          <textarea id={reasonId} rows="2" value={draft.editReason} onChange={(e) => draft.setEditReason(e.target.value)} placeholder="Recorded in the assessment history" />
+        </div>
+      )}
       <div className="btn-row">
         {!draft.editing
-          ? <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.setEditing(true)}>Edit evaluation</button>
+          ? <>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.setEditing(true)}>Edit evaluation</button>
+            {ev?.submitted && <button type="button" className="btn btn-sm btn-ghost" onClick={() => draft.setReopening(true)}>Reopen for revision</button>}
+          </>
           : <>
-            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Save ${s.short.toLowerCase()} draft`} onClick={() => draft.save(false)} disabled={draft.busy}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Save as draft (withdraws submission)' : 'Save draft'}</button>
-            <button type="button" className="btn btn-sm" aria-label={`Submit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.save(true)} disabled={draft.busy}>{draft.busy ? 'Saving…' : 'Submit evaluation'}</button>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Save ${s.short.toLowerCase()} draft`} onClick={() => draft.save(false)} disabled={draft.busy || needReason}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Save as draft (withdraws submission)' : 'Save draft'}</button>
+            <button type="button" className="btn btn-sm" aria-label={`Submit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.save(true)} disabled={draft.busy || needReason}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Submit changes' : 'Submit evaluation'}</button>
             {ev?.submitted && <button type="button" className="btn btn-sm btn-ghost" onClick={draft.cancelEdit} disabled={draft.busy}>Cancel edit</button>}
           </>}
       </div>
+      {draft.reopening && <Confirm title={`Reopen the ${s.short.toLowerCase()} evaluation`} message="It goes back to draft so it can be revised and submitted again. The scores are kept. Give a reason — it is recorded in the assessment history." requireReason confirmLabel="Reopen" onConfirm={draft.reopen} onClose={() => draft.setReopening(false)} />}
     </div>
+  );
+}
+
+// Where each part of the assessment stands, at the top of the form, each
+// linked to its section. Statuses come from the saved record, not the form.
+function AssessmentProgress({ appId, steps }) {
+  return (
+    <nav className="assess-progress" aria-label="Assessment progress">
+      <ol>
+        {steps.map((st) => (
+          <li key={st.key}>
+            <a href={`#${st.anchor}`} onClick={(e) => { e.preventDefault(); document.getElementById(st.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+              <span className="assess-progress-label">{st.label}</span>
+              <Badge variant={st.variant}>{st.status}</Badge>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+// Who saved, submitted or reopened each part, when and why (GET …/history).
+function AssessmentHistory({ appId, refreshKey }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    api.get(`/assessments/application/${appId}/history`).then((r) => { setRows(r.history || []); setErr(null); }).catch((e) => setErr(e.message));
+  }, [open, appId, refreshKey]);
+  const what = (h) => ({
+    'assessment.draft_saved': h.previousState === 'submitted' ? 'Withdrew to draft' : 'Saved a draft',
+    // An update only follows a submission, so an update to draft is a withdrawal.
+    'assessment.submitted': 'Submitted', 'assessment.updated': h.state === 'draft' ? 'Withdrew to draft' : 'Changed after submission',
+    'assessment.reopened': 'Reopened for revision', 'assessment.final_decision': 'Recorded the final decision',
+  })[h.action] || h.action;
+  const part = (h) => (h.part === 'final' ? 'Final decision' : `${ASSESS_SECTIONS[h.part]?.short || h.part} evaluation`);
+  return (
+    <section className="assess-sec assess-history" aria-label="Assessment history">
+      <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? 'Hide history' : 'Show history'}
+      </button>
+      {open && (err ? <p className="assess-muted">{err}</p> : !rows ? <Skeleton rows={2} /> : rows.length === 0 ? <p className="assess-muted">Nothing recorded yet.</p> : (
+        <ol className="assess-history-list">
+          {rows.map((h, i) => (
+            <li key={i}>
+              <span className="assess-history-when">{fmtDate(h.at)}</span>
+              <span><strong>{h.actor || 'System'}</strong> · {what(h)} — {part(h)}{h.decision ? `: ${h.decision}` : ''}{h.previous ? ` (was ${h.previous})` : ''}</span>
+              {h.reason && <span className="assess-history-reason">Reason: {h.reason}</span>}
+            </li>
+          ))}
+        </ol>
+      ))}
+    </section>
   );
 }
 
@@ -11299,44 +11406,164 @@ function SalaryCell({ visible, value, currency }) {
   return <span>{value != null ? `${value} ${currency || ''}` : '—'}</span>;
 }
 
-function CreateOfferModal({ application, user, onClose, onCreated }) {
+// The offer letter beside the form. It is the server's own letter
+// (lib/offer-letter.js) — the same renderer as the issued letter — re-rendered
+// as the recruiter types, with every empty variable drawn as a blank to fill.
+// The frame is sandboxed with no scripts: the letter is a document, not an app.
+function OfferLetterPane({ draft, offerId }) {
+  const [html, setHtml] = useState('');
+  const [err, setErr] = useState(null);
+  const [scale, setScale] = useState(0.6);
+  const wrapRef = useRef(null);
+  const key = JSON.stringify(draft || {});
+  useEffect(() => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      const req = offerId ? api.html(`/offers/${offerId}/preview`, { signal: ctl.signal })
+        : api.html('/offers/letter-draft', { method: 'POST', body: draft, signal: ctl.signal });
+      req.then((h) => { setHtml(h); setErr(null); }).catch((e) => { if (e.name !== 'AbortError') setErr(e.message); });
+    }, offerId ? 0 : 350);
+    return () => { clearTimeout(t); ctl.abort(); };
+  }, [key, offerId]);
+  // The letter is an A4 page (≈ 820px wide with its margin); scale it to the pane.
+  useEffect(() => {
+    const el = wrapRef.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => setScale(Math.min(1, e.contentRect.width / 820)));
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+  if (err) return <div className="offer-letter-pane"><p className="muted">{err}</p></div>;
+  return (
+    <div className="offer-letter-pane" ref={wrapRef} aria-label="Offer letter preview">
+      <div className="offer-letter-scale" style={{ height: Math.round(2290 * scale) }}>
+        <iframe title="Offer letter" sandbox="allow-same-origin allow-modals" srcDoc={html}
+          style={{ width: 820, height: 2290, transform: `scale(${scale})`, transformOrigin: '0 0' }} />
+      </div>
+    </div>
+  );
+}
+
+// One form for creating and editing an offer, with the letter beside it.
+// `offer` (edit) pre-fills it; an edit sends only what changed.
+const OFFER_BLANK = { titlePrefix: '', salutationName: '', positionTitle: '', currency: 'EGP', salaryComponents: {}, joiningDate: '', expiryDate: '', benefits: '', notes: '' };
+function OfferFormModal({ application, offer, user, onClose, onSaved }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ positionTitle: application?.position || '', salaryOffered: '', currency: 'EGP', benefits: '', joiningDate: '', expiryDate: '', notes: '' });
+  const init = offer
+    ? { ...OFFER_BLANK, titlePrefix: offer.titlePrefix || '', salutationName: offer.salutationName || '', positionTitle: offer.positionTitle || '', currency: offer.currency || 'EGP',
+        salaryComponents: offer.salaryComponents || (offer.salaryOffered != null ? { basic: offer.salaryOffered } : {}),
+        joiningDate: offer.joiningDate || '', expiryDate: offer.expiryDate || '', benefits: offer.benefits || '', notes: offer.notes || '' }
+    : { ...OFFER_BLANK, positionTitle: application?.position || '' };
+  const [f, setF] = useState(init);
   const [link, setLink] = useState(EMPTY_LINK);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const setComp = (k, v) => setF((s) => ({ ...s, salaryComponents: { ...s.salaryComponents, [k]: v } }));
   useEffect(() => { api.get('/offers/meta/form').then(setMeta).catch(() => {}); }, []);
+  const comps = Object.fromEntries(Object.entries(f.salaryComponents).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, Number(v)]));
+  const total = Object.values(comps).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  const termsLocked = offer && ['pending_approval', 'approved'].includes(offer.status);
+  // What the letter pane renders: the form as it stands, nothing saved.
+  const draft = {
+    applicationId: application?.id, candidateId: link.candidate?.id,
+    candidateName: link.mode === 'new' ? link.newName : (offer?.candidate?.fullName || undefined),
+    requestId: link.requestId || offer?.requestId || undefined,
+    titlePrefix: f.titlePrefix, salutationName: f.salutationName, positionTitle: f.positionTitle, currency: f.currency,
+    salaryComponents: meta?.canEditSalary ? comps : undefined, expiryDate: f.expiryDate,
+  };
   async function save() {
     setBusy(true);
     try {
-      const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
-      const body = { ...target, ...f };
-      if (body.salaryOffered === '') body.salaryOffered = null;
-      const r = await api.post('/offers', body);
-      toast('Offer created: ' + r.offer.offerNo); onCreated();
+      const body = { titlePrefix: f.titlePrefix || null, salutationName: f.salutationName, positionTitle: f.positionTitle, currency: f.currency,
+        joiningDate: f.joiningDate || undefined, expiryDate: f.expiryDate || undefined, notes: f.notes,
+        ...(meta?.canSeeSalary ? { benefits: f.benefits } : {}),
+        ...(meta?.canEditSalary ? { salaryComponents: Object.keys(comps).length ? comps : null } : {}) };
+      if (offer) {
+        const r = await api.put('/offers/' + offer.id, body);
+        toast(r.offer.status === 'pending_approval' && offer.status === 'approved' ? 'Saved — the changed terms go back to the HR Director for approval' : 'Offer saved');
+        onSaved(r.offer);
+      } else {
+        const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
+        const r = await api.post('/offers', { ...target, ...body });
+        toast('Offer created: ' + r.offer.offerNo); onSaved(r.offer);
+      }
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const createBlocked = !offer && !application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim()));
+  const title = offer ? `Edit offer — ${offer.offerNo}` : application ? `Create offer — ${application.candidate?.fullName || ''}` : 'Create offer';
   return (
-    <Modal title={application ? `Generate Offer — ${application.candidate?.fullName || ''}` : 'Create offer'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || (!application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim())))}>{busy ? 'Creating…' : 'Create Offer'}</button></>}>
-      {application
-        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Offer Preparation</strong>.</p>
-        : <><StandaloneLinkFields user={user} link={link} setLink={setLink} />
-          <p className="muted">A standalone offer is not tied to a pipeline: no application moves and no seat is filled. It still needs HR Director approval before it can be sent.</p></>}
-      <div className="form-grid">
-        <div className="field full"><label>Position Title{application ? '' : ' *'}</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
-        {meta?.canEditSalary && <>
-          <div className="field"><label>Salary Offered</label><input type="number" value={f.salaryOffered} onChange={(e) => set('salaryOffered', e.target.value)} /></div>
-          <div className="field"><label>Currency</label><input value={f.currency} onChange={(e) => set('currency', e.target.value)} /></div>
-        </>}
-        <div className="field"><label>Joining Date</label><input type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></div>
-        <div className="field"><label>Offer expiry</label><input type="date" value={f.expiryDate} onChange={(e) => set('expiryDate', e.target.value)} /></div>
-        <div className="field full"><label>Benefits</label><input value={f.benefits} onChange={(e) => set('benefits', e.target.value)} placeholder="Housing, transport, medical…" /></div>
-        <div className="field full"><label>Notes</label><textarea rows="3" value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal offer-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="offer-compose-body">
+          <div className="offer-compose-form">
+            {offer ? null : application
+              ? <p className="muted">Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Issuing Offer</strong>.</p>
+              : <><StandaloneLinkFields user={user} link={link} setLink={setLink} />
+                <p className="muted">A standalone offer is not tied to a pipeline: no application moves and no seat is filled. It still needs HR Director approval before it can be sent.</p></>}
+            {termsLocked && <div className="notice notice-warn">This offer is {offer.status === 'approved' ? 'approved' : 'waiting for approval'}. Changing the salary, breakdown, currency, position or joining date sends it back to the HR Director. The title, salutation, expiry and notes do not.</div>}
+            <div className="section-title">Addressee</div>
+            <div className="form-grid">
+              <div className="field"><label>Title</label>
+                <select value={f.titlePrefix} onChange={(e) => set('titlePrefix', e.target.value)}>
+                  <option value="">Choose…</option>{(meta?.titlePrefixes || ['Mr.', 'Ms.', 'Mrs.', 'Eng.', 'Dr.']).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select></div>
+              <div className="field"><label>Salutation name</label><input value={f.salutationName} onChange={(e) => set('salutationName', e.target.value)} placeholder="First name (optional)" /></div>
+              <div className="field full"><label>Position{application || offer ? '' : ' *'}</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
+            </div>
+            {meta?.canEditSalary ? <>
+              <div className="section-title">Total monthly salary (net)</div>
+              <div className="form-grid">
+                {(meta.salaryComponents || []).map((c) => (
+                  <div key={c.key} className="field"><label>{c.label}{c.key === 'basic' ? ' *' : ''}</label>
+                    <input type="number" min="0" step="0.01" inputMode="decimal" value={f.salaryComponents[c.key] ?? ''} onChange={(e) => setComp(c.key, e.target.value)} /></div>
+                ))}
+                <div className="field"><label>Currency</label><input value={f.currency} onChange={(e) => set('currency', e.target.value)} /></div>
+                <div className="field"><label>Total</label><div className="offer-total">{f.currency} {total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
+              </div>
+            </> : meta && <p className="muted">Salary is hidden — your role cannot set offer salary.</p>}
+            <div className="section-title">Dates</div>
+            <div className="form-grid">
+              <div className="field"><label>Joining date</label><input type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></div>
+              <div className="field"><label>Offer expiry</label><input type="date" value={f.expiryDate} onChange={(e) => set('expiryDate', e.target.value)} />
+                <span className="field-hint">The letter says it is valid until this date. Left empty, it is valid for {meta?.defaultValidityDays || 5} days from the date it is sent.</span></div>
+            </div>
+            <div className="section-title">Internal</div>
+            <div className="form-grid">
+              {meta?.canSeeSalary && <div className="field full"><label>Benefits note</label><input value={f.benefits} onChange={(e) => set('benefits', e.target.value)} placeholder="Not printed on the letter" /></div>}
+              <div className="field full"><label>Notes</label><textarea rows="3" value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Not printed on the letter" /></div>
+            </div>
+          </div>
+          {meta?.canSeeSalary
+            ? <OfferLetterPane draft={draft} />
+            : <div className="offer-letter-pane"><p className="muted">The letter preview shows the salary, which your role cannot view.</p></div>}
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={save} disabled={busy || createBlocked}>{busy ? 'Saving…' : offer ? 'Save changes' : 'Create offer'}</button>
+        </div>
       </div>
-      {meta && !meta.canEditSalary && <p className="muted">Salary fields are hidden — your role cannot set offer salary.</p>}
-    </Modal>
+    </div>
+  );
+}
+// Kept as the name other screens import.
+function CreateOfferModal({ application, user, onClose, onCreated }) {
+  return <OfferFormModal application={application} user={user} onClose={onClose} onSaved={() => onCreated()} />;
+}
+
+// The saved offer's letter, exactly as it will be (or was) issued.
+function OfferLetterModal({ offer, onClose }) {
+  const frameHost = useRef(null);
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  function print() { const fr = frameHost.current?.querySelector('iframe'); try { fr?.contentWindow?.print(); } catch { /* the browser's own print still works */ } }
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal offer-letter-modal" role="dialog" aria-modal="true" aria-label={'Offer letter ' + offer.offerNo} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>Offer letter — {offer.offerNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="modal-body" ref={frameHost}><OfferLetterPane offerId={offer.id} /></div>
+        <div className="modal-foot"><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn btn-secondary" onClick={print}>Print / save as PDF</button></div>
+      </div>
+    </div>
   );
 }
 
@@ -11457,6 +11684,8 @@ function OfferDetail({ id, user, onBack }) {
   const [o, setO] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [action, setAction] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [letter, setLetter] = useState(false);
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setO((await api.get('/offers/' + id)).offer); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -11464,9 +11693,15 @@ function OfferDetail({ id, user, onBack }) {
   if (!o) return <Skeleton rows={8} />;
 
   async function act(path, body, okMsg) {
-    try { const r = await api.post(`/offers/${id}/${path}`, body || {}); setO(r.offer); toast(okMsg); }
+    try {
+      const r = await api.post(`/offers/${id}/${path}`, body || {}); setO(r.offer);
+      // Issuing and delivery are separate facts: say what is known, no more.
+      if (r.delivery) toast(r.delivery.state === 'queued' ? `${okMsg}. Email queued to ${r.delivery.to}.` : `${okMsg}. No email was sent: ${r.delivery.message}`, r.delivery.state === 'queued' ? undefined : 'warn');
+      else toast(okMsg);
+    }
     catch (e) { toast(e.message, 'error'); }
   }
+  const editable = can(user, 'offer.edit') && ['draft', 'pending_approval', 'approved'].includes(o.status);
   const s = o.status;
   // One approval layer: the HR Director. The approve/reject controls are shown
   // only to a user who actually holds the director permission the server
@@ -11483,10 +11718,12 @@ function OfferDetail({ id, user, onBack }) {
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Offers</button>}
         title={<> Offer — {o.candidate?.fullName}</>} sub={<> <strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · <span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></>}
         actions={<>
+          {o.salaryVisible && <button className="btn btn-secondary" onClick={() => setLetter(true)}>Preview letter</button>}
+          {editable && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
           {btns.submit_offer?.visible && s === 'draft' && <button className="btn" onClick={() => act('submit', {}, 'Sent to the HR Director for approval')}>Submit for approval</button>}
           {btns.approve_offer?.visible && isDirector && s === 'pending_approval' && <button className="btn" onClick={() => act('approve', {}, 'Offer approved')}>Approve</button>}
           {btns.reject_offer_approval?.visible && isDirector && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => setAction({ title: 'Reject Offer', path: 'reject-approval', body: (r) => ({ reason: r }), msg: 'Offer rejected' })}>Reject</button>}
-          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
+          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer issued')}>Send Offer</button>}
           {btns.accept_offer?.visible && s === 'sent' && <button className="btn" onClick={() => act('result', { result: 'accepted' }, 'Marked accepted')}>Mark Accepted</button>}
           {btns.reject_offer_candidate?.visible && ['sent', 'accepted'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Mark Rejected by Candidate', path: 'result', body: (r) => ({ result: 'rejected_by_candidate', reason: r }), msg: 'Marked rejected by candidate' })}>Rejected by Candidate</button>}
           {btns.withdraw_offer?.visible && !['joined', 'withdrawn', 'rejected_by_candidate'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Withdraw Offer', path: 'result', body: (r) => ({ result: 'withdrawn', reason: r }), msg: 'Offer withdrawn' })}>Withdraw</button>}
@@ -11503,10 +11740,12 @@ function OfferDetail({ id, user, onBack }) {
           <Info label="Application">{o.application ? <>{o.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={o.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <Info label="Position">{o.positionTitle}</Info>
           <Info label="Project">{o.project?.name}</Info>
+          {o.titlePrefix && <Info label="Addressed as">{o.titlePrefix} {o.candidate?.fullName}</Info>}
           {o.salaryVisible
-            ? <Info label="Salary Offered">{o.salaryOffered != null ? `${o.salaryOffered} ${o.currency}` : '—'}</Info>
+            ? <Info label="Total monthly salary (net)">{o.salaryOffered != null ? `${o.currency} ${Number(o.salaryOffered).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</Info>
             : <Info label="Salary Offered"><span className="muted">Restricted</span></Info>}
-          {o.salaryVisible && <Info label="Benefits">{o.benefits || '—'}</Info>}
+          {o.salaryVisible && o.salaryComponents && <Info label="Breakdown">{Object.entries(o.salaryComponents).map(([k, v]) => `${({ basic: 'Basic', accommodation: 'Accommodation', transportation: 'Transportation', others: 'Others', area_allowance: 'Area allowance' })[k] || k} ${Number(v).toLocaleString('en-US')}`).join(' · ')}</Info>}
+          {o.salaryVisible && o.benefits && <Info label="Benefits note">{o.benefits}</Info>}
           <Info label="Joining Date">{fmtDateShort(o.joiningDate)}</Info>
           {o.expiryDate && <Info label="Offer expiry">{fmtDateShort(o.expiryDate)}</Info>}
           <Info label="Prepared By">{o.preparedBy?.name}</Info>
@@ -11523,6 +11762,8 @@ function OfferDetail({ id, user, onBack }) {
 
       {action && <Confirm title={action.title} message="Provide a reason. Recorded in the audit trail." requireReason danger
         onConfirm={(r) => { const a = action; setAction(null); act(a.path, a.body(r), a.msg); }} onClose={() => setAction(null)} />}
+      {editing && <OfferFormModal offer={o} user={user} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
+      {letter && <OfferLetterModal offer={o} onClose={() => setLetter(false)} />}
     </div>
   );
 }

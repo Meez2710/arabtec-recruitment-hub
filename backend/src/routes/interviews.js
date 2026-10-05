@@ -6,6 +6,8 @@ import {
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
+import { APP_TERMINAL, APP_LABELS, appNorm, REQ_TERMINAL, REQ_LABELS, reqNorm } from '../lib/stages.js';
+import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
 import { notifyEvent } from '../lib/notify.js';
 import { sendMail } from '../lib/mailer.js';
 import { interviewInvite as interviewInviteTpl } from '../lib/email_templates.js';
@@ -227,13 +229,16 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   const panel = Array.isArray(d.panel) ? d.panel : [];
   if (panel.length === 0) return res.status(400).json({ error: 'At least one interviewer (panel member) is required.' });
   for (const m of panel) if (!Users.byId(Number(m.interviewerId))) return res.status(400).json({ error: 'A selected interviewer does not exist.' });
-  // Cannot schedule for a terminal application (rejected/withdrawn/hired) unless an
-  // authorized user explicitly overrides (candidate.merge gate + reason), matching
-  // the duplicate-override pattern used elsewhere.
-  const TERMINAL_APP = ['rejected', 'withdrawn', 'joined', 'offer_rejected'];
-  if (app && TERMINAL_APP.includes(app.status)) {
+  // Cannot schedule for a terminal application (rejected, offer declined, joined)
+  // unless an authorized user explicitly overrides (candidate.merge gate +
+  // reason), matching the duplicate-override pattern used elsewhere. The
+  // terminal set is the canonical one in lib/stages.js, compared after alias
+  // normalisation — a hand-kept list here used legacy names and let a
+  // canonical 'offer_declined' application be scheduled again.
+  if (app && APP_TERMINAL.includes(appNorm(app.status))) {
     if (!d.overrideTerminal) {
-      return res.status(409).json({ error: `Cannot schedule an interview for a ${app.status} application.`, applicationStatus: app.status });
+      const label = APP_LABELS[appNorm(app.status)] || app.status;
+      return res.status(409).json({ error: `Cannot schedule an interview for an application that is ${label}.`, applicationStatus: appNorm(app.status) });
     }
     if (!req.user.permissions.includes('candidate.merge')) {
       return res.status(403).json({ error: 'You are not permitted to override scheduling for a terminal application.' });
@@ -243,6 +248,14 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
     }
   }
 
+  // A closed/cancelled request: recruiting for it has ended. Same override
+  // discipline as a terminal application (candidate.merge + reason).
+  const reqRow = requestId ? Requests.byId(requestId) : null;
+  if (reqRow && REQ_TERMINAL.includes(reqNorm(reqRow.status)) && !(d.overrideTerminal && req.user.permissions.includes('candidate.merge') && d.overrideReason && d.overrideReason.trim())) {
+    if (d.overrideTerminal && !req.user.permissions.includes('candidate.merge')) return res.status(403).json({ error: 'You are not permitted to override scheduling for this request.' });
+    if (d.overrideTerminal) return res.status(400).json({ error: 'A reason is required to override and schedule for a closed request.' });
+    return res.status(409).json({ error: `Hiring request ${reqRow.ticket_no || ''} is ${REQ_LABELS[reqNorm(reqRow.status)] || reqRow.status}; interviews for it are no longer scheduled.`.replace('  ', ' '), requestStatus: reqNorm(reqRow.status) });
+  }
   const interviewNo = Interviews.nextNo();
   const created = Interviews.create({
     interviewNo, applicationId: app ? app.id : null, candidateId, requestId,
@@ -271,14 +284,9 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
     title: `Interview scheduled: ${interviewNo}`,
     body: `${cand ? cand.full_name : 'A candidate'} — ${dateText}`,
     attachments: (() => { const ics = interviewIcs(created, cand); return ics ? [{ filename: `${interviewNo}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH', content: ics }] : []; })(),
+    onExternalResult: cand ? candidateEmailReporter({ candidateId: cand.id, applicationId: app ? app.id : null, actorId: req.user.id, what: 'Interview invite' }) : undefined,
   });
-  if (invited.sent && cand) {
-    try {
-      CandidateActivity.add({ candidateId: cand.id, applicationId: app ? app.id : null, actorId: req.user.id,
-        actorName: 'System', type: 'email_sent', note: 'Interview invite sent' });
-    } catch { /* the activity note must never fail scheduling */ }
-  }
-  res.status(201).json({ interview: serialize(created, req.user, { detail: true }) });
+  res.status(201).json({ interview: serialize(created, req.user, { detail: true }), delivery: deliveryPlan(invited, cand) });
 });
 
 /* ---------------- RESCHEDULE ---------------- */
@@ -339,8 +347,9 @@ router.post('/:id/link-application', requirePermission('interview.edit'), (req, 
   const app = Applications.byId(Number((req.body || {}).applicationId));
   if (!app) return res.status(404).json({ error: 'Application not found.' });
   if (Number(app.candidate_id) !== Number(iv.candidate_id)) return res.status(400).json({ error: 'That application belongs to a different candidate.' });
-  const TERMINAL_APP = ['rejected', 'withdrawn', 'joined', 'offer_rejected', 'offer_declined'];
-  if (TERMINAL_APP.includes(app.status)) return res.status(409).json({ error: `Cannot link an interview to a ${app.status} application.` });
+  if (APP_TERMINAL.includes(appNorm(app.status))) {
+    return res.status(409).json({ error: `Cannot link an interview to an application that is ${APP_LABELS[appNorm(app.status)] || app.status}.` });
+  }
   if (iv.request_id && app.request_id && Number(iv.request_id) !== Number(app.request_id)) {
     return res.status(400).json({ error: 'That application is for a different hiring request than this interview.' });
   }

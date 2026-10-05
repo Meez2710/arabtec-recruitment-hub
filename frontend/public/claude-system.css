@@ -1910,3 +1910,55 @@ button.cal-slot:focus-visible { outline: 0; }
 .perm-area-count { margin-right: auto; }
 .perm-area-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-5); }
 @media (max-width: 900px) { .perm-area-grid { grid-template-columns: 1fr; } }
+
+/* ==========================================================================
+   22. OFFER COMPOSE — the form beside the letter it produces
+   ----------------------------------------------------------------------------
+   Owner request, 5 Oct 2026: on Create offer, preview the offer letter on the
+   right half and show each field still to be filled as a blank in the letter,
+   updating while typing. The letter is the server's own (lib/offer-letter.js),
+   in a sandboxed frame scaled to the pane. Geometry only.
+   ========================================================================= */
+.modal.offer-compose { width: min(1320px, 96vw); max-width: none; height: min(920px, 94vh); display: flex; flex-direction: column; }
+.offer-compose-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.offer-compose-form { min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-5); }
+.offer-compose-form .section-title { margin: var(--sp-5) 0 var(--sp-2); }
+.offer-compose-form .section-title:first-of-type { margin-top: var(--sp-3); }
+.offer-compose-form .notice { margin-bottom: var(--sp-3); }
+.offer-letter-pane { min-height: 0; overflow-y: auto; padding: var(--sp-4); border-left-width: 1px; border-left-style: solid; }
+.offer-letter-scale { overflow: hidden; }
+.offer-letter-scale iframe { display: block; border: 0; }
+.offer-total { min-height: var(--cl-ctl-lg); display: flex; align-items: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.modal.offer-letter-modal { width: min(940px, 96vw); max-width: none; height: min(960px, 94vh); display: flex; flex-direction: column; }
+.modal.offer-letter-modal .modal-body { flex: 1 1 auto; min-height: 0; padding: 0; display: flex; }
+.modal.offer-letter-modal .offer-letter-pane { flex: 1 1 auto; border-left-width: 0; }
+@media (max-width: 900px) {
+  .modal.offer-compose { height: 94vh; }
+  .offer-compose-body { grid-template-columns: 1fr; overflow-y: auto; }
+  .offer-compose-form, .offer-letter-pane { overflow: visible; }
+  .offer-letter-pane { border-left-width: 0; border-top-width: 1px; border-top-style: solid; }
+}
+
+/* ==========================================================================
+   23. ASSESSMENT PROGRESS, CHANGE REASON AND HISTORY (audit 2026-10-05)
+   ----------------------------------------------------------------------------
+   The form opens with where each part stands; changing a submitted evaluation
+   asks why; the history lists who did what. Geometry only.
+   ========================================================================= */
+.assess-progress { margin: 0 0 var(--sp-5); }
+.assess-progress ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.assess-progress a { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--cl-ctl-lg); padding: 0 var(--sp-3); border-width: 1px; border-style: solid; border-radius: var(--cl-r-md); text-decoration: none; }
+.assess-progress-label { font-weight: 600; }
+/* The save row is a wrapping flex row; the reason takes a full line of its own,
+   between the state line and the buttons. */
+.assess-reason { flex: 1 0 100%; display: grid; gap: var(--sp-1); margin: var(--sp-1) 0; }
+.assess-bar-row > .btn-row { margin-left: auto; }
+.assess-reason textarea { width: 100%; }
+.assess-history { margin-top: var(--sp-5); }
+.assess-history-list { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.assess-history-list li { display: grid; gap: var(--sp-1); padding-bottom: var(--sp-2); border-bottom-width: 1px; border-bottom-style: solid; }
+.assess-history-when { font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .assess-progress ol { display: grid; grid-template-columns: 1fr; }
+  .assess-progress a { width: 100%; justify-content: space-between; }
+}
