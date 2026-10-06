@@ -77,11 +77,19 @@ export function rejection({ candidateName, position }) {
 }
 
 // 3. Interview invitation
+// Kept for the Notifications console sample. Real invitations are rendered by
+// lib/interview-messages.js (plain-text templates, escaped). Values here are
+// escaped too, and the video mode is 'video' (it was compared with 'online',
+// which never occurs, so the link was never shown as a link).
+const escT = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export function interviewInvite({ candidateName, position, dateText, mode, locationOrLink }) {
-  const name = candidateName || 'there';
-  const where = mode === 'online'
-    ? `Online${locationOrLink ? ` — join link: <a href="${locationOrLink}" style="color:${BRAND};">${locationOrLink}</a>` : ''}`
-    : (locationOrLink || 'Details to follow');
+  const name = escT(candidateName || 'there');
+  position = position ? escT(position) : position;
+  dateText = dateText ? escT(dateText) : dateText;
+  const link = /^https:\/\//i.test(String(locationOrLink || '')) ? escT(locationOrLink) : null;
+  const where = mode === 'video'
+    ? `Video call${link ? ` — join link: <a href="${link}" style="color:${BRAND};">${link}</a>` : (locationOrLink ? ` — ${escT(locationOrLink)}` : '')}`
+    : (locationOrLink ? escT(locationOrLink) : 'Details to follow');
   return {
     subject: `Interview invitation${position ? ' — ' + position : ''}`,
     html: shell('You’re invited to an interview', [

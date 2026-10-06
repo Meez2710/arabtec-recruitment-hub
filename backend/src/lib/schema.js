@@ -1038,6 +1038,52 @@ export function ensureSchema() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_msoauth_expires ON microsoft_oauth_state(expires_at);
+
+  -- Interview communications (audit 2026-10-06). A message edited for ONE
+  -- interview: kind = invite | update | cancel, audience = candidate | panel |
+  -- whatsapp | panel_removed. Absent rows fall back to the global templates.
+  CREATE TABLE IF NOT EXISTS interview_message (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interview(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    subject TEXT,
+    body TEXT NOT NULL,
+    updated_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (interview_id, kind, audience)
+  );
+  -- One row per recipient per channel per send action. batch_key is the
+  -- client's one-time key for that action: a double click or retry of the same
+  -- action finds its rows instead of sending again. status: queued | accepted
+  -- (provider accepted) | dry_run (test transport, not delivered) | not_sent
+  -- (with reason) | failed (with reason) | manual_handoff (WhatsApp opened by a
+  -- person — never counted as sent). "delivered" is never claimed: no
+  -- provider here confirms delivery.
+  CREATE TABLE IF NOT EXISTS interview_dispatch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interview(id) ON DELETE CASCADE,
+    batch_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 0,
+    audience TEXT NOT NULL,
+    recipient_key TEXT NOT NULL,
+    recipient_user_id INTEGER REFERENCES users(id),
+    recipient_name TEXT,
+    recipient_address TEXT,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT,
+    attach_cv INTEGER NOT NULL DEFAULT 0,
+    subject TEXT,
+    provider TEXT,
+    retry_of INTEGER,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (batch_key, recipient_key, channel)
+  );
+  CREATE INDEX IF NOT EXISTS idx_ivdispatch_interview ON interview_dispatch(interview_id, created_at);
   `);
 
   // AFTER the DDL above, not before it. These same three calls used to sit in

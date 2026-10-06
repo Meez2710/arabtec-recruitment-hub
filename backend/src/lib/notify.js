@@ -55,7 +55,7 @@ export function notifyByPermission(permCode, payload, { excludeUserId } = {}) {
 
 /* ------------------------------------------------------------------ config */
 
-function configFor(eventKey) {
+export function configFor(eventKey) {
   const event = EVENT_BY_KEY[eventKey];
   if (!event) return null;
   let row = null;

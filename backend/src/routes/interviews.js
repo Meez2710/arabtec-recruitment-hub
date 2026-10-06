@@ -7,38 +7,24 @@ import { requireAuth, requirePermission, requireAnyPermission } from '../middlew
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
 import { APP_TERMINAL, APP_LABELS, appNorm, REQ_TERMINAL, REQ_LABELS, reqNorm } from '../lib/stages.js';
-import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
 import { schedulingGuard, evaluateConflicts, conflictRefusal } from '../lib/interview-rules.js';
 import { tx, run as dbRun } from '../lib/db.js';
 import { canSeeCandidate } from '../lib/candidate-scope.js';
-import { notifyEvent } from '../lib/notify.js';
-import { sendMail } from '../lib/mailer.js';
-import { interviewInvite as interviewInviteTpl } from '../lib/email_templates.js';
+import {
+  PLACEHOLDERS, DEFAULT_TEMPLATES, AUDIENCES, HAS_SUBJECT, KINDS, TEMPLATE_SETTING, globalTemplates, validateTemplateSet, validateText,
+  messageValues, fill, cairoParts, intlPhone, whatsappLink, detailsProblem, EMAIL_OK,
+} from '../lib/interview-messages.js';
+import {
+  effectiveMessages, saveMessages, renderAll, recipients, channelStatus, sendAction, dispatchesFor, recordWhatsappHandoff, appUrl,
+} from '../lib/interview-dispatch.js';
+import { SystemSettings } from '../lib/models.js';
 
 const router = Router();
 router.use(requireAuth);
 
 const IV_TYPES = ['phone', 'technical', 'client', 'final', 'hr', 'reference'];
 
-// A calendar entry for the invite email, so the interview lands in Outlook
-// (or any calendar) with one click instead of being retyped from the text.
-// METHOD:PUBLISH, not REQUEST: the ATS is not the meeting organizer and does
-// not track replies, so this is an entry to add, not a meeting to accept.
-function icsText(s) { return String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
-function icsDate(d) { return new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); }
-function interviewIcs(iv, cand) {
-  const start = new Date(iv.scheduled_at);
-  if (isNaN(start)) return null;
-  const end = new Date(start.getTime() + (Number(iv.duration_min) || 60) * 60000);
-  const summary = `Interview — ${cand?.current_position || cand?.full_name || 'Arabtec'} (${iv.interview_type || 'interview'})`;
-  const description = [cand?.full_name ? `Candidate: ${cand.full_name}` : null, iv.interview_no ? `Reference: ${iv.interview_no}` : null,
-    iv.mode ? `Mode: ${iv.mode}` : null, iv.location_or_link ? `Where: ${iv.location_or_link}` : null].filter(Boolean).join('\n');
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Arabtec Recruitment Hub//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
-    `UID:${iv.interview_no || iv.id}@arabtec-recruitment-hub`, `DTSTAMP:${icsDate(Date.now())}`,
-    `DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`, `SUMMARY:${icsText(summary)}`,
-    ...(iv.location_or_link ? [`LOCATION:${icsText(iv.location_or_link)}`] : []),
-    `DESCRIPTION:${icsText(description)}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
-}
+// Calendar entries are built in lib/interview-messages.js (stable UID, rising SEQUENCE).
 const IV_MODES = ['onsite', 'video', 'phone'];
 const IV_STATUSES = ['scheduled', 'completed', 'no_show', 'cancelled', 'rescheduled'];
 const RECS = ['strong_yes', 'yes', 'no', 'strong_no'];
@@ -201,6 +187,70 @@ router.get('/application/:applicationId', (req, res) => {
   res.json({ interviews: rows.map((iv) => serialize(iv, req.user)) });
 });
 
+/* ---------------- INVITATION TEMPLATES (global) ---------------- */
+// Registered before `/:id`. Reading needs a scheduling permission; changing the
+// organisation's defaults needs notification.manage (the existing Notifications
+// permission). Templates carry placeholders only — never salary or HR data —
+// and never touch sender credentials.
+router.get('/message-templates', requireAnyPermission('interview.schedule', 'interview.edit'), (req, res) => {
+  res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: AUDIENCES, hasSubject: HAS_SUBJECT,
+    placeholders: Object.entries(PLACEHOLDERS).map(([name, p]) => ({ name, label: p.label, in: p.in })),
+    canEdit: req.user.permissions.includes('notification.manage') });
+});
+router.put('/message-templates', requirePermission('notification.manage'), (req, res) => {
+  const d = req.body || {};
+  let stored = {};
+  try { stored = JSON.parse(SystemSettings.get(TEMPLATE_SETTING) || '{}') || {}; } catch { stored = {}; }
+  if (d.reset) {
+    SystemSettings.upsert(TEMPLATE_SETTING, '{}');
+    writeAudit(req, { action: 'interview.templates_reset', entityType: 'setting', entityId: TEMPLATE_SETTING, oldValue: stored });
+    return res.json({ templates: globalTemplates() });
+  }
+  const err = validateTemplateSet(d.templates);
+  if (err) return res.status(400).json({ error: err });
+  const merged = JSON.parse(JSON.stringify(stored));
+  for (const [kind, auds] of Object.entries(d.templates)) {
+    merged[kind] = merged[kind] || {};
+    for (const [aud, partsIn] of Object.entries(auds)) merged[kind][aud] = { ...(merged[kind][aud] || {}), ...partsIn };
+  }
+  SystemSettings.upsert(TEMPLATE_SETTING, JSON.stringify(merged));
+  writeAudit(req, { action: 'interview.templates_updated', entityType: 'setting', entityId: TEMPLATE_SETTING,
+    oldValue: stored, newValue: merged });
+  res.json({ templates: globalTemplates() });
+});
+
+/* ---------------- DRAFT PREVIEW (scheduling form, nothing saved) ---------------- */
+router.post('/message-preview', requirePermission('interview.schedule'), (req, res) => {
+  const d = req.body || {};
+  const kind = 'invite';
+  const app = d.applicationId ? Applications.byId(Number(d.applicationId)) : null;
+  const candidate = app ? Candidates.byId(app.candidate_id) : d.candidateId ? Candidates.byId(Number(d.candidateId)) : null;
+  if (candidate && !canSeeCandidate(req.user, candidate.id)) return res.status(403).json({ error: 'You can only use candidates assigned to you.' });
+  const request = app?.request_id ? Requests.byId(app.request_id) : d.requestId ? Requests.byId(Number(d.requestId)) : null;
+  const cand = candidate || { full_name: String(d.candidateName || '').trim(), email: d.candidateEmail || null, phone: d.candidatePhone || null };
+  const at = canonicalInstant(d.scheduledAt || '') || new Date(Date.now() + 86400000).toISOString();
+  const iv = { id: 0, interview_no: '(assigned on save)', scheduled_at: at, duration_min: validDuration(d.durationMin) || 60,
+    mode: IV_MODES.includes(d.mode) ? d.mode : 'onsite', interview_type: IV_TYPES.includes(d.interviewType) ? d.interviewType : 'technical', location_or_link: d.locationOrLink || '' };
+  const panel = (Array.isArray(d.panel) ? d.panel : []).map((id) => Users.byId(Number(id))).filter(Boolean);
+  const organizer = Users.byId(req.user.id);
+  const base = globalTemplates()[kind];
+  const msgs = {};
+  const errors = {};
+  for (const aud of AUDIENCES[kind]) {
+    const m = (d.messages && d.messages[aud]) || {};
+    msgs[aud] = { subject: m.subject !== undefined ? m.subject : base[aud].subject, body: m.body !== undefined ? m.body : base[aud].body };
+    const e = (HAS_SUBJECT[aud] ? validateText(msgs[aud].subject, aud, 'subject') : null) || validateText(msgs[aud].body, aud, 'body');
+    if (e) errors[aud] = e;
+  }
+  const v = (recipient) => messageValues({ iv, candidate: cand, request, organizer, panel, recipient, appUrl: appUrl() });
+  const out = {
+    candidate: { subject: fill(msgs.candidate.subject, v(null)), body: fill(msgs.candidate.body, v(null)), to: cand.email || null, reachable: EMAIL_OK(cand.email) },
+    whatsapp: { body: fill(msgs.whatsapp.body, v(null)), phone: cand.phone || null, valid: !!intlPhone(cand.phone), link: whatsappLink(cand.phone, fill(msgs.whatsapp.body, v(null))) },
+    panel: panel.map((u) => ({ userId: u.id, name: u.full_name, to: u.email || null, reachable: EMAIL_OK(u.email), subject: fill(msgs.panel.subject, v(u)), body: fill(msgs.panel.body, v(u)) })),
+  };
+  res.json({ messages: msgs, preview: out, errors, when: cairoParts(at), detailsProblem: detailsProblem(iv), channel: channelStatus(kind) });
+});
+
 /* ---------------- DETAIL ---------------- */
 router.get('/:id', (req, res) => {
   const iv = Interviews.byId(Number(req.params.id));
@@ -209,8 +259,94 @@ router.get('/:id', (req, res) => {
   res.json({ interview: serialize(iv, req.user, { detail: true }) });
 });
 
+/* ---------------- MESSAGES for one interview ---------------- */
+// For the people who arrange interviews (schedule/edit), not for panelists.
+const canArrange = (u) => u.permissions.includes('interview.edit') || u.permissions.includes('interview.schedule');
+function loadForMessages(req, res) {
+  const iv = Interviews.byId(Number(req.params.id));
+  if (!iv) { res.status(404).json({ error: 'Interview not found.' }); return null; }
+  if (!canArrange(req.user) || !canViewInterview(req.user, iv)) { res.status(403).json({ error: 'You cannot manage this interview’s messages.' }); return null; }
+  return iv;
+}
+const kindOf = (v, iv) => (KINDS.includes(v) ? v : iv.status === 'cancelled' ? 'cancel' : 'invite');
+
+router.get('/:id/messages', (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const kind = kindOf(req.query.kind, iv);
+  const { rendered, messages } = renderAll(iv, kind);
+  const reach = recipients(iv, kind);
+  res.json({ kind, messages, rendered, recipients: reach.list, whatsapp: { ...reach.whatsapp, link: whatsappLink(reach.whatsapp.phone, rendered.whatsapp.body), text: rendered.whatsapp.body },
+    channel: channelStatus(kind), detailsProblem: kind === 'cancel' ? null : detailsProblem(iv), when: cairoParts(iv.scheduled_at),
+    notice: (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })(),
+    dispatches: dispatchesFor(iv.id) });
+});
+
+router.put('/:id/messages', requirePermission('interview.edit'), (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const d = req.body || {};
+  if (!KINDS.includes(d.kind)) return res.status(400).json({ error: 'kind must be invite, update or cancel.' });
+  const msgs = d.messages || {};
+  for (const [aud, m] of Object.entries(msgs)) {
+    if (!AUDIENCES[d.kind].includes(aud)) return res.status(400).json({ error: `Unknown recipient "${aud}".` });
+    const e = (HAS_SUBJECT[aud] && m.subject !== undefined ? validateText(m.subject, aud, 'subject') : null) || validateText(m.body, aud, 'body');
+    if (e) return res.status(400).json({ error: `${aud}: ${e}` });
+  }
+  saveMessages(iv, d.kind, msgs, req.user);
+  writeAudit(req, { action: 'interview.messages_edited', entityType: 'interview', entityId: iv.id, newValue: { kind: d.kind, audiences: Object.keys(msgs) } });
+  res.json({ messages: effectiveMessages(iv, d.kind) });
+});
+
+router.post('/:id/send', requirePermission('interview.edit'), async (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const d = req.body || {};
+  if (!KINDS.includes(d.kind)) return res.status(400).json({ error: 'kind must be invite, update or cancel.' });
+  const batchKey = typeof d.batchKey === 'string' ? d.batchKey.trim().slice(0, 100) : '';
+  if (!batchKey) return res.status(400).json({ error: 'A batchKey (one per send action) is required.' });
+  if (d.kind === 'cancel' && iv.status !== 'cancelled') return res.status(409).json({ error: 'Cancel the interview before sending a cancellation.' });
+  if (d.kind !== 'cancel' && !['scheduled', 'rescheduled'].includes(iv.status)) return res.status(409).json({ error: `This interview is ${iv.status}; only a scheduled interview’s invitation or update can be sent.` });
+  if (d.kind !== 'cancel') { const p = detailsProblem(iv); if (p) return res.status(400).json({ error: p, code: 'details_incomplete' }); }
+  if (!d.retryFailed && !d.candidate && !(Array.isArray(d.panel) && d.panel.length)) return res.status(400).json({ error: 'Choose at least one recipient.' });
+  const r = await sendAction(Interviews.byId(iv.id), { kind: d.kind, batchKey, candidate: !!d.candidate, panel: d.panel || [], attachCv: d.attachCv || [], retryFailed: !!d.retryFailed, actor: req.user });
+  if (r.nothingToRetry) return res.status(409).json({ error: 'There are no failed messages to retry for the current version of this interview.' });
+  if (!r.replayed) {
+    writeAudit(req, { action: 'interview.messages_sent', entityType: 'interview', entityId: iv.id,
+      newValue: { kind: d.kind, batchKey, retry: !!d.retryFailed, summary: r.summary,
+        recipients: r.rows.map((x) => ({ audience: x.audience, recipient: x.recipientName, status: x.status, attachCv: x.attachCv })) } });
+  }
+  res.json({ replayed: !!r.replayed, dispatches: r.rows, summary: r.summary || null, interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
+});
+
+// An explicit decision not to tell anyone about a change or cancellation.
+router.post('/:id/notice/skip', requirePermission('interview.edit'), (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const reason = String((req.body || {}).reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'Give a reason for not sending this update.' });
+  let n = null; try { n = iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { n = null; }
+  if (!n || n.communicated) return res.status(409).json({ error: 'There is no pending change to skip.' });
+  Interviews.setNotice(iv.id, { ...n, communicated: false, skipped: true, skippedAt: new Date().toISOString(), skippedBy: req.user.fullName, skipReason: reason });
+  InterviewActivity.add(iv.id, req.user, 'notice_not_sent', reason);
+  writeAudit(req, { action: 'interview.notice_skipped', entityType: 'interview', entityId: iv.id, newValue: { kind: n.kind }, comments: reason });
+  res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
+});
+
+router.post('/:id/whatsapp-handoff', requirePermission('interview.edit'), (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const d = req.body || {};
+  const kind = kindOf(d.kind, iv);
+  const batchKey = typeof d.batchKey === 'string' && d.batchKey.trim() ? d.batchKey.trim().slice(0, 100) : `wa-${iv.id}-${Date.now()}`;
+  const r = recordWhatsappHandoff(iv, { kind, batchKey, actor: req.user });
+  if (r.error) return res.status(400).json({ error: r.error });
+  InterviewActivity.add(iv.id, req.user, 'whatsapp_opened', 'Opened in WhatsApp for sending by hand — not confirmed as sent');
+  res.json({ link: r.link, text: r.text, dispatches: dispatchesFor(iv.id).filter((x) => x.batchKey === batchKey) });
+});
+
+router.get('/:id/dispatches', (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  res.json({ dispatches: dispatchesFor(iv.id) });
+});
+
 /* ---------------- SCHEDULE ---------------- */
-router.post('/', requirePermission('interview.schedule'), (req, res) => {
+router.post('/', requirePermission('interview.schedule'), async (req, res) => {
   const d = req.body || {};
   // Two ways in: from an application (the pipeline), or standalone — a
   // candidate from the Talent Pool with an optional hiring request. A
@@ -288,29 +424,22 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   // NOTE: scheduling an interview does NOT change application.status. They are independent.
   // Invitations are an explicit act (audit 2026-10-06, decision 7): saving an
   // interview sends nothing unless the caller asks for it.
-  const delivery = d.sendInvitations ? sendLegacyInvitation(created, app, req) : { state: 'not_requested' };
+  let delivery = { state: 'not_requested' };
+  if (d.sendInvitations) {
+    // API convenience: send the invitation to the candidate and the whole
+    // panel straight away (the screen previews first and sends explicitly).
+    const fresh = Interviews.byId(created.id);
+    const problem = detailsProblem(fresh);
+    if (problem) delivery = { state: 'not_sent', reason: 'details_incomplete', message: problem };
+    else {
+      const r = await sendAction(fresh, { kind: 'invite', batchKey: `create-${created.id}`, candidate: true,
+        panel: InterviewPanel.interviewerIds(created.id).map(Number), attachCv: [], actor: req.user });
+      const cRow = r.rows.find((x) => x.audience === 'candidate');
+      delivery = { state: cRow && ['accepted', 'dry_run'].includes(cRow.status) ? 'queued' : 'not_sent', to: cRow?.recipientAddress || null, reason: cRow?.reason || null, summary: r.summary, dispatches: r.rows };
+    }
+  }
   res.status(201).json({ interview: serialize(Interviews.byId(created.id), req.user, { detail: true }), delivery, warnings: outcome.warnings });
 });
-
-// Interim (Packet I): the previous automatic invitation, now sent only when
-// explicitly requested. Replaced by per-recipient dispatch in Packet II.
-function sendLegacyInvitation(created, app, req) {
-  const cand = Candidates.byId(created.candidate_id);
-  const dateText = created.scheduled_at
-    ? new Date(created.scheduled_at).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Cairo' }) + ' (Cairo time)' : '';
-  const panelUsers = InterviewPanel.forInterview(created.id).map((m) => { try { return Users.byId(m.interviewer_id); } catch { return null; } }).filter(Boolean);
-  const invited = notifyEvent('interview.scheduled', {
-    actor: req.user, candidate: cand, panel: panelUsers,
-    linkType: 'interview', linkId: created.id,
-    vars: { candidateName: cand ? cand.full_name : null, position: cand ? cand.current_position : null,
-      dateText, mode: created.mode, locationOrLink: created.location_or_link },
-    title: `Interview scheduled: ${created.interview_no}`,
-    body: `${cand ? cand.full_name : 'A candidate'} — ${dateText}`,
-    attachments: (() => { const ics = interviewIcs(created, cand); return ics ? [{ filename: `${created.interview_no}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH', content: ics }] : []; })(),
-    onExternalResult: cand ? candidateEmailReporter({ candidateId: cand.id, applicationId: app ? app.id : null, actorId: req.user.id, what: 'Interview invite' }) : undefined,
-  });
-  return deliveryPlan(invited, cand);
-}
 
 /* ---------------- RESCHEDULE ---------------- */
 router.put('/:id', requirePermission('interview.edit'), (req, res) => {

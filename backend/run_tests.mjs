@@ -19,6 +19,7 @@ const SUITES = [
   'scheduler_validation_test.mjs', // interview date/duration contract on POST/PUT; refused updates never half-apply
   'interview_assessment_link_test.mjs', // interviews reach their assessment: link, unlock on active interview, reopen
   'interview_booking_test.mjs', // audit 2026-10-06: simultaneous appointments, conflicts, request guards, idempotent create, CV
+  'interview_comms_test.mjs', // audit 2026-10-06: templates, explicit per-recipient sends, truthful outcomes, retry, WhatsApp hand-off, updates/cancellations
   'phase5_test.mjs',          // offers, approval, joining
   'workflow_integrity_test.mjs', // audit 2026-10-05: stale send, contractual re-approval, sent-offer lock, interview terminals
   'offer_letter_test.mjs',    // audit 2026-10-05: offer letter fidelity, live letter, issued vs emailed, handoffs
