@@ -296,6 +296,24 @@ router.put('/:id/messages', requirePermission('interview.edit'), (req, res) => {
   res.json({ messages: effectiveMessages(iv, d.kind) });
 });
 
+// Render unsaved edits for the preview pane; nothing is stored.
+router.post('/:id/messages/preview', (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const d = req.body || {};
+  const kind = kindOf(d.kind, iv);
+  const current = effectiveMessages(iv, kind);
+  const merged = {}; const errors = {};
+  for (const aud of AUDIENCES[kind]) {
+    const m = (d.messages && d.messages[aud]) || {};
+    merged[aud] = { subject: m.subject !== undefined ? m.subject : current[aud].subject, body: m.body !== undefined ? m.body : current[aud].body };
+    const e = (HAS_SUBJECT[aud] ? validateText(merged[aud].subject, aud, 'subject') : null) || validateText(merged[aud].body, aud, 'body');
+    if (e) errors[aud] = e;
+  }
+  if (Object.keys(errors).length) return res.json({ errors, rendered: null });
+  const { rendered } = renderAll(iv, kind, { messages: merged });
+  res.json({ errors, rendered, whatsappLink: whatsappLink(Candidates.byId(iv.candidate_id)?.phone, rendered.whatsapp.body) });
+});
+
 router.post('/:id/send', requirePermission('interview.edit'), async (req, res) => {
   const iv = loadForMessages(req, res); if (!iv) return;
   const d = req.body || {};
@@ -524,7 +542,7 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
       Interviews.setOverlapReason(iv.id, overlapReason);
       InterviewActivity.add(iv.id, req.user, 'panel_overlap_acknowledged', overlapReason);
     }
-    if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); InterviewActivity.add(iv.id, req.user, 'rescheduled', `→ ${scheduledAt}`); }
+    if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); { const p = cairoParts(scheduledAt); InterviewActivity.add(iv.id, req.user, 'rescheduled', `Moved to ${p.date}, ${p.time} (${p.timezone})`); } }
     else if (!added.length && !removed.length) InterviewActivity.add(iv.id, req.user, 'updated');
     if (changes.length) {
       // The calendar entry's revision rises; its UID never changes. What

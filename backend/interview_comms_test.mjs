@@ -49,6 +49,16 @@ try {
   const winter = M.cairoParts('2026-12-15T08:00:00Z');
   c('summer: 07:00 UTC is 10:00 Cairo time (GMT+3)', summer.time === '10:00' && summer.timezone === 'Cairo time (GMT+3)', JSON.stringify(summer));
   c('winter: 08:00 UTC is 10:00 Cairo time (GMT+2)', winter.time === '10:00' && winter.timezone === 'Cairo time (GMT+2)', JSON.stringify(winter));
+  {
+    // No hiring request and no current position: no "the the", no "— —", no "()".
+    const v = M.messageValues({ iv: { scheduled_at: '2026-10-08T07:00:00Z', duration_min: 60, mode: 'video', interview_no: 'INT-T' }, candidate: { full_name: 'Synthetic Person' } });
+    const T = M.DEFAULT_TEMPLATES.invite;
+    const subj = M.fill(T.candidate.subject, v), body = M.fill(T.candidate.body, v), pan = M.fill(T.panel.body, v), wa = M.fill(T.whatsapp.body, v);
+    c('unknown position reads cleanly in the subject', subj === 'Interview invitation — Arabtec', subj);
+    c('…and in the bodies (no gap, no stray brackets)', /interview for the role\./.test(body) && /for Synthetic Person\.\n/.test(pan) && /for the role on /.test(wa) && !/the the|\(\)|— —/.test(body + pan + wa));
+    const named = M.fill(T.candidate.subject, M.messageValues({ iv: { scheduled_at: '2026-10-08T07:00:00Z' }, candidate: { full_name: 'X' }, request: { title: 'Senior Site Engineer' } }));
+    c('a known position is used as given', named === 'Interview invitation — Senior Site Engineer — Arabtec', named);
+  }
   const html = M.textToHtml(M.fill('Dear {{candidateName}}', { candidateName: '<img src=x onerror=alert(1)> & "Co"' }));
   c('substituted values are escaped in the email HTML', !html.includes('<img') && html.includes('&lt;img') && html.includes('&amp;'));
   const ivx = { id: 9, interview_no: 'INT-09', scheduled_at: '2026-12-15T08:00:00Z', duration_min: 60, calendar_seq: 3, location_or_link: 'HQ' };

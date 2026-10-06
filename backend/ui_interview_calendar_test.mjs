@@ -115,11 +115,16 @@ check('an open slot opens the schedule form on that time', () => {
   assert.match(page, /onCreateAt=\{setCreateAt\}/);
   assert.match(page, /initialAt=\{createAt\}/);
 });
-check('the schedule form checks the panel for clashes and only warns', () => {
+// INTERVIEW_IMPLEMENTATION_BRIEF decision 2: the candidate cannot be in two
+// interviews at once (blocks); a shared panelist is allowed only when the
+// overlap is acknowledged with a reason; a shared location/link only warns.
+check('the schedule form checks conflicts live: candidate blocks, panel needs a reason, location warns', () => {
   const modal = app.slice(app.indexOf('function ScheduleInterviewModal'), app.indexOf('function InterviewsPage'));
   assert.match(modal, /\/interviews\/clashes\?/);
-  assert.match(modal, /notice notice-warn cal-clash/);
-  assert.doesNotMatch(modal.slice(modal.indexOf('disabled={'), modal.indexOf('disabled={') + 200), /clashes/, 'a clash must not disable Schedule');
+  assert.match(modal, /const formReady = [^;]*!blockedByCandidate[^;]*\(!needsAck \|\| \(ack && overlapReason\.trim\(\)\)\)/, 'candidate conflict blocks; panel overlap needs acknowledgement + reason');
+  assert.match(modal, /ackPanelOverlap: true, overlapReason/, 'the acknowledgement and reason are sent to the server');
+  assert.match(modal, /avail\.location[^\n]*className="notice">/, 'a shared location or link is a plain warning');
+  assert.doesNotMatch(modal, /formReady = [^;]*avail\.location/, 'a location overlap never blocks saving');
 });
 
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);

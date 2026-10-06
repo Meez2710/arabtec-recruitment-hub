@@ -4271,6 +4271,7 @@ const NOTIF_WHO_SHORT = {
   approvers: 'Approvers', panel: 'Panel', candidate: 'Candidate', actor: 'Who acted',
 };
 function NotificationsPanel({ user }) {
+  const [ivTemplates, setIvTemplates] = useState(false);
   const toast = useToast();
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -4315,6 +4316,12 @@ function NotificationsPanel({ user }) {
 
   return (
     <div>
+      {/* The words of interview invitations live with the interviews; this is the second way in. */}
+      <div className="iv-tpl-link">
+        <span className="muted">Interview invitations, updates and cancellations are worded in their own templates.</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIvTemplates(true)}>Interview invitation templates</button>
+      </div>
+      {ivTemplates && <InterviewTemplatesModal onClose={() => setIvTemplates(false)} />}
       {!data.emailConfigured && (
         <div className="notice notice-warn card-pad" style={{ marginBottom: 14 }}>
           <strong>No mailbox is configured.</strong> In-app alerts still work; anything ticked
@@ -10776,82 +10783,732 @@ async function ensureApplication(candidateId, requestId) {
   return created.application.id;
 }
 
+/* ===================== Interview scheduling & communications =====================
+   Audit 2026-10-06 (INTERVIEW_IMPLEMENTATION_BRIEF.md). One interview per
+   candidate; candidate & CV, interview & panel, and invitations in one form;
+   explicit "Save" or "Save & send"; Cairo time throughout; truthful outcomes.
+   ================================================================================ */
+const IV_TZ = 'Africa/Cairo';
+// Cairo wall time "YYYY-MM-DDTHH:mm" ↔ UTC instant, DST-correct.
+function cairoOffsetMin(ms) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: IV_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    .formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - ms) / 60000;
+}
+function cairoInputToIso(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v || '');
+  if (!m) return null;
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  let t = wall - cairoOffsetMin(wall) * 60000;
+  t = wall - cairoOffsetMin(t) * 60000; // settle across a DST change
+  return new Date(t).toISOString();
+}
+function isoToCairoInput(iso) {
+  if (!iso) return '';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: IV_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+function cairoTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d) ? "—" : d.toLocaleTimeString("en-GB", { timeZone: IV_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+}
+function cairoLabel(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const s = d.toLocaleString('en-GB', { timeZone: IV_TZ, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const off = new Intl.DateTimeFormat('en-US', { timeZone: IV_TZ, timeZoneName: 'shortOffset' }).formatToParts(d).find((x) => x.type === 'timeZoneName')?.value || '';
+  return `${s} · Cairo (${off})`;
+}
+const ivKey = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now() + Math.random().toString(16).slice(2));
+const INTL_PHONE = (v) => /^\+[1-9]\d{7,14}$/.test(String(v || '').replace(/[\s\-().]/g, ''));
+const EMAIL_FMT = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
+const HTTPS_LINK = (v) => { try { return new URL(String(v || '').trim()).protocol === 'https:'; } catch { return false; } };
+function ivDetailsProblem(mode, where) {
+  const v = String(where || '').trim();
+  if (mode === 'video' && !HTTPS_LINK(v)) return 'Add the meeting link (https://…) to send invitations.';
+  if (mode === 'onsite' && !v) return 'Add the location to send invitations.';
+  if (mode === 'phone' && !v) return 'Add the phone number or call arrangement to send invitations.';
+  return null;
+}
+
+// Outcome of one recipient, in words that never overstate.
+const DISPATCH_STATUS = {
+  queued: { label: 'Queued', variant: 'soft' },
+  accepted: { label: 'Accepted by the mail server', variant: 'success' },
+  dry_run: { label: 'Test transport — not delivered', variant: 'warning' },
+  not_sent: { label: 'Not sent', variant: 'warning' },
+  failed: { label: 'Failed', variant: 'critical' },
+  manual_handoff: { label: 'Opened in WhatsApp — not confirmed', variant: 'soft' },
+};
+function DispatchList({ rows }) {
+  if (!rows || !rows.length) return null;
+  return (
+    <ul className="iv-dispatch-list">
+      {rows.map((r) => {
+        const st = DISPATCH_STATUS[r.status] || { label: r.status, variant: 'soft' };
+        return (
+          <li key={r.id}>
+            <span className="iv-dispatch-who"><strong>{r.recipientName || 'Recipient'}</strong>
+              <span className="muted">{r.audience === 'candidate' ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from panel' : 'Panel'}{r.channel === 'whatsapp' ? ' · WhatsApp' : r.recipientAddress ? ' · ' + r.recipientAddress : ''}{r.attachCv ? ' · CV attached' : ''}</span></span>
+            <Badge variant={st.variant}>{st.label}</Badge>
+            {r.reason && r.status !== 'manual_handoff' && <span className="iv-dispatch-reason">{r.reason}</span>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// The WhatsApp hand-off: edit, copy, open. Opening is a person sending it.
+function WhatsAppHandoff({ phone, text, onText, onOpen, editable = true }) {
+  const toast = useToast();
+  const ok = INTL_PHONE(phone);
+  return (
+    <div className="iv-wa">
+      <div className="iv-wa-head"><strong>WhatsApp message</strong><span className="muted">{ok ? phone : phone ? `${phone} — not in international format (e.g. +201001234567)` : 'No phone number'}</span></div>
+      {editable
+        ? <textarea rows="4" value={text} onChange={(e) => onText(e.target.value)} aria-label="WhatsApp message" />
+        : <div className="iv-preview-body">{text}</div>}
+      <div className="btn-row">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(text).then(() => toast('Message copied')).catch(() => toast('Copy failed — select the text instead', 'error')); }}>Copy message</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!ok || !onOpen} onClick={onOpen}>Open WhatsApp</button>
+      </div>
+      <p className="field-hint">WhatsApp opens on this device with the message ready; you press send. The Hub records that it was opened, not that it was sent. No CV or private link is ever included.</p>
+    </div>
+  );
+}
+
+// Subject + body editor with placeholder chips that insert at the cursor.
+function MessageEditor({ label, value, onChange, hasSubject = true, placeholders = [], error }) {
+  const bodyRef = useRef(null);
+  const insert = (name) => {
+    const el = bodyRef.current; const token = `{{${name}}}`;
+    if (!el) { onChange({ ...value, body: (value.body || '') + token }); return; }
+    const s = el.selectionStart ?? (value.body || '').length; const e = el.selectionEnd ?? s;
+    const body = (value.body || '').slice(0, s) + token + (value.body || '').slice(e);
+    onChange({ ...value, body });
+    setTimeout(() => { el.focus(); el.setSelectionRange(s + token.length, s + token.length); }, 0);
+  };
+  return (
+    <div className="iv-editor">
+      <div className="iv-editor-label">{label}</div>
+      {hasSubject && <input aria-label={label + ' subject'} value={value.subject || ''} onChange={(e) => onChange({ ...value, subject: e.target.value })} placeholder="Subject" />}
+      <textarea ref={bodyRef} rows="8" aria-label={label + ' message'} value={value.body || ''} onChange={(e) => onChange({ ...value, body: e.target.value })} />
+      {placeholders.length > 0 && (
+        <div className="iv-chips" aria-label="Insert a placeholder">
+          {placeholders.map((p) => <button key={p.name} type="button" className="chip-btn" title={p.label} onClick={() => insert(p.name)}>{p.name}</button>)}
+        </div>
+      )}
+      {error && <div className="iv-error" role="alert">{error}</div>}
+    </div>
+  );
+}
+const phFor = (all, code) => (all || []).filter((p) => p.in.includes(code));
+
+/* ----------------------------- Schedule form ----------------------------- */
+const IV_FORM_BLANK = { interviewType: 'technical', mode: 'video', scheduledAt: '', durationMin: 60, round: 1, locationOrLink: '', panel: [] };
+const IV_LINK_BLANK = { mode: 'pick', candidate: null, newName: '', newEmail: '', newPhone: '', requestId: '' };
+const IV_PROGRESS_BLANK = { candidateId: null, cvDone: false, applicationId: null, interviewId: null };
+
 // `initialAt` is the slot clicked on the calendar; the form opens on that time.
 function ScheduleInterviewModal({ application, user, onClose, onScheduled, initialAt }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ interviewType: 'technical', mode: 'video', scheduledAt: initialAt ? toLocalInput(initialAt) : '', durationMin: 60, round: 1, locationOrLink: '', panel: [] });
-  const [link, setLink] = useState(EMPTY_LINK);
+  const [tpl, setTpl] = useState(null);
+  const [f, setF] = useState(() => ({ ...IV_FORM_BLANK, scheduledAt: initialAt ? isoToCairoInput(new Date(initialAt).toISOString()) : '' }));
+  const [link, setLink] = useState(IV_LINK_BLANK);
+  const [cvFile, setCvFile] = useState(null);
+  const [requests, setRequests] = useState(null);
+  const [q, setQ] = useState(''); const [hits, setHits] = useState([]);
+  const [dups, setDups] = useState(null);
+  const [progress, setProgress] = useState(IV_PROGRESS_BLANK);
+  const [stepError, setStepError] = useState(null); // { step, message }
+  const [avail, setAvail] = useState({ state: 'idle' }); // idle|checking|ok|conflicts|unavailable
+  const [ack, setAck] = useState(false); const [overlapReason, setOverlapReason] = useState('');
+  const [msgs, setMsgs] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [rcpt, setRcpt] = useState({ candidate: true, panel: null, attachCv: [] });
   const [busy, setBusy] = useState(false);
-  const [clashes, setClashes] = useState([]);
+  const [result, setResult] = useState(null); // { interview, dispatches, summary, sent }
+  const [waText, setWaText] = useState('');
+  const keys = useRef({ create: ivKey(), send: ivKey() });
+  const busyRef = useRef(false);
+  const waTouched = useRef(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  useEffect(() => { api.get('/interviews/meta/form').then(setMeta); }, []);
-  // Who on the chosen panel is already booked then. A warning, never a block:
-  // panels overlap on purpose, and the scheduler decides.
-  const panelKey = f.panel.join(',');
+  const canAdd = can(user, 'candidate.add');
+
   useEffect(() => {
-    const start = f.scheduledAt ? new Date(f.scheduledAt) : null;
-    if (!start || isNaN(start) || !panelKey) { setClashes([]); return undefined; }
+    api.get('/interviews/meta/form').then(setMeta).catch((e) => toast(e.message, 'error'));
+    api.get('/interviews/message-templates').then((t) => { setTpl(t); setMsgs({ ...t.templates.invite }); setWaText(''); }).catch(() => setTpl({ templates: null, placeholders: [] }));
+    if (!application) api.get('/requests?pageSize=100').then((r) => setRequests(r.requests || [])).catch(() => setRequests([]));
+  }, []);
+  // Talent Pool search for an existing candidate.
+  useEffect(() => {
+    const term = q.trim();
+    if (application || link.mode !== 'pick' || !term) { setHits([]); return undefined; }
+    const t = setTimeout(() => api.get('/candidates?q=' + encodeURIComponent(term) + '&pageSize=8').then((r) => setHits(r.candidates || [])).catch(() => setHits([])), 180);
+    return () => clearTimeout(t);
+  }, [q, link.mode]);
+
+  const candidateId = application ? application.candidate?.id || application.candidateId : (link.mode === 'pick' ? link.candidate?.id : progress.candidateId);
+  const startIso = cairoInputToIso(f.scheduledAt);
+  const panelKey = f.panel.join(',');
+  // Availability: candidate (block), panel (acknowledge), same place (warn).
+  // A failed check is shown as "unavailable", never as "no conflict".
+  useEffect(() => {
+    if (!startIso || !panelKey) { setAvail({ state: 'idle' }); return undefined; }
     let live = true;
+    setAvail((a) => ({ ...a, state: 'checking' }));
     const t = setTimeout(() => {
-      const qs = new URLSearchParams({ start: start.toISOString(), durationMin: String(Number(f.durationMin) || 60), panel: panelKey });
+      const qs = new URLSearchParams({ start: startIso, durationMin: String(Number(f.durationMin) || 60), panel: panelKey });
+      if (candidateId) qs.set('candidateId', String(candidateId));
+      if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
       api.get('/interviews/clashes?' + qs.toString())
-        .then((r) => { if (live) setClashes(r.clashes || []); })
-        .catch(() => { if (live) setClashes([]); });
+        .then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length;
+          setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [] }); })
+        .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
     }, 300);
     return () => { live = false; clearTimeout(t); };
-  }, [f.scheduledAt, f.durationMin, panelKey]);
-  function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
+  }, [startIso, f.durationMin, panelKey, candidateId, f.locationOrLink]);
 
+  // Panel recipients default to everyone on the panel.
+  const panelSel = rcpt.panel === null ? f.panel : rcpt.panel.filter((id) => f.panel.includes(id));
+  const candEmail = application ? application.candidate?.email : link.mode === 'pick' ? link.candidate?.email : link.newEmail;
+  const candPhone = application ? application.candidate?.phone : link.mode === 'pick' ? link.candidate?.phone : link.newPhone;
+  const candName = application ? application.candidate?.fullName : link.mode === 'pick' ? link.candidate?.fullName : link.newName;
+  // Live preview of the invitations from the server's own renderer.
+  const previewKey = JSON.stringify({ msgs, startIso, f, candidateId, candName, candEmail, candPhone, req: link.requestId, app: application?.id });
+  useEffect(() => {
+    if (!msgs) return undefined;
+    const t = setTimeout(() => {
+      api.post('/interviews/message-preview', {
+        applicationId: application?.id, candidateId: !application && link.mode === 'pick' ? link.candidate?.id : (progress.candidateId || undefined),
+        candidateName: candName, candidateEmail: candEmail, candidatePhone: candPhone, requestId: link.requestId || undefined,
+        scheduledAt: startIso, durationMin: Number(f.durationMin), mode: f.mode, interviewType: f.interviewType, locationOrLink: f.locationOrLink,
+        panel: f.panel, messages: msgs,
+      }).then((p) => { setPreview(p); if (!waTouched.current) setWaText(p.preview.whatsapp.body); }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [previewKey]);
+
+  function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
+  const candReady = application ? true : link.mode === 'pick' ? !!link.candidate : !!link.newName.trim() && (!!link.newEmail.trim() || !!link.newPhone.trim());
+  const contactProblem = !application && link.mode === 'new'
+    ? (link.newEmail.trim() && !EMAIL_FMT(link.newEmail) ? 'The email address is not valid.' : link.newPhone.trim() && !INTL_PHONE(link.newPhone) ? 'Use international format for the phone, e.g. +201001234567.' : null) : null;
+  const blockedByCandidate = avail.state === 'conflicts' && (avail.candidate || []).length > 0;
+  const needsAck = avail.state === 'conflicts' && (avail.panel || []).length > 0;
+  const formReady = candReady && !contactProblem && !!startIso && f.panel.length > 0 && !blockedByCandidate && (!needsAck || (ack && overlapReason.trim()));
+  const sendProblem = ivDetailsProblem(f.mode, f.locationOrLink) || (preview && Object.values(preview.errors || {})[0]) || null;
+
+  // Each step keeps its result, so a failure part-way can be retried without
+  // creating the candidate, application or interview a second time.
+  async function save(send) {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setStepError(null);
+    let p = { ...progress };
+    try {
+      let cid = application ? (application.candidate?.id || application.candidateId) : link.mode === 'pick' ? link.candidate?.id : p.candidateId;
+      if (!application && link.mode === 'new' && !p.candidateId) {
+        try {
+          const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, phone: link.newPhone.trim() ? link.newPhone.replace(/[\s\-().]/g, '') : undefined, source: 'manual' });
+          cid = r.candidate.id; p = { ...p, candidateId: cid }; setProgress(p);
+        } catch (e) {
+          if (e.status === 409 && e.data?.duplicates) { setDups(e.data.duplicates); throw Object.assign(new Error('This person may already be in the Talent Pool. Choose the existing record below, or change the details.'), { step: 'candidate' }); }
+          throw Object.assign(e, { step: 'candidate' });
+        }
+      }
+      if (cvFile && !p.cvDone && cid) {
+        try { await api.upload(`/candidates/${cid}/resume?parse=0`, cvFile); p = { ...p, cvDone: true }; setProgress(p); }
+        catch (e) { throw Object.assign(new Error(`The CV did not upload: ${e.message}. Try again, or remove the file to continue without a CV.`), { step: 'cv' }); }
+      }
+      let target = application ? { applicationId: application.id } : { candidateId: cid, requestId: link.requestId ? Number(link.requestId) : undefined };
+      if (!application && link.requestId) {
+        if (!p.applicationId) { p = { ...p, applicationId: await ensureApplication(cid, Number(link.requestId)) }; setProgress(p); }
+        target = { applicationId: p.applicationId };
+      }
+      let iv = null;
+      if (!p.interviewId) {
+        try {
+          const r = await api.post('/interviews', {
+            ...target, idempotencyKey: keys.current.create, interviewType: f.interviewType, mode: f.mode, scheduledAt: startIso,
+            durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink.trim(),
+            panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
+            ...(needsAck ? { ackPanelOverlap: true, overlapReason: overlapReason.trim() } : {}),
+          });
+          iv = r.interview; p = { ...p, interviewId: iv.id }; setProgress(p);
+        } catch (e) {
+          if (e.data?.code === 'candidate_conflict') setAvail((a) => ({ ...a, state: 'conflicts', candidate: e.data.conflicts || [] }));
+          if (e.data?.code === 'panel_conflict') setAvail((a) => ({ ...a, state: 'conflicts', panel: e.data.clashes || [] }));
+          throw Object.assign(e, { step: 'interview' });
+        }
+      } else iv = (await api.get('/interviews/' + p.interviewId)).interview;
+      let out = { interview: iv, dispatches: [], summary: null, sent: false };
+      if (send) {
+        try {
+          await api.put(`/interviews/${iv.id}/messages`, { kind: 'invite', messages: { candidate: msgs.candidate, panel: msgs.panel, whatsapp: { body: waText || msgs.whatsapp.body } } });
+          const r = await api.post(`/interviews/${iv.id}/send`, { kind: 'invite', batchKey: keys.current.send, candidate: !!rcpt.candidate, panel: panelSel, attachCv: rcpt.attachCv.filter((id) => panelSel.includes(id)) });
+          out = { interview: r.interview || iv, dispatches: r.dispatches || [], summary: r.summary, sent: true };
+        } catch (e) { throw Object.assign(new Error(`The interview is saved (${iv.interviewNo}), but the invitations were not sent: ${e.message}`), { step: 'send' }); }
+      } else if (waTouched.current) {
+        await api.put(`/interviews/${iv.id}/messages`, { kind: 'invite', messages: { whatsapp: { body: waText } } }).catch(() => {});
+      }
+      setResult(out);
+      toast(send ? `Interview ${iv.interviewNo} saved` : `Interview ${iv.interviewNo} saved — no invitations sent`);
+    } catch (e) {
+      setStepError({ step: e.step || 'interview', message: e.message || 'Something went wrong' });
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  function scheduleAnother() {
+    // Keep the slot shape (time, type, mode, length); clear everything personal.
+    setF((s) => ({ ...IV_FORM_BLANK, interviewType: s.interviewType, mode: s.mode, scheduledAt: s.scheduledAt, durationMin: s.durationMin, round: s.round }));
+    setLink(IV_LINK_BLANK); setCvFile(null); setDups(null); setQ(''); setProgress(IV_PROGRESS_BLANK); setStepError(null);
+    setAck(false); setOverlapReason(''); setRcpt({ candidate: true, panel: null, attachCv: [] });
+    setMsgs(tpl?.templates ? { ...tpl.templates.invite } : null); waTouched.current = false; setWaText('');
+    keys.current = { create: ivKey(), send: ivKey() }; setResult(null);
+  }
+  async function openWhatsApp(ivId) {
+    try { const r = await api.post(`/interviews/${ivId}/whatsapp-handoff`, { kind: 'invite' }); window.open(r.link, '_blank', 'noopener'); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const title = application ? `Schedule interview — ${application.candidate?.fullName || ''}` : 'Schedule interview';
+  if (!meta || !msgs) return <Modal title={title} onClose={onClose}><Skeleton /></Modal>;
+  const nameOf = (id) => meta.interviewers.find((u) => u.id === id)?.name || 'Panel member';
+
+  if (result) {
+    const iv = result.interview;
+    return toPageLevel(
+      <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) { onScheduled(); } }}>
+        <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label="Interview saved" tabIndex="-1" onKeyDown={onDialogKeyDown}>
+          <div className="modal-head"><h3>Interview {iv.interviewNo} saved</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={() => onScheduled()}><Icon name="close" size={16} /></button></div>
+          <div className="modal-body iv-result">
+            <p><strong>{iv.candidate?.fullName}</strong> · {cairoLabel(iv.scheduledAt)} · {iv.durationMin} min · {ivMode(iv.mode)}</p>
+            {result.sent ? <>
+              <div className="section-title">Invitations</div>
+              {result.summary?.dryRun && <div className="notice notice-warn">This server uses a test mail transport: messages were prepared but <strong>not delivered</strong>.</div>}
+              <DispatchList rows={result.dispatches} />
+            </> : <p className="muted">No invitations were sent. You can send them from the interview at any time.</p>}
+            <WhatsAppHandoff phone={iv.candidate ? candPhone : null} text={waText} editable={false} onOpen={() => openWhatsApp(iv.id)} />
+          </div>
+          <div className="modal-foot">
+            <button className="btn btn-ghost" onClick={() => onScheduled(iv.id)}>Open interview</button>
+            <button className="btn btn-secondary" onClick={scheduleAnother}>Schedule another</button>
+            <button className="btn" onClick={() => onScheduled()}>Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const progressNote = (progress.candidateId || progress.cvDone || progress.applicationId || progress.interviewId)
+    ? [progress.candidateId && 'candidate created', progress.cvDone && 'CV uploaded', progress.applicationId && 'linked to the request', progress.interviewId && 'interview saved'].filter(Boolean).join(' · ') : null;
+  return toPageLevel(
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="iv-compose-body">
+          <div className="iv-compose-form">
+            {/* 1 — Candidate & CV */}
+            <section className="iv-step" aria-labelledby="iv-step-1">
+              <h4 id="iv-step-1"><span className="iv-step-n">1</span>Candidate &amp; CV</h4>
+              {application ? (
+                <p className="muted">Application <strong>{application.applicationNo}</strong> — {application.candidate?.fullName}. Scheduling does not change the pipeline status.</p>
+              ) : <>
+                {canAdd && (
+                  <div className="seg-tabs" role="tablist" aria-label="Candidate source">
+                    <button type="button" role="tab" aria-selected={link.mode === 'pick'} className={'seg-tab' + (link.mode === 'pick' ? ' active' : '')} disabled={!!progress.candidateId} onClick={() => setLink((s) => ({ ...s, mode: 'pick' }))}>From Talent Pool</button>
+                    <button type="button" role="tab" aria-selected={link.mode === 'new'} className={'seg-tab' + (link.mode === 'new' ? ' active' : '')} disabled={!!progress.candidateId} onClick={() => setLink((s) => ({ ...s, mode: 'new' }))}>New candidate</button>
+                  </div>
+                )}
+                {link.mode === 'pick' ? (
+                  link.candidate ? (
+                    <div className="standalone-picked"><strong>{link.candidate.fullName}</strong>
+                      <span className="muted">{link.candidate.candidateNo}{link.candidate.email ? ' · ' + link.candidate.email : ''}{link.candidate.hasResume ? ' · CV on file' : ''}</span>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLink((s) => ({ ...s, candidate: null }))}>Change</button></div>
+                  ) : <>
+                    <input aria-label="Search the Talent Pool" placeholder="Search name, email, phone…" value={q} onChange={(e) => setQ(e.target.value)} />
+                    {hits.length > 0 && <ul className="standalone-results" role="listbox">{hits.map((c) => (
+                      <li key={c.id} role="option" aria-selected="false" onClick={() => { setLink((s) => ({ ...s, candidate: c })); setQ(''); }}>
+                        <strong>{c.fullName}</strong> <span className="muted">{c.candidateNo}{c.currentPosition ? ' · ' + c.currentPosition : ''}</span></li>))}</ul>}
+                  </>
+                ) : (
+                  <div className="form-grid">
+                    <div className="field full"><label>Full name *</label><input value={link.newName} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newName: e.target.value }))} /></div>
+                    <div className="field"><label>Email</label><input type="email" value={link.newEmail} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newEmail: e.target.value }))} placeholder="name@example.com" /></div>
+                    <div className="field"><label>Phone (international)</label><input value={link.newPhone} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newPhone: e.target.value }))} placeholder="+20 100 123 4567" inputMode="tel" /></div>
+                    <p className="field-hint full">An email or a phone number is required. The phone is used for WhatsApp.</p>
+                  </div>
+                )}
+                {dups && dups.length > 0 && link.mode === 'new' && !progress.candidateId && (
+                  <div className="notice notice-warn" role="status"><strong>Already in the Talent Pool?</strong>
+                    <ul className="iv-dups">{dups.map((d) => (
+                      <li key={d.id}><span>{d.fullName} · {d.candidateNo}{d.email ? ' · ' + d.email : ''}{d.phone ? ' · ' + d.phone : ''}</span>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setLink((s) => ({ ...s, mode: 'pick', candidate: { id: d.id, fullName: d.fullName, candidateNo: d.candidateNo, email: d.email, phone: d.phone } })); setDups(null); setStepError(null); }}>Use this candidate</button></li>))}</ul></div>
+                )}
+                <div className="field"><label>Hiring request (optional)</label>
+                  <select value={link.requestId} disabled={!!progress.applicationId} onChange={(e) => setLink((s) => ({ ...s, requestId: e.target.value }))}>
+                    <option value="">None — standalone interview</option>
+                    {(requests || []).map((r) => {
+                      const pending = r.status === 'pending_approval' || r.status === 'draft';
+                      const paused = r.status === 'on_hold';
+                      return <option key={r.id} value={r.id} disabled={pending || paused}>{r.ticketNo} — {r.title}{pending ? ' (awaiting approval)' : paused ? ' (on hold)' : ''}</option>;
+                    })}
+                  </select>
+                  <span className="field-hint">Requests awaiting approval or on hold can match candidates, but their interviews wait.</span></div>
+              </>}
+              <div className="iv-cv">
+                <span className="iv-cv-label">CV</span>
+                {cvFile ? <span className="iv-cv-file">{cvFile.name}{progress.cvDone ? ' · uploaded' : ''}
+                  {!progress.cvDone && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCvFile(null)}>Remove</button>}</span>
+                  : (application?.candidate?.hasResume || link.candidate?.hasResume) ? <span className="muted">A CV is already on file.</span>
+                    : <span className="muted">No CV attached</span>}
+                {!progress.cvDone && (
+                  <label className="btn btn-secondary btn-sm iv-file">{cvFile ? 'Replace file' : 'Attach CV'}
+                    <input type="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => { const file = e.target.files && e.target.files[0]; if (file) setCvFile(file); e.target.value = ''; }} hidden /></label>
+                )}
+                <span className="field-hint">PDF, Word, text or image, up to 20 MB. Stored on the candidate; not read by AI for this booking.</span>
+              </div>
+            </section>
+
+            {/* 2 — Interview & panel */}
+            <section className="iv-step" aria-labelledby="iv-step-2">
+              <h4 id="iv-step-2"><span className="iv-step-n">2</span>Interview &amp; panel</h4>
+              <div className="form-grid">
+                <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{ivType(t)}</option>)}</select></div>
+                <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{ivMode(m)}</option>)}</select></div>
+                <div className="field"><label>Date &amp; time (Cairo) *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} />
+                  {startIso && <span className="field-hint">{cairoLabel(startIso)}</span>}</div>
+                <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+                <div className="field full">
+                  <label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone number or call arrangement' : 'Location'}</label>
+                  <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
+                    placeholder={f.mode === 'video' ? 'https://… (paste the link from your calendar)' : f.mode === 'phone' ? '+20 100 000 0000' : 'Office, meeting room or site address'} />
+                  {f.mode === 'video' && f.locationOrLink.trim() && !HTTPS_LINK(f.locationOrLink) && <span className="iv-error">Use a full https:// meeting link.</span>}
+                </div>
+              </div>
+              <div className="iv-sub">Panel *</div>
+              <div className="iv-panel-pick">{meta.interviewers.map((u) => (
+                <button key={u.id} type="button" title={u.name} aria-pressed={f.panel.includes(u.id)} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => togglePanel(u.id)}>{u.name}{f.panel[0] === u.id ? ' · lead' : ''}</button>))}</div>
+              <div className="iv-avail" role="status" aria-live="polite">
+                {avail.state === 'checking' && <span className="muted">Checking availability…</span>}
+                {avail.state === 'ok' && <span className="iv-avail-ok">No conflicts for the candidate or the panel at this time.</span>}
+                {avail.state === 'unavailable' && <div className="notice notice-warn">The availability check could not run, so conflicts are <strong>unknown</strong>. Saving still re-checks on the server.</div>}
+                {avail.state === 'conflicts' && <>
+                  {(avail.candidate || []).length > 0 && <div className="notice notice-danger"><strong>The candidate is already booked</strong> {avail.candidate.map((c) => `${cairoTime(c.start)}–${cairoTime(c.end)}`).join(', ')}. Choose another time.</div>}
+                  {(avail.panel || []).length > 0 && <div className="notice notice-warn">
+                    <strong>Panel already booked:</strong> {avail.panel.map((c) => `${c.name} (${cairoTime(c.start)}–${cairoTime(c.end)})`).join(' · ')}
+                    <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
+                    {ack && <input aria-label="Reason for the overlap" placeholder="Reason, e.g. joins for the first 15 minutes" value={overlapReason} onChange={(e) => setOverlapReason(e.target.value)} />}
+                  </div>}
+                  {(avail.location || []).length > 0 && <div className="notice">Another interview uses the same {f.mode === 'video' ? 'meeting link' : 'location'} at an overlapping time ({avail.location.map((c) => `${cairoTime(c.start)}–${cairoTime(c.end)}`).join(', ')}). Check it is free.</div>}
+                </>}
+              </div>
+            </section>
+
+            {/* 3 — Invitations */}
+            <section className="iv-step" aria-labelledby="iv-step-3">
+              <h4 id="iv-step-3"><span className="iv-step-n">3</span>Invitations</h4>
+              <div className="iv-recipients">
+                <label className="iv-rcpt"><input type="checkbox" checked={!!rcpt.candidate} onChange={(e) => setRcpt((r) => ({ ...r, candidate: e.target.checked }))} />
+                  <span><strong>{candName || 'Candidate'}</strong> <span className="muted">{candEmail ? candEmail : 'no email — use WhatsApp or add one'}</span></span></label>
+                {f.panel.map((id) => {
+                  const on = panelSel.includes(id);
+                  const cvOk = !!cvFile || application?.candidate?.hasResume || link.candidate?.hasResume;
+                  return (
+                    <div key={id} className="iv-rcpt">
+                      <label><input type="checkbox" checked={on} onChange={(e) => setRcpt((r) => ({ ...r, panel: e.target.checked ? [...panelSel, id] : panelSel.filter((x) => x !== id) }))} />
+                        <span><strong>{nameOf(id)}</strong> <span className="muted">panel</span></span></label>
+                      {on && cvOk && <label className="iv-attach"><input type="checkbox" checked={rcpt.attachCv.includes(id)} onChange={(e) => setRcpt((r) => ({ ...r, attachCv: e.target.checked ? [...r.attachCv, id] : r.attachCv.filter((x) => x !== id) }))} /> Attach the CV to this email</label>}
+                    </div>
+                  );
+                })}
+              </div>
+              {preview?.channel?.blocked && <div className="notice notice-warn">{preview.channel.blocked.message} Saving still works; invitations would be recorded as not sent.</div>}
+              {preview?.channel?.dryRun && <div className="notice">Test mail transport on this server: invitations are prepared, <strong>not delivered</strong>.</div>}
+              <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tpl.placeholders, 'c')} error={preview?.errors?.candidate} />
+              <MessageEditor label="Panel email (each panelist gets their own)" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tpl.placeholders, 'p')} error={preview?.errors?.panel} />
+              <WhatsAppHandoff phone={candPhone} text={waText} onText={(v) => { waTouched.current = true; setWaText(v); }} onOpen={progress.interviewId ? () => openWhatsApp(progress.interviewId) : null} />
+              {!progress.interviewId && <p className="field-hint">“Open WhatsApp” is available once the interview is saved.</p>}
+            </section>
+          </div>
+
+          <aside className="iv-preview" aria-label="Invitation preview">
+            <div className="iv-preview-title">Preview</div>
+            {!preview ? <Skeleton rows={4} /> : <>
+              <div className="iv-preview-card">
+                <div className="iv-preview-meta">To {preview.preview.candidate.to || <em>no email</em>}</div>
+                <div className="iv-preview-subject">{preview.preview.candidate.subject}</div>
+                <div className="iv-preview-body">{preview.preview.candidate.body}</div>
+              </div>
+              {preview.preview.panel.slice(0, 1).map((pm) => (
+                <div key={pm.userId} className="iv-preview-card">
+                  <div className="iv-preview-meta">To {pm.name}{pm.to ? ` <${pm.to}>` : ''}{preview.preview.panel.length > 1 ? ` · and ${preview.preview.panel.length - 1} more, each addressed separately` : ''}</div>
+                  <div className="iv-preview-subject">{pm.subject}</div>
+                  <div className="iv-preview-body">{pm.body}</div>
+                </div>
+              ))}
+              <p className="field-hint">The calendar entry (.ics) is attached to each email in Cairo time. The interview reference is assigned on save.</p>
+            </>}
+          </aside>
+        </div>
+        <div className="modal-foot iv-foot">
+          {stepError && <div className="iv-error iv-foot-error" role="alert">{stepError.message}{progressNote ? ` (Kept: ${progressNote}.)` : ''}</div>}
+          {!stepError && progressNote && <span className="muted">Kept: {progressNote}</span>}
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-secondary" onClick={() => save(false)} disabled={busy || !formReady}>{busy ? 'Saving…' : 'Save interview'}</button>
+          <button className="btn" onClick={() => save(true)} disabled={busy || !formReady || !!sendProblem || (!rcpt.candidate && panelSel.length === 0)}
+            title={sendProblem || undefined}>{busy ? 'Saving…' : 'Save & send invitations'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------- Communicate (invite / update / cancel) ---------------- */
+function CommunicateModal({ iv, kind, onClose, onDone }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [tplPh, setTplPh] = useState([]);
+  const [msgs, setMsgs] = useState(null);
+  const [rendered, setRendered] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [sel, setSel] = useState(null);
+  const [cv, setCv] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [waText, setWaText] = useState('');
+  const [skipAsk, setSkipAsk] = useState(false);
+  const batch = useRef(ivKey());
+  const busyRef = useRef(false);
+  const resultRef = useRef(null);
+  useEffect(() => { if (result && resultRef.current) resultRef.current.scrollIntoView({ block: 'start' }); }, [result]);
+  const load = useCallback(async () => {
+    try {
+      const d = await api.get(`/interviews/${iv.id}/messages?kind=${kind}`);
+      setData(d); setRendered(d.rendered); setWaText(d.whatsapp.text || '');
+      setMsgs({ candidate: { subject: d.messages.candidate.subject, body: d.messages.candidate.body }, panel: { subject: d.messages.panel.subject, body: d.messages.panel.body },
+        ...(d.messages.panel_removed ? { panel_removed: { subject: d.messages.panel_removed.subject, body: d.messages.panel_removed.body } } : {}) });
+      setSel((s) => s || { candidate: d.recipients.some((r) => r.audience === 'candidate' && r.reachable), panel: d.recipients.filter((r) => r.audience !== 'candidate' && r.reachable).map((r) => r.userId) });
+    } catch (e) { toast(e.message, 'error'); onClose(); }
+  }, [iv.id, kind]);
+  useEffect(() => { load(); api.get('/interviews/message-templates').then((t) => setTplPh(t.placeholders || [])).catch(() => {}); }, [load]);
+  useEffect(() => {
+    if (!msgs) return undefined;
+    const t = setTimeout(() => {
+      api.post(`/interviews/${iv.id}/messages/preview`, { kind, messages: { ...msgs, whatsapp: { body: data?.messages?.whatsapp?.body } } })
+        .then((r) => { setErrors(r.errors || {}); if (r.rendered) setRendered(r.rendered); }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [JSON.stringify(msgs)]);
+  const verb = kind === 'invite' ? 'invitation' : kind === 'update' ? 'update' : 'cancellation';
+  async function send(retryFailed = false) {
+    if (busyRef.current) return; busyRef.current = true; setBusy(true);
+    try {
+      await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { ...msgs, whatsapp: { body: waText } } });
+      const r = await api.post(`/interviews/${iv.id}/send`, retryFailed ? { kind, batchKey: batch.current, retryFailed: true }
+        : { kind, batchKey: batch.current, candidate: !!sel.candidate, panel: sel.panel, attachCv: cv.filter((id) => sel.panel.includes(id)) });
+      setResult(r); toast(r.replayed ? 'Already sent — nothing sent twice' : `${verb[0].toUpperCase() + verb.slice(1)} processed`);
+      batch.current = ivKey();
+    } catch (e) { toast(e.message, 'error'); } finally { busyRef.current = false; setBusy(false); }
+  }
+  async function openWhatsApp() {
+    try { await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { whatsapp: { body: waText } } }); const r = await api.post(`/interviews/${iv.id}/whatsapp-handoff`, { kind }); window.open(r.link, '_blank', 'noopener'); load(); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  async function skip(reason) {
+    setSkipAsk(false);
+    try { await api.post(`/interviews/${iv.id}/notice/skip`, { reason }); toast('Recorded: not sent'); onDone(); } catch (e) { toast(e.message, 'error'); }
+  }
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const title = kind === 'invite' ? 'Send invitations' : kind === 'update' ? 'Send the update' : 'Send the cancellation';
+  const failedLatest = (data?.dispatches || []).filter((r) => r.kind === kind && r.revision === iv.calendarSeq && r.channel === 'email');
+  const hasFailed = (() => { const seen = new Set(); return failedLatest.some((r) => { if (seen.has(r.recipientKey)) return false; seen.add(r.recipientKey); return r.status === 'failed'; }); })();
+  return toPageLevel(
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title} — {iv.interviewNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        {!data || !msgs || !sel ? <div className="modal-body"><Skeleton rows={6} /></div> : (
+          <div className="iv-compose-body">
+            <div className="iv-compose-form">
+              <p className="muted">{cairoLabel(iv.scheduledAt)} · {iv.durationMin} min · {ivMode(iv.mode)}{data.notice?.changes?.length && kind === 'update' ? ` · changed: ${data.notice.changes.map((c) => ({ date_time: 'date & time', duration: 'duration', location_or_link: 'location/link', mode: 'mode', panel: 'panel' })[c] || c).join(', ')}` : ''}</p>
+              {result && <div className="iv-result-block" ref={resultRef}><div className="iv-sub">Result</div>{result.summary?.dryRun && <div className="notice notice-warn">Test transport — <strong>not delivered</strong>.</div>}<DispatchList rows={result.dispatches} /></div>}
+              {data.detailsProblem && <div className="notice notice-warn">{data.detailsProblem}</div>}
+              {data.channel.blocked && <div className="notice notice-warn">{data.channel.blocked.message}</div>}
+              {data.channel.dryRun && <div className="notice">Test mail transport on this server: messages are prepared, <strong>not delivered</strong>.</div>}
+              <div className="iv-sub">Recipients</div>
+              <div className="iv-recipients">
+                {data.recipients.map((r) => {
+                  const isCand = r.audience === 'candidate';
+                  const on = isCand ? sel.candidate : sel.panel.includes(r.userId);
+                  return (
+                    <div key={r.key + r.audience} className="iv-rcpt">
+                      <label><input type="checkbox" disabled={!r.reachable} checked={on && r.reachable}
+                        onChange={(e) => setSel((s) => (isCand ? { ...s, candidate: e.target.checked } : { ...s, panel: e.target.checked ? [...s.panel, r.userId] : s.panel.filter((x) => x !== r.userId) }))} />
+                        <span><strong>{r.name}</strong> <span className="muted">{isCand ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from the panel' : r.added ? 'Added to the panel' : 'Panel'}{r.address ? ' · ' + r.address : ''}</span>
+                          {r.problem && <span className="iv-error">{r.problem}</span>}</span></label>
+                      {r.audience === 'panel' && on && r.canAttachCv && kind !== 'cancel' && <label className="iv-attach"><input type="checkbox" checked={cv.includes(r.userId)} onChange={(e) => setCv((x) => (e.target.checked ? [...x, r.userId] : x.filter((y) => y !== r.userId)))} /> Attach the CV</label>}
+                    </div>
+                  );
+                })}
+              </div>
+              <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tplPh, 'c')} error={errors.candidate} />
+              <MessageEditor label="Panel email" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tplPh, 'p')} error={errors.panel} />
+              {msgs.panel_removed && data.recipients.some((r) => r.audience === 'panel_removed') && <MessageEditor label="Removed panelist" value={msgs.panel_removed} onChange={(v) => setMsgs((m) => ({ ...m, panel_removed: v }))} placeholders={phFor(tplPh, 'r')} error={errors.panel_removed} />}
+              <WhatsAppHandoff phone={data.whatsapp.phone} text={waText} onText={setWaText} onOpen={data.whatsapp.valid ? openWhatsApp : null} />
+            </div>
+            <aside className="iv-preview" aria-label="Preview">
+              <div className="iv-preview-title">Preview</div>
+              {rendered && <>
+                <div className="iv-preview-card"><div className="iv-preview-meta">Candidate</div><div className="iv-preview-subject">{rendered.candidate.subject}</div><div className="iv-preview-body">{rendered.candidate.body}</div></div>
+                {Object.entries(rendered.panel || {}).slice(0, 1).map(([uid, pm]) => (
+                  <div key={uid} className="iv-preview-card"><div className="iv-preview-meta">Panel{pm.asInvite ? ' (new member — invitation)' : ''}</div><div className="iv-preview-subject">{pm.subject}</div><div className="iv-preview-body">{pm.body}</div></div>))}
+                {Object.entries(rendered.panelRemoved || {}).slice(0, 1).map(([uid, pm]) => (
+                  <div key={uid} className="iv-preview-card"><div className="iv-preview-meta">Removed panelist</div><div className="iv-preview-subject">{pm.subject}</div><div className="iv-preview-body">{pm.body}</div></div>))}
+              </>}
+            </aside>
+          </div>
+        )}
+        <div className="modal-foot iv-foot">
+          {!result && data?.notice && !data.notice.communicated && !data.notice.skipped && kind !== 'invite' && <button className="btn btn-ghost" onClick={() => setSkipAsk(true)}>Don’t send</button>}
+          {hasFailed && <button className="btn btn-secondary" disabled={busy} onClick={() => send(true)}>Retry failed</button>}
+          <button className={result ? 'btn' : 'btn btn-ghost'} onClick={result ? onDone : onClose}>{result ? 'Done' : 'Cancel'}</button>
+          {!result && <button className="btn" disabled={busy || !sel || !!(data && data.detailsProblem) || Object.keys(errors).length > 0 || !(sel?.candidate || sel?.panel?.length)} onClick={() => send(false)}>{busy ? 'Sending…' : `Send ${verb}`}</button>}
+        </div>
+        {skipAsk && <Confirm title="Don’t send this change" message="Record why the candidate and panel are not being told (e.g. agreed by phone)." requireReason confirmLabel="Record" onConfirm={skip} onClose={() => setSkipAsk(false)} />}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- Reschedule / edit --------------------------- */
+function RescheduleModal({ iv, onClose, onSaved }) {
+  const toast = useToast();
+  const [meta, setMeta] = useState(null);
+  const [f, setF] = useState({ scheduledAt: isoToCairoInput(iv.scheduledAt), durationMin: iv.durationMin || 60, mode: iv.mode, locationOrLink: iv.locationOrLink || '', panel: iv.panel.map((m) => m.id) });
+  const [avail, setAvail] = useState({ state: 'idle' });
+  const [ack, setAck] = useState(false); const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  useEffect(() => { api.get('/interviews/meta/form').then(setMeta).catch(() => {}); }, []);
+  const startIso = cairoInputToIso(f.scheduledAt);
+  const panelKey = f.panel.join(',');
+  useEffect(() => {
+    if (!startIso || !panelKey) { setAvail({ state: 'idle' }); return undefined; }
+    let live = true; setAvail((a) => ({ ...a, state: 'checking' }));
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ start: startIso, durationMin: String(Number(f.durationMin) || 60), panel: panelKey, candidateId: String(iv.candidate?.id || ''), excludeId: String(iv.id) });
+      if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
+      api.get('/interviews/clashes?' + qs.toString()).then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length; setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [] }); })
+        .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [startIso, f.durationMin, panelKey, f.locationOrLink]);
+  const needsAck = avail.state === 'conflicts' && (avail.panel || []).length > 0;
+  const blocked = avail.state === 'conflicts' && (avail.candidate || []).length > 0;
   async function save() {
     setBusy(true);
     try {
-      let target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
-      // With a hiring request chosen, schedule on the candidate's application so
-      // the interview assessment is available for this interview.
-      if (!application && target.requestId) target = { applicationId: await ensureApplication(target.candidateId, target.requestId) };
-      await api.post('/interviews', {
-        ...target, interviewType: f.interviewType, mode: f.mode,
-        scheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : null,
-        durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink,
-        panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
-      });
-      toast('Interview scheduled'); onScheduled();
+      const r = await api.put(`/interviews/${iv.id}`, { scheduledAt: startIso, durationMin: Number(f.durationMin), mode: f.mode, locationOrLink: f.locationOrLink.trim(),
+        panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })), ...(needsAck ? { ackPanelOverlap: true, overlapReason: reason.trim() } : {}) });
+      toast(r.changes?.length ? 'Interview updated — review the update to send' : 'Saved — nothing changed that needs telling');
+      onSaved(r.changes || []);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  if (!meta) return <Modal title="Schedule Interview" onClose={onClose}><Skeleton /></Modal>;
   return (
-    <Modal title={application ? `Schedule Interview — ${application.candidate?.fullName || ''}` : 'Schedule interview'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !f.scheduledAt || f.panel.length === 0 || (!application && !standaloneLinkReady(link))}>{busy ? 'Scheduling…' : 'Schedule'}</button></>}>
-      {application
-        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Scheduling does <strong>not</strong> change the application's pipeline status.</p>
-        : <StandaloneLinkFields user={user} link={link} setLink={setLink} />}
-      <div className="form-grid">
-        <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
-        <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
-        <div className="field"><label>Date &amp; Time *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
-        <div className="field"><label>Duration (min)</label><input type="number" min="1" max="480" step="1" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
-        <div className="field"><label>Round</label><input type="number" min="1" value={f.round} onChange={(e) => set('round', e.target.value)} /></div>
-        <div className="field">
-          <label>{f.mode === 'video' ? 'Google Meet link' : f.mode === 'phone' ? 'Phone number' : 'Location'}</label>
-          <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
-            placeholder={f.mode === 'video' ? 'https://meet.google.com/abc-defg-hij' : f.mode === 'phone' ? '+20 100 000 0000' : 'Meeting room / site address'} />
-          {f.mode === 'video' && (
-            <div className="field-hint">Google Meet is the standard for video interviews. Paste the link from Google Calendar — it is sent verbatim in the candidate's invite email.</div>
-          )}
+    <Modal title={`Reschedule / edit — ${iv.interviewNo}`} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy || !startIso || !f.panel.length || blocked || (needsAck && !(ack && reason.trim()))} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button></>}>
+      {!meta ? <Skeleton /> : <>
+        <div className="form-grid">
+          <div className="field"><label>Date &amp; time (Cairo)</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} />{startIso && <span className="field-hint">{cairoLabel(startIso)}</span>}</div>
+          <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+          <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{ivMode(m)}</option>)}</select></div>
+          <div className="field"><label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone / arrangement' : 'Location'}</label><input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} /></div>
         </div>
-      </div>
-      <div className="section-title">Panel (interviewers) *</div>
-      <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} title={u.name} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
-      <p className="muted" style={{ marginTop: 8 }}>First selected is the lead. Only selected interviewers will see this interview and may submit feedback.</p>
-      {clashes.length > 0 && (
-        <div className="notice notice-warn cal-clash" role="status">
-          <strong>Already booked at this time:</strong>{' '}
-          {clashes.map((c) => `${c.name} (${timeOf(c.start)}–${timeOf(c.end)})`).join(' · ')}.
-          {' '}You can still schedule; panels sometimes overlap on purpose.
+        <div className="iv-sub">Panel</div>
+        <div className="iv-panel-pick">{meta.interviewers.map((u) => <button key={u.id} type="button" title={u.name} aria-pressed={f.panel.includes(u.id)} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => setF((s) => ({ ...s, panel: s.panel.includes(u.id) ? s.panel.filter((x) => x !== u.id) : [...s.panel, u.id] }))}>{u.name}</button>)}</div>
+        <div className="iv-avail" role="status">
+          {avail.state === 'checking' && <span className="muted">Checking availability…</span>}
+          {avail.state === 'ok' && <span className="iv-avail-ok">No conflicts at this time.</span>}
+          {avail.state === 'unavailable' && <div className="notice notice-warn">Availability could not be checked; conflicts are unknown. Saving re-checks on the server.</div>}
+          {blocked && <div className="notice notice-danger"><strong>The candidate is already booked then.</strong> Choose another time.</div>}
+          {needsAck && <div className="notice notice-warn"><strong>Panel already booked:</strong> {avail.panel.map((c) => c.name).join(', ')}
+            <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
+            {ack && <input aria-label="Reason for the overlap" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />}</div>}
+        </div>
+        <p className="muted">After saving, you choose whether and how to tell the candidate and panel.</p>
+      </>}
+    </Modal>
+  );
+}
+
+/* ---------------------- Invitation templates (global) --------------------- */
+function InterviewTemplatesModal({ onClose }) {
+  const toast = useToast();
+  const [t, setT] = useState(null);
+  const [kind, setKind] = useState('invite');
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => { api.get('/interviews/message-templates').then((r) => { setT(r); setDraft(JSON.parse(JSON.stringify(r.templates))); }).catch((e) => toast(e.message, 'error')); }, []);
+  async function save() {
+    setBusy(true); setErr(null);
+    try { const r = await api.put('/interviews/message-templates', { templates: draft }); setT((x) => ({ ...x, templates: r.templates })); toast('Templates saved'); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  async function reset() {
+    setBusy(true);
+    try { const r = await api.put('/interviews/message-templates', { reset: true }); setDraft(JSON.parse(JSON.stringify(r.templates))); toast('Templates reset to the defaults'); }
+    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  const labels = { candidate: 'Candidate email', panel: 'Panel email', whatsapp: 'WhatsApp (candidate)', panel_removed: 'Removed panelist' };
+  const codes = { candidate: 'c', panel: 'p', whatsapp: 'w', panel_removed: 'r' };
+  return (
+    <Modal title="Interview invitation templates" onClose={onClose} wide
+      footer={t?.canEdit ? <><button className="btn btn-ghost" onClick={reset} disabled={busy}>Reset to defaults</button><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save templates'}</button></> : <button className="btn" onClick={onClose}>Close</button>}>
+      {!t || !draft ? <Skeleton /> : <div className="iv-tpl-body">
+        <p className="muted">The organisation’s default wording. Each interview starts from these and can be edited before sending. Placeholders are filled in for each recipient; only the ones listed under each message can be used there.{t.canEdit ? '' : ' You can view these; changing them needs the Notifications permission.'}</p>
+        <div className="seg-tabs" role="tablist">{[['invite', 'Invitation'], ['update', 'Update'], ['cancel', 'Cancellation']].map(([k, l]) => <button key={k} role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => setKind(k)}>{l}</button>)}</div>
+        {err && <div className="notice notice-danger">{err}</div>}
+        {t.audiences[kind].map((aud) => (
+          <MessageEditor key={kind + aud} label={labels[aud]} hasSubject={t.hasSubject[aud]} value={draft[kind][aud]}
+            onChange={(v) => setDraft((d) => ({ ...d, [kind]: { ...d[kind], [aud]: t.hasSubject[aud] ? v : { body: v.body } } }))}
+            placeholders={t.canEdit ? phFor(t.placeholders, codes[aud]) : []} />
+        ))}
+      </div>}
+    </Modal>
+  );
+}
+
+/* ---------------------- Communications on an interview -------------------- */
+function InterviewComms({ iv, canManage, onOpen }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { if (canManage) api.get(`/interviews/${iv.id}/dispatches`).then((r) => setRows(r.dispatches || [])).catch(() => setRows([])); }, [iv.id, iv.calendarSeq, canManage]);
+  if (!canManage) return null;
+  const n = iv.notice;
+  const pending = n && !n.communicated && !n.skipped;
+  const batches = [];
+  for (const r of rows || []) { let b = batches.find((x) => x.key === r.batchKey); if (!b) { b = { key: r.batchKey, kind: r.kind, at: r.createdAt, rows: [] }; batches.push(b); } b.rows.push(r); }
+  return (
+    <div className="card card-pad iv-comms">
+      <div className="row-between"><div className="section-title" style={{ marginTop: 0 }}>Communications</div>
+        {['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary btn-sm" onClick={() => onOpen('invite')}>Send invitations</button>}</div>
+      {pending && (
+        <div className="notice notice-warn" role="status">
+          {n.kind === 'cancel' ? 'The cancellation has not been sent to anyone yet.' : 'The changes to this interview have not been sent yet.'}
+          <div className="btn-row"><button className="btn btn-sm" onClick={() => onOpen(n.kind)}>{n.kind === 'cancel' ? 'Review & send cancellation' : 'Review & send update'}</button></div>
         </div>
       )}
-    </Modal>
+      {n && n.skipped && <p className="muted">Not sent on purpose by {n.skippedBy}: {n.skipReason}</p>}
+      {rows === null ? <Skeleton rows={2} /> : batches.length === 0 ? <p className="muted">Nothing sent yet.</p> : batches.map((b) => (
+        <div key={b.key} className="iv-batch">
+          <div className="iv-batch-head"><strong>{b.kind === 'invite' ? 'Invitation' : b.kind === 'update' ? 'Update' : 'Cancellation'}</strong> <span className="muted">{fmtDate(b.at)}</span></div>
+          <DispatchList rows={b.rows} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -11097,6 +11754,7 @@ function InterviewsPage({ user, initialFilters }) {
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createAt, setCreateAt] = useState(null); // the calendar slot that opened the form
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const loadSeq = useRef(0);
   // The calendar is the first screen; a dashboard link that carries list
   // filters still lands on the list it was built for. Phones get one day.
@@ -11156,13 +11814,15 @@ function InterviewsPage({ user, initialFilters }) {
           {data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>}
           <ViewToggle value={view} onChange={setView}
             options={isPhone ? [['day', 'Day'], ['list', 'List']] : [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['list', 'List']]} />
+          {(can(user, 'interview.schedule') || can(user, 'interview.edit')) && <button className="btn btn-secondary" onClick={() => setTemplatesOpen(true)}>Invitation templates</button>}
           {can(user, 'interview.schedule') && <button className="btn" onClick={() => setCreating(true)}>Schedule interview</button>}
         </>} />
       {(creating || createAt) && (
         <ScheduleInterviewModal user={user} initialAt={createAt}
           onClose={() => { setCreating(false); setCreateAt(null); }}
-          onScheduled={() => { setCreating(false); setCreateAt(null); load(); }} />
+          onScheduled={(openId) => { setCreating(false); setCreateAt(null); load(); if (openId) setSelected(openId); }} />
       )}
+      {templatesOpen && <InterviewTemplatesModal onClose={() => setTemplatesOpen(false)} />}
       <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
         count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" suffix={isCalendar ? 'in view' : null} />}>
@@ -11293,6 +11953,8 @@ function InterviewDetail({ id, user, onBack }) {
   const [assessOpen, setAssessOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [reopenAsk, setReopenAsk] = useState(false);
+  const [resched, setResched] = useState(false);
+  const [comm, setComm] = useState(null); // 'invite' | 'update' | 'cancel'
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -11300,9 +11962,14 @@ function InterviewDetail({ id, user, onBack }) {
   if (!iv) return <Skeleton rows={8} />;
 
   async function setStatus(status, reason) {
-    try { await api.post(`/interviews/${id}/status`, { status, reason }); toast(status === 'scheduled' ? 'Interview reopened' : 'Interview ' + status.replace('_', '-')); load(); }
+    try {
+      await api.post(`/interviews/${id}/status`, { status, reason }); toast(status === 'scheduled' ? 'Interview reopened' : 'Interview ' + status.replace('_', '-')); await load();
+      // A cancellation is communicated explicitly: offer it straight away.
+      if (status === 'cancelled' && canManageComms) setComm('cancel');
+    }
     catch (e) { toast(e.message, 'error'); }
   }
+  const canManageComms = can(user, 'interview.edit');
   const canEdit = btns.cancel_interview?.visible || btns.complete_interview?.visible;
   const canFeedback = btns.add_feedback?.visible;
   const active = !['cancelled', 'completed'].includes(iv.status);
@@ -11317,6 +11984,7 @@ function InterviewDetail({ id, user, onBack }) {
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
           {btns.complete_interview?.visible && ['completed', 'no_show'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setReopenAsk(true)}>Reopen interview</button>}
+          {can(user, 'interview.edit') && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setResched(true)}>Reschedule / edit</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
         </>} />
 
@@ -11332,11 +12000,16 @@ function InterviewDetail({ id, user, onBack }) {
           <div className="section-title">Details</div>
           <Info label="Type / Mode">{ivType(iv.interviewType)} · {ivMode(iv.mode)}</Info>
           <Info label="Round">{iv.round}</Info>
+          <Info label="When">{cairoLabel(iv.scheduledAt)}</Info>
           <Info label="Duration">{iv.durationMin} min</Info>
           <Info label="Location / Link">{/^https?:\/\//i.test(iv.locationOrLink || '')
             ? <a className="btn btn-secondary btn-sm" href={iv.locationOrLink} target="_blank" rel="noopener noreferrer" title={iv.locationOrLink}>Join {iv.mode === 'video' ? 'video call' : 'link'}</a>
             : (iv.locationOrLink || '—')}</Info>
           <Info label="Organizer">{iv.organizer?.name}</Info>
+          {iv.cv && <Info label="CV">{iv.cv.available
+            ? <button type="button" className="btn btn-secondary btn-sm" title={iv.cv.fileName || undefined} onClick={() => openCvReview(iv.cv.candidateId)}>Open CV{iv.cv.fileName ? ` — ${iv.cv.fileName}` : ''}</button>
+            : <span className="muted">No CV attached</span>}</Info>}
+          {iv.overlapReason && <Info label="Panel overlap">{iv.overlapReason}</Info>}
           {iv.cancelReason && <Info label="Cancel Reason">{iv.cancelReason}</Info>}
           <div className="section-title">Panel</div>
           <div>{iv.panel.map((m) => <span key={m.id} className="chip" title={m.name + (m.isLead ? ' (lead)' : '')}>{m.name}{m.isLead ? ' (lead)' : ''}</span>)}</div>
@@ -11353,12 +12026,15 @@ function InterviewDetail({ id, user, onBack }) {
               <div className="muted fine-key">{fmtDate(f.submittedAt)}</div>
             </div>
           ))}
+          <InterviewComms iv={iv} canManage={canManageComms} onOpen={setComm} />
           <div className="section-title">Activity</div>
           {(iv.activity || []).map((a) => <div key={a.id} style={{ fontSize: 12.5, padding: '4px 0' }}><strong style={{ textTransform: 'capitalize' }}>{a.type.replace(/_/g, ' ')}</strong>{a.note ? ' — ' + a.note : ''} <span className="muted">· {a.actor_name} · {fmtDate(a.occurred_at)}</span></div>)}
         </div>
       </div>
 
       {fbOpen && <FeedbackModal interviewId={id} onClose={() => setFbOpen(false)} onSaved={() => { setFbOpen(false); load(); }} />}
+      {resched && <RescheduleModal iv={iv} onClose={() => setResched(false)} onSaved={async (changes) => { setResched(false); await load(); if (changes.length) setComm('update'); }} />}
+      {comm && <CommunicateModal iv={iv} kind={comm} onClose={() => { setComm(null); load(); }} onDone={() => { setComm(null); load(); }} />}
       {assessOpen && <InterviewAssessmentDrawer applicationId={iv.application.id} user={user} title={`${iv.candidate?.fullName || ''} · ${iv.interviewNo}`} onClose={() => setAssessOpen(false)} />}
       {reopenAsk && <Confirm title="Reopen interview" confirmLabel="Reopen"
         message={`Move this interview back to Scheduled? It was marked ${iv.status === 'no_show' ? 'No-Show' : 'Completed'}. Feedback and the assessment are kept; the change is recorded in the audit trail.`}

@@ -1962,3 +1962,68 @@ button.cal-slot:focus-visible { outline: 0; }
   .assess-progress ol { display: grid; grid-template-columns: 1fr; }
   .assess-progress a { width: 100%; justify-content: space-between; }
 }
+
+/* ==========================================================================
+   24. INTERVIEW SCHEDULING & COMMUNICATIONS (audit 2026-10-06)
+   ----------------------------------------------------------------------------
+   One dialog: 1 Candidate & CV, 2 Interview & panel, 3 Invitations (a real
+   sequence, so it is numbered), with the rendered messages beside it. The
+   send dialog and the templates reuse the same editor. Geometry only.
+   ========================================================================= */
+.modal.iv-compose { width: min(1240px, 96vw); max-width: none; height: min(920px, 94vh); display: flex; flex-direction: column; }
+.iv-compose-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.iv-compose-form { min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-5); display: grid; gap: var(--sp-5); align-content: start; }
+.iv-preview { min-height: 0; overflow-y: auto; padding: var(--sp-4); border-left-width: 1px; border-left-style: solid; display: grid; gap: var(--sp-3); align-content: start; }
+.iv-step { display: grid; gap: var(--sp-3); }
+.iv-step h4 { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
+.iv-step-n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; }
+.iv-sub { font-weight: 600; margin-top: var(--sp-1); }
+.iv-cv { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.iv-cv .field-hint { flex: 1 0 100%; margin: 0; }
+.iv-cv-label { font-weight: 600; }
+.iv-cv-file { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.iv-file { cursor: pointer; }
+.iv-panel-pick { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.iv-panel-pick .tag-toggle { min-height: var(--cl-ctl-sm); }
+.iv-avail { display: grid; gap: var(--sp-2); min-height: 24px; }
+.iv-avail .notice { display: grid; gap: var(--sp-2); }
+.iv-ack { display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 500; }
+.iv-recipients { display: grid; gap: var(--sp-2); }
+.iv-rcpt { display: grid; gap: var(--sp-1); }
+.iv-rcpt > label, label.iv-rcpt { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.iv-rcpt span { display: grid; gap: 4px; }
+.iv-attach { display: inline-flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-6); }
+.iv-editor { display: grid; gap: var(--sp-2); }
+.iv-editor-label { font-weight: 600; }
+.iv-editor textarea { width: 100%; resize: vertical; }
+.iv-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.chip-btn { min-height: 28px; padding: 0 var(--sp-2); border-width: 1px; border-style: solid; border-radius: var(--cl-r-sm); cursor: pointer; }
+.iv-wa { display: grid; gap: var(--sp-2); padding: var(--sp-3); border-width: 1px; border-style: solid; border-radius: var(--cl-r-md); }
+.iv-wa-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-2); }
+.iv-wa textarea { width: 100%; resize: vertical; }
+.iv-preview-title { font-weight: 600; }
+.iv-preview-card { display: grid; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-width: 1px; border-style: solid; border-radius: var(--cl-r-md); }
+.iv-preview-subject { font-weight: 600; }
+.iv-preview-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.modal-foot.iv-foot { flex-wrap: wrap; align-items: center; }
+.iv-foot-error, .iv-foot > .muted { flex: 1 1 280px; margin-right: auto; }
+.iv-result { display: grid; gap: var(--sp-3); }
+.iv-dispatch-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.iv-dispatch-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-1) var(--sp-3); align-items: center; padding: var(--sp-2) 0; border-bottom-width: 1px; border-bottom-style: solid; }
+.iv-dispatch-who { display: grid; gap: var(--sp-1); min-width: 0; }
+.iv-dispatch-reason { grid-column: 1 / -1; }
+.iv-dups { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.iv-dups li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sp-2); }
+.iv-comms { margin-top: var(--sp-4); display: grid; gap: var(--sp-3); }
+.iv-batch { display: grid; gap: var(--sp-1); }
+.iv-batch-head { display: flex; gap: var(--sp-2); align-items: baseline; }
+.iv-tpl-body { display: grid; gap: var(--sp-5); }
+.iv-tpl-link { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+@media (max-width: 900px) {
+  .modal.iv-compose { height: 94vh; }
+  /* One scrolling column: rows size to their content (no min-height:0 squeeze). */
+  .iv-compose-body { grid-template-columns: 1fr; overflow-y: auto; align-content: start; }
+  .iv-compose-form, .iv-preview { overflow: visible; min-height: auto; }
+  .iv-preview { border-left-width: 0; border-top-width: 1px; border-top-style: solid; }
+  .iv-attach { padding-left: var(--sp-5); }
+}

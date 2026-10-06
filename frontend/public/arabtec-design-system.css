@@ -1554,3 +1554,21 @@ td.recip-external { background: var(--warning-tint); }
 .assess-progress a:hover { border-color: var(--line-strong, #cfd4da); }
 .assess-history-list li { border-color: var(--line); }
 .assess-history-when, .assess-history-reason { color: var(--muted); font-size: 12.5px; }
+
+/* Interview scheduling & communications (claude-system.css §24). */
+.iv-preview { background: var(--canvas, #F4F5F7); border-color: var(--line); }
+.iv-preview-card, .iv-wa { background: #fff; border-color: var(--line); }
+.iv-step-n { background: var(--green-50); color: var(--green-700); }
+.iv-preview-meta, .iv-dispatch-reason { color: var(--muted); }
+.iv-error { color: var(--danger, #B42318); }
+.iv-avail-ok { color: var(--green-700); }
+.chip-btn { background: #fff; border-color: var(--line); color: var(--ink); }
+.chip-btn:hover { border-color: var(--green-700); color: var(--green-700); }
+.iv-dispatch-list li { border-color: var(--line); }
+.iv-step h4 { font-size: 15px; }
+.iv-step-n { font-size: 12px; font-weight: 700; }
+.iv-editor textarea, .iv-wa textarea, .chip-btn { font: inherit; }
+.chip-btn { font-size: 12px; }
+.iv-error { font-size: 13px; }
+.iv-preview-meta, .iv-dispatch-reason { font-size: 12px; }
+.iv-preview-body { font-size: 13px; line-height: 1.55; }

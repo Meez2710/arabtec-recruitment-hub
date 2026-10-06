@@ -181,7 +181,8 @@ export function messageValues({ iv, candidate, request, organizer, panel = [], r
   const full = String(candidate?.full_name || '').trim();
   return {
     candidateName: full, candidateFirstName: full.split(/\s+/)[0] || full,
-    position: request?.title || candidate?.current_position || 'the advertised',
+    // Empty when unknown: fill() then tidies "the  role", "— —" and "()".
+    position: String(request?.title || candidate?.current_position || '').trim(),
     interviewType: TYPE_LABEL[iv.interview_type] || iv.interview_type || 'Interview',
     date: now.date, time: now.time, timezone: now.timezone,
     duration: duration(iv.duration_min),
@@ -204,7 +205,13 @@ export function messageValues({ iv, candidate, request, organizer, panel = [], r
 
 /** Substitute placeholders in plain text (values are plain text too). */
 export function fill(text, values) {
-  return String(text || '').replace(/\{\{\s*([A-Za-z]+)\s*\}\}/g, (m, name) => (values[name] ?? ''));
+  return String(text || '').replace(/\{\{\s*([A-Za-z]+)\s*\}\}/g, (m, name) => (values[name] ?? ''))
+    // An empty value must not leave a gap: "the  role" → "the role",
+    // "invitation —  — Arabtec" → "invitation — Arabtec", "Name ()" → "Name".
+    .replace(/(\S)[ \t]{2,}/g, '$1 ')
+    .replace(/ — (?:— )+/g, ' — ')
+    .replace(/[ \t]*\([ \t]*\)/g, '')
+    .replace(/(\S) +([,.])/g, '$1$2');
 }
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
