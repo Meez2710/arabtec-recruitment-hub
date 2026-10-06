@@ -64,6 +64,9 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
   const hmUser = ivMeta.json.interviewers.find((u) => u.name === 'Nadia Fouad');
   const otherUser = ivMeta.json.interviewers.find((u) => u.name === 'Hassan Ali');
   const future = new Date(Date.now() + 86400000).toISOString();
+  // Each booking gets its own slot: the same panelist at the same instant now
+  // needs an acknowledged reason (audit 2026-10-06) and these checks are not about that.
+  let slotN = 0; const slot = () => new Date(Date.now() + 86400000 + (++slotN) * 2 * 3600000).toISOString();
 
   const reqId = await approvedRequest(hrMgr, recMgr);
   const { appId, candId } = await linkApp(recruiter, reqId, 'QA Cand');
@@ -88,23 +91,24 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
   console.log('\n— 3. Terminal-app scheduling block + override —');
   const { appId: rejApp } = await linkApp(recruiter, reqId, 'Rejected Cand', 'technical_interview');
   await api(`/api/applications/${rejApp}/move`, { method: 'POST', token: recruiter, body: { status: 'rejected', reason: 'not a fit' } });
-  const schedRejected = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: rejApp, scheduledAt: future, panel: [{ interviewerId: interviewerUser.id }] } });
+  const schedRejected = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: rejApp, scheduledAt: slot(), panel: [{ interviewerId: interviewerUser.id }] } });
   c('cannot schedule for rejected application (409)', schedRejected.status === 409, `got ${schedRejected.status}`);
-  const overrideNoPerm = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: rejApp, scheduledAt: future, overrideTerminal: true, overrideReason: 'x', panel: [{ interviewerId: interviewerUser.id }] } });
+  const overrideNoPerm = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: rejApp, scheduledAt: slot(), overrideTerminal: true, overrideReason: 'x', panel: [{ interviewerId: interviewerUser.id }] } });
   c('recruiter (no merge perm) cannot override terminal (403)', overrideNoPerm.status === 403, `got ${overrideNoPerm.status}`);
-  const overrideOk = await api('/api/interviews', { method: 'POST', token: hrMgr, body: { applicationId: rejApp, scheduledAt: future, overrideTerminal: true, overrideReason: 'reconsidering candidate', panel: [{ interviewerId: interviewerUser.id }] } });
+  const overrideOk = await api('/api/interviews', { method: 'POST', token: hrMgr, body: { applicationId: rejApp, scheduledAt: slot(), overrideTerminal: true, overrideReason: 'reconsidering candidate', panel: [{ interviewerId: interviewerUser.id }] } });
   c('authorized override schedules for terminal app (201)', overrideOk.status === 201, `got ${overrideOk.status}`);
 
   console.log('\n— 4. Validation —');
-  const noPanel = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appId, scheduledAt: future, panel: [] } });
+  const noPanel = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appId, scheduledAt: slot(), panel: [] } });
   c('no panel rejected (400)', noPanel.status === 400);
   const past = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appId, scheduledAt: '2020-01-01T09:00:00Z', panel: [{ interviewerId: interviewerUser.id }] } });
   c('past date rejected (400)', past.status === 400);
-  const badApp = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: 999999, scheduledAt: future, panel: [{ interviewerId: interviewerUser.id }] } });
+  const badApp = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: 999999, scheduledAt: slot(), panel: [{ interviewerId: interviewerUser.id }] } });
   c('invalid application rejected (404)', badApp.status === 404, `got ${badApp.status}`);
 
   console.log('\n— 5. Reschedule + panel-change audit —');
-  const sched2 = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appId, scheduledAt: future, panel: [{ interviewerId: interviewerUser.id }] } });
+  // A different slot: the same candidate cannot hold two overlapping interviews (audit 2026-10-06).
+  const sched2 = await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appId, scheduledAt: new Date(new Date(future).getTime() + 3 * 3600000).toISOString(), panel: [{ interviewerId: interviewerUser.id }] } });
   const iv2 = sched2.json.interview.id;
   const future2 = new Date(Date.now() + 2 * 86400000).toISOString();
   const resched = await api(`/api/interviews/${iv2}`, { method: 'PUT', token: recruiter, body: { scheduledAt: future2 } });
@@ -122,7 +126,7 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
   // non-panelist with feedback perm but not assigned → blocked
   const reqId2 = await approvedRequest(hrMgr, recMgr);
   const { appId: appB } = await linkApp(recruiter, reqId2, 'Cand B');
-  const ivB = (await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appB, scheduledAt: future, panel: [{ interviewerId: otherUser.id }] } })).json.interview.id;
+  const ivB = (await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appB, scheduledAt: slot(), panel: [{ interviewerId: otherUser.id }] } })).json.interview.id;
   const hmNotPanel = await api(`/api/interviews/${ivB}/feedback`, { method: 'POST', token: hm, body: { recommendation: 'yes' } });
   c('HM not on panel & not request-owner cannot feedback (403)', hmNotPanel.status === 403, `got ${hmNotPanel.status}`);
 
@@ -136,15 +140,15 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
   // HM owns a request they requested → sees its interviews even if not on panel
   const hmReq = await approvedRequest(hrMgr, recMgr, hm); // hm is requester
   const { appId: appHm } = await linkApp(recruiter, hmReq, 'HM Req Cand');
-  const ivHm = (await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appHm, scheduledAt: future, panel: [{ interviewerId: otherUser.id }] } })).json.interview.id;
+  const ivHm = (await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: appHm, scheduledAt: slot(), panel: [{ interviewerId: otherUser.id }] } })).json.interview.id;
   const hmList = await api('/api/interviews', { token: hm });
   c('HM sees interview on own request (not on panel)', hmList.json.interviews.some((x) => x.id === ivHm));
   const hmDetail = await api(`/api/interviews/${ivHm}`, { token: hm });
   c('HM can open own-request interview detail (200)', hmDetail.status === 200, `got ${hmDetail.status}`);
 
   console.log('\n— 8. RBAC: schedule/edit gated; hidden buttons via API —');
-  c('interviewer cannot schedule (403)', (await api('/api/interviews', { method: 'POST', token: interviewer, body: { applicationId: appId, scheduledAt: future, panel: [{ interviewerId: interviewerUser.id }] } })).status === 403);
-  c('viewer cannot schedule (403)', (await api('/api/interviews', { method: 'POST', token: viewer, body: { applicationId: appId, scheduledAt: future, panel: [{ interviewerId: interviewerUser.id }] } })).status === 403);
+  c('interviewer cannot schedule (403)', (await api('/api/interviews', { method: 'POST', token: interviewer, body: { applicationId: appId, scheduledAt: slot(), panel: [{ interviewerId: interviewerUser.id }] } })).status === 403);
+  c('viewer cannot schedule (403)', (await api('/api/interviews', { method: 'POST', token: viewer, body: { applicationId: appId, scheduledAt: slot(), panel: [{ interviewerId: interviewerUser.id }] } })).status === 403);
   c('interviewer cannot cancel/edit (403)', (await api(`/api/interviews/${iv2}/status`, { method: 'POST', token: interviewer, body: { status: 'cancelled', reason: 'x' } })).status === 403);
   c('cancel without reason rejected (400)', (await api(`/api/interviews/${iv2}/status`, { method: 'POST', token: recruiter, body: { status: 'cancelled' } })).status === 400);
 

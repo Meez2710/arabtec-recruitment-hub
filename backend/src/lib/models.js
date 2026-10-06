@@ -1231,14 +1231,22 @@ export const Interviews = {
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM interview WHERE id=?', [id]); },
+  byIdempotencyKey(key) { return key ? get('SELECT * FROM interview WHERE idempotency_key=?', [key]) : null; },
+  /** Raise the calendar revision and record what is still to be communicated. */
+  setNotice(id, notice, { bumpSeq = false } = {}) {
+    run(`UPDATE interview SET notice_state=?, calendar_seq=COALESCE(calendar_seq,0)+?, updated_at=? WHERE id=?`,
+      [notice ? JSON.stringify(notice) : null, bumpSeq ? 1 : 0, nowISO(), id]);
+    return this.byId(id);
+  },
+  setOverlapReason(id, reason) { run('UPDATE interview SET overlap_reason=?, updated_at=? WHERE id=?', [reason || null, nowISO(), id]); },
   create(d) {
     const r = run(
       `INSERT INTO interview (interview_no,application_id,candidate_id,request_id,round,interview_type,mode,
-        scheduled_at,duration_min,location_or_link,organizer_id,status,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        scheduled_at,duration_min,location_or_link,organizer_id,status,created_by,idempotency_key,overlap_reason,calendar_seq,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [d.interviewNo, d.applicationId ?? null, d.candidateId, d.requestId ?? null, d.round || 1, d.interviewType || 'technical',
        d.mode || 'onsite', d.scheduledAt || null, d.durationMin || 60, d.locationOrLink || null,
-       d.organizerId, d.status || 'scheduled', d.createdBy, nowISO(), nowISO()],
+       d.organizerId, d.status || 'scheduled', d.createdBy, d.idempotencyKey || null, d.overlapReason || null, 0, nowISO(), nowISO()],
     );
     return this.byId(Number(r.lastInsertRowid));
   },

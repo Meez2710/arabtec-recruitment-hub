@@ -1068,6 +1068,26 @@ export function ensureSchema() {
   addColumnIfMissing('offer', 'title_prefix', 'TEXT');
   addColumnIfMissing('offer', 'salutation_name', 'TEXT');
   addColumnIfMissing('offer', 'salary_components', 'TEXT');
+  // Interview booking and communications (audit 2026-10-06,
+  // INTERVIEW_IMPLEMENTATION_BRIEF.md). All additive and nullable.
+  //   idempotency_key — a client's one-time submission key: a retried or
+  //                     double-clicked "Save" returns the same interview
+  //   overlap_reason  — why a shared panelist was knowingly double-booked
+  //   calendar_seq    — the calendar entry's revision (ICS SEQUENCE); rises on
+  //                     every material change and on cancellation, UID stays
+  //   notice_state    — JSON: the change or cancellation not yet communicated
+  addColumnIfMissing('interview', 'idempotency_key', 'TEXT');
+  addColumnIfMissing('interview', 'overlap_reason', 'TEXT');
+  addColumnIfMissing('interview', 'calendar_seq', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('interview', 'notice_state', 'TEXT');
+  try { exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_interview_idempotency ON interview(idempotency_key)'); } catch (e) { console.error('  ! interview idempotency index:', e.message); }
+  // A row that booking transactions lock first, so two concurrent bookings
+  // cannot both pass the conflict check (PostgreSQL row lock; SQLite has one writer).
+  try {
+    if (!get("SELECT key FROM system_setting WHERE key='interview_booking_lock'")) {
+      run('INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)', ['interview_booking_lock', '0', new Date().toISOString()]);
+    }
+  } catch (e) { console.error('  ! interview booking lock row:', e.message); }
   relaxStandaloneLinks();
 
   migrateWorkflowStages();

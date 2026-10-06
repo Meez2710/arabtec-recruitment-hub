@@ -8,6 +8,9 @@ import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from 
 import { writeAudit } from '../lib/audit.js';
 import { APP_TERMINAL, APP_LABELS, appNorm, REQ_TERMINAL, REQ_LABELS, reqNorm } from '../lib/stages.js';
 import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
+import { schedulingGuard, evaluateConflicts, conflictRefusal } from '../lib/interview-rules.js';
+import { tx, run as dbRun } from '../lib/db.js';
+import { canSeeCandidate } from '../lib/candidate-scope.js';
 import { notifyEvent } from '../lib/notify.js';
 import { sendMail } from '../lib/mailer.js';
 import { interviewInvite as interviewInviteTpl } from '../lib/email_templates.js';
@@ -103,6 +106,10 @@ function serialize(iv, user, { detail = false } = {}) {
     request: req ? { id: req.id, ticketNo: req.ticket_no, title: req.title } : null,
     application: app ? { id: app.id, applicationNo: app.application_no, status: app.status } : null, // shows application status SEPARATELY
     panel: InterviewPanel.forInterview(iv.id).map((m) => ({ id: m.interviewer_id, name: m.full_name, isLead: m.is_lead === 1 })),
+    overlapReason: iv.overlap_reason || null,
+    calendarSeq: Number(iv.calendar_seq || 0),
+    // A change or cancellation that has not been communicated yet.
+    notice: (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })(),
     createdAt: iv.created_at,
   };
   if (detail) {
@@ -117,6 +124,12 @@ function serialize(iv, user, { detail = false } = {}) {
     }));
     out.myFeedback = all.find((f) => f.interviewer_id === user.id) ? true : false;
     out.activity = InterviewActivity.forInterview(iv.id);
+    // The candidate's stored CV, for whoever may see this candidate (the
+    // panel through existing assignment scope). The file itself is served by
+    // the authenticated, scope-checked GET /candidates/:id/resume.
+    out.cv = cand && canSeeCandidate(user, cand.id)
+      ? { available: !!cand.resume_path, fileName: cand.resume_name || null, candidateId: cand.id }
+      : null;
   }
   return out;
 }
@@ -164,17 +177,17 @@ router.get('/clashes', requireAnyPermission('interview.schedule', 'interview.edi
   const durationMin = Math.min(Number(req.query.durationMin) > 0 ? Number(req.query.durationMin) : 60, MAX_DURATION_MIN);
   const wanted = intervalOf(req.query.start, durationMin);
   if (!wanted) return res.status(400).json({ error: '`start` must be an ISO date.' });
-  if (panel.length === 0) return res.json({ clashes: [] });
   const excludeId = Number(req.query.excludeId) || null;
-  const from = new Date(wanted.start - MAX_DURATION_MIN * 60000).toISOString();
-  const to = new Date(wanted.end).toISOString();
-  const existing = Interviews.activeBetween(from, to, ACTIVE_STATUSES).map((iv) => ({
-    id: iv.id, status: iv.status, scheduledAt: iv.scheduled_at, durationMin: iv.duration_min,
-    panel: InterviewPanel.forInterview(iv.id).map((m) => ({ id: m.interviewer_id, name: m.full_name })),
-  }));
-  const clashes = findPanelClashes({ start: req.query.start, durationMin, panel, excludeId }, existing)
-    .map(({ interviewerId, name, start, end }) => ({ interviewerId, name, start, end }));
-  res.json({ clashes });
+  const candidateId = Number(req.query.candidateId) || null;
+  const location = typeof req.query.location === 'string' ? req.query.location.slice(0, 500) : '';
+  const found = evaluateConflicts({ start: req.query.start, durationMin, panelIds: panel, candidateId, location, excludeId });
+  // Times only — no candidate, request or interview number — so a scheduler
+  // learns nothing about interviews they cannot open.
+  res.json({
+    clashes: found.panel.map(({ interviewerId, name, start, end }) => ({ interviewerId, name, start, end })),
+    candidateConflicts: found.candidate.map(({ start, end }) => ({ start, end })),
+    locationWarnings: found.location.map(({ start, end }) => ({ start, end })),
+  });
 });
 
 /* ---------------- LIST for a request's pipeline / application ---------------- */
@@ -229,70 +242,75 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   const panel = Array.isArray(d.panel) ? d.panel : [];
   if (panel.length === 0) return res.status(400).json({ error: 'At least one interviewer (panel member) is required.' });
   for (const m of panel) if (!Users.byId(Number(m.interviewerId))) return res.status(400).json({ error: 'A selected interviewer does not exist.' });
-  // Cannot schedule for a terminal application (rejected, offer declined, joined)
-  // unless an authorized user explicitly overrides (candidate.merge gate +
-  // reason), matching the duplicate-override pattern used elsewhere. The
-  // terminal set is the canonical one in lib/stages.js, compared after alias
-  // normalisation — a hand-kept list here used legacy names and let a
-  // canonical 'offer_declined' application be scheduled again.
-  if (app && APP_TERMINAL.includes(appNorm(app.status))) {
-    if (!d.overrideTerminal) {
-      const label = APP_LABELS[appNorm(app.status)] || app.status;
-      return res.status(409).json({ error: `Cannot schedule an interview for an application that is ${label}.`, applicationStatus: appNorm(app.status) });
-    }
-    if (!req.user.permissions.includes('candidate.merge')) {
-      return res.status(403).json({ error: 'You are not permitted to override scheduling for a terminal application.' });
-    }
-    if (!d.overrideReason || !d.overrideReason.trim()) {
-      return res.status(400).json({ error: 'A reason is required to override and schedule for a terminal application.' });
-    }
-  }
-
-  // A closed/cancelled request: recruiting for it has ended. Same override
-  // discipline as a terminal application (candidate.merge + reason).
+  // Request and application state (awaiting approval, on hold, closed,
+  // terminal application with the authorised override) — lib/interview-rules.js.
   const reqRow = requestId ? Requests.byId(requestId) : null;
-  if (reqRow && REQ_TERMINAL.includes(reqNorm(reqRow.status)) && !(d.overrideTerminal && req.user.permissions.includes('candidate.merge') && d.overrideReason && d.overrideReason.trim())) {
-    if (d.overrideTerminal && !req.user.permissions.includes('candidate.merge')) return res.status(403).json({ error: 'You are not permitted to override scheduling for this request.' });
-    if (d.overrideTerminal) return res.status(400).json({ error: 'A reason is required to override and schedule for a closed request.' });
-    return res.status(409).json({ error: `Hiring request ${reqRow.ticket_no || ''} is ${REQ_LABELS[reqNorm(reqRow.status)] || reqRow.status}; interviews for it are no longer scheduled.`.replace('  ', ' '), requestStatus: reqNorm(reqRow.status) });
-  }
-  // Owner decision Q-01: a request on hold pauses interview scheduling;
-  // existing interviews are untouched and scheduling returns on resume.
-  if (reqRow && reqNorm(reqRow.status) === 'on_hold') {
-    return res.status(409).json({ error: `Interview scheduling is unavailable because hiring request ${reqRow.ticket_no || ''} is currently On Hold. It resumes when the request is resumed.`.replace('  ', ' '), requestStatus: 'on_hold' });
-  }
-  const interviewNo = Interviews.nextNo();
-  const created = Interviews.create({
-    interviewNo, applicationId: app ? app.id : null, candidateId, requestId,
-    round: d.round || 1, interviewType: d.interviewType || 'technical', mode: d.mode || 'onsite',
-    scheduledAt, durationMin, locationOrLink: d.locationOrLink,
-    organizerId: req.user.id, status: 'scheduled', createdBy: req.user.id,
+  const blocked = schedulingGuard({ reqRow, app, user: req.user, body: d, action: 'schedule' });
+  if (blocked) return res.status(blocked.status).json(blocked.body);
+  const idempotencyKey = typeof d.idempotencyKey === 'string' && d.idempotencyKey.trim() ? d.idempotencyKey.trim().slice(0, 100) : null;
+  const panelIds = panel.map((m) => Number(m.interviewerId));
+
+  // Check and write in one transaction behind the booking lock, so two people
+  // booking the same slot at once cannot both pass the check, and a repeated
+  // submission (double click, network retry) returns the interview it made.
+  let outcome;
+  tx(() => {
+    dbRun("UPDATE system_setting SET value=value WHERE key='interview_booking_lock'");
+    const earlier = Interviews.byIdempotencyKey(idempotencyKey);
+    if (earlier) { outcome = { replayed: earlier }; return; }
+    const conflicts = evaluateConflicts({ start: scheduledAt, durationMin, panelIds, candidateId, location: d.locationOrLink });
+    const refusal = conflictRefusal(conflicts, d);
+    if (refusal) { outcome = { refusal }; return; }
+    const overlapReason = conflicts.panel.length ? String(d.overlapReason).trim() : null;
+    const interviewNo = Interviews.nextNo();
+    const created = Interviews.create({
+      interviewNo, applicationId: app ? app.id : null, candidateId, requestId,
+      round: d.round || 1, interviewType: d.interviewType || 'technical', mode: d.mode || 'onsite',
+      scheduledAt, durationMin, locationOrLink: d.locationOrLink,
+      organizerId: req.user.id, status: 'scheduled', createdBy: req.user.id, idempotencyKey, overlapReason,
+    });
+    InterviewPanel.set(created.id, panel.map((m) => ({ interviewerId: Number(m.interviewerId), isLead: !!m.isLead })));
+    InterviewActivity.add(created.id, req.user, 'scheduled', `${created.interview_type} interview scheduled`);
+    if (overlapReason) InterviewActivity.add(created.id, req.user, 'panel_overlap_acknowledged', overlapReason);
+    CandidateActivity.add({ candidateId, applicationId: app ? app.id : null, actorId: req.user.id, actorName: req.user.fullName, type: 'interview_scheduled', note: `${interviewNo} (${created.interview_type})` });
+    if (requestId) Requests.stampLifecycle(requestId, 'first_interview_at'); // lifecycle: first interview scheduled
+    writeAudit(req, { action: 'interview.scheduled', entityType: 'interview', entityId: created.id,
+      newValue: { interviewNo, applicationId: app ? app.id : null, candidateId, requestId, standalone: !app, panel: panelIds,
+        panelOverlap: conflicts.panel.length ? conflicts.panel.map((x) => x.interviewerId) : undefined },
+      comments: d.overrideTerminal ? `Terminal-app override: ${d.overrideReason}` : (overlapReason ? `Panel overlap acknowledged: ${overlapReason}` : null) });
+    outcome = { created, warnings: conflicts.location.length ? { location: conflicts.location.map(({ start, end }) => ({ start, end })) } : null };
   });
-  InterviewPanel.set(created.id, panel.map((m) => ({ interviewerId: Number(m.interviewerId), isLead: !!m.isLead })));
-  InterviewActivity.add(created.id, req.user, 'scheduled', `${created.interview_type} interview scheduled`);
-  CandidateActivity.add({ candidateId, applicationId: app ? app.id : null, actorId: req.user.id, actorName: req.user.fullName, type: 'interview_scheduled', note: `${interviewNo} (${created.interview_type})` });
-  if (requestId) Requests.stampLifecycle(requestId, 'first_interview_at'); // lifecycle: first interview scheduled
-  writeAudit(req, { action: 'interview.scheduled', entityType: 'interview', entityId: created.id, newValue: { interviewNo, applicationId: app ? app.id : null, candidateId, requestId, standalone: !app, panel: panel.map((m) => m.interviewerId) }, comments: d.overrideTerminal ? `Terminal-app override: ${d.overrideReason}` : null });
+  if (outcome.refusal) return res.status(outcome.refusal.status).json(outcome.refusal.body);
+  if (outcome.replayed) {
+    return res.status(200).json({ interview: serialize(outcome.replayed, req.user, { detail: true }), replayed: true, delivery: { state: 'not_requested' } });
+  }
+  const { created } = outcome;
   // NOTE: scheduling an interview does NOT change application.status. They are independent.
-  // Auto-email the candidate an invitation (best-effort; no-op until email configured).
-  // Routed through the console: the invitation reaches the candidate AND the
-  // panel, and an administrator controls both from one row.
-  const cand = Candidates.byId(candidateId);
+  // Invitations are an explicit act (audit 2026-10-06, decision 7): saving an
+  // interview sends nothing unless the caller asks for it.
+  const delivery = d.sendInvitations ? sendLegacyInvitation(created, app, req) : { state: 'not_requested' };
+  res.status(201).json({ interview: serialize(Interviews.byId(created.id), req.user, { detail: true }), delivery, warnings: outcome.warnings });
+});
+
+// Interim (Packet I): the previous automatic invitation, now sent only when
+// explicitly requested. Replaced by per-recipient dispatch in Packet II.
+function sendLegacyInvitation(created, app, req) {
+  const cand = Candidates.byId(created.candidate_id);
   const dateText = created.scheduled_at
-    ? new Date(created.scheduled_at).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' }) : '';
-  const panelUsers = panel.map((m) => { try { return Users.byId(Number(m.interviewerId)); } catch { return null; } }).filter(Boolean);
+    ? new Date(created.scheduled_at).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Cairo' }) + ' (Cairo time)' : '';
+  const panelUsers = InterviewPanel.forInterview(created.id).map((m) => { try { return Users.byId(m.interviewer_id); } catch { return null; } }).filter(Boolean);
   const invited = notifyEvent('interview.scheduled', {
     actor: req.user, candidate: cand, panel: panelUsers,
     linkType: 'interview', linkId: created.id,
     vars: { candidateName: cand ? cand.full_name : null, position: cand ? cand.current_position : null,
       dateText, mode: created.mode, locationOrLink: created.location_or_link },
-    title: `Interview scheduled: ${interviewNo}`,
+    title: `Interview scheduled: ${created.interview_no}`,
     body: `${cand ? cand.full_name : 'A candidate'} — ${dateText}`,
-    attachments: (() => { const ics = interviewIcs(created, cand); return ics ? [{ filename: `${interviewNo}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH', content: ics }] : []; })(),
+    attachments: (() => { const ics = interviewIcs(created, cand); return ics ? [{ filename: `${created.interview_no}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH', content: ics }] : []; })(),
     onExternalResult: cand ? candidateEmailReporter({ candidateId: cand.id, applicationId: app ? app.id : null, actorId: req.user.id, what: 'Interview invite' }) : undefined,
   });
-  res.status(201).json({ interview: serialize(created, req.user, { detail: true }), delivery: deliveryPlan(invited, cand) });
-});
+  return deliveryPlan(invited, cand);
+}
 
 /* ---------------- RESCHEDULE ---------------- */
 router.put('/:id', requirePermission('interview.edit'), (req, res) => {
@@ -319,25 +337,86 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
     if (d.panel.length === 0) return res.status(400).json({ error: 'At least one interviewer is required.' });
     for (const m of d.panel) if (!Users.byId(Number(m.interviewerId))) return res.status(400).json({ error: 'A selected interviewer does not exist.' });
   }
-  const before = { scheduledAt: iv.scheduled_at, mode: iv.mode };
-  // Same instant in another spelling is not a reschedule.
-  const rescheduled = !!scheduledAt && new Date(scheduledAt).getTime() !== new Date(iv.scheduled_at).getTime();
-  const panelBefore = InterviewPanel.interviewerIds(iv.id);
-  const updated = Interviews.update(iv.id, { ...d, scheduledAt, durationMin });
-  let panelChanged = false;
-  if (Array.isArray(d.panel)) {
-    InterviewPanel.set(iv.id, d.panel.map((m) => ({ interviewerId: Number(m.interviewerId), isLead: !!m.isLead })));
-    const panelAfter = InterviewPanel.interviewerIds(iv.id);
-    panelChanged = JSON.stringify([...panelBefore].sort()) !== JSON.stringify([...panelAfter].sort());
-    if (panelChanged) {
-      InterviewActivity.add(iv.id, req.user, 'panel_changed');
-      writeAudit(req, { action: 'interview.panel_changed', entityType: 'interview', entityId: iv.id, oldValue: { panel: panelBefore }, newValue: { panel: panelAfter } });
-    }
+  // What would change. A "material" change is one the candidate or panel
+  // must hear about: time, length, place/link, mode, or who sits on the panel.
+  const panelBefore = InterviewPanel.interviewerIds(iv.id).map(Number);
+  const newPanelIds = Array.isArray(d.panel) ? d.panel.map((m) => Number(m.interviewerId)) : panelBefore;
+  const sameSet = (a, b) => JSON.stringify([...a].sort((x, y) => x - y)) === JSON.stringify([...b].sort((x, y) => x - y));
+  const next = {
+    scheduledAt: scheduledAt || iv.scheduled_at,
+    durationMin: durationMin || Number(iv.duration_min) || 60,
+    locationOrLink: d.locationOrLink !== undefined ? String(d.locationOrLink ?? '') : (iv.location_or_link || ''),
+    mode: d.mode || iv.mode,
+  };
+  const changes = [];
+  if (new Date(next.scheduledAt).getTime() !== new Date(iv.scheduled_at).getTime()) changes.push('date_time');
+  if (next.durationMin !== (Number(iv.duration_min) || 60)) changes.push('duration');
+  if (next.locationOrLink.trim() !== String(iv.location_or_link || '').trim()) changes.push('location_or_link');
+  if (next.mode !== iv.mode) changes.push('mode');
+  if (!sameSet(newPanelIds, panelBefore)) changes.push('panel');
+  const timing = changes.some((c) => ['date_time', 'duration', 'panel', 'location_or_link'].includes(c));
+
+  // A material change re-applies the booking rules: request/application state
+  // and conflicts (excluding this interview). Cancelling stays possible always.
+  let warnings = null;
+  let overlapReason = null;
+  if (changes.length) {
+    const reqRow = iv.request_id ? Requests.byId(iv.request_id) : null;
+    const app = iv.application_id ? Applications.byId(iv.application_id) : null;
+    const blocked = schedulingGuard({ reqRow, app, user: req.user, body: d, action: 'reschedule' });
+    if (blocked) return res.status(blocked.status).json(blocked.body);
   }
-  if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); InterviewActivity.add(iv.id, req.user, 'rescheduled', `→ ${scheduledAt}`); }
-  else if (!panelChanged) InterviewActivity.add(iv.id, req.user, 'updated');
-  writeAudit(req, { action: 'interview.updated', entityType: 'interview', entityId: iv.id, oldValue: before, newValue: { scheduledAt: updated.scheduled_at, rescheduled } });
-  res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
+  let refusal = null;
+  tx(() => {
+    if (timing) {
+      dbRun("UPDATE system_setting SET value=value WHERE key='interview_booking_lock'");
+      const conflicts = evaluateConflicts({ start: next.scheduledAt, durationMin: next.durationMin, panelIds: newPanelIds,
+        candidateId: iv.candidate_id, location: next.locationOrLink, excludeId: iv.id });
+      refusal = conflictRefusal(conflicts, d);
+      if (refusal) return;
+      if (conflicts.panel.length) overlapReason = String(d.overlapReason).trim();
+      if (conflicts.location.length) warnings = { location: conflicts.location.map(({ start, end }) => ({ start, end })) };
+    }
+    const before = { scheduledAt: iv.scheduled_at, durationMin: iv.duration_min, mode: iv.mode, locationOrLink: iv.location_or_link };
+    const rescheduled = changes.includes('date_time');
+    const updated = Interviews.update(iv.id, { ...d, scheduledAt, durationMin });
+    let added = []; let removed = [];
+    if (Array.isArray(d.panel)) {
+      InterviewPanel.set(iv.id, d.panel.map((m) => ({ interviewerId: Number(m.interviewerId), isLead: !!m.isLead })));
+      const panelAfter = InterviewPanel.interviewerIds(iv.id).map(Number);
+      added = panelAfter.filter((x) => !panelBefore.includes(x));
+      removed = panelBefore.filter((x) => !panelAfter.includes(x));
+      if (added.length || removed.length) {
+        InterviewActivity.add(iv.id, req.user, 'panel_changed');
+        writeAudit(req, { action: 'interview.panel_changed', entityType: 'interview', entityId: iv.id, oldValue: { panel: panelBefore }, newValue: { panel: panelAfter } });
+      }
+    }
+    if (overlapReason) {
+      Interviews.setOverlapReason(iv.id, overlapReason);
+      InterviewActivity.add(iv.id, req.user, 'panel_overlap_acknowledged', overlapReason);
+    }
+    if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); InterviewActivity.add(iv.id, req.user, 'rescheduled', `→ ${scheduledAt}`); }
+    else if (!added.length && !removed.length) InterviewActivity.add(iv.id, req.user, 'updated');
+    if (changes.length) {
+      // The calendar entry's revision rises; its UID never changes. What
+      // changed is kept until it has been communicated (or explicitly not).
+      const prevNotice = (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })();
+      const carry = prevNotice && prevNotice.kind === 'update' && !prevNotice.communicated ? prevNotice : null;
+      Interviews.setNotice(iv.id, {
+        kind: 'update', communicated: false, at: new Date().toISOString(),
+        changes: [...new Set([...(carry?.changes || []), ...changes])],
+        addedPanel: [...new Set([...(carry?.addedPanel || []), ...added])].filter((x) => !removed.includes(x)),
+        removedPanel: [...new Set([...(carry?.removedPanel || []), ...removed])].filter((x) => !added.includes(x)),
+        // What the people being told last heard, for the update message.
+        previous: carry?.previous || before,
+      }, { bumpSeq: true });
+    }
+    writeAudit(req, { action: 'interview.updated', entityType: 'interview', entityId: iv.id, oldValue: before,
+      newValue: { scheduledAt: updated.scheduled_at, durationMin: updated.duration_min, mode: updated.mode, locationOrLink: updated.location_or_link, rescheduled, changes },
+      comments: overlapReason ? `Panel overlap acknowledged: ${overlapReason}` : null });
+  });
+  if (refusal) return res.status(refusal.status).json(refusal.body);
+  res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }), changes, warnings });
 });
 
 /* ---------------- LINK a standalone interview to an application ---------------- */
@@ -372,7 +451,23 @@ router.post('/:id/status', requirePermission('interview.edit'), (req, res) => {
   if (!['completed', 'no_show', 'cancelled', 'scheduled'].includes(status)) return res.status(400).json({ error: 'Invalid interview status.' });
   if (status === 'cancelled' && (!reason || !reason.trim())) return res.status(400).json({ error: 'A reason is required to cancel an interview.' });
   if (iv.status === 'cancelled') return res.status(409).json({ error: 'Interview is already cancelled.' });
+  if (status === 'scheduled' && ['completed', 'no_show'].includes(iv.status)) {
+    // Reopening returns the interview to the schedule, so the request and
+    // application must still allow scheduling; a future slot must still be free.
+    const blocked = schedulingGuard({ reqRow: iv.request_id ? Requests.byId(iv.request_id) : null,
+      app: iv.application_id ? Applications.byId(iv.application_id) : null, user: req.user, body: req.body || {}, action: 'reopen' });
+    if (blocked) return res.status(blocked.status).json(blocked.body);
+    if (new Date(iv.scheduled_at).getTime() > Date.now()) {
+      const refusal = conflictRefusal(evaluateConflicts({ start: iv.scheduled_at, durationMin: iv.duration_min,
+        panelIds: InterviewPanel.interviewerIds(iv.id).map(Number), candidateId: iv.candidate_id, excludeId: iv.id }), req.body || {});
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+    }
+  }
   Interviews.setStatus(iv.id, status, status === 'cancelled' ? { cancel_reason: reason } : {});
+  if (status === 'cancelled') {
+    // The cancellation is a new calendar revision, still to be communicated.
+    Interviews.setNotice(iv.id, { kind: 'cancel', communicated: false, at: new Date().toISOString() }, { bumpSeq: true });
+  }
   InterviewActivity.add(iv.id, req.user, status, reason || null);
   CandidateActivity.add({ candidateId: iv.candidate_id, applicationId: iv.application_id, actorId: req.user.id, actorName: req.user.fullName, type: 'interview_' + status });
   writeAudit(req, { action: 'interview.status_changed', entityType: 'interview', entityId: iv.id, oldValue: { status: iv.status }, newValue: { status }, comments: reason || null });

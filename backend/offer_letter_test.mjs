@@ -239,7 +239,8 @@ try {
     const p = await pipeline();
     await must(`/api/requests/${p.rid}/cancel`, { method: 'POST', token: recMgr, body: { reason: 'Audit' } });
     const mona = (await must('/api/interviews/meta/form', { token: recruiter })).interviewers[0];
-    const body = { applicationId: p.aid, scheduledAt: new Date(Date.now() + 86400000).toISOString(), panel: [{ interviewerId: mona.id, isLead: true }] };
+    // A slot of its own: the same panelist at the same instant now needs an acknowledged reason (audit 2026-10-06).
+    const body = { applicationId: p.aid, scheduledAt: new Date(Date.now() + 2 * 86400000 + 5 * 3600000).toISOString(), panel: [{ interviewerId: mona.id, isLead: true }] };
     const iv = await api('/api/interviews', { method: 'POST', token: recruiter, body });
     c('scheduling for a cancelled request is refused (409), nothing created', iv.status === 409 && (await must(`/api/interviews/application/${p.aid}`, { token: recruiter })).interviews.length === 0, iv.text.slice(0, 140));
     c('…an authorized override with a reason still schedules (201)', (await api('/api/interviews', { method: 'POST', token: hrMgr, body: { ...body, overrideTerminal: true, overrideReason: 'Pool interview' } })).status === 201);

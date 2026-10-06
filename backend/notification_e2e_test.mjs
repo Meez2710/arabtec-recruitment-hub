@@ -159,6 +159,8 @@ const iv = await fired(() => POST('/api/interviews', {
   applicationId: appId, scheduledAt: new Date(Date.now() + 864e5).toISOString(),
   interviewType: 'technical', mode: 'onsite', locationOrLink: 'Head Office',
   panel: [{ interviewerId: hiringMgr.id, isLead: true }],
+  // Audit 2026-10-06 (decision 7): saving sends nothing unless asked.
+  sendInvitations: true,
 }, admin));
 ok('interview scheduled', iv.res.status === 201, `HTTP ${iv.res.status}`);
 ok('interview.scheduled → candidate emailed',
