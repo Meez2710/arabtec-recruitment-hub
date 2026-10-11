@@ -512,6 +512,15 @@ await check('a draft whose base is no longer the published version cannot be sub
     box(pg, 'qa').w = 120;
     pg.links[0].points = [{ x: 5, y: 6 }];
   });
+  await check('live route edit may add a link entry (reporting lines are implied by parentKey)', async () => {
+    const cur = (await api(`/api/org/charts/versions/${mkc.chart.currentVersionId}`)).json.version;
+    const p = structuredClone(cur.payload);
+    p.pages[0].links.push({ childKey: 'qa', kind: 'reports', fromSide: 'bottom', toSide: 'top', points: [{ x: 1, y: 2 }, { x: 3, y: 2 }] });
+    const r = await api(`/api/org/charts/versions/${cur.id}`, { method: 'PUT', tok: manager, body: { payload: p, updatedAt: cur.updatedAt } });
+    assert.equal(r.status, 200, r.text);
+    p.pages[0].links.push({ childKey: 'qa', kind: 'dotted', fromSide: 'bottom', toSide: 'top' });
+    assert.equal((await api(`/api/org/charts/versions/${cur.id}`, { method: 'PUT', tok: manager, body: { payload: p, updatedAt: r.json.version.updatedAt } })).status, 409, 'dotted line stays structural');
+  });
   await check('stale draft: submit returns 409 with a live-changes summary', async () => {
     assert.equal(saved.status, 200, saved.text);
     const r = await api(`/api/org/charts/versions/${dr.id}/submit`, { method: 'POST', tok: manager });
@@ -530,6 +539,7 @@ await check('a draft whose base is no longer the published version cannot be sub
     assert.equal(box(pg, 'pm').title, 'Live Manager', 'live-only change copied');
     assert.equal(box(pg, 'qa').w, 120, 'live-only width copied');
     assert.deepEqual(pg.links[0].points, [{ x: 5, y: 6 }], 'live route copied');
+    assert.deepEqual(pg.links.find((l) => l.childKey === 'qa').points, [{ x: 1, y: 2 }, { x: 3, y: 2 }], 'route added live for a new link entry is copied');
   });
   await check('after rebase the draft submits, and a newer live edit blocks publish again', async () => {
     assert.equal((await api(`/api/org/charts/versions/${dr.id}/submit`, { method: 'POST', tok: manager })).status, 200);

@@ -193,9 +193,11 @@ export function structuralChanges(oldP, newP) {
     if (o.planned !== n.planned || o.proposed !== n.proposed)
       out.push(`box "${k}" changed planned seats`);
   }
+  // A reporting line is implied by parentKey (checked above), so a "reports" link entry only carries
+  // its route and may be added or dropped live. Dotted lines are real extra relationships.
   const ls = (p) =>
     p.pages
-      .flatMap((x) => x.links.map((l) => `${l.childKey}|${l.kind}`))
+      .flatMap((x) => x.links.filter((l) => l.kind === "dotted").map((l) => `${l.childKey}|${l.kind}`))
       .sort()
       .join(",");
   if (ls(oldP) !== ls(newP)) out.push("lines added or removed");
@@ -720,17 +722,21 @@ function liveDelta(base, live) {
   const bl = new Map(base.pages.flatMap((p) => p.links).map((l) => [`${l.childKey}|${l.kind}`, l]));
   for (const l of live.pages.flatMap((p) => p.links)) {
     const o = bl.get(`${l.childKey}|${l.kind}`);
-    if (!o) continue;
+    if (!o) {
+      if (l.kind !== "dotted") out.push({ kind: "link", key: l.childKey, fields: ["route"] });
+      continue;
+    }
     const f = LINK_LIVE_FIELDS.filter((k) => !same(o[k], l[k]));
     if (f.length) out.push({ kind: "link", key: l.childKey, fields: f });
   }
   return out;
 }
 
+const FIELD_WORDS = { title: "title", text: "text", w: "width", x: "position", y: "position" };
 const describeDelta = (d) =>
   d.map((x) =>
     x.kind === "box"
-      ? `Box "${x.title || x.key}": ${x.fields.join(", ")} changed`
+      ? `Box "${x.title || x.key}": ${[...new Set(x.fields.map((f) => FIELD_WORDS[f] || f))].join(", ")} changed`
       : `Line to "${x.key}": route changed`,
   );
 
@@ -784,6 +790,12 @@ export function rebaseDraft(vid) {
     const key = `${l.childKey}|${l.kind}`;
     const o = bl.get(key);
     const d = dl.get(key);
+    if (!o && !d && l.kind !== "dotted" && real.has(l.childKey)) {
+      // a route drawn live for a line the draft has no entry for: copy it onto the page that holds the box
+      const pg = draft.pages.find((q) => q.boxes.some((b) => b.key === l.childKey));
+      if (pg) pg.links.push(JSON.parse(JSON.stringify(l)));
+      continue;
+    }
     if (!o || !d) continue;
     for (const k of LINK_LIVE_FIELDS)
       if (!same(o[k], l[k]) && same(o[k], d[k])) {
