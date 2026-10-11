@@ -464,6 +464,7 @@ export function chartDetail(id) {
     version,
     assignments: listAssignments(id),
     positions: listPositions(id),
+    possibleDuplicates: possibleDuplicates(id),
   };
 }
 
@@ -1026,6 +1027,7 @@ export function publishVersion(vid, userId, moves = {}) {
       before,
       after: getVersion(vid, false),
       supersededVersionId: chart.currentVersionId,
+      possibleDuplicates: possibleDuplicates(chart.id),
     };
   });
 }
@@ -1103,22 +1105,24 @@ function publishedBoxKeys(chart) {
   );
 }
 
-/** One person's shares across ALL charts must not exceed 1. employee_id when set, else trimmed case-insensitive name. */
+/** One person's shares across ALL charts must not exceed 1. Only enforced for people with an employee_id or user_id; names are not identities. */
 export function assertSharesWithinOne({
   employeeId,
+  userId,
   personName,
   share,
   exceptId = 0,
 }) {
+  if (!employeeId && !userId) return;
   const others = employeeId
     ? all("SELECT share FROM org_assignment WHERE employee_id=? AND id<>?", [
         employeeId,
         exceptId,
       ])
-    : all(
-        "SELECT share FROM org_assignment WHERE employee_id IS NULL AND lower(trim(person_name))=? AND id<>?",
-        [String(personName).trim().toLowerCase(), exceptId],
-      );
+    : all("SELECT share FROM org_assignment WHERE user_id=? AND id<>?", [
+        userId,
+        exceptId,
+      ]);
   const total = others.reduce((s, r) => s + Number(r.share), 0) + share;
   if (total > 1 + EPS) {
     throw new OrgChartError(
@@ -1127,6 +1131,44 @@ export function assertSharesWithinOne({
       { totalShare: total },
     );
   }
+}
+
+const normName = (s) => String(s).trim().toLowerCase().replace(/\s+/g, " ");
+
+/** Name-only people whose normalised name appears more than once across published charts and this chart. Not a block, just a hint. */
+export function possibleDuplicates(chartId) {
+  const rows = all(
+    `SELECT a.person_name, a.chart_id, a.box_key, c.name AS chart_name, c.current_version_id AS cv
+       FROM org_assignment a JOIN org_chart c ON c.id=a.chart_id
+      WHERE a.employee_id IS NULL AND a.user_id IS NULL
+        AND (a.chart_id=? OR c.current_version_id IS NOT NULL)
+      ORDER BY a.chart_id, a.box_key, a.sort_order, a.id`,
+    [chartId],
+  );
+  const titles = new Map();
+  const boxTitle = (r) => {
+    if (!titles.has(r.chart_id)) {
+      const m = new Map();
+      if (r.cv) {
+        const v = get("SELECT payload_json FROM org_chart_version WHERE id=?", [r.cv]);
+        if (v) for (const b of allBoxes(JSON.parse(v.payload_json))) m.set(b.key, b.title);
+      }
+      titles.set(r.chart_id, m);
+    }
+    return titles.get(r.chart_id).get(r.box_key) ?? r.box_key;
+  };
+  const groups = new Map();
+  for (const r of rows) {
+    const k = normName(r.person_name);
+    if (!groups.has(k)) groups.set(k, { personName: r.person_name.trim(), occurrences: [] });
+    groups.get(k).occurrences.push({
+      chartId: r.chart_id,
+      chartName: r.chart_name,
+      boxKey: r.box_key,
+      boxTitle: boxTitle(r),
+    });
+  }
+  return [...groups.values()].filter((g) => g.occurrences.length > 1);
 }
 
 function checkPosition(chartId, boxKey, positionId) {
@@ -1158,6 +1200,7 @@ export function createAssignment(chartId, body) {
     const share = d.share ?? 1;
     assertSharesWithinOne({
       employeeId: d.employeeId ?? null,
+      userId: d.userId ?? null,
       personName: d.personName,
       share,
     });
@@ -1210,10 +1253,12 @@ export function updateAssignment(chartId, aid, body) {
     if (
       d.share !== undefined ||
       d.personName !== undefined ||
-      d.employeeId !== undefined
+      d.employeeId !== undefined ||
+      d.userId !== undefined
     ) {
       assertSharesWithinOne({
         employeeId: next.employeeId,
+        userId: next.userId,
         personName: next.personName,
         share: next.share,
         exceptId: aid,

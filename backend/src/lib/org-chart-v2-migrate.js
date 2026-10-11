@@ -29,7 +29,7 @@ function lockedTx(fn) {
 }
 
 /** Build one chart payload (+ the people to insert) from a root node and the full node list. */
-export function convertTree(root, kidsOf, sharesByName, prefix = "b") {
+export function convertTree(root, kidsOf, prefix = "b") {
   let n = 0;
   const boxes = [];
   const people = []; // { boxKey, slot, name, sort }
@@ -188,12 +188,7 @@ export function convertTree(root, kidsOf, sharesByName, prefix = "b") {
       },
     ],
   };
-  // A name that appears in several nodes is split so the person's shares across charts never exceed 1.
-  const shared = people.map((p) => ({
-    ...p,
-    share: 1 / (sharesByName.get(norm(p.name)) || 1),
-  }));
-  return { payload, people: shared };
+  return { payload, people };
 }
 
 /**
@@ -246,18 +241,13 @@ export function buildPayloadFromRows(rows, chartName = "Imported chart") {
     roots = [top];
   }
   if (!roots.length) throw new Error("The file has no people rows.");
-  const nameCount = new Map();
-  for (const n of nodes) {
-    const k = norm(n.employee_name);
-    if (k) nameCount.set(k, (nameCount.get(k) || 0) + 1);
-  }
   const prefix = `i${Math.random().toString(36).slice(2, 5)}_`;
-  const { payload, people } = convertTree(roots[0], kidsOf, nameCount, prefix);
+  const { payload, people } = convertTree(roots[0], kidsOf, prefix);
   payload.pages[0].importPeople = people.map((p) => ({
     boxKey: p.boxKey,
     personName: p.name,
     status: "in_post",
-    share: p.share,
+    share: 1,
     sortOrder: p.sort,
   }));
   return { payload };
@@ -276,16 +266,11 @@ export function migrateOrganizationNodesToCharts() {
       if (nd.parent_id == null) continue;
       kidsOf.set(nd.parent_id, [...(kidsOf.get(nd.parent_id) || []), nd]);
     }
-    const nameCount = new Map();
-    for (const nd of nodes) {
-      const k = norm(nd.employee_name);
-      if (k) nameCount.set(k, (nameCount.get(k) || 0) + 1);
-    }
     const roots = nodes.filter((nd) => nd.parent_id == null);
     let charts = 0;
     let assignments = 0;
     for (const root of roots) {
-      const { payload, people } = convertTree(root, kidsOf, nameCount);
+      const { payload, people } = convertTree(root, kidsOf);
       const isHo =
         norm(root.department) === "head office" ||
         norm(root.project_or_location) === "head office";
@@ -317,7 +302,7 @@ export function migrateOrganizationNodesToCharts() {
             seat.get(`${p.boxKey}#${p.slot}`) ?? null,
             p.name,
             "in_post",
-            p.share,
+            1,
             p.sort,
             t,
             t,

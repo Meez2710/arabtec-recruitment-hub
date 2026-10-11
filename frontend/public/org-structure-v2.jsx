@@ -1135,6 +1135,7 @@
     const [positions, setPositions] = useState([]);
     const [versions, setVersions] = useState([]);
     const [mode, setMode] = useState('view');
+    const [dupOpen, setDupOpen] = useState(false);
     const [doc, setDocState] = useState(null);
     const [ver, setVerState] = useState(null);
     const [pageIdx, setPageIdx] = useState(0);
@@ -1211,7 +1212,7 @@
 
     const refreshPeople = useCallback(async () => {
       if (!chartId) return;
-      try { const d = await api().get('/org/charts/' + chartId); setAssignments(d.assignments || []); setPositions(d.positions || []); }
+      try { const d = await api().get('/org/charts/' + chartId); setAssignments(d.assignments || []); setPositions(d.positions || []); setDetail((p) => p && { ...p, possibleDuplicates: d.possibleDuplicates || [] }); }
       catch (e) { setErr(errText(e)); }
     }, [chartId]);
 
@@ -1916,6 +1917,16 @@
                 <div key={l} className={'ocv2-metric' + ((l === 'Layers' && v > LIMITS.layersMax) || (l === 'Widest span' && v > LIMITS.spanMax) ? ' warn' : '')}><b>{v}</b><span>{l}</span></div>
               ))}
             </div>
+
+            {editing && detail.possibleDuplicates && detail.possibleDuplicates.length > 0 && (
+              <div className="page-sub" style={{ color: 'var(--muted)', marginBottom: 10 }}>
+                {detail.possibleDuplicates.length} {detail.possibleDuplicates.length === 1 ? 'name appears' : 'names appear'} more than once {'—'} check they are different people
+                <button type="button" className="btn btn-sm btn-ghost" aria-expanded={dupOpen} onClick={() => setDupOpen((o) => !o)}>{dupOpen ? 'Hide' : 'Show'}</button>
+                {dupOpen && <ul>{detail.possibleDuplicates.map((g) => (
+                  <li key={g.personName.toLowerCase()}>{g.personName}: {g.occurrences.map((o) => o.chartName + ' / ' + o.boxTitle).join('; ')}</li>
+                ))}</ul>}
+              </div>
+            )}
 
             {compare && restr ? (
               <Compare published={compare.published} draft={doc} pageIdx={pageIdx} assignments={assignments} diff={compare.diff} today={today} />

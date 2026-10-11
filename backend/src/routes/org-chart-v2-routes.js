@@ -224,6 +224,7 @@ export function registerOrgChartV2Routes(parent) {
         res.json({
           version: out.after,
           ...(out.imported ? { importedPeople: out.imported } : {}),
+          possibleDuplicates: out.possibleDuplicates,
           ...(out.supersededVersionId
             ? { supersededVersionId: out.supersededVersionId }
             : {}),

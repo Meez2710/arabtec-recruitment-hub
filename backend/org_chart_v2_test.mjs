@@ -137,10 +137,10 @@ await check('migration groups people into role boxes and keeps vacant seats', as
   assert.equal(boxes.find((b) => b.title === 'Project Manager').parentKey, boxes.find((b) => b.title === 'Harbor Tower').key);
   assert.ok(boxes.every((b) => b.w === 81 && Number.isFinite(b.x) && Number.isFinite(b.y)));
 });
-await check('migration splits a repeated name so shares stay within 1', async () => {
+await check('migration gives a repeated legacy name share 1 on each row (names are not identities)', async () => {
   const rows = all("SELECT share FROM org_assignment WHERE person_name='Hadi Sabry'");
   assert.equal(rows.length, 2);
-  assert.ok(rows.reduce((s, r) => s + r.share, 0) <= 1 + 1e-9);
+  assert.ok(rows.every((r) => r.share === 1));
 });
 await check('migration is idempotent and never touches organization_node', async () => {
   const again = migrateOrganizationNodesToCharts();
@@ -279,23 +279,27 @@ await check('assignment validation: bad status, bad date, unknown box, recruiter
   assert.equal((await post({ boxKey: 'eng', personName: '' })).status, 400);
   assert.equal((await post({ boxKey: 'eng', personName: 'A B' }, recruiter)).status, 403);
 });
-await check('shares across charts cannot exceed 1 (name match is trimmed and case-insensitive)', async () => {
+await check('shares are enforced per employee_id only; same-name people are never blocked but are flagged', async () => {
   const other = await api('/api/org/charts', { method: 'POST', body: { name: 'Second Site', payload: { pages: [{ key: 'p1', boxes: [P('Engineer', { key: 'e1' })] }] } } });
   assert.equal(other.status, 201, other.text);
   const first = await api(`/api/org/charts/${cid}/assignments`, { method: 'POST', body: { boxKey: 'eng', personName: 'Rana Fouad', share: 0.5 } });
   assert.equal(first.status, 201);
-  const second = await api(`/api/org/charts/${other.json.chart.id}/assignments`, { method: 'POST', body: { boxKey: 'e1', personName: '  RANA fouad ', share: 0.5 } });
+  const second = await api(`/api/org/charts/${other.json.chart.id}/assignments`, { method: 'POST', body: { boxKey: 'e1', personName: '  RANA   fouad ', share: 1 } });
   assert.equal(second.status, 201, second.text);
-  const third = await api(`/api/org/charts/${cid}/assignments`, { method: 'POST', body: { boxKey: 'qa', personName: 'rana Fouad', share: 0.1 } });
-  assert.equal(third.status, 409);
-  assert.match(third.json.error, /100% at most/);
-  const raise = await api(`/api/org/charts/${cid}/assignments/${first.json.assignment.id}`, { method: 'PUT', body: { share: 0.9 } });
-  assert.equal(raise.status, 409);
+  const third = await api(`/api/org/charts/${cid}/assignments`, { method: 'POST', body: { boxKey: 'eng', personName: 'rana Fouad', share: 1 } });
+  assert.equal(third.status, 201, third.text);
+  const raise = await api(`/api/org/charts/${cid}/assignments/${first.json.assignment.id}`, { method: 'PUT', body: { share: 1 } });
+  assert.equal(raise.status, 200, raise.text);
+  const dup = (await api(`/api/org/charts/${other.json.chart.id}`)).json.possibleDuplicates.find((g) => g.personName.toLowerCase().includes('rana'));
+  assert.ok(dup, 'flagged');
+  assert.equal(dup.occurrences.length, 3);
+  assert.deepEqual(Object.keys(dup.occurrences[0]).sort(), ['boxKey', 'boxTitle', 'chartId', 'chartName']);
   assert.equal((await api(`/api/org/charts/${cid}/assignments`, { method: 'POST', body: { boxKey: 'eng', personName: 'Zed', share: 1.5 } })).status, 400);
   const byId = await api(`/api/org/charts/${cid}/assignments`, { method: 'POST', body: { boxKey: 'eng', personName: 'Rana Fouad', employeeId: 77, share: 1 } });
-  assert.equal(byId.status, 201, 'employee_id match is separate from the name match');
-  const byId2 = await api(`/api/org/charts/${cid}/assignments`, { method: 'POST', body: { boxKey: 'qa', personName: 'Someone Else', employeeId: 77, share: 0.2 } });
+  assert.equal(byId.status, 201);
+  const byId2 = await api(`/api/org/charts/${cid}/assignments`, { method: 'POST', body: { boxKey: 'eng', personName: 'Someone Else', employeeId: 77, share: 0.2 } });
   assert.equal(byId2.status, 409);
+  assert.match(byId2.json.error, /100% at most/);
 });
 await check('assignment delete works and is audited', async () => {
   const r = await api(`/api/org/charts/${cid}/assignments/${asg.id}`, { method: 'DELETE', tok: manager });
@@ -596,6 +600,24 @@ await check('a draft whose base is no longer the published version cannot be sub
     assert.equal(detail.status, 200);
     assert.equal(detail.json.version, null);
     assert.equal(all("SELECT id FROM audit_log WHERE action='org_chart_v2.chart_imported'").length >= 1, true, 'import is audited');
+  });
+  await check('an import with duplicate short names publishes and reports them', async () => {
+    const pl = importPayload();
+    pl.pages[0].importPeople = [
+      { boxKey: 'ieng', personName: 'Sami Dup', share: 1, sortOrder: 0 },
+      { boxKey: 'ieng', personName: 'sami  dup', share: 1, sortOrder: 1 },
+      { boxKey: 'ipm', personName: 'Sami Dup', share: 1, sortOrder: 2 },
+    ];
+    const r = await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Dup Plaza', payload: pl, asDraft: true } });
+    const v = r.json.version.id;
+    await api(`/api/org/charts/versions/${v}/submit`, { method: 'POST', tok: manager });
+    await api(`/api/org/charts/versions/${v}/approve`, { method: 'POST', tok: director });
+    const pub = await api(`/api/org/charts/versions/${v}/publish`, { method: 'POST', tok: manager });
+    assert.equal(pub.status, 200, pub.text);
+    assert.equal(pub.json.importedPeople, 3);
+    const g = pub.json.possibleDuplicates.find((x) => x.personName === 'Sami Dup');
+    assert.equal(g.occurrences.length, 3);
+    assert.ok(g.occurrences.some((o) => o.boxTitle === 'Project Manager'));
   });
   await check('a viewer cannot import', async () => {
     assert.equal((await api('/api/org/charts', { method: 'POST', tok: viewer, body: { name: 'X', payload: importPayload(), asDraft: true } })).status, 403);
