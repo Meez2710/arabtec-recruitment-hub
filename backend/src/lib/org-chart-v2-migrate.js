@@ -13,8 +13,6 @@ const PAD = 4.5;
 const GAP_X = 9;
 const GAP_Y = 30;
 const COL_INDENT = 12;
-// The Hub logo sits top-right under the header band; boxes are never placed under it (mirrors LOGO in org-structure-v2.jsx).
-const LOGO = { x: 1107, y: 83, w: 58, h: 56 };
 const UNIT_TYPES = new Set(["department", "project", "organizational_unit"]);
 
 const norm = (s) =>
@@ -164,20 +162,6 @@ export function convertTree(root, kidsOf, sharesByName, prefix = "b") {
   };
   measure(boxes[0]);
   place(boxes[0], 20, 90);
-  // Keep the whole tree clear of the logo: move it down until no box touches that corner.
-  for (let i = 0; i < 6; i += 1) {
-    const hit = boxes.filter(
-      (b) =>
-        b.x < LOGO.x + LOGO.w + 4 &&
-        b.x + b.w > LOGO.x - 4 &&
-        b.y < LOGO.y + LOGO.h + 4 &&
-        b.y + b.h > LOGO.y - 4,
-    );
-    if (!hit.length) break;
-    const dy = LOGO.y + LOGO.h + 6 - Math.min(...hit.map((b) => b.y));
-    for (const b of boxes) b.y += dy;
-  }
-
   const links = boxes
     .filter((b) => b.parentKey)
     .map((b) => ({

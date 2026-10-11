@@ -212,43 +212,100 @@ await check('warnings: span above 12 report boxes (zati excluded), manager with 
   assert.ok(deep.get('g').some((t) => /layers/.test(t)));
   assert.equal(deep.has('f'), false);
 });
-await check('auto-arrange never places a box under the logo', () => {
-  const boxes = [role('root', null, { x: 600, y: 90 }), ...Array.from({ length: 20 }, (_, i) => role('c' + i, 'root', { x: i * 10, y: 200, arrange: undefined }))];
-  boxes.forEach((b, i) => { b.title = 'Role ' + i; });
+await check('warnings: the no-one-in-post rule needs a child role box and planned >= 1', () => {
+  const nobody = (boxes) => warn(boxes, boxes.filter((b) => b.parentKey).map((b) => person(b.key))).get('m');
+  assert.ok(nobody([role('m'), role('a', 'm')]).some((t) => /nobody in post/.test(t)));
+  assert.equal(nobody([role('m'), { ...role('t', 'm'), kind: 'team' }]), undefined, 'only a team below: no warning');
+  assert.equal(nobody([role('m', null, { planned: 0 }), role('a', 'm')]), undefined, 'planned 0: no warning');
+});
+await check('auto-arrange has no logo obstacle: the first row starts at the top of the page', () => {
+  const boxes = [role('root', null, { x: 600, y: 90 }), ...Array.from({ length: 20 }, (_, i) => role('c' + i, 'root', { x: i * 10, y: 200 }))];
   const page = { boxes, links: [] };
   const geo = new Map(boxes.map((b) => [b.key, { b, x: b.x, y: b.y, w: 81, h: 38, m: {} }]));
   const pos = SHEET.autoLayout(page, geo, null);
   assert.equal(pos.size, boxes.length);
-  for (const [k, v] of pos) {
-    const hit = v.x < 1107 + 58 + 4 && v.x + 81 > 1107 - 4 && v.y < 83 + 56 + 4 && v.y + 38 > 83 - 4;
-    assert.equal(hit, false, `${k} at ${v.x},${v.y} overlaps the logo`);
-  }
+  assert.equal(pos.get('root').y, 92);
+});
+await check('clean box model: title, meta with open count, names without dashes, suffix and joiner runs', () => {
+  const m = SHEET.boxModel({ ...role('r'), title: 'Site Engineer', planned: 4, w: 240 }, [
+    { personName: 'Ahmed', suffix: 'Sr.', status: 'in_post' },
+    { personName: 'Mona', status: 'joining', effectiveDate: '2999-10-30' },
+  ], '2026-10-04');
+  const txt = m.rows.map((r) => r.runs.map((u) => u.t).join(''));
+  assert.equal(txt[0], 'Site Engineer');
+  assert.equal(txt[1], 'X4 · 2 open');
+  assert.equal(txt[2], 'Ahmed – Sr.');
+  assert.equal(txt[3], 'Mona · joins 30/10');
+  assert.equal(m.rows[3].runs[0].tone, 'brand');
+  assert.equal(m.rows[2].runs[1].tone, 'muted');
+  assert.equal(m.h, m.rows.reduce((n, r) => n + r.lh, 0) + 12);
+  const z = SHEET.boxModel({ ...role('z'), zati: true, planned: 5 }, [], '2026-10-04');
+  assert.equal(z.rows[1].runs[0].t, 'X5 zati', 'zati never shows an open count');
+  assert.equal(SHEET.boxModel({ ...role('t'), kind: 'team', title: 'Team' }, [], '2026-10-04').h, 20);
 });
 
 /* ------------------------------------ export ---------------------------------- */
 
+const run = (t, tone = 'ink', s = 8.5, w = 600) => ({ t, tone, s, w });
 const model = {
-  name: 'Project', title1: 'Harbor Site', title2: 'Org chart', date: '04/10/2026',
+  style: 'classic', name: 'Project', title1: 'Harbor Site', title2: 'Org chart', date: '04/10/2026',
   boxes: [
     { key: 'a', kind: 'role', x: 500, y: 100, w: 81, h: 29, lines: [{ t: 'Manager', red: false }, { t: '- Karim Zaki 30/10', red: true }], logical: [{ t: 'Manager', red: false }, { t: '- Karim Zaki 30/10', red: true }], left: false, dashed: false },
     { key: 'b', kind: 'role', x: 500, y: 200, w: 81, h: 29, lines: [{ t: 'Engineer', red: false }], logical: [{ t: 'Engineer', red: false }], left: false, dashed: true },
   ],
   lines: [{ key: 'b', parent: 'a', pts: [[540, 129], [540, 200]], fs: 'bottom', ts: 'top' }],
 };
-await check('SVG export draws bands, titles, red joiners, dashed proposed boxes and an arrowhead', () => {
-  const svg = ctx.ArabtecOrgExport.svgOf(model, null);
+const cleanModel = {
+  style: 'clean', name: 'Project', title1: 'Harbor Site', title2: 'Org chart', date: '04/10/2026',
+  boxes: [
+    { key: 'a', kind: 'role', x: 500, y: 100, w: 81, h: 40, rows: [{ runs: [run('Manager')], lh: 11, s: 8.5 }, { runs: [run('Karim Zaki', 'brand', 7.5, 500), run(' · joins 30/10', 'brand', 7, 400)], lh: 10, s: 7.5 }], left: false, dashed: false },
+    { key: 'b', kind: 'role', x: 500, y: 200, w: 81, h: 29, rows: [{ runs: [run('Engineer')], lh: 11, s: 8.5 }], left: false, dashed: true },
+    { key: 'c', kind: 'team', x: 700, y: 200, w: 81, h: 20, rows: [{ runs: [run('Team', 'soft', 8)], lh: 10, s: 8 }], center: true, left: false, dashed: false },
+  ],
+  lines: [{ key: 'b', parent: 'a', pts: [[540, 140], [540, 200]], fs: 'bottom', ts: 'top' }],
+};
+await check('Clean SVG: white page, left title, Updated date, thin light cards, no bands, logo or arrowheads, red only in joiner text', () => {
+  const svg = ctx.ArabtecOrgExport.svgOf(cleanModel, null);
+  assert.doesNotMatch(svg, /#860915|<image|stroke="#000"/);
+  assert.match(svg, /x="24" y="38"[^>]*>Harbor Site/);
+  assert.match(svg, /Updated 04 Oct 2026/);
+  assert.match(svg, /rx="5\.5"/);
+  assert.match(svg, /stroke-dasharray="3 2"/);
+  assert.match(svg, /fill="#D01827">Karim Zaki/);
+  assert.equal((svg.match(/#D01827/g) || []).length, 2, 'brand red appears only as text fill');
+  assert.equal((svg.match(/ Z"/g) || []).length, 0, 'no arrowheads');
+});
+await check('Classic SVG keeps the Visio look (bands, black borders, arrowhead, red joiner) but has no logo', () => {
+  const svg = ctx.ArabtecOrgExport.svgOf(model, null, 'classic');
   assert.match(svg, /fill="#860915"/);
   assert.match(svg, /Harbor Site/);
   assert.match(svg, /Date: 04\/10\/2026/);
   assert.match(svg, /fill="#E0161B">- Karim Zaki 30\/10/);
   assert.match(svg, /stroke-dasharray="3 2"/);
   assert.equal((svg.match(/ Z" fill="#000"/g) || []).length, 1, 'one arrowhead per connector');
+  assert.doesNotMatch(svg, /<image/);
 });
-await check('Visio export: one page per chart page, A3 landscape, glued connectors with arrows, red joiner row, no logo in headless mode', async () => {
-  const blob = await ctx.ArabtecOrgExport.vsdx([model, { ...model, name: 'QA' }], { title: 'Test', logoMode: null });
+await check('Clean Visio: title and date shapes, rounded light cards, grey connector without arrows, red only as joiner text', async () => {
+  const blob = await ctx.ArabtecOrgExport.vsdx([cleanModel], { title: 'Test' });
+  const z = await JSZip.loadAsync(Buffer.from(await blob.arrayBuffer()));
+  assert.equal(Object.keys(z.files).some((n) => /media|logo/.test(n)), false);
+  const xml = await z.file('visio/pages/page1.xml').async('string');
+  const dom = new DOMParser().parseFromString(xml, 'text/xml');
+  assert.equal(dom.getElementsByTagName('Shape').length, 1 + 1 + 1 + 3, 'title, date, connector, three boxes');
+  assert.doesNotMatch(xml, /#860915|Band\./);
+  assert.match(xml, /N="EndArrow" V="0"/);
+  assert.match(xml, /N="Rounding" V="0\.083333" U="IN"/);
+  assert.match(xml, /N="LineColor" V="#D0D4DA"/);
+  assert.match(xml, /Updated 04 Oct 2026/);
+  assert.equal((xml.match(/N="Color" V="#D01827"/g) || []).length, 2);
+  assert.equal(dom.getElementsByTagName('Connect').length, 2);
+});
+await check('Classic Visio: one page per chart page, A3 landscape, glued connectors with arrows, red joiner row, bands, no logo', async () => {
+  const blob = await ctx.ArabtecOrgExport.vsdx([model, { ...model, name: 'QA' }], { title: 'Test', style: 'classic' });
   const z = await JSZip.loadAsync(Buffer.from(await blob.arrayBuffer()));
   const names = Object.keys(z.files);
   assert.ok(names.includes('visio/pages/page1.xml') && names.includes('visio/pages/page2.xml'));
+  assert.equal(names.some((n) => /media|logo/.test(n)), false);
   const pagesXml = await z.file('visio/pages/pages.xml').async('string');
   assert.equal((pagesXml.match(/<Page /g) || []).length, 2);
   assert.match(pagesXml, /PageWidth" V="16\.5354/);

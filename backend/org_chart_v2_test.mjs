@@ -676,7 +676,7 @@ await check('a draft whose base is no longer the published version cannot be sub
     assert.equal(r.status, 200, r.text);
     assert.equal(r.json.version.payload.pages[0].importPeople, undefined);
   });
-  await check('CSV import groups people rows into role boxes with the migration rules and keeps clear of the logo', async () => {
+  await check('CSV import groups people rows into role boxes with the migration rules and and has no logo obstacle', async () => {
     const rows = [
       { id: '1', name: 'Mona Adel', title: 'Project Manager', department: 'Site' },
       { id: '2', name: 'Tarek Wael', title: 'Site Engineer', department: 'Site', reportsToId: '1' },
@@ -691,7 +691,6 @@ await check('a draft whose base is no longer the published version cannot be sub
     assert.equal(eng[0].planned, 2);
     assert.equal(pg.importPeople.filter((x) => x.boxKey === eng[0].key).length, 2);
     assert.equal(pg.importPeople.length, 3);
-    assert.ok(pg.boxes.every((b) => !(b.x < 1169 && b.x + b.w > 1103 && b.y < 143 && b.y + (b.h || 0) > 79)), 'nothing under the logo');
     assert.equal(new Set(pg.boxes.map((b) => b.key)).size, pg.boxes.length);
     assert.equal((await api('/api/org/charts/import/csv', { method: 'POST', tok: viewer, body: { rows } })).status, 403);
     assert.equal((await api('/api/org/charts/import/csv', { method: 'POST', tok: manager, body: { rows: [] } })).status, 400);

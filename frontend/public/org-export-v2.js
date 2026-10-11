@@ -1,8 +1,9 @@
 /* Organization Structure v2: exports (docs/org-chart/ORG_CHART_V2_PLAN.md section 5).
    window.ArabtecOrgExport = { pdf, vsdx, svg, csv, download, PAPER }
    Each page of a chart arrives as a "sheet model" built by org-structure-v2.jsx from exactly what the sheet shows:
-   { name, title1, title2, date, boxes: [{ key, kind, x, y, w, h, lines, logical, left, dashed }], lines: [{ key, pts, fs, ts, parent }] }
-   lines  = wrapped lines as drawn ({ t, red }); logical = unwrapped lines for Visio, which wraps the text itself.
+   { style, name, title1, title2, date, boxes: [{ key, kind, x, y, w, h, rows, center, lines, logical, left, dashed }], lines: [{ key, pts, fs, ts, parent }] }
+   style "clean" (default): rows = [{ runs: [{ t, tone, s, w }], lh, s }]. style "classic" (Visio replica): lines = wrapped lines as drawn
+   ({ t, red }); logical = unwrapped lines for Visio, which wraps the text itself. Neither style draws a logo.
    PDF and Visio code is ported from docs/org-chart/reference/prototype-org-chart-builder.html (toPDF / groupedPDF,
    vsdxPackage / groupedVSDX, svgToPng). jsPDF and JSZip load on demand from /vendor/. World units are points on A3 (1190 x 842). */
 (function (root) {
@@ -17,7 +18,68 @@
   const MAROON = "#860915",
     RED = "#E0161B";
   const BAND = { x: 14.4, w: 1161.2, hy: 25, hh: 52, fy: 801, fh: 28 };
-  const LOGO = { x: 1107, y: 83, w: 58, h: 56 };
+  // Clean style: Hub tokens resolved to literals (exports cannot read CSS variables).
+  const UI_FONT = 'Inter, Arial, "Liberation Sans", Helvetica, sans-serif';
+  const DISPLAY_FONT =
+    '"Inter Tight", Inter, Arial, "Liberation Sans", Helvetica, sans-serif';
+  const PADX = 7,
+    PADY = 6;
+  const TONE = {
+    ink: "#1A1A1A",
+    soft: "#4A4641",
+    muted: "#6F6A64",
+    brand: "#D01827",
+  };
+  const CLEAN = {
+    line: "#D0D4DA",
+    dash: "#C9CED6",
+    team: "#F0F1F3",
+    text: "#FAFAFB",
+  };
+  const MON = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  function updated(d) {
+    if (!d) return "";
+    let m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(d),
+      day,
+      mon,
+      yr;
+    if (m) [day, mon, yr] = [m[1], m[2], m[3]];
+    else if ((m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d)))
+      [day, mon, yr] = [m[3], m[2], m[1]];
+    return (
+      "Updated " +
+      (MON[+mon - 1]
+        ? String(+day).padStart(2, "0") + " " + MON[+mon - 1] + " " + yr
+        : d)
+    );
+  }
+  // Baselines of the rows of one clean box: [{ row, base }]
+  function rowBases(b) {
+    let y = b.y + PADY;
+    if (b.center) y = b.y + (b.h - b.rows.reduce((n, r) => n + r.lh, 0)) / 2;
+    return b.rows.map((r) => {
+      const base = y + r.lh / 2 + r.s * 0.35;
+      y += r.lh;
+      return { row: r, base };
+    });
+  }
+  const fillOf = (b) =>
+    b.left ? CLEAN.text : b.center ? CLEAN.team : "#FFFFFF";
+  const strokeOf = (b) =>
+    b.left || b.center ? null : b.dashed ? CLEAN.dash : CLEAN.line;
   const BOX_FONT = 'Arial, "Liberation Sans", Helvetica, sans-serif';
   const HEAD_FONT = 'Calibri, Carlito, Arial, "Liberation Sans", sans-serif';
   const PAPER = {
@@ -81,49 +143,107 @@
     ];
   }
 
-  /* ------------------------------- the Hub logo ------------------------------ */
-  let logoCache = null;
-  async function logo() {
-    if (logoCache) return logoCache;
-    const text = await (await fetch("/arabtec-logo.svg")).text();
-    const uri =
-      "data:image/svg+xml;base64," +
-      root.btoa(unescape(encodeURIComponent(text)));
-    const vb = /viewBox="\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)/.exec(text);
-    const aspect = vb ? +vb[1] / +vb[2] : 600 / 396;
-    // contain inside the 58 x 56 box, glued to its top-right corner
-    const w = Math.min(LOGO.w, LOGO.h * aspect),
-      h = w / aspect;
-    const box = { x: LOGO.x + LOGO.w - w, y: LOGO.y, w, h };
-    const scale = 8,
-      cv = root.document.createElement("canvas");
-    cv.width = Math.round(w * scale);
-    cv.height = Math.round(h * scale);
-    const img = await new Promise((res, rej) => {
-      const i = new root.Image();
-      i.onload = () => res(i);
-      i.onerror = () => rej(new Error("The logo could not be drawn."));
-      i.src = uri;
-    });
-    const g = cv.getContext("2d");
-    g.drawImage(img, 0, 0, cv.width, cv.height);
-    const png = cv.toDataURL("image/png");
-    // Visio draws transparent PNG pixels in its default fill colour, so its copy sits on white (the sheet is white).
-    g.globalCompositeOperation = "destination-over";
-    g.fillStyle = "#fff";
-    g.fillRect(0, 0, cv.width, cv.height);
-    logoCache = {
-      uri,
-      png,
-      pngOnWhite: cv.toDataURL("image/png"),
-      box,
-      aspect,
-    };
-    return logoCache;
-  }
-
   /* ----------------------------------- SVG ----------------------------------- */
-  function svgOf(m, lg) {
+  function cleanSvg(m) {
+    const f = (fam, sz, wt, fill, x, y, anchor, t) =>
+      '<text x="' +
+      x +
+      '" y="' +
+      y +
+      '"' +
+      (anchor ? ' text-anchor="' + anchor + '"' : "") +
+      ' font-family="' +
+      fam +
+      '" font-size="' +
+      sz +
+      '" font-weight="' +
+      wt +
+      '" fill="' +
+      fill +
+      '">' +
+      esc(t) +
+      "</text>";
+    let o =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' +
+      W +
+      " " +
+      H +
+      '" width="' +
+      W +
+      '" height="' +
+      H +
+      '">';
+    o += '<rect width="' + W + '" height="' + H + '" fill="#fff"/>';
+    o += f(DISPLAY_FONT, 16, 700, TONE.ink, 24, 38, "", m.title1);
+    o += f(UI_FONT, 9, 400, TONE.muted, 24, 52, "", m.title2);
+    if (m.date)
+      o += f(
+        UI_FONT,
+        7.5,
+        400,
+        TONE.muted,
+        W - 24,
+        H - 24,
+        "end",
+        updated(m.date),
+      );
+    for (const L of m.lines)
+      o +=
+        '<path d="M' +
+        L.pts.map((q) => r1(q[0]) + "," + r1(q[1])).join(" L") +
+        '" fill="none" stroke="' +
+        CLEAN.line +
+        '" stroke-width="1"/>';
+    for (const b of m.boxes) {
+      const st = strokeOf(b);
+      o +=
+        '<rect x="' +
+        r1(b.x + 0.5) +
+        '" y="' +
+        r1(b.y + 0.5) +
+        '" width="' +
+        r1(b.w - 1) +
+        '" height="' +
+        r1(b.h - 1) +
+        '" rx="5.5" fill="' +
+        fillOf(b) +
+        '"' +
+        (st ? ' stroke="' + st + '" stroke-width="1"' : "") +
+        (b.dashed ? ' stroke-dasharray="3 2"' : "") +
+        "/>";
+      o += '<text font-family="' + UI_FONT + '" xml:space="preserve">';
+      for (const { row, base } of rowBases(b)) {
+        if (!row.runs.length) continue;
+        o +=
+          '<tspan x="' +
+          r1(b.center ? b.x + b.w / 2 : b.x + PADX) +
+          '" y="' +
+          r1(base) +
+          '" text-anchor="' +
+          (b.center ? "middle" : "start") +
+          '">';
+        for (const u of row.runs)
+          o +=
+            '<tspan font-size="' +
+            u.s +
+            '" font-weight="' +
+            u.w +
+            '" fill="' +
+            TONE[u.tone] +
+            '">' +
+            esc(u.t) +
+            "</tspan>";
+        o += "</tspan>";
+      }
+      o += "</text>";
+    }
+    return o + "</svg>";
+  }
+  function svgOf(m, _lg, style) {
+    if ((style || m.style || "clean") !== "classic") return cleanSvg(m);
+    return classicSvg(m);
+  }
+  function classicSvg(m) {
     let o =
       '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ' +
       W +
@@ -170,21 +290,6 @@
       '" fill="' +
       MAROON +
       '" stroke="#000" stroke-width="0.75"/>';
-    if (lg)
-      o +=
-        '<image x="' +
-        r1(lg.box.x) +
-        '" y="' +
-        lg.box.y +
-        '" width="' +
-        r1(lg.box.w) +
-        '" height="' +
-        r1(lg.box.h) +
-        '" href="' +
-        lg.uri +
-        '" xlink:href="' +
-        lg.uri +
-        '"/>';
     if (m.date)
       o +=
         '<text x="1168" y="787" text-anchor="end" font-family="' +
@@ -245,8 +350,8 @@
     }
     return o + "</svg>";
   }
-  async function svg(m) {
-    return new Blob([svgOf(m, await logo())], { type: "image/svg+xml" });
+  async function svg(m, { style } = {}) {
+    return new Blob([svgOf(m, null, style)], { type: "image/svg+xml" });
   }
 
   /* ----------------------------------- PDF ----------------------------------- */
@@ -274,7 +379,11 @@
       m.title1,
       m.title2,
       m.date,
-      ...m.boxes.flatMap((b) => b.lines.map((l) => l.t)),
+      ...m.boxes.flatMap((b) =>
+        b.rows
+          ? b.rows.flatMap((r) => r.runs.map((u) => u.t))
+          : b.lines.map((l) => l.t),
+      ),
     ].join(" ");
   const clean = (t) =>
     String(t)
@@ -286,10 +395,9 @@
 
   async function pdf(
     models,
-    { paper = "A3", title = "Organization chart" } = {},
+    { paper = "A3", title = "Organization chart", style = "clean" } = {},
   ) {
     const J = await needJsPdf();
-    const lg = await logo();
     const [pw, ph] = PAPER[paper] || PAPER.A3,
       s = pw / W;
     const doc = new J({
@@ -305,85 +413,149 @@
     });
     for (let i = 0; i < models.length; i++) {
       const m = models[i];
+      const clean_ = (style || m.style || "clean") !== "classic";
       if (i > 0) doc.addPage([pw, ph], "landscape");
       // Arabic or other scripts the standard PDF fonts cannot draw: print this page as a sharp image (about 200 dpi)
       if (NON_LATIN1.test(pageText(m))) {
         const px = Math.min(9000, Math.round((pw / 72) * 200)),
           py = Math.round((px * ph) / pw);
-        doc.addImage(await svgToPng(svgOf(m, lg), px, py), "PNG", 0, 0, pw, ph);
+        doc.addImage(
+          await svgToPng(svgOf(m, null, clean_ ? "clean" : "classic"), px, py),
+          "PNG",
+          0,
+          0,
+          pw,
+          ph,
+        );
         continue;
       }
       const X = (x) => x * s,
         Y = (y) => y * s;
-      doc.setLineDashPattern([], 0);
-      doc.setLineWidth(0.75 * s);
-      doc.setDrawColor("#000000");
-      doc.setFillColor(MAROON);
-      doc.rect(X(BAND.x), Y(BAND.hy), X(BAND.w), Y(BAND.hh), "FD");
-      doc.rect(X(BAND.x), Y(BAND.fy), X(BAND.w), Y(BAND.fh), "FD");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(18 * s);
-      doc.setTextColor("#FFFFFF");
-      doc.text(clean(m.title1 || ""), X(W / 2), Y(BAND.hy + 20), {
-        align: "center",
+      if (clean_) cleanPdfPage(doc, m, s, X, Y);
+      else classicPdfPage(doc, m, s, X, Y);
+    }
+    return doc.output("blob");
+  }
+  function cleanPdfPage(doc, m, s, X, Y) {
+    doc.setLineDashPattern([], 0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16 * s);
+    doc.setTextColor(TONE.ink);
+    doc.text(clean(m.title1 || ""), X(24), Y(38));
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9 * s);
+    doc.setTextColor(TONE.muted);
+    doc.text(clean(m.title2 || ""), X(24), Y(52));
+    if (m.date) {
+      doc.setFontSize(7.5 * s);
+      doc.text(clean(updated(m.date)), X(W - 24), Y(H - 24), {
+        align: "right",
       });
-      doc.text(clean(m.title2 || ""), X(W / 2), Y(BAND.hy + 42), {
-        align: "center",
-      });
-      doc.addImage(
-        lg.png,
-        "PNG",
-        X(lg.box.x),
-        Y(lg.box.y),
-        X(lg.box.w),
-        Y(lg.box.h),
+    }
+    doc.setLineWidth(1 * s);
+    doc.setDrawColor(CLEAN.line);
+    for (const L of m.lines) {
+      const P = L.pts,
+        rel = [];
+      for (let k = 1; k < P.length; k++)
+        rel.push([X(P[k][0] - P[k - 1][0]), Y(P[k][1] - P[k - 1][1])]);
+      doc.lines(rel, X(P[0][0]), Y(P[0][1]), [1, 1], "S", false);
+    }
+    for (const b of m.boxes) {
+      const st = strokeOf(b);
+      doc.setFillColor(fillOf(b));
+      if (st) doc.setDrawColor(st);
+      if (b.dashed) doc.setLineDashPattern([3 * s, 2 * s], 0);
+      doc.roundedRect(
+        X(b.x + 0.5),
+        Y(b.y + 0.5),
+        X(b.w - 1),
+        Y(b.h - 1),
+        5.5 * s,
+        5.5 * s,
+        st ? "FD" : "F",
       );
-      if (m.date) {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7 * s);
-        doc.setTextColor("#333333");
-        doc.text("Date: " + clean(m.date), X(1168), Y(787), { align: "right" });
-      }
-      doc.setDrawColor("#000000");
-      doc.setFillColor("#000000");
-      for (const L of m.lines) {
-        const P = L.pts,
-          rel = [];
-        for (let k = 1; k < P.length; k++)
-          rel.push([X(P[k][0] - P[k - 1][0]), Y(P[k][1] - P[k - 1][1])]);
-        doc.lines(rel, X(P[0][0]), Y(P[0][1]), [1, 1], "S", false);
-        const a = arrowHead(P, 5);
-        doc.triangle(
-          X(a[0][0]),
-          Y(a[0][1]),
-          X(a[1][0]),
-          Y(a[1][1]),
-          X(a[2][0]),
-          Y(a[2][1]),
-          "F",
-        );
-      }
-      for (const b of m.boxes) {
-        doc.setFillColor("#FFFFFF");
-        doc.setDrawColor(b.left ? GREY : "#000000");
-        doc.setLineWidth(0.75 * s);
-        if (b.dashed) doc.setLineDashPattern([3 * s, 2 * s], 0);
-        doc.rect(X(b.x), Y(b.y), X(b.w), Y(b.h), "FD");
-        doc.setLineDashPattern([], 0);
-        doc.setFont("helvetica", b.left ? "normal" : "bold");
-        doc.setFontSize(FS * s);
-        b.lines.forEach((l, k) => {
-          doc.setTextColor(l.red ? RED : "#000000");
-          doc.text(
-            clean(l.t),
-            X(b.left ? b.x + PAD : b.x + b.w / 2),
-            Y(b.y + PAD + k * LH + 7.4),
-            { align: b.left ? "left" : "center" },
-          );
+      doc.setLineDashPattern([], 0);
+      for (const { row, base } of rowBases(b)) {
+        if (!row.runs.length) continue;
+        const wid = row.runs.map((u) => {
+          doc.setFont("helvetica", u.w >= 600 ? "bold" : "normal");
+          doc.setFontSize(u.s * s);
+          return doc.getTextWidth(clean(u.t));
+        });
+        let x = b.center
+          ? X(b.x + b.w / 2) - wid.reduce((n, v) => n + v, 0) / 2
+          : X(b.x + PADX);
+        row.runs.forEach((u, k) => {
+          doc.setFont("helvetica", u.w >= 600 ? "bold" : "normal");
+          doc.setFontSize(u.s * s);
+          doc.setTextColor(TONE[u.tone]);
+          doc.text(clean(u.t), x, Y(base));
+          x += wid[k];
         });
       }
     }
-    return doc.output("blob");
+  }
+  function classicPdfPage(doc, m, s, X, Y) {
+    doc.setLineDashPattern([], 0);
+    doc.setLineWidth(0.75 * s);
+    doc.setDrawColor("#000000");
+    doc.setFillColor(MAROON);
+    doc.rect(X(BAND.x), Y(BAND.hy), X(BAND.w), Y(BAND.hh), "FD");
+    doc.rect(X(BAND.x), Y(BAND.fy), X(BAND.w), Y(BAND.fh), "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18 * s);
+    doc.setTextColor("#FFFFFF");
+    doc.text(clean(m.title1 || ""), X(W / 2), Y(BAND.hy + 20), {
+      align: "center",
+    });
+    doc.text(clean(m.title2 || ""), X(W / 2), Y(BAND.hy + 42), {
+      align: "center",
+    });
+    if (m.date) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7 * s);
+      doc.setTextColor("#333333");
+      doc.text("Date: " + clean(m.date), X(1168), Y(787), { align: "right" });
+    }
+    doc.setDrawColor("#000000");
+    doc.setFillColor("#000000");
+    for (const L of m.lines) {
+      const P = L.pts,
+        rel = [];
+      for (let k = 1; k < P.length; k++)
+        rel.push([X(P[k][0] - P[k - 1][0]), Y(P[k][1] - P[k - 1][1])]);
+      doc.lines(rel, X(P[0][0]), Y(P[0][1]), [1, 1], "S", false);
+      const a = arrowHead(P, 5);
+      doc.triangle(
+        X(a[0][0]),
+        Y(a[0][1]),
+        X(a[1][0]),
+        Y(a[1][1]),
+        X(a[2][0]),
+        Y(a[2][1]),
+        "F",
+      );
+    }
+    for (const b of m.boxes) {
+      doc.setFillColor("#FFFFFF");
+      doc.setDrawColor(b.left ? GREY : "#000000");
+      doc.setLineWidth(0.75 * s);
+      if (b.dashed) doc.setLineDashPattern([3 * s, 2 * s], 0);
+      doc.rect(X(b.x), Y(b.y), X(b.w), Y(b.h), "FD");
+      doc.setLineDashPattern([], 0);
+      doc.setFont("helvetica", b.left ? "normal" : "bold");
+      doc.setFontSize(FS * s);
+      b.lines.forEach((l, k) => {
+        doc.setTextColor(l.red ? RED : "#000000");
+        doc.text(
+          clean(l.t),
+          X(b.left ? b.x + PAD : b.x + b.w / 2),
+          Y(b.y + PAD + k * LH + 7.4),
+          { align: b.left ? "left" : "center" },
+        );
+      });
+    }
   }
 
   /* ---------------------------------- Visio ---------------------------------- */
@@ -435,7 +607,8 @@
     iy = (y) => PHI - y / 72;
 
   /* One Visio page of shapes. Ids start at 1 on every page. */
-  function vsdxPage(m, lg, withLogo) {
+  function vsdxPage(m, style) {
+    const cleanStyle = style !== "classic";
     let id = 1;
     const parts = [],
       conns = [],
@@ -472,49 +645,70 @@
           "</Shape>",
       );
     };
-    band(BAND.hy, BAND.hh, [m.title1, m.title2].filter(Boolean).join("\n"));
-    band(BAND.fy, BAND.fh, "");
-    if (m.date) {
-      const sid = id++;
-      parts.push(
-        '<Shape ID="' +
-          sid +
-          '" NameU="Date.' +
-          sid +
-          '" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">' +
-          place(1040, 779, 128, 12) +
-          cell("LinePattern", 0) +
-          cell("FillPattern", 0) +
-          cell("VerticalAlign", 1) +
-          cell("LeftMargin", 0, "PT") +
-          cell("RightMargin", 0, "PT") +
-          cell("TopMargin", 0, "PT") +
-          cell("BottomMargin", 0, "PT") +
-          '<Section N="Character">' +
-          chr(0, 7, "#333333", 0, 0) +
-          '</Section><Section N="Paragraph"><Row IX="0">' +
-          cell("HorzAlign", 2) +
-          '</Row></Section><Text><cp IX="0"/>' +
-          esc("Date: " + m.date) +
-          "</Text></Shape>",
-      );
-    }
-    if (withLogo) {
-      const sid = id++;
-      parts.push(
-        '<Shape ID="' +
-          sid +
-          '" NameU="Logo" Type="Foreign" LineStyle="0" FillStyle="0" TextStyle="0">' +
-          place(lg.box.x, lg.box.y, lg.box.w, lg.box.h) +
-          cell("FillPattern", 0) +
-          cell("LinePattern", 0) +
-          cell("ImgOffsetX", 0, "", "ImgWidth*0") +
-          cell("ImgOffsetY", 0, "", "ImgHeight*0") +
-          cell("ImgWidth", f6(lg.box.w / 72), "", "Width*1") +
-          cell("ImgHeight", f6(lg.box.h / 72), "", "Height*1") +
-          rectGeom +
-          '<ForeignData ForeignType="Bitmap" CompressionType="PNG"><Rel r:id="rId1"/></ForeignData></Shape>',
-      );
+    if (cleanStyle) {
+      const textShape = (name, x, y, w, h, valign, halign, runs) => {
+        const sid = id++;
+        parts.push(
+          '<Shape ID="' +
+            sid +
+            '" NameU="' +
+            name +
+            "." +
+            sid +
+            '" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">' +
+            place(x, y, w, h) +
+            cell("LinePattern", 0) +
+            cell("FillPattern", 0) +
+            cell("VerticalAlign", valign) +
+            cell("LeftMargin", 0, "PT") +
+            cell("RightMargin", 0, "PT") +
+            cell("TopMargin", 0, "PT") +
+            cell("BottomMargin", 0, "PT") +
+            '<Section N="Character">' +
+            runs.map((r, i) => chr(i, r.s, r.c, r.bold, 0)).join("") +
+            '</Section><Section N="Paragraph"><Row IX="0">' +
+            cell("HorzAlign", halign) +
+            "</Row></Section>" +
+            "<Text>" +
+            runs.map((r, i) => '<cp IX="' + i + '"/>' + esc(r.t)).join("\n") +
+            "</Text></Shape>",
+        );
+      };
+      const heads = [{ t: m.title1, s: 16, c: TONE.ink, bold: 1 }];
+      if (m.title2) heads.push({ t: m.title2, s: 9, c: TONE.muted, bold: 0 });
+      textShape("Title", 24, 24, 760, 16 + (m.title2 ? 14 : 0), 0, 0, heads);
+      if (m.date)
+        textShape("Date", W - 24 - 200, H - 24 - 12, 200, 12, 2, 2, [
+          { t: updated(m.date), s: 7.5, c: TONE.muted, bold: 0 },
+        ]);
+    } else {
+      band(BAND.hy, BAND.hh, [m.title1, m.title2].filter(Boolean).join("\n"));
+      band(BAND.fy, BAND.fh, "");
+      if (m.date) {
+        const sid = id++;
+        parts.push(
+          '<Shape ID="' +
+            sid +
+            '" NameU="Date.' +
+            sid +
+            '" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">' +
+            place(1040, 779, 128, 12) +
+            cell("LinePattern", 0) +
+            cell("FillPattern", 0) +
+            cell("VerticalAlign", 1) +
+            cell("LeftMargin", 0, "PT") +
+            cell("RightMargin", 0, "PT") +
+            cell("TopMargin", 0, "PT") +
+            cell("BottomMargin", 0, "PT") +
+            '<Section N="Character">' +
+            chr(0, 7, "#333333", 0, 0) +
+            '</Section><Section N="Paragraph"><Row IX="0">' +
+            cell("HorzAlign", 2) +
+            '</Row></Section><Text><cp IX="0"/>' +
+            esc("Date: " + m.date) +
+            "</Text></Shape>",
+        );
+      }
     }
     const conStart = id;
     id += m.lines.length;
@@ -577,11 +771,11 @@
           cell("ObjType", 2) +
           cell("ShapeRouteStyle", 1) +
           cell("ConFixedCode", 2) +
-          cell("LineColor", "#000000") +
+          cell("LineColor", cleanStyle ? CLEAN.line : "#000000") +
           cell("LinePattern", 1) +
           cell("LineWeight", f6(0.75 / 72), "PT") +
           cell("BeginArrow", 0) +
-          cell("EndArrow", 4) +
+          cell("EndArrow", cleanStyle ? 0 : 4) +
           cell("EndArrowSize", 1) +
           '<Section N="Geometry" IX="0">' +
           cell("NoFill", 1) +
@@ -623,9 +817,50 @@
       const sid = bid[b.key],
         w = b.w / 72,
         h = b.h / 72;
-      const text = b.logical
-        .map((l, i) => '<cp IX="' + i + '"/>' + esc(l.t))
-        .join("\n");
+      let ci = 0;
+      const text = cleanStyle
+        ? b.rows
+            .map((r, i) =>
+              r.runs.length
+                ? r.runs
+                    .map(
+                      (u, k) =>
+                        '<cp IX="' + ci++ + '"/>' + (k ? "" : '<pp IX="' + i + '"/>') + esc(u.t),
+                    )
+                    .join("")
+                : '<pp IX="' + i + '"/>',
+            )
+            .join("\n")
+        : b.logical.map((l, i) => '<cp IX="' + i + '"/>' + esc(l.t)).join("\n");
+      const chars = cleanStyle
+        ? (() => {
+            let n = 0;
+            return b.rows
+              .flatMap((r) => r.runs)
+              .map((u) => chr(n++, u.s, TONE[u.tone], u.w >= 600, 0))
+              .join("");
+          })()
+        : b.logical
+            .map((l, i) =>
+              chr(i, FS, l.red ? RED : "#000000", !b.left, b.left ? 0 : 1),
+            )
+            .join("");
+      const paras = cleanStyle
+        ? b.rows
+            .map(
+              (r, i) =>
+                '<Row IX="' +
+                i +
+                '">' +
+                cell("HorzAlign", b.center ? 1 : 0) +
+                cell("SpLine", f6(-(r.lh / (1.17 * r.s)))) +
+                "</Row>",
+            )
+            .join("")
+        : '<Row IX="0">' +
+          cell("HorzAlign", b.left ? 0 : 1) +
+          cell("SpLine", -1.2) +
+          "</Row>";
       parts.push(
         '<Shape ID="' +
           sid +
@@ -634,30 +869,36 @@
           "." +
           sid +
           '" Name="' +
-          esc((b.logical[0] && b.logical[0].t) || "Box") +
+          esc(
+            (cleanStyle
+              ? b.rows[0] && b.rows[0].runs[0] && b.rows[0].runs[0].t
+              : b.logical[0] && b.logical[0].t) || "Box",
+          ) +
           '" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">' +
           place(b.x, b.y, b.w, b.h) +
-          cell("LineColor", b.left ? GREY : "#000000") +
-          cell("LinePattern", b.dashed ? 2 : 1) +
+          (cleanStyle
+            ? cell("LineColor", b.dashed ? CLEAN.dash : CLEAN.line) +
+              cell("LinePattern", b.left || b.center ? 0 : b.dashed ? 2 : 1) +
+              cell("Rounding", f6(6 / 72), "IN")
+            : cell("LineColor", b.left ? GREY : "#000000") +
+              cell("LinePattern", b.dashed ? 2 : 1)) +
           cell("LineWeight", f6(0.75 / 72), "PT") +
-          cell("FillForegnd", "#FFFFFF") +
+          cell("FillForegnd", cleanStyle ? fillOf(b) : "#FFFFFF") +
           cell("FillPattern", 1) +
-          cell("VerticalAlign", b.left ? 0 : 1) +
-          cell("TopMargin", f6(PAD / 72), "PT") +
-          cell("BottomMargin", f6(PAD / 72), "PT") +
-          cell("LeftMargin", f6(PAD / 72), "PT") +
-          cell("RightMargin", f6(PAD / 72), "PT") +
+          cell(
+            "VerticalAlign",
+            cleanStyle ? (b.center ? 1 : 0) : b.left ? 0 : 1,
+          ) +
+          cell("TopMargin", f6((cleanStyle ? PADY : PAD) / 72), "PT") +
+          cell("BottomMargin", f6((cleanStyle ? PADY : PAD) / 72), "PT") +
+          cell("LeftMargin", f6((cleanStyle ? PADX : PAD) / 72), "PT") +
+          cell("RightMargin", f6((cleanStyle ? PADX : PAD) / 72), "PT") +
           '<Section N="Character">' +
-          // one Character row per line: viewers read repeated run indexes unreliably
-          b.logical
-            .map((l, i) =>
-              chr(i, FS, l.red ? RED : "#000000", !b.left, b.left ? 0 : 1),
-            )
-            .join("") +
-          '</Section><Section N="Paragraph"><Row IX="0">' +
-          cell("HorzAlign", b.left ? 0 : 1) +
-          cell("SpLine", -1.2) +
-          "</Row></Section>" +
+          // one Character row per run/line: viewers read repeated run indexes unreliably
+          chars +
+          '</Section><Section N="Paragraph">' +
+          paras +
+          "</Section>" +
           '<Section N="Connection">' +
           conRow(0, w / 2, h, "Width*0.5", "Height*1") +
           conRow(1, 0, h / 2, "Width*0", "Height*0.5") +
@@ -685,14 +926,11 @@
 
   async function vsdx(
     models,
-    { title = "Organization chart", logoMode = "png" } = {},
+    { title = "Organization chart", style = "clean" } = {},
   ) {
     const Z = await needZip();
-    const lg = logoMode ? await logo() : null;
     const R = "http://schemas.openxmlformats.org/package/2006/relationships",
       VR = "http://schemas.microsoft.com/visio/2010/relationships";
-    const IMG =
-      "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
     const hdr = '<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n';
     const pageEntries = models
       .map(
@@ -811,7 +1049,6 @@
       "[Content_Types].xml",
       hdr +
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
-        (lg ? '<Default Extension="png" ContentType="image/png"/>' : "") +
         '<Override PartName="/visio/document.xml" ContentType="application/vnd.ms-visio.drawing.main+xml"/><Override PartName="/visio/pages/pages.xml" ContentType="application/vnd.ms-visio.pages+xml"/>' +
         models
           .map(
@@ -886,22 +1123,11 @@
         "</Relationships>",
     );
     models.forEach((m, i) => {
-      z.file("visio/pages/page" + (i + 1) + ".xml", vsdxPage(m, lg, !!lg));
-      if (lg)
-        z.file(
-          "visio/pages/_rels/page" + (i + 1) + ".xml.rels",
-          hdr +
-            '<Relationships xmlns="' +
-            R +
-            '"><Relationship Id="rId1" Type="' +
-            IMG +
-            '" Target="../media/logo.png"/></Relationships>',
-        );
+      z.file(
+        "visio/pages/page" + (i + 1) + ".xml",
+        vsdxPage(m, style || m.style),
+      );
     });
-    if (lg)
-      z.file("visio/media/logo.png", lg.pngOnWhite.split(",")[1], {
-        base64: true,
-      });
     return z.generateAsync({
       type: "blob",
       mimeType: "application/vnd.ms-visio.drawing",
@@ -932,5 +1158,5 @@
     setTimeout(() => root.URL.revokeObjectURL(url), 4000);
   }
 
-  root.ArabtecOrgExport = { pdf, vsdx, svg, svgOf, csv, download, logo, PAPER };
+  root.ArabtecOrgExport = { pdf, vsdx, svg, svgOf, csv, download, PAPER };
 })(window);

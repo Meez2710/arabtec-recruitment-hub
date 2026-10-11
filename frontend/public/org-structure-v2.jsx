@@ -11,8 +11,12 @@
   /* ------------------------------ constants ------------------------------ */
   const PAGE_W = 1190, PAGE_H = 842;          // A3 landscape in points (world units)
   const SNAP = 4.5, PAD = 4.5, LH = 9.6, FS = 8, DEFAULT_W = 81;
-  const MAROON = '#860915', JOIN_RED = '#E0161B';
-  const BAND = { x: 14.4, w: 1161.2, hy: 25, hh: 52, fy: 801, fh: 28 };
+  const JOIN_RED = 'var(--brand)';            // joiner name text colour (text only, never a border or fill)
+  const AVAIL_W = 1141.2;                       // usable width for auto-arrange
+  const UI_FONT = 'Inter, Arial, "Liberation Sans", Helvetica, sans-serif'; // Hub --font-ui
+  const DISPLAY_FONT = '"Inter Tight", Inter, Arial, "Liberation Sans", Helvetica, sans-serif'; // Hub --font-display
+  const PADX = 7, PADY = 6;
+  const TONE = { ink: 'var(--ink)', soft: 'var(--ink-soft)', muted: 'var(--muted)', brand: 'var(--brand)' };
   const GAPX = 12, GAPY = 24, COLGAP = 10, BUS = 10, TOP_Y = 92;
   const SIDES = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };
   const BOX_FONT = 'Arial, "Liberation Sans", Helvetica, sans-serif';
@@ -20,9 +24,6 @@
   // Soft-warning thresholds (plan section 4). No client-readable system_setting getter exists yet, so constants.
   // Site charts routinely have one report per manager, so there is no "too few reports" rule.
   const LIMITS = { spanMax: 12, layersMax: 6 };
-  // The Hub logo: top-right, just under the header band, drawn whole (object-fit contain). Auto-arrange treats it as an obstacle.
-  const LOGO = { x: PAGE_W - 25 - 58, y: 83, w: 58, h: 56 };
-  const hitsLogo = (x, y, w, h) => x < LOGO.x + LOGO.w + 4 && x + w > LOGO.x - 4 && y < LOGO.y + LOGO.h + 4 && y + h > LOGO.y - 4;
   const ARRANGES = [['row', 'Row'], ['col-left', 'Column left'], ['col-right', 'Column right'], ['two-col', 'Two columns']];
   const SCOPE_LABEL = { project: 'Project charts', head_office: 'Head Office', department: 'Department charts' };
   const STATE_LABEL = { draft: 'Draft', pending_approval: 'Waiting for approval', published: 'Published', superseded: 'Superseded' };
@@ -43,33 +44,64 @@
   /* --------------------------- text measuring ---------------------------- */
   let mctx = null;
   const widthCache = new Map();
-  function textW(s, bold) {
-    const k = (bold ? 'b' : 'n') + s;
+  function measure(str, font) {
+    const k = font + '|' + str;
     let w = widthCache.get(k);
     if (w == null) {
       if (!mctx) mctx = document.createElement('canvas').getContext('2d');
-      mctx.font = (bold ? 'bold ' : '') + FS + 'px ' + BOX_FONT;
-      w = mctx.measureText(s).width;
+      mctx.font = font;
+      w = mctx.measureText(str).width;
       if (widthCache.size > 5000) widthCache.clear();
       widthCache.set(k, w);
     }
     return w;
   }
+  const CLASSIC_B = 'bold ' + FS + 'px ' + BOX_FONT, CLASSIC_N = FS + 'px ' + BOX_FONT;
   function wrap(s, maxW, bold) {
+    const font = bold ? CLASSIC_B : CLASSIC_N, textW = (t) => measure(t, font);
     const out = [];
     let line = '';
     for (let word of String(s).split(/\s+/).filter(Boolean)) {
-      while (textW(word, bold) > maxW && word.length > 1) {           // break a word that can never fit
+      while (textW(word) > maxW && word.length > 1) {           // break a word that can never fit
         let n = word.length - 1;
-        while (n > 1 && textW(word.slice(0, n), bold) > maxW) n--;
+        while (n > 1 && textW(word.slice(0, n)) > maxW) n--;
         if (line) { out.push(line); line = ''; }
         out.push(word.slice(0, n)); word = word.slice(n);
       }
       const t = line ? line + ' ' + word : word;
-      if (line && textW(t, bold) > maxW) { out.push(line); line = word; } else line = t;
+      if (line && textW(t) > maxW) { out.push(line); line = word; } else line = t;
     }
     if (line || !out.length) out.push(line);
     return out;
+  }
+  // Clean style: words carry their own tone/size/weight; returns lines of merged runs { t, tone, s, w }.
+  function wrapRuns(segs, maxW) {
+    const words = [];
+    segs.forEach((g) => String(g.t).split(/\s+/).filter(Boolean).forEach((x) => words.push({ ...g, t: x })));
+    const font = (g) => g.w + ' ' + g.s + 'px ' + UI_FONT;
+    const lines = [];
+    let line = [], lw = 0;
+    const flush = () => { lines.push(line); line = []; lw = 0; };
+    for (let wd of words) {
+      while (measure(wd.t, font(wd)) > maxW && wd.t.length > 1) {
+        let n = wd.t.length - 1;
+        while (n > 1 && measure(wd.t.slice(0, n), font(wd)) > maxW) n--;
+        if (line.length) flush();
+        lines.push([{ ...wd, t: wd.t.slice(0, n) }]); wd = { ...wd, t: wd.t.slice(n) };
+      }
+      const ww = measure(wd.t, font(wd)), sp = line.length ? measure(' ', font(wd)) : 0;
+      if (line.length && lw + sp + ww > maxW) { flush(); line.push(wd); lw = ww; } else { line.push(wd); lw += sp + ww; }
+    }
+    if (line.length) flush();
+    return (lines.length ? lines : [[]]).map((ln) => {
+      const runs = [];
+      ln.forEach((wd, i) => {
+        const last = runs[runs.length - 1];
+        if (last && last.tone === wd.tone && last.s === wd.s && last.w === wd.w) last.t += ' ' + wd.t;
+        else { if (last) last.t += ' '; runs.push({ ...wd }); }  // the space stays with the run before, so run offsets never start on a space
+      });
+      return runs;
+    });
   }
 
   /* ------------------------ box content (plan section 2) ------------------ */
@@ -78,14 +110,29 @@
     if (!b.planned) return '';
     return 'X' + b.planned + (b.shared ? ' Shared' : '') + (b.zati ? ' zati' : '');
   }
-  // One logical line per person: "- name" + " – suffix", joiners red with dd/mm until their date.
+  const isJoining = (a, today) => a.status === 'joining' && (!a.effectiveDate || a.effectiveDate >= today);
+  // Classic (Visio replica) line: "- name – suffix", joiners red with dd/mm until their date.
   function personLine(a, today) {
-    const joining = a.status === 'joining' && (!a.effectiveDate || a.effectiveDate >= today);
+    const joining = isJoining(a, today);
     let t = '- ' + a.personName + (a.suffix ? ' – ' + a.suffix : '');
     if (joining && a.effectiveDate) t += ' ' + ddmm(a.effectiveDate);
     return { t, red: joining };
   }
-  function boxModel(b, people, today) {
+  // Plain one-line text for lists and panels: "Name – suffix · joins 30/10".
+  function plainPerson(a, today) {
+    const joining = isJoining(a, today);
+    return { t: a.personName + (a.suffix ? ' – ' + a.suffix : '') + (joining && a.effectiveDate ? ' · joins ' + ddmm(a.effectiveDate) : ''), red: joining };
+  }
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // "04/10/2026" or "2026-10-04" -> "Updated 04 Oct 2026"; anything else is shown as typed.
+  function updatedLabel(d) {
+    if (!d) return '';
+    let m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(d), day, mon, yr;
+    if (m) [day, mon, yr] = [m[1], m[2], m[3]];
+    else if ((m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d))) [day, mon, yr] = [m[3], m[2], m[1]];
+    return 'Updated ' + (MON[+mon - 1] ? pad2(+day) + ' ' + MON[+mon - 1] + ' ' + yr : d);
+  }
+  function classicBoxModel(b, people, today) {
     const w = b.w || DEFAULT_W, inner = w - 2 * PAD, lines = [];
     const add = (t, red, bold) => wrap(t, inner, bold).forEach((l) => lines.push({ t: l, red: !!red }));
     if (b.kind === 'text') {
@@ -102,12 +149,37 @@
     }
     return { w, h: lines.length * LH + 2 * PAD, lines, left: b.kind === 'text', dashed: b.kind === 'role' && b.proposed > 0 };
   }
+  // Clean style (default): rows of runs { t, tone, s, w }; each row { runs, lh, s }.
+  function boxModel(b, people, today) {
+    const w = b.w || DEFAULT_W, inner = w - 2 * PADX, rows = [];
+    const addRows = (segs, lh) => wrapRuns(segs, inner).forEach((runs) => rows.push({ runs, lh, s: Math.max(0, ...runs.map((r) => r.s)) || segs[0].s }));
+    const kind = b.kind === 'text' ? 'text' : b.kind === 'team' ? 'team' : 'role';
+    if (kind === 'text') {
+      String(b.text || '').split('\n').forEach((p) => (p.trim() ? addRows([{ t: p, tone: 'soft', s: 7.5, w: 400 }], 10) : rows.push({ runs: [], lh: 10, s: 7.5 })));
+      if (!rows.length) rows.push({ runs: [], lh: 10, s: 7.5 });
+    } else if (kind === 'team') {
+      addRows([{ t: b.title || 'Untitled', tone: 'soft', s: 8, w: 600 }], 10);
+    } else {
+      addRows([{ t: b.title || 'Untitled', tone: 'ink', s: 8.5, w: 600 }], 11);
+      const named = (people || []).length, open = b.planned - named;
+      const meta = [countLine(b), !b.zati && open > 0 ? open + ' open' : '', b.proposed > 0 ? 'Proposed X' + b.proposed : ''].filter(Boolean).join(' · ');
+      if (meta) addRows([{ t: meta, tone: 'muted', s: 7, w: 400 }], 9.5);
+      (people || []).forEach((a) => {
+        const joining = isJoining(a, today), segs = [{ t: a.personName, tone: joining ? 'brand' : 'soft', s: 7.5, w: joining ? 500 : 400 }];
+        if (a.suffix) segs.push({ t: '– ' + a.suffix, tone: 'muted', s: 7.5, w: 400 });
+        if (joining && a.effectiveDate) segs.push({ t: '· joins ' + ddmm(a.effectiveDate), tone: 'brand', s: 7, w: 400 });
+        addRows(segs, 10);
+      });
+    }
+    const body = rows.reduce((n, r) => n + r.lh, 0);
+    return { w, h: kind === 'team' ? Math.max(20, body + 10) : body + 2 * PADY, rows, kind, center: kind === 'team', left: kind === 'text', dashed: kind === 'role' && b.proposed > 0 };
+  }
 
   /* ------------------------------ geometry -------------------------------- */
-  function buildGeo(page, peopleByBox, today) {
-    const geo = new Map();
+  function buildGeo(page, peopleByBox, today, style) {
+    const geo = new Map(), model = style === 'classic' ? classicBoxModel : boxModel;
     for (const b of page.boxes) {
-      const m = boxModel(b, peopleByBox.get(b.key), today);
+      const m = model(b, peopleByBox.get(b.key), today);
       geo.set(b.key, { b, x: b.x, y: b.y, w: m.w, h: m.h, m });
     }
     return geo;
@@ -259,7 +331,7 @@
       if (!b || b.kind !== 'role') continue;
       const staff = list.filter((c) => !c.zati).length;
       if (staff > LIMITS.spanMax) add(k, 'Manages ' + staff + ' boxes (more than ' + LIMITS.spanMax + ').');
-      if (!assignments.some((a) => a.boxKey === k && a.status === 'in_post')) add(k, 'Manager box with nobody in post.');
+      if (b.planned >= 1 && list.some((c) => c.kind === 'role') && !assignments.some((a) => a.boxKey === k && a.status === 'in_post')) add(k, 'Manager box with nobody in post.');
     }
     for (const b of sh.byKey.values()) {
       if (b.kind !== 'role') continue;
@@ -280,7 +352,7 @@
       const list = page.boxes.filter((b) => b.parentKey === k);
       return list.sort(mode && mode.startsWith('col') ? (a, b) => a.y - b.y || a.x - b.x : (a, b) => a.x - b.x || a.y - b.y);
     };
-    const AVAIL = BAND.w - 20;
+    const AVAIL = AVAIL_W;
     function block(key, inh) {
       const sz = size(key), own = byKey.get(key).arrange;
       const mode = own || (inh && inh.startsWith('col') ? inh : 'row');
@@ -353,15 +425,8 @@
       let x = PAGE_W / 2 - tw / 2;
       const placed = [];
       r.forEach((b) => { b.items.forEach((it) => placed.push({ key: it.key, x: x + it.x, y: y + it.y })); x += b.w + GAPX * 2; });
-      // never place anything under the logo: push the row down until it clears
-      let dy = 0;
-      for (let i = 0; i < 8; i++) {
-        const hit = placed.filter((it) => hitsLogo(it.x, it.y + dy, size(it.key).w, size(it.key).h));
-        if (!hit.length) break;
-        dy += LOGO.y + LOGO.h + 6 - Math.min(...hit.map((it) => it.y + dy));
-      }
-      placed.forEach((it) => out.set(it.key, { x: r1(it.x), y: r1(it.y + dy) }));
-      y += Math.max(...r.map((b) => b.h)) + GAPY * 2 + dy;
+      placed.forEach((it) => out.set(it.key, { x: r1(it.x), y: r1(it.y) }));
+      y += Math.max(...r.map((b) => b.h)) + GAPY * 2;
     });
     return out;
   }
@@ -396,14 +461,16 @@
       .ocv2-tools .sep { width:1px; height:20px; background:var(--line-strong); margin:0 4px; }
       .ocv2-status { font-size:11px; color:var(--muted, #6b7580); }
       .ocv2-status.err { color:#b7000f; }
-      .ocv2-stage { position:relative; overflow:hidden; background:#E4E6EA; border:1px solid var(--line); height:calc(100vh - 380px); min-height:460px; touch-action:none; user-select:none; outline:none; }
+      .ocv2-stage { position:relative; overflow:hidden; background:var(--app-bg); border:1px solid var(--line); height:calc(100vh - 380px); min-height:460px; touch-action:none; user-select:none; outline:none; }
       .ocv2-stage.pan { cursor:grab; } .ocv2-stage.panning { cursor:grabbing; }
       .ocv2-world { position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform; }
-      .ocv2-world svg { display:block; max-width:none; max-height:none; overflow:visible; background:#fff; box-shadow:0 2px 14px rgba(26,26,26,.22); }
+      .ocv2-world svg { display:block; max-width:none; max-height:none; overflow:visible; }
       .ocv2-tabs { display:flex; gap:2px; align-items:flex-end; padding:0 8px; background:#fff; border:1px solid var(--line); border-top:0; border-radius:0 0 12px 12px; overflow-x:auto; }
       .ocv2-tab { border:1px solid var(--line); border-top:0; background:var(--surface-2, #F4F5F7); padding:6px 14px; font-size:12px; cursor:pointer; border-radius:0 0 8px 8px; color:var(--ink-soft, #4b5560); white-space:nowrap; }
       .ocv2-tab[aria-selected="true"] { background:#fff; color:var(--text-strong, #1a1a1a); font-weight:700; box-shadow:0 2px 0 var(--action, #008064) inset; }
       .ocv2-box { cursor:pointer; }
+      .ocv2-ring { opacity:0; }
+      .ocv2-box:hover .ocv2-ring { opacity:1; }
       .ocv2-hit { fill:none; stroke:transparent; cursor:pointer; pointer-events:stroke; }
       .ocv2-menu { position:fixed; z-index:1200; min-width:210px; background:#fff; border:1px solid var(--line-strong); border-radius:10px; box-shadow:0 10px 30px rgba(26,26,26,.2); padding:6px; font-size:12px; }
       .ocv2-menu button { display:flex; width:100%; align-items:center; justify-content:space-between; gap:12px; border:0; background:transparent; padding:7px 10px; border-radius:6px; text-align:left; cursor:pointer; font-size:12px; color:var(--text-strong, #1a1a1a); }
@@ -428,13 +495,13 @@
       .ocv2-person input, .ocv2-person select { height:30px; font-size:12px; min-width:0; }
       .ocv2-person .grip { cursor:grab; color:var(--muted, #6b7580); user-select:none; padding:0 4px; }
       .ocv2-legend { font-size:12px; color:var(--ink-soft, #4b5560); line-height:1.7; }
-      .ocv2-legend i { display:inline-block; width:14px; height:10px; border:1px solid #000; margin-right:6px; vertical-align:middle; }
+      .ocv2-legend i { display:inline-block; width:14px; height:10px; border:1px solid var(--line-strong); border-radius:3px; margin-right:6px; vertical-align:middle; }
       .ocv2-kbd { font-size:11px; color:var(--muted, #6b7580); line-height:1.8; }
       .ocv2-kbd kbd { background:var(--surface-2, #F4F5F7); border:1px solid var(--line-strong); border-radius:4px; padding:0 5px; font-size:10.5px; }
       .ocv2-compare { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
       @media (max-width: 1100px) { .ocv2-compare { grid-template-columns:1fr; } }
       .ocv2-compare .cap { font-size:12px; font-weight:700; margin:0 0 6px; }
-      .ocv2-compare svg { width:100%; max-width:100%; height:auto; display:block; background:#fff; border:1px solid var(--line); }
+      .ocv2-compare svg { width:100%; max-width:100%; height:auto; display:block; }
       .ocv2-changes li { margin-bottom:4px; font-size:12px; }
       .ocv2-toast { position:fixed; left:50%; transform:translateX(-50%); bottom:20px; z-index:1300; background:#1a1a1a; color:#fff; padding:10px 14px; border-radius:10px; font-size:12px; max-width:360px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
       .ocv2-toast.warn { background:#8a5a00; }
@@ -446,60 +513,60 @@
   /* ------------------------------- the sheet ------------------------------ */
   // Pure SVG of one A3 page in world units (points). Interaction is attached by the parent.
   function SheetSvg({ page, geo, lines, sel, selLine, warn, highlight, hidden, k, ui, dateFallback, interactive, width, height, style }) {
-    const date = page.date || dateFallback || '';
+    const date = updatedLabel(page.date || dateFallback || '');
     const hl = highlight || new Map();
-    const HL = { added: '#1a9b4b', removed: '#d8232a', moved: '#e6a100' };
-    const ink = '#000';
+    const ring = (g, color, wd, extra) => <rect x={g.x - 1} y={g.y - 1} width={g.w + 2} height={g.h + 2} rx="7" fill="none" stroke={color} strokeWidth={wd} pointerEvents="none" {...extra} />;
+    const ringW = Math.min(4, Math.max(1, 2 / k));
     return (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox={'0 0 ' + PAGE_W + ' ' + PAGE_H} width={width || PAGE_W} height={height || PAGE_H} style={style}
         data-sheet={interactive ? '1' : undefined} role="img" aria-label={(page.title1 || '') + ' ' + (page.title2 || '')}>
-        <rect x="0" y="0" width={PAGE_W} height={PAGE_H} fill="#fff" />
-        <rect x={BAND.x} y={BAND.hy} width={BAND.w} height={BAND.hh} fill={MAROON} stroke="#000" strokeWidth="0.75" />
-        <text x={PAGE_W / 2} y={BAND.hy + 20} textAnchor="middle" fill="#fff" fontFamily={HEAD_FONT} fontWeight="bold" fontSize="18">{page.title1}</text>
-        <text x={PAGE_W / 2} y={BAND.hy + 42} textAnchor="middle" fill="#fff" fontFamily={HEAD_FONT} fontWeight="bold" fontSize="18">{page.title2}</text>
-        <rect x={BAND.x} y={BAND.fy} width={BAND.w} height={BAND.fh} fill={MAROON} stroke="#000" strokeWidth="0.75" />
-        <image href="/arabtec-logo.svg" x={LOGO.x} y={LOGO.y} width={LOGO.w} height={LOGO.h} preserveAspectRatio="xMaxYMin meet" />
-        {date && <text x="1168" y="787" textAnchor="end" fontFamily={HEAD_FONT} fontSize="7" fill="#333">{'Date: ' + date}</text>}
+        <rect x="0.5" y="0.5" width={PAGE_W - 1} height={PAGE_H - 1} rx="10" fill="var(--surface)" stroke="var(--line)" strokeWidth="1" />
+        <text x="24" y="38" fill="var(--ink)" fontFamily={'var(--font-display, ' + DISPLAY_FONT + ')'} fontWeight="700" fontSize="16">{page.title1}</text>
+        <text x="24" y="52" fill="var(--muted)" fontFamily={'var(--font-ui, ' + UI_FONT + ')'} fontSize="9">{page.title2}</text>
+        {date && <text x={PAGE_W - 24} y={PAGE_H - 24} textAnchor="end" fontFamily={'var(--font-ui, ' + UI_FONT + ')'} fontSize="7.5" fill="var(--muted)">{date}</text>}
 
-        <g>
-          {lines.map((L) => {
-            const ok = highlight && hl.get(L.key);
-            return (
-              <g key={L.key}>
-                <path d={ptsD(L.route.pts)} fill="none" stroke={selLine === L.key ? '#008064' : ink} strokeWidth={selLine === L.key ? 1.5 : 0.75} />
-                <path d={'M' + arrowHead(L.route.pts, 5).map((q) => r1(q[0]) + ',' + r1(q[1])).join(' L') + ' Z'} fill={selLine === L.key ? '#008064' : ink} />
-                {interactive && <path className="ocv2-hit" data-line={L.key} d={ptsD(L.route.pts)} strokeWidth={Math.max(6, 8 / k)} />}
-              </g>
-            );
-          })}
+        <g fill="none" stroke="var(--line-strong)" strokeWidth="1">
+          {lines.map((L) => (
+            <g key={L.key}>
+              <path d={ptsD(L.route.pts)} stroke={selLine === L.key ? 'var(--action)' : undefined} strokeWidth={selLine === L.key ? 1.5 : 1} />
+              {interactive && <path className="ocv2-hit" data-line={L.key} d={ptsD(L.route.pts)} strokeWidth={Math.max(6, 8 / k)} />}
+            </g>
+          ))}
         </g>
 
         {page.boxes.map((b) => {
           if (hidden && hidden.has(b.key)) return null;
           const g = geo.get(b.key), m = g.m, h = hl.get(b.key);
-          const isSel = sel && sel.has(b.key);
-          const stroke = h ? HL[h] : m.left ? '#b9bec5' : ink;
-          const fam = { fontFamily: m.left ? HEAD_FONT : BOX_FONT, fontSize: FS, fontWeight: m.left ? 'normal' : 'bold' };
+          const isSel = sel && sel.has(b.key), isDrop = ui && ui.dropKey === b.key;
           const w = warn && warn.get(b.key);
+          const fill = isDrop ? 'var(--action-tint)' : m.left ? 'var(--surface-2)' : m.center ? 'var(--neutral-tint)' : 'var(--surface)';
+          const bordered = !m.left && !m.center;
           return (
             <g key={b.key} data-key={interactive ? b.key : undefined} className="ocv2-box" opacity={h === 'removed' && ui && ui.fadeRemoved ? 0.9 : 1}>
-              <rect x={g.x} y={g.y} width={g.w} height={g.h} fill="#fff" stroke={stroke} strokeWidth={h ? 1.5 : 0.75} strokeDasharray={m.dashed ? '3 2' : null} />
-              <text {...fam} fill="#000">
-                {m.lines.map((l, i) => (
-                  <tspan key={i} x={m.left ? g.x + PAD : g.x + g.w / 2} y={g.y + PAD + i * LH + 7.4} textAnchor={m.left ? 'start' : 'middle'} fill={l.red ? JOIN_RED : '#000'}>{l.t || ' '}</tspan>
-                ))}
+              <rect className="ocv2-card" x={g.x + 0.5} y={g.y + 0.5} width={g.w - 1} height={g.h - 1} rx="5.5" fill={fill}
+                stroke={bordered ? (m.dashed ? 'var(--line-strong)' : 'var(--line)') : 'none'} strokeWidth="1" strokeDasharray={m.dashed ? '3 2' : null} />
+              <text fontFamily={'var(--font-ui, ' + UI_FONT + ')'} xmlSpace="preserve">
+                {(() => { let y = g.y + PADY; if (m.center) y = g.y + (g.h - m.rows.reduce((n, r) => n + r.lh, 0)) / 2;
+                  return m.rows.map((r, i) => { const base = y + r.lh / 2 + r.s * 0.35; y += r.lh;
+                    return r.runs.length ? (
+                      <tspan key={i} x={m.center ? g.x + g.w / 2 : g.x + PADX} y={base} textAnchor={m.center ? 'middle' : 'start'}>
+                        {r.runs.map((u, j) => <tspan key={j} fontSize={u.s} fontWeight={u.w} fill={TONE[u.tone]}>{u.t}</tspan>)}
+                      </tspan>) : null; }); })()}
               </text>
-              {isSel && <rect x={g.x - 2} y={g.y - 2} width={g.w + 4} height={g.h + 4} fill="none" stroke="#008064" strokeWidth={Math.max(1.2, 1.6 / k)} pointerEvents="none" />}
-              {ui && ui.dropKey === b.key && <rect x={g.x - 3} y={g.y - 3} width={g.w + 6} height={g.h + 6} fill="rgba(0,128,100,.12)" stroke="#008064" strokeWidth="1.5" strokeDasharray="4 2" pointerEvents="none" />}
-              {w && w.length > 0 && <circle cx={g.x + g.w - 2} cy={g.y + 2} r="3.5" fill="#f59e0b" stroke="#fff" strokeWidth="0.75"><title>{w.join(' ')}</title></circle>}
+              {interactive && ring(g, 'var(--action)', ringW, { className: 'ocv2-ring' })}
+              {isSel && ring(g, 'var(--action)', ringW)}
+              {h === 'added' && ring(g, 'var(--action)', 2)}
+              {h === 'moved' && ring(g, 'var(--warning)', 2)}
+              {h === 'removed' && ring(g, 'var(--danger)', 1.5, { strokeDasharray: '4 3', opacity: 0.6 })}
+              {w && w.length > 0 && <circle cx={g.x + g.w - 4} cy={g.y + 4} r="2.5" fill="var(--warning)" stroke="var(--surface)" strokeWidth="0.5"><title>{w.join(' ')}</title></circle>}
             </g>
           );
         })}
 
         {ui && ui.guides && ui.guides.map((gd, i) => (gd.x != null
-          ? <line key={'g' + i} x1={gd.x} x2={gd.x} y1={0} y2={PAGE_H} stroke="#e0161b" strokeWidth={0.75 / Math.max(k, 0.5)} strokeDasharray="4 3" pointerEvents="none" />
-          : <line key={'g' + i} y1={gd.y} y2={gd.y} x1={0} x2={PAGE_W} stroke="#e0161b" strokeWidth={0.75 / Math.max(k, 0.5)} strokeDasharray="4 3" pointerEvents="none" />))}
-        {ui && ui.marquee && <rect x={ui.marquee.x} y={ui.marquee.y} width={ui.marquee.w} height={ui.marquee.h} fill="rgba(0,128,100,.08)" stroke="#008064" strokeWidth={1 / k} strokeDasharray={4 / k + ' ' + 3 / k} pointerEvents="none" />}
+          ? <line key={'g' + i} x1={gd.x} x2={gd.x} y1={0} y2={PAGE_H} stroke="var(--action)" strokeWidth={0.75 / Math.max(k, 0.5)} strokeDasharray="4 3" pointerEvents="none" />
+          : <line key={'g' + i} y1={gd.y} y2={gd.y} x1={0} x2={PAGE_W} stroke="var(--action)" strokeWidth={0.75 / Math.max(k, 0.5)} strokeDasharray="4 3" pointerEvents="none" />))}
+        {ui && ui.marquee && <rect x={ui.marquee.x} y={ui.marquee.y} width={ui.marquee.w} height={ui.marquee.h} fill="var(--action-tint)" fillOpacity="0.6" stroke="var(--action)" strokeWidth={1 / k} strokeDasharray={4 / k + ' ' + 3 / k} pointerEvents="none" />}
         {ui && ui.lineUi}
       </svg>
     );
@@ -669,7 +736,7 @@
             ? <PeopleList chartId={chartId} box={box} people={people} boxes={allBoxes.filter((b) => liveKeys.has(b.key))} canEdit={editing} onChanged={onChanged} onError={onError} />
             : people.length
               ? <div><p className="page-sub">These people come from the imported file. They become assignments when the draft is published.</p>
-                {people.map((a) => { const l = personLine(a, todayISO()); return <div key={a.id} style={{ fontSize: 12, color: l.red ? JOIN_RED : 'inherit', marginBottom: 2 }}>{l.t}</div>; })}</div>
+                {people.map((a) => { const l = plainPerson(a, todayISO()); return <div key={a.id} style={{ fontSize: 12, color: l.red ? JOIN_RED : 'inherit', marginBottom: 2 }}>{l.t}</div>; })}</div>
               : <p className="page-sub">This box is new in the draft. People can be added once the restructure is published.</p>
         )}
         {box.kind === 'role' && tab === 'seats' && (
@@ -699,10 +766,10 @@
         </div>
         <h3 style={{ marginTop: 16 }}>Legend</h3>
         <div className="ocv2-legend">
-          <div><i style={{ background: '#fff' }} /> Role box: title, count, names</div>
-          <div><i style={{ background: '#fff', borderStyle: 'dashed' }} /> Proposed seats (not yet approved)</div>
-          <div><span style={{ color: JOIN_RED, fontWeight: 700 }}>- Name 30/10</span> New joiner until the date</div>
-          <div><span style={{ color: '#b45309', fontWeight: 700 }}>{'●'}</span> Soft warning (span, layers, no one in post)</div>
+          <div><i style={{ background: 'var(--surface)' }} /> Role box: title, count, names</div>
+          <div><i style={{ background: 'var(--surface)', borderStyle: 'dashed' }} /> Proposed seats (not yet approved)</div>
+          <div><span style={{ color: JOIN_RED, fontWeight: 500 }}>Name · joins 30/10</span> Red name = joining, with date</div>
+          <div><span style={{ color: 'var(--warning)', fontWeight: 700 }}>{'●'}</span> Soft warning in Edit and Restructure (span, layers, no one in post)</div>
         </div>
         <h3 style={{ marginTop: 16 }}>Shortcuts</h3>
         <div className="ocv2-kbd">
@@ -750,9 +817,9 @@
           {!d && <p className="page-sub">Loading the change list…</p>}
           {d && (
             <ul className="ocv2-changes" style={{ paddingLeft: 18, margin: 0 }}>
-              <li><span style={{ color: '#1a9b4b', fontWeight: 700 }}>Added</span> ({d.boxesAdded.length}){d.boxesAdded.length ? ': ' + d.boxesAdded.map((b) => b.title || b.key).join(', ') : ''}</li>
-              <li><span style={{ color: '#d8232a', fontWeight: 700 }}>Removed</span> ({d.boxesRemoved.length}){d.boxesRemoved.length ? ': ' + d.boxesRemoved.map((b) => b.title || b.key).join(', ') : ''}</li>
-              <li><span style={{ color: '#b45309', fontWeight: 700 }}>Moved</span> ({d.boxesMoved.length}){d.boxesMoved.length ? ': ' + d.boxesMoved.map((b) => (b.title || b.key) + ' now reports to ' + (b.toParentKey ? title(b.toParentKey) : 'nobody (top level)')).join('; ') : ''}</li>
+              <li><span style={{ color: 'var(--action)', fontWeight: 700 }}>Added</span> ({d.boxesAdded.length}){d.boxesAdded.length ? ': ' + d.boxesAdded.map((b) => b.title || b.key).join(', ') : ''}</li>
+              <li><span style={{ color: 'var(--danger)', fontWeight: 700 }}>Removed</span> ({d.boxesRemoved.length}){d.boxesRemoved.length ? ': ' + d.boxesRemoved.map((b) => b.title || b.key).join(', ') : ''}</li>
+              <li><span style={{ color: 'var(--warning-text)', fontWeight: 700 }}>Moved</span> ({d.boxesMoved.length}){d.boxesMoved.length ? ': ' + d.boxesMoved.map((b) => (b.title || b.key) + ' now reports to ' + (b.toParentKey ? title(b.toParentKey) : 'nobody (top level)')).join('; ') : ''}</li>
               <li>Renamed ({d.boxesRenamed.length}){d.boxesRenamed.length ? ': ' + d.boxesRenamed.map((b) => b.from + ' to ' + b.to).join('; ') : ''}</li>
               <li>Seats: {d.seatsDelta.approved >= 0 ? '+' : ''}{d.seatsDelta.approved} approved, {d.seatsDelta.proposed >= 0 ? '+' : ''}{d.seatsDelta.proposed} proposed</li>
               <li>Layers: {d.layersBefore} to {d.layersAfter}. Widest span: {d.widestSpanBefore} to {d.widestSpanAfter}.</li>
@@ -778,14 +845,14 @@
             <button type="button" className="btn btn-sm btn-secondary" onClick={() => setFocus(cur.parentKey && byKey.has(cur.parentKey) ? cur.parentKey : null)}>Back</button>
             <h3 style={{ margin: '10px 0 4px' }}>{cur.title}</h3>
             {cur.kind === 'role' && <div className="page-sub">{countLine(cur)}</div>}
-            {peopleOf(cur.key).map((a) => { const l = personLine(a, today); return <div key={a.id} style={{ color: l.red ? JOIN_RED : 'inherit', fontSize: 13 }}>{l.t}</div>; })}
+            {peopleOf(cur.key).map((a) => { const l = plainPerson(a, today); return <div key={a.id} style={{ color: l.red ? JOIN_RED : 'inherit', fontSize: 13 }}>{l.t}</div>; })}
           </div>
         )}
         {kids(focus).map((b) => (
           <button key={b.key} type="button" className="ocv2-list-row" onClick={() => setFocus(b.key)}>
             <strong>{b.title || String(b.text || '').split('\n')[0] || 'Untitled'}</strong>
             <div className="page-sub" style={{ margin: 0 }}>{[b.kind === 'role' ? countLine(b) : '', kids(b.key).length ? kids(b.key).length + ' reports' : ''].filter(Boolean).join(' · ')}</div>
-            {peopleOf(b.key).map((a) => { const l = personLine(a, today); return <div key={a.id} style={{ color: l.red ? JOIN_RED : 'inherit', fontSize: 12 }}>{l.t}</div>; })}
+            {peopleOf(b.key).map((a) => { const l = plainPerson(a, today); return <div key={a.id} style={{ color: l.red ? JOIN_RED : 'inherit', fontSize: 12 }}>{l.t}</div>; })}
           </button>
         ))}
         {!kids(focus).length && !cur && <p className="page-sub">This chart has no boxes yet.</p>}
@@ -898,12 +965,12 @@
     return out;
   }
   // Exactly what the sheet shows for one page, in the neutral shape org-export-v2.js draws.
-  function sheetModel(page, peopleByBox, today, dateFallback) {
-    const geo = buildGeo(page, peopleByBox, today);
+  function sheetModel(page, peopleByBox, today, dateFallback, style) {
+    const st = style === 'classic' ? 'classic' : 'clean', geo = buildGeo(page, peopleByBox, today, st);
     const lines = pageLines(page, geo, new Set());
     return {
-      name: page.name, title1: page.title1 || '', title2: page.title2 || '', date: page.date || dateFallback || '',
-      boxes: page.boxes.map((b) => { const g = geo.get(b.key); return { key: b.key, kind: b.kind, x: g.x, y: g.y, w: g.w, h: g.h, lines: g.m.lines, logical: logicalLines(b, peopleByBox.get(b.key), today), left: g.m.left, dashed: g.m.dashed }; }),
+      style: st, name: page.name, title1: page.title1 || '', title2: page.title2 || '', date: page.date || dateFallback || '',
+      boxes: page.boxes.map((b) => { const g = geo.get(b.key); return { key: b.key, kind: b.kind, x: g.x, y: g.y, w: g.w, h: g.h, rows: g.m.rows, center: g.m.center, lines: g.m.lines, logical: st === 'classic' ? logicalLines(b, peopleByBox.get(b.key), today) : undefined, left: g.m.left, dashed: g.m.dashed }; }),
       lines: lines.map((L) => ({ key: L.key, parent: L.parent, pts: L.route.pts, fs: L.route.fs, ts: L.route.ts })),
     };
   }
@@ -950,10 +1017,11 @@
     if (!X) throw new Error('The export tools did not load. Reload the page and try again.');
     const doc = ctx.doc, name = (ctx.chart && ctx.chart.name) || 'Org chart';
     const idxs = ctx.scope === 'current' || format === 'svg' ? [Math.min(ctx.pageIdx, doc.pages.length - 1)] : doc.pages.map((_, i) => i);
-    const models = () => idxs.map((i) => sheetModel(doc.pages[i], ctx.peopleByBox, ctx.today, ctx.dateFallback));
-    if (format === 'pdf') X.download(await X.pdf(models(), { paper: ctx.paper, title: name }), slug(name) + '-' + ctx.paper.toLowerCase() + '.pdf');
-    else if (format === 'vsdx') X.download(await X.vsdx(doc.pages.map((_, i) => sheetModel(doc.pages[i], ctx.peopleByBox, ctx.today, ctx.dateFallback)), { title: name }), slug(name) + '.vsdx');
-    else if (format === 'svg') X.download(await X.svg(models()[0]), slug(name) + '-' + slug(doc.pages[idxs[0]].name || 'page') + '.svg');
+    const style = ctx.style === 'classic' ? 'classic' : 'clean';
+    const models = () => idxs.map((i) => sheetModel(doc.pages[i], ctx.peopleByBox, ctx.today, ctx.dateFallback, style));
+    if (format === 'pdf') X.download(await X.pdf(models(), { paper: ctx.paper, title: name, style }), slug(name) + '-' + ctx.paper.toLowerCase() + '.pdf');
+    else if (format === 'vsdx') X.download(await X.vsdx(doc.pages.map((_, i) => sheetModel(doc.pages[i], ctx.peopleByBox, ctx.today, ctx.dateFallback, style)), { title: name, style }), slug(name) + '.vsdx');
+    else if (format === 'svg') X.download(await X.svg(models()[0], { style }), slug(name) + '-' + slug(doc.pages[idxs[0]].name || 'page') + '.svg');
     else if (format === 'csv') X.download(X.csv(peopleCsvRows(name, doc, ctx.people)), slug(name) + '-people.csv');
     else if (format === 'json') X.download(new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), chart: ctx.chart ? { id: ctx.chart.id, name: ctx.chart.name, scope: ctx.chart.scope } : null,
       version: ctx.version ? { id: ctx.version.id, state: ctx.version.state, label: ctx.version.label } : null, payload: doc, assignments: ctx.people }, null, 2)], { type: 'application/json' }), slug(name) + '-backup.json');
@@ -961,18 +1029,27 @@
     return true;
   }
 
-  function PdfModal({ pageCount, onClose, onExport }) {
-    const [paper, setPaper] = useState('A3'), [scope, setScope] = useState('all');
-    const a = useAction(() => onExport(paper, scope));
+  const STYLE_KEY = 'orgChartV2ExportStyle';
+  const lastStyle = () => { try { return localStorage.getItem(STYLE_KEY) === 'classic' ? 'classic' : 'clean'; } catch (e) { return 'clean'; } };
+  const rememberStyle = (v) => { try { localStorage.setItem(STYLE_KEY, v); } catch (e) { /* storage unavailable */ } };
+  function PdfModal({ format, pageCount, onClose, onExport }) {
+    const pdf = format !== 'vsdx';
+    const [paper, setPaper] = useState('A3'), [scope, setScope] = useState('all'), [style, setStyle] = useState(lastStyle);
+    const a = useAction(() => { rememberStyle(style); return onExport(paper, scope, style); });
     return (
-      <Modal title="Export PDF" onClose={onClose} footer={<><button type="button" className="btn btn-ghost" onClick={onClose} disabled={a.busy}>Cancel</button>
-        <button type="button" className="btn" disabled={a.busy} onClick={() => a.go()}>{a.busy ? 'Preparing…' : 'Download PDF'}</button></>}>
+      <Modal title={pdf ? 'Export PDF' : 'Export Visio'} onClose={onClose} footer={<><button type="button" className="btn btn-ghost" onClick={onClose} disabled={a.busy}>Cancel</button>
+        <button type="button" className="btn" disabled={a.busy} onClick={() => a.go()}>{a.busy ? 'Preparing…' : pdf ? 'Download PDF' : 'Download Visio'}</button></>}>
         {a.error && <div className="error-banner" role="alert">{a.error}</div>}
-        <p className="page-sub" style={{ marginTop: 0 }}>Vector PDF of exactly what the sheet shows. Pages with Arabic or other non-Latin text are printed as a sharp image.</p>
-        <div className="form-grid">
+        {pdf && <p className="page-sub" style={{ marginTop: 0 }}>Vector PDF of exactly what the sheet shows. Pages with Arabic or other non-Latin text are printed as a sharp image.</p>}
+        <div className="field" role="radiogroup" aria-label="Style">
+          <label>Style</label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="radio" name="ocv2-style" checked={style === 'clean'} onChange={() => setStyle('clean')} /> Clean</label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="radio" name="ocv2-style" checked={style === 'classic'} onChange={() => setStyle('classic')} /> Classic (Visio style)</label>
+        </div>
+        {pdf && <div className="form-grid">
           <div className="field"><label>Paper (landscape)</label><select value={paper} onChange={(e) => setPaper(e.target.value)}>{['A4', 'A3', 'A2', 'A1'].map((z) => <option key={z} value={z}>{z}</option>)}</select></div>
           <div className="field"><label>Pages</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="all">All pages ({pageCount})</option><option value="current">Current page only</option></select></div>
-        </div>
+        </div>}
       </Modal>
     );
   }
@@ -1714,24 +1791,24 @@
       if (!selLineObj || !geo) return null;
       const pts = selLineObj.route.pts, k = view.k, hs = 10 / k, out = [];
       const dragEnd = ui.endDrag;
-      out.push(<path key="sl" d={ptsD(pts)} fill="none" stroke="#008064" strokeWidth={2.5 / k} opacity="0.35" pointerEvents="none" />);
+      out.push(<path key="sl" d={ptsD(pts)} fill="none" stroke="var(--action)" strokeWidth={2.5 / k} opacity="0.35" pointerEvents="none" />);
       if (editable && !dragEnd) {
         pts.forEach((a, i) => {
           const b = pts[i + 1]; if (!b) return;
           if (Math.hypot(b[0] - a[0], b[1] - a[1]) * k < 14) return;
           const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-          out.push(<rect key={'s' + i} data-seg={i} x={mx - hs / 2} y={my - hs / 2} width={hs} height={hs} rx={2 / k} fill="#fff" stroke="#008064" strokeWidth={1.5 / k} style={{ cursor: near(a[1], b[1]) ? 'ns-resize' : 'ew-resize' }}><title>Drag to move this part of the line</title></rect>);
+          out.push(<rect key={'s' + i} data-seg={i} x={mx - hs / 2} y={my - hs / 2} width={hs} height={hs} rx={2 / k} fill="#fff" stroke="var(--action)" strokeWidth={1.5 / k} style={{ cursor: near(a[1], b[1]) ? 'ns-resize' : 'ew-resize' }}><title>Drag to move this part of the line</title></rect>);
         });
         const S = pts[0], E = pts[pts.length - 1];
-        out.push(<circle key="es" data-end="s" cx={S[0]} cy={S[1]} r={6 / k} fill="#fff" stroke="#008064" strokeWidth={2 / k} style={{ cursor: 'crosshair' }}><title>Drag to another side of the manager's box{restr ? ' or onto another box to change the manager' : ''}</title></circle>);
-        out.push(<circle key="ee" data-end="e" cx={E[0]} cy={E[1]} r={6 / k} fill="#fff" stroke="#008064" strokeWidth={2 / k} style={{ cursor: 'crosshair' }}><title>Drag to another side of this box</title></circle>);
+        out.push(<circle key="es" data-end="s" cx={S[0]} cy={S[1]} r={6 / k} fill="#fff" stroke="var(--action)" strokeWidth={2 / k} style={{ cursor: 'crosshair' }}><title>Drag to another side of the manager's box{restr ? ' or onto another box to change the manager' : ''}</title></circle>);
+        out.push(<circle key="ee" data-end="e" cx={E[0]} cy={E[1]} r={6 / k} fill="#fff" stroke="var(--action)" strokeWidth={2 / k} style={{ cursor: 'crosshair' }}><title>Drag to another side of this box</title></circle>);
       }
       if (dragEnd && geo.get(dragEnd.key)) {
         const fixed = dragEnd.which === 's' ? pts[pts.length - 1] : pts[0];
         const tip = dragEnd.target ? anchor(geo.get(dragEnd.target.key), dragEnd.target.side) : [dragEnd.px, dragEnd.py];
-        out.push(<path key="tmp" d={'M' + fixed + ' L' + tip} fill="none" stroke="#008064" strokeWidth={1.5 / k} strokeDasharray={4 / k + ' ' + 3 / k} pointerEvents="none" />);
+        out.push(<path key="tmp" d={'M' + fixed + ' L' + tip} fill="none" stroke="var(--action)" strokeWidth={1.5 / k} strokeDasharray={4 / k + ' ' + 3 / k} pointerEvents="none" />);
         const tn = dragEnd.target ? geo.get(dragEnd.target.key) : dragEnd.hoverKey ? geo.get(dragEnd.hoverKey) : null;
-        if (tn) ['top', 'bottom', 'left', 'right'].forEach((sd) => { const q = anchor(tn, sd); out.push(<circle key={'cp' + sd} cx={q[0]} cy={q[1]} r={5 / k} fill={dragEnd.target && dragEnd.target.side === sd ? '#008064' : '#fff'} stroke="#008064" strokeWidth={1.5 / k} pointerEvents="none" />); });
+        if (tn) ['top', 'bottom', 'left', 'right'].forEach((sd) => { const q = anchor(tn, sd); out.push(<circle key={'cp' + sd} cx={q[0]} cy={q[1]} r={5 / k} fill={dragEnd.target && dragEnd.target.side === sd ? 'var(--action)' : '#fff'} stroke="var(--action)" strokeWidth={1.5 / k} pointerEvents="none" />); });
       }
       return <g>{out}</g>;
     }
@@ -1757,8 +1834,8 @@
 
     const exportItems = [
       { label: 'PDF…', onClick: () => setModal({ type: 'pdf' }) },
-      { label: 'Visio (.vsdx)', onClick: () => runExport('vsdx') },
-      { label: 'SVG (this page)', onClick: () => runExport('svg') },
+      { label: 'Visio (.vsdx)…', onClick: () => setModal({ type: 'vsdx' }) },
+      { label: 'SVG (this page)', onClick: () => runExport('svg', { style: 'clean' }) },
       { label: 'CSV of people', onClick: () => runExport('csv') },
       { label: 'JSON backup', onClick: () => runExport('json') },
     ];
@@ -1893,7 +1970,7 @@
         {menu && <Menu x={menu.x} y={menu.y} items={menu.items || menuItems(menu.keys)} onClose={() => setMenu(null)} />}
         {modal && modal.type === 'new' && <NewChartModal onClose={() => setModal(null)} onCreate={async (b) => { const r = await api().post('/org/charts', b); await loadCharts(); setChartId(r.chart.id); setModal(null); }} />}
         {modal && modal.type === 'import' && <ImportModal current={detail && detail.chart.currentVersionId ? detail.chart : null} onClose={() => setModal(null)} onImport={afterImport} />}
-        {modal && modal.type === 'pdf' && <PdfModal pageCount={doc ? doc.pages.length : 1} onClose={() => setModal(null)} onExport={async (paper, scope) => { await runExport('pdf', { paper, scope }); setModal(null); }} />}
+        {modal && (modal.type === 'pdf' || modal.type === 'vsdx') && <PdfModal format={modal.type} pageCount={doc ? doc.pages.length : 1} onClose={() => setModal(null)} onExport={async (paper, scope, style) => { await runExport(modal.type, { paper, scope, style }); setModal(null); }} />}
         {modal && modal.type === 'start' && <StartModal hasDraft={drafts.length > 0} onClose={() => setModal(null)} onStart={async (l, d) => { await startRestructure(l, d); setModal(null); }} />}
         {modal && modal.type === 'delete' && <DeleteModal keys={modal.keys} initial={modal.mode} page={page} assignments={assignments} onClose={() => setModal(null)} onDelete={(m) => { commit((d, p) => { removeBoxes(p, modal.keys, m); }); setSel(new Set()); setModal(null); }} />}
         {modal && modal.type === 'move' && <MoveModal box={geo.get(modal.key).b} people={peopleByBox.get(modal.key) || []} boxes={allBoxes.filter((b) => b.kind === 'role' && liveKeys.has(b.key) && b.key !== modal.key)} onClose={() => setModal(null)}
@@ -1922,5 +1999,5 @@
 
   window.ArabtecOrgStructureV2Page = OrgStructureV2Page;
   window.ArabtecOrgStructureV2Gate = OrgStructureGate;
-  window.ORG_CHART_V2 = { boxModel, autoLayout, routeOf, elbowPts, computeMetrics, computeWarnings };
+  window.ORG_CHART_V2 = { boxModel, classicBoxModel, autoLayout, routeOf, elbowPts, computeMetrics, computeWarnings };
 })();
