@@ -28,6 +28,7 @@ export const FEATURE_META = {
   public_careers:            { label: 'Public careers page', description: 'Reserved. No careers page ships in this version.', enforced: false },
   email_notifications:       { label: 'Email notifications', description: 'Reserved. Email is governed by Email & Mailbox and per-event notification settings.', enforced: false },
   interview_self_schedule:   { label: 'Candidate self-scheduling', description: 'Reserved. Not built in this version.', enforced: false },
+  org_chart_v2:              { label: 'Organization Structure v2', description: 'Versioned A3 org charts with drafts and HR Director approval. The existing structure is converted into charts on the next server start.', enforced: true },
 };
 export function allFlags() {
   const flags = all("SELECT key, value FROM system_setting WHERE key LIKE 'feature.%' ORDER BY key");
@@ -57,6 +58,7 @@ export const DEFAULT_FEATURE_FLAGS = [
   ['feature.ai_scoring',        'disabled'],  // AI candidate-job matching
   ['feature.email_notifications','disabled'],  // real SMTP email sending
   ['feature.interview_self_schedule','disabled'], // candidate self-booking
+  ['feature.org_chart_v2',      'disabled'],  // versioned org charts (/api/org/charts)
 ];
 
 // Idempotent: seed flags that don't exist yet.

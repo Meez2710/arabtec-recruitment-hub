@@ -680,3 +680,86 @@ model OfferActivity {
 
   offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
 }
+
+// ---- Organization Structure v2 (docs/org-chart/ORG_CHART_V2_PLAN.md section 3) ----
+// project/department/user links are plain ids (no relation) so the legacy models stay untouched.
+model OrgChart {
+  id               Int      @id @default(autoincrement())
+  name             String
+  projectId        Int?
+  departmentId     Int?
+  scope            String   @default("project") // project | head_office | department
+  status           String   @default("active")  // active | archived
+  currentVersionId Int?
+  createdBy        Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  versions    OrgChartVersion[]
+  positions   OrgPosition[]
+  assignments OrgAssignment[]
+}
+
+model OrgChartVersion {
+  id               Int       @id @default(autoincrement())
+  chartId          Int
+  label            String    @default("")
+  state            String    @default("draft") // draft | pending_approval | published | superseded
+  basedOnVersionId Int?
+  payloadJson      String
+  createdBy        Int?
+  submittedBy      Int?
+  approvedBy       Int?
+  publishedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  chart OrgChart @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@index([chartId])
+}
+
+model OrgPosition {
+  id                 Int      @id @default(autoincrement())
+  chartId            Int
+  boxKey             String
+  slotNo             Int      @default(1)
+  approval           String   @default("approved") // approved | proposed | frozen
+  requisitionSeatId  Int?
+  createdInVersionId Int?
+  closedInVersionId  Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  chart       OrgChart        @relation(fields: [chartId], references: [id], onDelete: Cascade)
+  assignments OrgAssignment[]
+
+  @@index([chartId])
+  @@index([chartId, boxKey])
+}
+
+model OrgAssignment {
+  id            Int      @id @default(autoincrement())
+  chartId       Int
+  boxKey        String
+  positionId    Int?
+  personName    String
+  employeeId    Int?
+  userId        Int?
+  status        String   @default("in_post") // in_post | joining | leaving
+  effectiveDate String?
+  share         Float    @default(1)
+  suffix        String?
+  applicationId Int?
+  sortOrder     Int      @default(0)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  chart    OrgChart     @relation(fields: [chartId], references: [id], onDelete: Cascade)
+  position OrgPosition? @relation(fields: [positionId], references: [id])
+
+  @@index([chartId])
+  @@index([chartId, boxKey])
+  @@index([employeeId])
+}
