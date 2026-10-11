@@ -757,7 +757,8 @@ function assertNotStale(row, chart) {
  */
 export function rebaseDraft(vid) {
   const row = getVersionRow(vid);
-  if (row.state !== "draft")
+  // Approved drafts may be rebased too: only non-structural live edits (which never need approval) come in.
+  if (row.state !== "draft" && row.state !== "pending_approval")
     throw new OrgChartError(409, "Only a draft can be updated with live changes.");
   const chart = getChart(row.chart_id);
   if (row.based_on_version_id !== chart.currentVersionId)
@@ -805,8 +806,8 @@ export function rebaseDraft(vid) {
   }
   const doc = validatePayload(draft);
   const r = run(
-    `UPDATE org_chart_version SET payload_json=?, base_payload_json=?, based_on_updated_at=?, updated_at=? WHERE id=? AND updated_at=? AND state='draft'`,
-    [JSON.stringify(doc), live.payload_json, live.updated_at, stamp(row.updated_at), vid, row.updated_at],
+    `UPDATE org_chart_version SET payload_json=?, base_payload_json=?, based_on_updated_at=?, updated_at=? WHERE id=? AND updated_at=? AND state=?`,
+    [JSON.stringify(doc), live.payload_json, live.updated_at, stamp(row.updated_at), vid, row.updated_at, row.state],
   );
   if (!r.changes)
     throw new OrgChartError(409, "Someone else saved this draft. Reload to see their changes.");

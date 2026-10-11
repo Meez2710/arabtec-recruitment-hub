@@ -550,6 +550,12 @@ await check('a draft whose base is no longer the published version cannot be sub
     assert.equal(r.status, 409);
     assert.equal(r.json.error, 'The live chart changed after this draft started.');
     assert.ok(r.json.liveChanges.some((x) => /Live Planner/.test(x)));
+    const rb = await api(`/api/org/charts/versions/${dr.id}/rebase`, { method: 'POST', tok: manager });
+    assert.equal(rb.status, 200, rb.text);
+    assert.equal(rb.json.version.state, 'pending_approval', 'approval is kept');
+    assert.equal(box(rb.json.version.payload.pages[0], 'plan').title, 'Live Planner');
+    const pub = await api(`/api/org/charts/versions/${dr.id}/publish`, { method: 'POST', tok: manager });
+    assert.equal(pub.status, 200, pub.text);
   });
 }
 

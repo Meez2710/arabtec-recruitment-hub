@@ -29,6 +29,7 @@ export const FRONTEND_SOURCES = {
   'cv-intake.js': 'cv-intake.jsx',
   'email-settings.js': 'email-settings.jsx',
   'org-structure.js': 'org-structure.jsx',
+  'org-structure-v2.js': 'org-structure-v2.jsx',
   'app.js': 'app.jsx',
 };
 // app.jsx gets the Organization Structure page inserted before it is compiled,
