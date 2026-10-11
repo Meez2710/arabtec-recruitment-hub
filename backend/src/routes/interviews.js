@@ -7,8 +7,11 @@ import { requireAuth, requirePermission, requireAnyPermission } from '../middlew
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
-import { sendMail } from '../lib/mailer.js';
-import { interviewInvite as interviewInviteTpl } from '../lib/email_templates.js';
+import { sendMail, isConfigured as mailConfigured } from '../lib/mailer.js';
+import { interviewInvite as interviewInviteTpl, candidateMessage } from '../lib/email_templates.js';
+import {
+  MESSAGE_KINDS, PLACEHOLDERS, currentTemplates, saveTemplate, composeMessage,
+} from '../lib/interview-messages.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -69,6 +72,7 @@ function serialize(iv, user, { detail = false } = {}) {
     scheduledAt: iv.scheduled_at, durationMin: iv.duration_min, locationOrLink: iv.location_or_link,
     status: iv.status,                       // INTERVIEW status — independent of application status
     cancelReason: iv.cancel_reason, overallOutcome: iv.overall_outcome,
+    candidateResponse: iv.candidate_response || 'pending', // the candidate's own answer, recorded by HR
     organizer: organizer ? { id: organizer.id, name: organizer.full_name } : null,
     // The links that the spec requires every interview to carry:
     candidate: cand ? { id: cand.id, candidateNo: cand.candidate_no, fullName: cand.full_name, currentPosition: cand.current_position } : null,
@@ -233,22 +237,129 @@ router.post('/', requirePermission('interview.schedule'), (req, res) => {
   const dateText = created.scheduled_at
     ? new Date(created.scheduled_at).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' }) : '';
   const panelUsers = panel.map((m) => { try { return Users.byId(Number(m.interviewerId)); } catch { return null; } }).filter(Boolean);
+  // The invitation reads as HR wrote it under Message templates; the scheduler
+  // may have edited this one copy before saving.
+  const invite = composeMessage('invite', { iv: created, candidate: cand, request: requestId ? Requests.byId(requestId) : null, panel: panelUsers, sender: req.user });
+  const custom = d.message && typeof d.message.text === 'string' && d.message.text.trim()
+    ? { subject: String(d.message.subject || invite.subject).slice(0, 200), text: String(d.message.text).slice(0, 5000) } : null;
+  // `notify.email === false`: the scheduler chose not to email the candidate
+  // (they will use WhatsApp or a call); the panel is still told.
+  const emailCandidate = !(d.notify && d.notify.email === false);
   const invited = notifyEvent('interview.scheduled', {
-    actor: req.user, candidate: cand, panel: panelUsers,
+    actor: req.user, candidate: emailCandidate ? cand : null, panel: panelUsers,
     linkType: 'interview', linkId: created.id,
     vars: { candidateName: cand ? cand.full_name : null, position: cand ? cand.current_position : null,
-      dateText, mode: created.mode, locationOrLink: created.location_or_link },
+      dateText, mode: created.mode, locationOrLink: created.location_or_link,
+      message: custom || { subject: invite.subject, text: invite.email } },
     title: `Interview scheduled: ${interviewNo}`,
     body: `${cand ? cand.full_name : 'A candidate'} — ${dateText}`,
     attachments: (() => { const ics = interviewIcs(created, cand); return ics ? [{ filename: `${interviewNo}.ics`, contentType: 'text/calendar; charset=utf-8; method=PUBLISH', content: ics }] : []; })(),
   });
-  if (invited.sent && cand) {
+  if (invited.sent && cand && emailCandidate) {
     try {
       CandidateActivity.add({ candidateId: cand.id, applicationId: app ? app.id : null, actorId: req.user.id,
         actorName: 'System', type: 'email_sent', note: 'Interview invite sent' });
     } catch { /* the activity note must never fail scheduling */ }
   }
-  res.status(201).json({ interview: serialize(created, req.user, { detail: true }) });
+  // Said plainly to the scheduler: was the candidate actually emailed? Only
+  // when they have an address, a mailbox is connected and the event is on.
+  const candidateEmailed = !!(emailCandidate && cand?.email && mailConfigured() && invited.emails > 0);
+  res.status(201).json({ interview: serialize(created, req.user, { detail: true }), candidateEmailed });
+});
+
+/* ---------------- MESSAGES TO THE CANDIDATE ----------------
+   HR controls the wording (templates); a scheduler fills one in for an
+   interview, edits it if needed, and sends it by email or opens it in
+   WhatsApp. Every send is written to the interview's activity. */
+const canMessage = requireAnyPermission('interview.schedule', 'interview.edit');
+
+router.get('/messages/templates', requireAnyPermission('interview.schedule', 'interview.edit', 'notification.manage'), (req, res) => {
+  res.json({ templates: currentTemplates(), placeholders: PLACEHOLDERS, kinds: MESSAGE_KINDS });
+});
+
+router.put('/messages/templates/:kind', requirePermission('notification.manage'), (req, res) => {
+  const before = currentTemplates()[req.params.kind];
+  const out = saveTemplate(req.params.kind, req.body || {});
+  if (out.error) return res.status(400).json({ error: out.error });
+  writeAudit(req, { action: 'interview.message_template_changed', entityType: 'message_template', entityId: req.params.kind,
+    oldValue: before, newValue: out.templates[req.params.kind], comments: req.body?.reset ? 'Reset to default' : null });
+  res.json({ templates: out.templates });
+});
+
+function messageContext(iv, user, reason) {
+  return {
+    iv, candidate: Candidates.byId(iv.candidate_id), request: iv.request_id ? Requests.byId(iv.request_id) : null,
+    panel: InterviewPanel.forInterview(iv.id), sender: user, reason,
+  };
+}
+function loadForMessage(req, res) {
+  const iv = Interviews.byId(Number(req.params.id));
+  if (!iv || !canViewInterview(req.user, iv)) { res.status(404).json({ error: 'Interview not found.' }); return null; }
+  if (!MESSAGE_KINDS.includes(req.params.kind)) { res.status(400).json({ error: 'Unknown message.' }); return null; }
+  return iv;
+}
+
+router.get('/:id/messages/:kind', canMessage, (req, res) => {
+  const iv = loadForMessage(req, res); if (!iv) return;
+  res.json({ message: composeMessage(req.params.kind, messageContext(iv, req.user)) });
+});
+
+router.post('/:id/messages/:kind/email', canMessage, async (req, res) => {
+  const iv = loadForMessage(req, res); if (!iv) return;
+  const cand = Candidates.byId(iv.candidate_id);
+  if (!cand?.email) return res.status(400).json({ error: 'This candidate has no email address. Add one on their profile, or use WhatsApp.' });
+  const d = req.body || {};
+  const subject = String(d.subject || '').trim().slice(0, 200);
+  const text = String(d.text || '').trim().slice(0, 5000);
+  if (!subject || !text) return res.status(400).json({ error: 'The subject and the message cannot be empty.' });
+  const { label } = composeMessage(req.params.kind, messageContext(iv, req.user));
+  const mail = candidateMessage({ title: label, subject, text });
+  const result = await sendMail({ to: cand.email, subject: mail.subject, html: mail.html });
+  if (!result.ok) {
+    const why = result.reason === 'not_configured'
+      ? 'No mailbox is connected yet, so the email was not sent. Connect one under Email & Mailbox, or use WhatsApp.'
+      : `The email could not be sent: ${result.error || 'unknown error'}.`;
+    return res.status(result.reason === 'not_configured' ? 409 : 502).json({ error: why });
+  }
+  InterviewActivity.add(iv.id, req.user, 'message_email', `${label} emailed to ${cand.email}`);
+  CandidateActivity.add({ candidateId: cand.id, applicationId: iv.application_id, actorId: req.user.id, actorName: req.user.fullName, type: 'email_sent', note: `${label} (${iv.interview_no})` });
+  writeAudit(req, { action: 'interview.message_sent', entityType: 'interview', entityId: iv.id, newValue: { channel: 'email', kind: req.params.kind, to: cand.email } });
+  res.json({ ok: true });
+});
+
+// WhatsApp and calls happen on the recruiter's own device; the server only
+// records them, so the history shows who contacted the candidate and how.
+const DEVICE_CHANNELS = { whatsapp: 'opened in WhatsApp for', call: 'phoned on' };
+router.post('/:id/messages/:kind/:channel', canMessage, (req, res) => {
+  const iv = loadForMessage(req, res); if (!iv) return;
+  const channel = req.params.channel;
+  if (!DEVICE_CHANNELS[channel]) return res.status(400).json({ error: 'Unknown channel.' });
+  const cand = Candidates.byId(iv.candidate_id);
+  const { label, to } = composeMessage(req.params.kind, messageContext(iv, req.user));
+  if (!to.whatsapp) return res.status(400).json({ error: 'This candidate has no usable mobile number.' });
+  const note = channel === 'call' ? `Called +${to.whatsapp} (${label})` : `${label} ${DEVICE_CHANNELS[channel]} +${to.whatsapp}`;
+  InterviewActivity.add(iv.id, req.user, 'message_' + channel, note);
+  CandidateActivity.add({ candidateId: cand.id, applicationId: iv.application_id, actorId: req.user.id, actorName: req.user.fullName,
+    type: channel === 'call' ? 'call_made' : 'whatsapp_opened', note: `${label} (${iv.interview_no})` });
+  writeAudit(req, { action: 'interview.message_sent', entityType: 'interview', entityId: iv.id, newValue: { channel, kind: req.params.kind, to: to.whatsapp } });
+  res.json({ ok: true });
+});
+
+/* ---------------- CANDIDATE RESPONSE ----------------
+   What the candidate said back (by phone, WhatsApp or email), recorded by HR
+   so everyone can see who has confirmed. */
+const RESPONSES = ['pending', 'confirmed', 'change_requested', 'declined'];
+router.post('/:id/response', canMessage, (req, res) => {
+  const iv = Interviews.byId(Number(req.params.id));
+  if (!iv || !canViewInterview(req.user, iv)) return res.status(404).json({ error: 'Interview not found.' });
+  const response = req.body?.response;
+  if (!RESPONSES.includes(response)) return res.status(400).json({ error: 'Invalid response.' });
+  const before = iv.candidate_response || 'pending';
+  Interviews.setCandidateResponse(iv.id, response);
+  const words = { pending: 'No answer yet', confirmed: 'Candidate confirmed', change_requested: 'Candidate asked for another time', declined: 'Candidate declined' };
+  InterviewActivity.add(iv.id, req.user, 'candidate_response', words[response]);
+  writeAudit(req, { action: 'interview.candidate_response', entityType: 'interview', entityId: iv.id, oldValue: { response: before }, newValue: { response } });
+  res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
 });
 
 /* ---------------- RESCHEDULE ---------------- */
@@ -274,7 +385,11 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
       writeAudit(req, { action: 'interview.panel_changed', entityType: 'interview', entityId: iv.id, oldValue: { panel: panelBefore }, newValue: { panel: panelAfter } });
     }
   }
-  if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); InterviewActivity.add(iv.id, req.user, 'rescheduled', `→ ${d.scheduledAt}`); }
+  if (rescheduled) {
+    Interviews.setStatus(iv.id, 'rescheduled'); InterviewActivity.add(iv.id, req.user, 'rescheduled', `→ ${d.scheduledAt}`);
+    // The candidate agreed to the old time, not this one: ask again.
+    if ((iv.candidate_response || 'pending') !== 'pending') Interviews.setCandidateResponse(iv.id, 'pending');
+  }
   else if (!panelChanged) InterviewActivity.add(iv.id, req.user, 'updated');
   writeAudit(req, { action: 'interview.updated', entityType: 'interview', entityId: iv.id, oldValue: before, newValue: { scheduledAt: updated.scheduled_at, rescheduled } });
   res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
