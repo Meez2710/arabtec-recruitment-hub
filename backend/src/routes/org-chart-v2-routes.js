@@ -5,6 +5,7 @@ import { requirePermission } from "../middleware/auth.js";
 import { writeAudit } from "../lib/audit.js";
 import { isEnabled } from "../lib/feature-flags.js";
 import * as Charts from "../lib/org-charts.js";
+import { buildPayloadFromRows } from "../lib/org-chart-v2-migrate.js";
 
 const manage = requirePermission("org_chart.manage");
 
@@ -74,16 +75,36 @@ export function registerOrgChartV2Routes(parent) {
               ? null
               : id(b.departmentId),
           payload: b.payload || null,
+          asDraft: b.asDraft === true,
         },
         req.user.id,
       );
       writeAudit(req, {
-        action: "org_chart_v2.chart_created",
+        action: out.version.state === "draft" ? "org_chart_v2.chart_imported" : "org_chart_v2.chart_created",
         entityType: "org_chart",
         entityId: out.chart.id,
         newValue: { chart: out.chart, payload: out.version.payload },
       });
       res.status(201).json(out);
+    }),
+  );
+
+  // CSV import: the browser parses the file; this groups the people rows into role boxes (same rules as the
+  // migration) and returns a payload. Nothing is written until the browser creates a draft with it.
+  router.post(
+    "/import/csv",
+    manage,
+    h((req, res) => {
+      const rows = req.body && req.body.rows;
+      if (!Array.isArray(rows) || !rows.length || rows.length > 5000)
+        throw new Charts.OrgChartError(400, "The file has no people rows (or more than 5000).");
+      try {
+        const out = buildPayloadFromRows(rows, String(req.body.name || "Imported chart").slice(0, 200));
+        res.json({ payload: Charts.validatePayload(out.payload) });
+      } catch (e) {
+        if (e instanceof Charts.OrgChartError) throw e;
+        throw new Charts.OrgChartError(400, e.message || "The file could not be read.");
+      }
     }),
   );
 
@@ -195,10 +216,14 @@ export function registerOrgChartV2Routes(parent) {
             approvedBy: out.after.approvedBy,
             publishedAt: out.after.publishedAt,
           },
-          comments: (req.body && req.body.comment) || null,
+          comments:
+            [(req.body && req.body.comment) || "", out.replaced ? `Replaced ${out.replaced} existing people with the imported roster.` : ""]
+              .filter(Boolean)
+              .join(" ") || null,
         });
         res.json({
           version: out.after,
+          ...(out.imported ? { importedPeople: out.imported } : {}),
           ...(out.supersededVersionId
             ? { supersededVersionId: out.supersededVersionId }
             : {}),

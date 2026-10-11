@@ -559,6 +559,147 @@ await check('a draft whose base is no longer the published version cannot be sub
   });
 }
 
+/* ------------------------------ import (drafts) ----------------------------- */
+
+{
+  const importPayload = () => ({
+    pages: [{
+      key: 'p1', name: 'Imported', title1: 'Import Plaza', title2: 'Site chart', date: '11/10/2026', paper: 'A3',
+      boxes: [
+        P('Import Plaza', { key: 'iroot', kind: 'team', planned: 0 }),
+        P('Project Manager', { key: 'ipm', parentKey: 'iroot', x: 100, y: 100 }),
+        P('Site Engineer', { key: 'ieng', parentKey: 'ipm', planned: 2, x: 100, y: 200 }),
+        P('Planner', { key: 'iplan', parentKey: 'ipm', planned: 1, x: 200, y: 200 }),
+      ],
+      links: [{ childKey: 'ipm', kind: 'reports', fromSide: 'bottom', toSide: 'top' }],
+      notes: [],
+      importPeople: [
+        { boxKey: 'ipm', personName: 'Rana Idris', status: 'in_post', suffix: 'Deputy', share: 1, sortOrder: 0 },
+        { boxKey: 'ieng', personName: 'Karim Zaki', status: 'joining', effectiveDate: '2026-10-30', share: 1, sortOrder: 0 },
+        { boxKey: 'ieng', personName: 'Dalia Fawzy', status: 'in_post', share: 1, sortOrder: 1 },
+        { boxKey: 'ghost', personName: 'Nobody Here', status: 'in_post', share: 1 },
+      ],
+    }],
+  });
+  let ic;
+  await check('import as a new chart creates a draft, never a published version', async () => {
+    const r = await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Import Plaza', payload: importPayload(), asDraft: true } });
+    assert.equal(r.status, 201, r.text);
+    ic = r.json;
+    assert.equal(ic.version.state, 'draft');
+    assert.equal(ic.chart.currentVersionId, null);
+    assert.equal(ic.version.payload.pages[0].importPeople.length, 3, 'a person whose box is not in the file is dropped');
+    assert.equal(all('SELECT id FROM org_assignment WHERE chart_id=?', [ic.chart.id]).length, 0, 'no people yet');
+    assert.equal(all('SELECT id FROM org_position WHERE chart_id=?', [ic.chart.id]).length, 0, 'no seats yet');
+    assert.equal(all("SELECT id FROM org_chart_version WHERE chart_id=? AND state='published'", [ic.chart.id]).length, 0);
+    const detail = await api(`/api/org/charts/${ic.chart.id}`);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.json.version, null);
+    assert.equal(all("SELECT id FROM audit_log WHERE action='org_chart_v2.chart_imported'").length >= 1, true, 'import is audited');
+  });
+  await check('a viewer cannot import', async () => {
+    assert.equal((await api('/api/org/charts', { method: 'POST', tok: viewer, body: { name: 'X', payload: importPayload(), asDraft: true } })).status, 403);
+  });
+  await check('an imported draft publishes through submit, approve, publish and then creates its people', async () => {
+    const v = ic.version.id;
+    assert.equal((await api(`/api/org/charts/versions/${v}/submit`, { method: 'POST', tok: manager })).status, 200);
+    assert.equal((await api(`/api/org/charts/versions/${v}/approve`, { method: 'POST', tok: director })).status, 200);
+    assert.equal(all('SELECT id FROM org_assignment WHERE chart_id=?', [ic.chart.id]).length, 0, 'still nothing before publish');
+    const pub = await api(`/api/org/charts/versions/${v}/publish`, { method: 'POST', tok: manager });
+    assert.equal(pub.status, 200, pub.text);
+    assert.equal(pub.json.importedPeople, 3);
+    const d = (await api(`/api/org/charts/${ic.chart.id}`)).json;
+    assert.equal(d.chart.currentVersionId, v);
+    assert.equal(d.assignments.length, 3);
+    const k = d.assignments.find((a) => a.personName === 'Karim Zaki');
+    assert.equal(k.status, 'joining');
+    assert.equal(k.effectiveDate, '2026-10-30');
+    assert.equal(k.boxKey, 'ieng');
+    assert.ok(k.positionId, 'seated');
+    assert.equal(d.assignments.find((a) => a.personName === 'Rana Idris').suffix, 'Deputy');
+    assert.equal(d.version.payload.pages[0].importPeople, undefined, 'import list is not kept on the published version');
+  });
+  await check('a draft started from the published imported chart does not carry importPeople (no duplicates)', async () => {
+    const r = await api(`/api/org/charts/${ic.chart.id}/drafts`, { method: 'POST', tok: manager, body: { label: 'Next' } });
+    assert.equal(r.status, 201, r.text);
+    assert.equal(r.json.version.payload.pages[0].importPeople, undefined);
+  });
+  await check('a new draft on an existing chart can take an imported payload; live chart and people stay untouched', async () => {
+    const base = (await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Existing Site', payload: basePayload() } })).json;
+    await api(`/api/org/charts/${base.chart.id}/assignments`, { method: 'POST', tok: manager, body: { boxKey: 'pm', personName: 'Live Person' } });
+    const r = await api(`/api/org/charts/${base.chart.id}/drafts`, { method: 'POST', tok: manager, body: { label: 'Imported', payload: importPayload() } });
+    assert.equal(r.status, 201, r.text);
+    assert.equal(r.json.version.state, 'draft');
+    assert.equal(r.json.version.basedOnVersionId, base.chart.currentVersionId);
+    assert.equal(r.json.version.payload.pages[0].boxes.length, 4);
+    const d = (await api(`/api/org/charts/${base.chart.id}`)).json;
+    assert.equal(d.version.payload.pages[0].boxes.length, 5, 'published chart unchanged');
+    assert.deepEqual(d.assignments.map((a) => a.personName), ['Live Person']);
+    const bad = await api(`/api/org/charts/${base.chart.id}/drafts`, { method: 'POST', tok: manager, body: { payload: { pages: [] } } });
+    assert.equal(bad.status, 400);
+  });
+  await check('deleting a box in a draft drops the people imported into it', async () => {
+    const r = await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Import Two', payload: importPayload(), asDraft: true } });
+    const del = await api(`/api/org/charts/versions/${r.json.version.id}/boxes/ieng?mode=promote`, { method: 'DELETE', tok: manager });
+    assert.equal(del.status, 200, del.text);
+    assert.deepEqual(del.json.version.payload.pages[0].importPeople.map((x) => x.personName), ['Rana Idris']);
+  });
+  await check('creating a published chart directly with importPeople creates the people at once', async () => {
+    const pl = importPayload();
+    pl.pages[0].importPeople.forEach((x) => { x.personName += ' Three'; });
+    const r = await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Import Three', payload: pl } });
+    assert.equal(r.status, 201, r.text);
+    assert.equal(r.json.version.state, 'published');
+    assert.equal(r.json.version.payload.pages[0].importPeople, undefined);
+    assert.equal(all('SELECT id FROM org_assignment WHERE chart_id=?', [r.json.chart.id]).length, 3);
+  });
+  await check('re-import on an existing chart replaces its people when published (flag set by the import)', async () => {
+    const base = (await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Replace Site', payload: basePayload() } })).json;
+    await api(`/api/org/charts/${base.chart.id}/assignments`, { method: 'POST', tok: manager, body: { boxKey: 'pm', personName: 'Old Person' } });
+    const pl = importPayload();
+    pl.importReplacesPeople = true;
+    pl.pages[0].importPeople.forEach((x) => { x.personName += ' Replace'; });
+    const dr = (await api(`/api/org/charts/${base.chart.id}/drafts`, { method: 'POST', tok: manager, body: { payload: pl } })).json.version;
+    await api(`/api/org/charts/versions/${dr.id}/submit`, { method: 'POST', tok: manager });
+    await api(`/api/org/charts/versions/${dr.id}/approve`, { method: 'POST', tok: director });
+    const pub = await api(`/api/org/charts/versions/${dr.id}/publish`, { method: 'POST', tok: manager });
+    assert.equal(pub.status, 200, pub.text);
+    const d = (await api(`/api/org/charts/${base.chart.id}`)).json;
+    assert.deepEqual(d.assignments.map((a) => a.personName).sort(), ['Dalia Fawzy Replace', 'Karim Zaki Replace', 'Rana Idris Replace']);
+    assert.equal(d.version.payload.importReplacesPeople, undefined);
+  });
+  await check('live edits cannot smuggle importPeople into a published version', async () => {
+    const d = (await api(`/api/org/charts/${ic.chart.id}`)).json;
+    const pl = structuredClone(d.version.payload);
+    pl.pages[0].importPeople = [{ boxKey: 'ipm', personName: 'Sneaky Person', share: 1 }];
+    const r = await api(`/api/org/charts/versions/${d.version.id}`, { method: 'PUT', tok: manager, body: { payload: pl, updatedAt: d.version.updatedAt } });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.json.version.payload.pages[0].importPeople, undefined);
+  });
+  await check('CSV import groups people rows into role boxes with the migration rules and keeps clear of the logo', async () => {
+    const rows = [
+      { id: '1', name: 'Mona Adel', title: 'Project Manager', department: 'Site' },
+      { id: '2', name: 'Tarek Wael', title: 'Site Engineer', department: 'Site', reportsToId: '1' },
+      { id: '3', name: 'Yara Hosny', title: 'Site Engineer', department: 'Site', reportsToId: '1' },
+      { id: '4', name: '', title: 'Planner', department: 'Site', reportsTo: 'Mona Adel' },
+    ];
+    const r = await api('/api/org/charts/import/csv', { method: 'POST', tok: manager, body: { rows, name: 'CSV Site' } });
+    assert.equal(r.status, 200, r.text);
+    const pg = r.json.payload.pages[0];
+    const eng = pg.boxes.filter((b) => b.title === 'Site Engineer');
+    assert.equal(eng.length, 1, 'same title and department share one box');
+    assert.equal(eng[0].planned, 2);
+    assert.equal(pg.importPeople.filter((x) => x.boxKey === eng[0].key).length, 2);
+    assert.equal(pg.importPeople.length, 3);
+    assert.ok(pg.boxes.every((b) => !(b.x < 1169 && b.x + b.w > 1103 && b.y < 143 && b.y + (b.h || 0) > 79)), 'nothing under the logo');
+    assert.equal(new Set(pg.boxes.map((b) => b.key)).size, pg.boxes.length);
+    assert.equal((await api('/api/org/charts/import/csv', { method: 'POST', tok: viewer, body: { rows } })).status, 403);
+    assert.equal((await api('/api/org/charts/import/csv', { method: 'POST', tok: manager, body: { rows: [] } })).status, 400);
+    const asNew = await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'CSV Site', payload: r.json.payload, asDraft: true } });
+    assert.equal(asNew.status, 201, asNew.text);
+  });
+}
+
 console.log(`\n${failures.length === 0 ? 'ALL PASS' : 'FAILURES'} — ${passed} passed, ${failures.length} failed`);
 if (failures.length) console.log('failed:', failures.join(' | '));
 process.exit(failures.length === 0 ? 0 : 1);

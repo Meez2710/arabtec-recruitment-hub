@@ -58,6 +58,17 @@ const linkSchema = z.looseObject({
   style: z.union([z.string().max(60), z.record(z.string(), z.any())]).nullish(),
 });
 
+// A person read from an imported file. Lives in the draft only; publishing turns each into an org_assignment.
+const importPersonSchema = z.looseObject({
+  boxKey: z.string().min(1).max(64),
+  personName: z.string().trim().min(1).max(200),
+  status: z.enum(ASSIGNMENT_STATUSES).default("in_post"),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  suffix: z.string().max(40).nullish(),
+  share: z.number().gt(0).max(1).default(1),
+  sortOrder: z.number().int().nullish(),
+});
+
 const pageSchema = z.looseObject({
   key: z.string().trim().min(1).max(64),
   name: z.string().max(120).default(""),
@@ -71,11 +82,14 @@ const pageSchema = z.looseObject({
     .array(z.looseObject({ text: z.string().max(5000) }))
     .max(200)
     .default([]),
+  importPeople: z.array(importPersonSchema).max(5000).optional(),
 });
 
 export const payloadSchema = z.looseObject({
   pages: z.array(pageSchema).min(1).max(20),
   effectiveDate: z.string().max(40).nullish(),
+  // Set by "import as new draft on this chart": publishing replaces the chart's people with the file's.
+  importReplacesPeople: z.boolean().optional(),
 });
 
 export const emptyPayload = (title = "") => ({
@@ -160,7 +174,12 @@ export function validatePayload(raw) {
       400,
       `That change would create a reporting cycle (at box "${cyc}").`,
     );
+  const roleKeys = new Set(boxes.filter((b) => b.kind === "role").map((b) => b.key));
   for (const p of payload.pages) {
+    if (p.importPeople) {
+      p.importPeople = p.importPeople.filter((x) => roleKeys.has(x.boxKey));
+      if (!p.importPeople.length) delete p.importPeople;
+    }
     for (const l of p.links) {
       if (!keys.has(l.childKey))
         throw new OrgChartError(
@@ -306,6 +325,7 @@ export function deleteBox(payload, key, mode = "promote") {
     for (const b of p.boxes)
       if (promoted.includes(b.key)) b.parentKey = box.parentKey || null;
     p.links = p.links.filter((l) => !gone.has(l.childKey));
+    if (p.importPeople) p.importPeople = p.importPeople.filter((x) => !gone.has(x.boxKey));
     for (const l of p.links) if (promoted.includes(l.childKey)) delete l.points; // the old route no longer fits
   }
   return { payload: next, removed, promoted };
@@ -537,6 +557,36 @@ function reseatAssignments(chartId) {
 
 /* ------------------------------- chart + drafts ----------------------------- */
 
+/** Copy of the payload without the import-only people lists. */
+function stripImportPeople(payload) {
+  const next = structuredClone(payload);
+  delete next.importReplacesPeople;
+  for (const p of next.pages) delete p.importPeople;
+  return next;
+}
+
+/** Turn each importPeople entry into an assignment (seat, share and box rules apply). Returns how many. */
+function createImportedAssignments(chartId, payload) {
+  let n = 0;
+  for (const p of payload.pages) {
+    const list = (p.importPeople || [])
+      .slice()
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    for (const x of list) {
+      createAssignment(chartId, {
+        boxKey: x.boxKey,
+        personName: x.personName,
+        status: x.status,
+        effectiveDate: x.effectiveDate || null,
+        suffix: x.suffix || null,
+        share: x.share,
+      });
+      n += 1;
+    }
+  }
+  return n;
+}
+
 export function createChart(
   {
     name,
@@ -544,6 +594,7 @@ export function createChart(
     projectId = null,
     departmentId = null,
     payload = null,
+    asDraft = false,
   },
   userId = null,
 ) {
@@ -573,6 +624,18 @@ export function createChart(
         [nm, projectId, departmentId, scope, userId, t, t],
       ).lastInsertRowid,
     );
+    // An imported chart starts as a draft with nothing published: people and seats appear when it is published.
+    if (asDraft) {
+      const vid = Number(
+        run(
+          `INSERT INTO org_chart_version (chart_id, label, state, payload_json, created_by, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?)`,
+          [cid, "Imported draft", "draft", JSON.stringify(doc), userId, t, t],
+        ).lastInsertRowid,
+      );
+      return { chart: getChart(cid), version: getVersion(vid) };
+    }
+    const clean = stripImportPeople(doc);
     const vid = Number(
       run(
         `INSERT INTO org_chart_version (chart_id, label, state, payload_json, created_by, approved_by, published_at, created_at, updated_at)
@@ -581,7 +644,7 @@ export function createChart(
           cid,
           "Initial version",
           "published",
-          JSON.stringify(doc),
+          JSON.stringify(clean),
           userId,
           userId,
           t,
@@ -591,13 +654,15 @@ export function createChart(
       ).lastInsertRowid,
     );
     run("UPDATE org_chart SET current_version_id=? WHERE id=?", [vid, cid]);
-    syncPositions(cid, vid, doc);
+    syncPositions(cid, vid, clean);
+    createImportedAssignments(cid, doc);
     return { chart: getChart(cid), version: getVersion(vid) };
   });
 }
 
-export function createDraft(chartId, { label } = {}, userId = null) {
+export function createDraft(chartId, { label, payload } = {}, userId = null) {
   const chart = getChart(chartId);
+  const imported = payload ? JSON.stringify(validatePayload(payload)) : null;
   if (!chart.currentVersionId)
     throw new OrgChartError(
       409,
@@ -616,7 +681,7 @@ export function createDraft(chartId, { label } = {}, userId = null) {
         base.id,
         base.updated_at,
         base.payload_json,
-        base.payload_json,
+        imported || base.payload_json,
         userId,
         t,
         t,
@@ -648,8 +713,9 @@ export function saveVersion(vid, { payload, updatedAt, label }) {
       409,
       "This draft is waiting for approval. Ask for it to be rejected back to draft before editing.",
     );
-  const doc = validatePayload(payload);
+  let doc = validatePayload(payload);
   if (row.state === "published") {
+    doc = stripImportPeople(doc);
     const changes = structuralChanges(JSON.parse(row.payload_json), doc);
     if (changes.length)
       throw new OrgChartError(409, "Use a restructure draft for that change.", {
@@ -904,6 +970,10 @@ export function publishVersion(vid, userId, moves = {}) {
     const payload = JSON.parse(row.payload_json);
     const keys = new Set(allBoxes(payload).map((b) => b.key));
     const t = nowISO();
+    // A re-import brings the whole roster, so the chart's current people are replaced by the file's.
+    let replaced = 0;
+    if (payload.importReplacesPeople && payload.pages.some((p) => p.importPeople?.length))
+      replaced = run("DELETE FROM org_assignment WHERE chart_id=?", [chart.id]).changes;
     for (const [from, to] of Object.entries(moves || {})) {
       if (!keys.has(to))
         throw new OrgChartError(
@@ -942,9 +1012,17 @@ export function publishVersion(vid, userId, moves = {}) {
       t,
       chart.id,
     ]);
-    syncPositions(chart.id, vid, payload);
+    const clean = stripImportPeople(payload);
+    run("UPDATE org_chart_version SET payload_json=? WHERE id=?", [
+      JSON.stringify(clean),
+      vid,
+    ]);
+    syncPositions(chart.id, vid, clean);
     reseatAssignments(chart.id);
+    const imported = createImportedAssignments(chart.id, payload);
     return {
+      imported,
+      replaced,
       before,
       after: getVersion(vid, false),
       supersededVersionId: chart.currentVersionId,

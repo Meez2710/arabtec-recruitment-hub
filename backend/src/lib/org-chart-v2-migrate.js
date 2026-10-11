@@ -13,6 +13,8 @@ const PAD = 4.5;
 const GAP_X = 9;
 const GAP_Y = 30;
 const COL_INDENT = 12;
+// The Hub logo sits top-right under the header band; boxes are never placed under it (mirrors LOGO in org-structure-v2.jsx).
+const LOGO = { x: 1107, y: 83, w: 58, h: 56 };
 const UNIT_TYPES = new Set(["department", "project", "organizational_unit"]);
 
 const norm = (s) =>
@@ -29,7 +31,7 @@ function lockedTx(fn) {
 }
 
 /** Build one chart payload (+ the people to insert) from a root node and the full node list. */
-function convertTree(root, kidsOf, sharesByName) {
+export function convertTree(root, kidsOf, sharesByName, prefix = "b") {
   let n = 0;
   const boxes = [];
   const people = []; // { boxKey, slot, name, sort }
@@ -39,7 +41,7 @@ function convertTree(root, kidsOf, sharesByName) {
   function addBox(parentKey, kind, title, nodes) {
     n += 1;
     const box = {
-      key: `b${n}`,
+      key: `${prefix}${n}`,
       kind,
       title,
       parentKey,
@@ -162,6 +164,19 @@ function convertTree(root, kidsOf, sharesByName) {
   };
   measure(boxes[0]);
   place(boxes[0], 20, 90);
+  // Keep the whole tree clear of the logo: move it down until no box touches that corner.
+  for (let i = 0; i < 6; i += 1) {
+    const hit = boxes.filter(
+      (b) =>
+        b.x < LOGO.x + LOGO.w + 4 &&
+        b.x + b.w > LOGO.x - 4 &&
+        b.y < LOGO.y + LOGO.h + 4 &&
+        b.y + b.h > LOGO.y - 4,
+    );
+    if (!hit.length) break;
+    const dy = LOGO.y + LOGO.h + 6 - Math.min(...hit.map((b) => b.y));
+    for (const b of boxes) b.y += dy;
+  }
 
   const links = boxes
     .filter((b) => b.parentKey)
@@ -195,6 +210,73 @@ function convertTree(root, kidsOf, sharesByName) {
     share: 1 / (sharesByName.get(norm(p.name)) || 1),
   }));
   return { payload, people: shared };
+}
+
+/**
+ * People rows from a CSV (parsed in the browser) -> one chart payload, grouped into role boxes with the same
+ * rules as the migration. rows: [{ id, name, title, department, reportsToId, reportsTo }].
+ * Several top-level rows hang under one team box named after the chart. Returns { payload } with importPeople set.
+ */
+export function buildPayloadFromRows(rows, chartName = "Imported chart") {
+  const nodes = rows.map((r, i) => ({
+    id: i + 1,
+    src: String(r.id ?? "").trim(),
+    employee_name: String(r.name ?? "").trim(),
+    position_title: String(r.title ?? "").trim(),
+    department: String(r.department ?? "").trim(),
+    node_type: "employee_position",
+    rid: String(r.reportsToId ?? "").trim(),
+    rname: norm(r.reportsTo),
+    parent_id: null,
+  }));
+  const bySrc = new Map();
+  const byName = new Map();
+  for (const n of nodes) {
+    if (n.src) bySrc.set(n.src, n.id);
+    for (const k of [norm(n.employee_name), norm(n.position_title)])
+      if (k && !byName.has(k)) byName.set(k, n.id);
+  }
+  for (const n of nodes) {
+    const p = (n.rid && bySrc.get(n.rid)) || (n.rname && byName.get(n.rname)) || null;
+    n.parent_id = p === n.id ? null : p;
+  }
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  for (const n of nodes) {
+    const seen = new Set([n.id]);
+    for (let p = n.parent_id; p; p = byId.get(p)?.parent_id) {
+      if (seen.has(p)) {
+        n.parent_id = null;
+        break;
+      }
+      seen.add(p);
+    }
+  }
+  const kidsOf = new Map();
+  for (const n of nodes)
+    if (n.parent_id != null)
+      kidsOf.set(n.parent_id, [...(kidsOf.get(n.parent_id) || []), n]);
+  let roots = nodes.filter((n) => n.parent_id == null);
+  if (roots.length > 1) {
+    const top = { id: 0, employee_name: "", position_title: chartName, department: "", node_type: "organizational_unit", parent_id: null };
+    kidsOf.set(0, roots);
+    roots = [top];
+  }
+  if (!roots.length) throw new Error("The file has no people rows.");
+  const nameCount = new Map();
+  for (const n of nodes) {
+    const k = norm(n.employee_name);
+    if (k) nameCount.set(k, (nameCount.get(k) || 0) + 1);
+  }
+  const prefix = `i${Math.random().toString(36).slice(2, 5)}_`;
+  const { payload, people } = convertTree(roots[0], kidsOf, nameCount, prefix);
+  payload.pages[0].importPeople = people.map((p) => ({
+    boxKey: p.boxKey,
+    personName: p.name,
+    status: "in_post",
+    share: p.share,
+    sortOrder: p.sort,
+  }));
+  return { payload };
 }
 
 export function migrateOrganizationNodesToCharts() {
