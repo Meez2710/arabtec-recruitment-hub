@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { ensureSchema } from './lib/schema.js';
 import { ensureOrganizationChartSchema, seedOrganizationChartIfEmpty } from './lib/org-chart-seed.js';
+import { migrateOrganizationNodesToCharts } from './lib/org-chart-v2-migrate.js';
 import { withOrgStructurePage } from './lib/org-structure-app-patch.js';
 import { compiledFrontend, warmFrontend } from './lib/frontend-build.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
@@ -325,6 +326,7 @@ app.listen(PORT, () => {
         ensureFeatureFlags();      // seed feature toggles (idempotent)
         await bootSeedIfEmpty();   // seed admin/reference data if empty
         seedOrganizationChartIfEmpty();
+        if (isEnabled('org_chart_v2')) migrateOrganizationNodesToCharts(); // v2 charts from organization_node (idempotent)
         APP_READY = true;
         console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
         // Compile the app on a worker thread once the database is ready, so the
