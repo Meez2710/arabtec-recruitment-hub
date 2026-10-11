@@ -336,7 +336,7 @@ export function deleteBox(payload, key, mode = "promote") {
     p.boxes = p.boxes.filter((b) => !gone.has(b.key));
     for (const b of p.boxes)
       if (promoted.includes(b.key)) b.parentKey = box.parentKey || null;
-    p.links = p.links.filter((l) => !gone.has(l.childKey));
+    p.links = p.links.filter((l) => !gone.has(l.childKey) && !gone.has(l.fromKey));
     if (p.importPeople) p.importPeople = p.importPeople.filter((x) => !gone.has(x.boxKey));
     for (const l of p.links) if (promoted.includes(l.childKey)) delete l.points; // the old route no longer fits
   }
@@ -709,7 +709,19 @@ export function createDraft(chartId, { label, payload } = {}, userId = null) {
  * only non-structural edits (text, widths, positions, line routes). `updatedAt` must match the
  * stored value or nothing is written (409).
  */
-export function saveVersion(vid, { payload, updatedAt, label }) {
+export function saveVersion(vid, body) {
+  return tx(() => {
+    const peek = getVersionRow(vid);
+    if (peek.state === "published") {
+      lockChart(peek.chart_id);
+      if (getChart(peek.chart_id).currentVersionId !== vid)
+        throw new OrgChartError(409, "This chart was just republished — reload.");
+    }
+    return saveVersionLocked(vid, body);
+  });
+}
+
+function saveVersionLocked(vid, { payload, updatedAt, label }) {
   if (!updatedAt)
     throw new OrgChartError(
       400,
@@ -963,6 +975,7 @@ export function rejectVersion(vid) {
  */
 export function publishVersion(vid, userId, moves = {}) {
   return tx(() => {
+    lockChart(getVersionRow(vid).chart_id);
     const row = getVersionRow(vid);
     if (row.state !== "pending_approval")
       throw new OrgChartError(409, "Only a submitted draft can be published.");
@@ -1155,6 +1168,12 @@ export function identityLockKeys(employeeId, userId) {
   ].filter(Boolean);
 }
 
+/** Serialise writes to one chart (publish, live saves, assignment writes) per chart (PostgreSQL only). */
+export function lockChart(chartId, kind = driverKind(), q = get) {
+  if (kind !== "postgres") return;
+  q("SELECT pg_advisory_xact_lock(hashtext('org_chart:'||?)) AS locked", [String(chartId)]);
+}
+
 function lockIdentities(employeeId, userId) {
   if (driverKind() !== "postgres") return;
   for (const k of identityLockKeys(employeeId, userId))
@@ -1257,9 +1276,11 @@ export function getAssignment(chartId, aid) {
 }
 
 export function createAssignment(chartId, body) {
-  const chart = getChart(chartId);
+  getChart(chartId);
   const d = cleanAssignment(body || {}, false);
   return tx(() => {
+    lockChart(chartId);
+    const chart = getChart(chartId);
     assertRoleBox(chart, d.boxKey);
     const share = d.share ?? 1;
     assertSharesWithinOne({
@@ -1306,10 +1327,13 @@ export function createAssignment(chartId, body) {
 }
 
 export function updateAssignment(chartId, aid, body) {
-  const chart = getChart(chartId);
-  const before = getAssignment(chartId, aid);
+  getChart(chartId);
+  getAssignment(chartId, aid);
   const d = cleanAssignment(body || {}, true);
   return tx(() => {
+    lockChart(chartId);
+    const chart = getChart(chartId);
+    const before = getAssignment(chartId, aid);
     const next = { ...before, ...d };
     const moved = d.boxKey !== undefined && d.boxKey !== before.boxKey;
     if (moved) assertRoleBox(chart, d.boxKey);
@@ -1356,7 +1380,10 @@ export function updateAssignment(chartId, aid, body) {
 
 export function deleteAssignment(chartId, aid) {
   getChart(chartId);
-  const before = getAssignment(chartId, aid);
-  run("DELETE FROM org_assignment WHERE id=?", [aid]);
-  return before;
+  return tx(() => {
+    lockChart(chartId);
+    const before = getAssignment(chartId, aid);
+    run("DELETE FROM org_assignment WHERE id=?", [aid]);
+    return before;
+  });
 }

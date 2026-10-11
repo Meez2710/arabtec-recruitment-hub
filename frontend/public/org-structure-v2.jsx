@@ -739,7 +739,10 @@
           </div>
         )}
         {box.kind === 'role' && tab === 'people' && (
-          liveKeys.has(box.key)
+          liveKeys.has(box.key) && restr
+            ? <div><p className="page-sub">People are changed in Edit mode — a draft only changes the structure.</p>
+              {people.map((a) => { const l = plainPerson(a, todayISO()); return <div key={a.id} style={{ fontSize: 12, color: l.red ? JOIN_RED : 'inherit', marginBottom: 2 }}>{l.t}</div>; })}</div>
+            : liveKeys.has(box.key)
             ? <PeopleList chartId={chartId} box={box} people={people} boxes={allBoxes.filter((b) => liveKeys.has(b.key))} canEdit={editing} onChanged={onChanged} onError={onError} />
             : people.length
               ? <div><p className="page-sub">These people come from the imported file. They become assignments when the draft is published.</p>
@@ -1198,13 +1201,17 @@
       setVer(d.version); setDoc(d.version ? clone(d.version.payload) : null);
       undoRef.current = { u: [], r: [], co: null };
     };
+    const loadTok = useRef(0), chartRef = useRef(null);
     const reloadChart = useCallback(async (id) => {
+      const tok = ++loadTok.current;
       const d = await api().get('/org/charts/' + id);
       const vs = await api().get('/org/charts/' + id + '/versions');
+      if (tok !== loadTok.current || id !== chartRef.current) return d;
       setVersions(vs.versions || []);
       applyPublished(d);
       return d;
     }, []);
+    chartRef.current = chartId;
     useEffect(() => {
       if (!chartId) { setDetail(null); setDoc(null); return; }
       let live = true;
@@ -1225,7 +1232,9 @@
 
     const drafts = versions.filter((v) => v.state === 'draft' || v.state === 'pending_approval');
     const openDraft = async (id) => {
+      const tok = ++loadTok.current;
       const r = await api().get('/org/charts/versions/' + id);
+      if (tok !== loadTok.current || r.version.chartId !== chartRef.current) return;
       setVer(r.version); setDoc(clone(r.version.payload));
       undoRef.current = { u: [], r: [], co: null };
       setSel(new Set()); setSelLine(null); setCompare(null);
@@ -1643,7 +1652,8 @@
       const finish = (nd) => { pushUndo(d.base); setDoc(nd); scheduleSave(); };
       if (d.type === 'seg') {
         if (!d.moved || !d.cur) return;
-        const pg = curPage(d.cur), L = pg.links.find((l) => l.childKey === d.key);
+        const pg = curPage(d.cur), L = pg.links.find((l) => l.childKey === d.key && l.kind !== 'dotted');
+        if (!L || !L.points) return;
         const P = simplifyPts([d.Fp[0], ...L.points.map((q) => [q.x, q.y]), d.Fp[d.Fp.length - 1]]).slice(1, -1);
         if (P.length >= 2) L.points = P.map((q) => ({ x: r1(q[0]), y: r1(q[1]) })); else delete L.points;
         finish(d.cur); return;

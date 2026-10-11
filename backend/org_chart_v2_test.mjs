@@ -843,6 +843,55 @@ await check('a draft whose base is no longer the published version cannot be sub
     const ok = await put({ childKey: 'qa', kind: 'dotted', fromKey: 'plan' });
     assert.equal(ok.status, 200, ok.text);
   });
+
+  await check('lockChart: advisory lock on postgres only', async () => {
+    const calls = [];
+    const q = (sql, args) => calls.push([sql, args]);
+    Charts.lockChart(12, 'sqlite', q);
+    Charts.lockChart(12, 'pglite', q);
+    assert.equal(calls.length, 0);
+    Charts.lockChart(12, 'postgres', q);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0][0], /pg_advisory_xact_lock\(hashtext\('org_chart:'\|\|\?\)\)/);
+    assert.deepEqual(calls[0][1], ['12']);
+  });
+
+  await check('deleting a box that is the fromKey of a dotted link removes the link and saves', async () => {
+    const c = await mkChart('Dangling Plaza');
+    const d = await draftOf(c.chart.id, (pg) => pg.links.push({ childKey: 'qa', kind: 'dotted', fromKey: 'plan' }));
+    const del = await api(`/api/org/charts/versions/${d.id}/boxes/plan?mode=promote&confirm=1`, { method: 'DELETE', tok: manager });
+    assert.equal(del.status, 200, del.text);
+    const v = get('SELECT payload_json FROM org_chart_version WHERE id=?', [d.id]);
+    assert.ok(!JSON.parse(v.payload_json).pages[0].links.some((l) => l.fromKey === 'plan'));
+  });
+
+  await check('live save to a superseded version is 409', async () => {
+    const c = await mkChart('Stale Live Plaza');
+    const v0 = c.version;
+    const d = await draftOf(c.chart.id);
+    await approveDraft(d);
+    assert.equal((await pub(d)).status, 200);
+    const r = await api(`/api/org/charts/versions/${v0.id}`, { method: 'PUT', tok: manager, body: { payload: v0.payload, updatedAt: v0.updatedAt } });
+    assert.equal(r.status, 409, r.text);
+  });
+
+  await check('assignment into a box removed by a just-published draft is 400', async () => {
+    const c = await mkChart('Removed Box Plaza');
+    const d = await draftOf(c.chart.id, (pg) => { pg.boxes = pg.boxes.filter((b) => b.key !== 'plan'); });
+    await approveDraft(d);
+    assert.equal((await pub(d)).status, 200);
+    assert.equal((await asgn(c.chart.id, { boxKey: 'plan', personName: 'Late Hire' })).status, 400);
+  });
+
+  await check('sequential partial assignment updates both persist', async () => {
+    const c = await mkChart('Partial Plaza');
+    const a = (await asgn(c.chart.id, { boxKey: 'qa', personName: 'Sami Rahal' })).json.assignment;
+    const put = (body) => api(`/api/org/charts/${c.chart.id}/assignments/${a.id}`, { method: 'PUT', tok: manager, body });
+    assert.equal((await put({ status: 'leaving' })).status, 200);
+    assert.equal((await put({ suffix: 'Jr' })).status, 200);
+    const row = get('SELECT status, suffix FROM org_assignment WHERE id=?', [a.id]);
+    assert.deepEqual({ ...row }, { status: 'leaving', suffix: 'Jr' });
+  });
 }
 
 console.log(`\n${failures.length === 0 ? 'ALL PASS' : 'FAILURES'} — ${passed} passed, ${failures.length} failed`);
