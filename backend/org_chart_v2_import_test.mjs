@@ -328,6 +328,59 @@ await check('CSV export quotes fields and keeps a byte-order mark for Excel', as
   assert.ok(t.includes('"Zaki, Karim","said ""hi"""'));
 });
 
+await check('CSV export guards formula injection: leading = + - @ tab CR get a single quote', async () => {
+  const t = await ctx.ArabtecOrgExport.csv([['=1+1', '+SUM(A1)', '-2', '@cmd', '\tx', 'ok', 'a=b', '=HYPERLINK("u")']]).text();
+  assert.ok(t.includes("'=1+1,'+SUM(A1),'-2,'@cmd,\"'\tx\"") || t.includes("'=1+1,'+SUM(A1),'-2,'@cmd,'\tx,ok,a=b,"), t);
+  assert.ok(t.includes(`"'=HYPERLINK(""u"")"`), t);
+  assert.ok(!/(^|,)[=+@]/.test(t.replace('﻿', '').split('\r\n')[0]), 'no cell starts with a formula character');
+});
+
+await check('Visio import: dotted master or non-solid LinePattern becomes a dotted link with fromKey; additional manager stays a reports link', async () => {
+  const pg = `<?xml version='1.0'?><PageContents ${NS}><Shapes>
+${belt(50, 8, 9, 1.125, 0.5, 'Top Role', `X1\n- Aya Salem\n`)}
+${belt(51, 4, 6, 1.125, 0.4, 'Left Role', `X1\n`)}
+${belt(52, 12, 6, 1.125, 0.4, 'Right Role', `X1\n`)}
+${belt(53, 8, 3, 1.125, 0.4, 'Low Role', `X1\n`)}
+<Shape ID='60' Type='Shape' Master='16'>${c('BeginX', 4)}${c('BeginY', 6)}${c('EndX', 8)}${c('EndY', 3)}</Shape>
+<Shape ID='61' Type='Shape' Master='15'>${c('BeginX', 12)}${c('BeginY', 6)}${c('EndX', 8)}${c('EndY', 3)}${c('LinePattern', 2)}</Shape>
+<Shape ID='62' Type='Shape' Master='17'>${c('BeginX', 8)}${c('BeginY', 9)}${c('EndX', 4)}${c('EndY', 6)}</Shape>
+</Shapes><Connects>
+<Connect FromSheet='60' FromCell='BeginX' ToSheet='51' ToCell='Connections.Bottom.X'/>
+<Connect FromSheet='60' FromCell='EndX' ToSheet='53' ToCell='Connections.Top.X'/>
+<Connect FromSheet='61' FromCell='BeginX' ToSheet='52' ToCell='Connections.Bottom.X'/>
+<Connect FromSheet='61' FromCell='EndX' ToSheet='53' ToCell='Connections.Top.X'/>
+<Connect FromSheet='62' FromCell='BeginX' ToSheet='50' ToCell='Connections.Bottom.X'/>
+<Connect FromSheet='62' FromCell='EndX' ToSheet='51' ToCell='Connections.Top.X'/>
+</Connects></PageContents>`;
+  const z = new JSZip();
+  z.file('visio/pages/pages.xml', `<?xml version='1.0'?><Pages ${NS}><Page ID='0' NameU='P' Name='P'><PageSheet>${c('PageWidth', PWI)}${c('PageHeight', PH)}</PageSheet><Rel r:id='rId1'/></Page></Pages>`);
+  z.file('visio/pages/_rels/pages.xml.rels', `<?xml version='1.0'?><Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='rId1' Type='x' Target='page1.xml'/></Relationships>`);
+  z.file('visio/masters/masters.xml', `<?xml version='1.0'?><Masters ${NS}><Master ID='15' NameU='Dynamic connector'/><Master ID='16' NameU='Dotted-line report'/><Master ID='17' NameU='Direct Additional Manager'/><Master ID='19' NameU='Executive Belt'/></Masters>`);
+  z.file('visio/pages/page1.xml', pg);
+  const r = await V.parse(await z.generateAsync({ type: 'arraybuffer' }));
+  const pgx = r.payload.pages[0];
+  const t = (n) => byTitle(pgx, n).key;
+  const dotted = pgx.links.filter((l) => l.kind === 'dotted');
+  assert.equal(dotted.length, 2);
+  assert.ok(dotted.some((l) => l.fromKey === t('Left Role') && l.childKey === t('Low Role')));
+  assert.ok(dotted.some((l) => l.fromKey === t('Right Role') && l.childKey === t('Low Role')));
+  const rep = pgx.links.find((l) => l.kind === 'reports');
+  assert.ok(rep && rep.childKey === t('Left Role') && !rep.fromKey);
+  assert.equal(byTitle(pgx, 'Left Role').parentKey, t('Top Role'));
+  assert.equal(byTitle(pgx, 'Low Role').parentKey, undefined, 'dotted lines do not set a parent');
+});
+
+await check('elapsed joiners count as in post for metrics and the manager-vacancy warning', () => {
+  const boxes = [{ key: 'm', kind: 'role', planned: 1, proposed: 0 }, { key: 'c', kind: 'role', planned: 1, proposed: 0, parentKey: 'm' }];
+  const mk = (d) => [{ boxKey: 'm', status: 'joining', effectiveDate: d }];
+  const m = SHEET.computeMetrics([{ boxes }], mk('2026-01-01'), '2026-10-11');
+  assert.equal(m.inPost, 1); assert.equal(m.joining, 0);
+  const f = SHEET.computeMetrics([{ boxes }], mk('2026-12-01'), '2026-10-11');
+  assert.equal(f.inPost, 0); assert.equal(f.joining, 1);
+  assert.equal(SHEET.computeWarnings([{ boxes }], mk('2026-01-01'), '2026-10-11').has('m'), false);
+  assert.equal(SHEET.computeWarnings([{ boxes }], mk('2026-12-01'), '2026-10-11').has('m'), true);
+});
+
 console.log(`\n${failures.length === 0 ? 'ALL PASS' : 'FAILURES'} — ${passed} passed, ${failures.length} failed`);
 if (failures.length) console.log('failed:', failures.join(' | '));
 process.exit(failures.length === 0 ? 0 : 1);

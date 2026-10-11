@@ -278,6 +278,13 @@
       if (!p || !c) continue;
       out.push({ key: b.key, parent: b.parentKey, route: routeOf(p, c, linkOf.get(b.key), p.b.arrange || null, rawKey === b.key) });
     }
+    // Dotted lines: extra relationships from fromKey to childKey, drawn dashed with the same router. Not selectable.
+    for (const l of page.links) {
+      if (l.kind !== 'dotted' || !l.fromKey || hidden.has(l.fromKey) || hidden.has(l.childKey)) continue;
+      const p = geo.get(l.fromKey), c = geo.get(l.childKey);
+      if (!p || !c) continue;
+      out.push({ key: 'd:' + l.fromKey + '>' + l.childKey, child: l.childKey, parent: l.fromKey, dotted: true, route: routeOf(p, c, l, null, false) });
+    }
     return out;
   }
   const setLink = (page, key, patch) => {
@@ -308,14 +315,14 @@
     for (const [, list] of kids) widest = Math.max(widest, list.filter((c) => !c.zati).length);
     return { layers, widest, kids, byKey };
   }
-  function computeMetrics(pages, assignments) {
+  function computeMetrics(pages, assignments, today = todayISO()) {
     const boxes = pages.flatMap((p) => p.boxes).filter((b) => b.kind === 'role');
     const by = new Map();
     for (const a of assignments) { if (!by.has(a.boxKey)) by.set(a.boxKey, []); by.get(a.boxKey).push(a); }
     let planned = 0, proposed = 0, open = 0, inPost = 0, joining = 0;
     for (const b of boxes) {
       const list = by.get(b.key) || [];
-      const ip = list.filter((a) => a.status !== 'joining').length, jn = list.filter((a) => a.status === 'joining').length;
+      const jn = list.filter((a) => isJoining(a, today)).length, ip = list.length - jn; // a joiner whose date has passed is in post
       planned += b.planned; proposed += b.proposed; inPost += ip; joining += jn;
       open += Math.max(0, b.planned - ip - jn);
     }
@@ -323,7 +330,7 @@
     return { planned, inPost, joining, open, proposed, layers: sh.layers, widest: sh.widest };
   }
   // Soft warnings. Team and text boxes are never evaluated; only role boxes can carry one.
-  function computeWarnings(pages, assignments) {
+  function computeWarnings(pages, assignments, today = todayISO()) {
     const sh = shapeOf(pages), w = new Map();
     const add = (k, msg) => { if (!w.has(k)) w.set(k, []); w.get(k).push(msg); };
     for (const [k, list] of sh.kids) {
@@ -331,7 +338,7 @@
       if (!b || b.kind !== 'role') continue;
       const staff = list.filter((c) => !c.zati).length;
       if (staff > LIMITS.spanMax) add(k, 'Manages ' + staff + ' boxes (more than ' + LIMITS.spanMax + ').');
-      if (b.planned >= 1 && list.some((c) => c.kind === 'role') && !assignments.some((a) => a.boxKey === k && a.status === 'in_post')) add(k, 'Manager box with nobody in post.');
+      if (b.planned >= 1 && list.some((c) => c.kind === 'role') && !assignments.some((a) => a.boxKey === k && (a.status === 'in_post' || (a.status === 'joining' && !isJoining(a, today))))) add(k, 'Manager box with nobody in post.');
     }
     for (const b of sh.byKey.values()) {
       if (b.kind !== 'role') continue;
@@ -528,8 +535,8 @@
         <g fill="none" stroke="var(--line-strong)" strokeWidth="1">
           {lines.map((L) => (
             <g key={L.key}>
-              <path d={ptsD(L.route.pts)} stroke={selLine === L.key ? 'var(--action)' : undefined} strokeWidth={selLine === L.key ? 1.5 : 1} />
-              {interactive && <path className="ocv2-hit" data-line={L.key} d={ptsD(L.route.pts)} strokeWidth={Math.max(6, 8 / k)} />}
+              <path d={ptsD(L.route.pts)} stroke={selLine === L.key ? 'var(--action)' : undefined} strokeWidth={selLine === L.key ? 1.5 : 1} strokeDasharray={L.dotted ? '4 3' : undefined} />
+              {interactive && !L.dotted && <path className="ocv2-hit" data-line={L.key} d={ptsD(L.route.pts)} strokeWidth={Math.max(6, 8 / k)} />}
             </g>
           ))}
         </g>
@@ -971,7 +978,7 @@
     return {
       style: st, name: page.name, title1: page.title1 || '', title2: page.title2 || '', date: page.date || dateFallback || '',
       boxes: page.boxes.map((b) => { const g = geo.get(b.key); return { key: b.key, kind: b.kind, x: g.x, y: g.y, w: g.w, h: g.h, rows: g.m.rows, center: g.m.center, lines: g.m.lines, logical: st === 'classic' ? logicalLines(b, peopleByBox.get(b.key), today) : undefined, left: g.m.left, dashed: g.m.dashed }; }),
-      lines: lines.map((L) => ({ key: L.key, parent: L.parent, pts: L.route.pts, fs: L.route.fs, ts: L.route.ts })),
+      lines: lines.map((L) => ({ key: L.key, child: L.child, dotted: !!L.dotted, parent: L.parent, pts: L.route.pts, fs: L.route.fs, ts: L.route.ts })),
     };
   }
   function peopleCsvRows(chartName, doc, people) {
@@ -1156,7 +1163,7 @@
 
     const docRef = useRef(null), verRef = useRef(null), viewRef = useRef(view), stageRef = useRef(null);
     const drag = useRef(null), spaceRef = useRef(false), undoRef = useRef({ u: [], r: [], co: null });
-    const saver = useRef({ timer: null, inflight: false, dirty: false });
+    const saver = useRef({ timer: null, inflight: false, dirty: false, failed: false });
     const fitted = useRef(false), toastTimer = useRef(null), pendingDraft = useRef(null);
 
     const setDoc = (d) => { docRef.current = d; setDocState(d); };
@@ -1230,13 +1237,13 @@
       if (s.inflight || !s.dirty) return;
       const v = verRef.current;
       if (!v) { s.dirty = false; return; }
-      s.dirty = false; s.inflight = true; setSaveState('saving');
+      s.dirty = false; s.failed = false; s.inflight = true; setSaveState('saving');
       try {
         const r = await api().put('/org/charts/versions/' + v.id, { payload: docRef.current, updatedAt: v.updatedAt });
         setVer({ ...verRef.current, updatedAt: r.version.updatedAt });
         if (!s.dirty) setSaveState('saved');
       } catch (e) {
-        s.dirty = false;
+        s.dirty = false; s.failed = true;
         setSaveState('error');
         const data = (e && e.data) || {};
         if (e.status === 409 && data.currentUpdatedAt) {
@@ -1263,6 +1270,14 @@
       }
     };
 
+    // Save everything pending; true when nothing is left unsaved. On failure the error is already shown and the caller must stay put.
+    const ensureSaved = async () => {
+      const s = saver.current;
+      if (s.failed) s.dirty = true; // retry the save that failed last time
+      await waitSaved();
+      return !s.failed;
+    };
+
     /* -------------------------- document edits + undo ------------------------ */
     const curPage = (d) => d.pages[Math.min(pageIdx, d.pages.length - 1)];
     const pushUndo = (str, co) => {
@@ -1270,7 +1285,7 @@
       if (co && u.co && u.co.key === co && now - u.co.t < 1200) { u.co.t = now; return; }
       u.u.push(str); if (u.u.length > 150) u.u.shift(); u.r = []; u.co = co ? { key: co, t: now } : null;
     };
-    const warnCount = (d) => { let n = 0; computeWarnings(d.pages, viewAssignments).forEach((l) => { n += l.length; }); return n; };
+    const warnCount = (d) => { let n = 0; computeWarnings(d.pages, viewAssignments, today).forEach((l) => { n += l.length; }); return n; };
     const commit = (mut, opts) => {
       const cur = docRef.current;
       if (!cur || !(mode === 'edit' || (restr && verRef.current && verRef.current.state === 'draft'))) return false;
@@ -1313,8 +1328,8 @@
     }, [page, collapsed]);
     const rawKey = drag.current && drag.current.type === 'seg' ? drag.current.key : null;
     const lines = page && geo ? pageLines(page, geo, hidden, rawKey) : [];
-    const metrics = useMemo(() => (doc ? computeMetrics(doc.pages, viewAssignments) : null), [doc, viewAssignments]);
-    const warnings = useMemo(() => (doc && editing ? computeWarnings(doc.pages, viewAssignments) : null), [doc, viewAssignments, editing]);
+    const metrics = useMemo(() => (doc ? computeMetrics(doc.pages, viewAssignments, today) : null), [doc, viewAssignments, today]);
+    const warnings = useMemo(() => (doc && editing ? computeWarnings(doc.pages, viewAssignments, today) : null), [doc, viewAssignments, editing, today]);
     const liveKeys = useMemo(() => new Set(detail && detail.version ? detail.version.payload.pages.flatMap((p) => p.boxes).filter((b) => b.kind === 'role').map((b) => b.key) : []), [detail]);
     const allBoxes = useMemo(() => (doc ? doc.pages.flatMap((p) => p.boxes) : []), [doc]);
     const selKeys = [...sel].filter((k) => geo && geo.has(k));
@@ -1706,7 +1721,7 @@
       if (m === mode) return;
       setErr(null); setStale(null); setMenu(null);
       try {
-        await waitSaved();
+        if (!(await ensureSaved())) return;
         if (m === 'restructure') {
           const d = await reloadChart(chartId);
           const latest = (await api().get('/org/charts/' + chartId + '/versions')).versions.filter((v) => v.state === 'draft' || v.state === 'pending_approval')[0];
@@ -1732,7 +1747,7 @@
     async function step(name, body) {
       setErr(null); setStale(null);
       try {
-        await waitSaved();
+        if (!(await ensureSaved())) return;
         const id = verRef.current.id;
         const r = await api().post('/org/charts/versions/' + id + '/' + name, body || {});
         if (name === 'publish') {
@@ -1774,7 +1789,7 @@
       if (compare) { setCompare(null); return; }
       if (!detail.chart.currentVersionId) { say('Nothing is published yet to compare with.', 'warn'); return; }
       try {
-        await waitSaved();
+        if (!(await ensureSaved())) return;
         const pub = await api().get('/org/charts/versions/' + detail.chart.currentVersionId);
         setCompare({ published: pub.version.payload, diff: null });
         const r = await api().get('/org/charts/' + chartId + '/diff?a=' + detail.chart.currentVersionId + '&b=' + verRef.current.id);
@@ -1852,7 +1867,7 @@
           </div>
           <div className="page-head-actions ocv2-bar">
             {charts && charts.length > 0 && (
-              <select aria-label="Chart" value={chartId || ''} onChange={(e) => { waitSaved().then(() => setChartId(Number(e.target.value))); }}>
+              <select aria-label="Chart" value={chartId || ''} onChange={(e) => { const id = Number(e.target.value); ensureSaved().then((ok) => { if (ok) setChartId(id); }); }}>
                 {Object.keys(chartsByScope).map((s) => <optgroup key={s} label={SCOPE_LABEL[s] || s}>{chartsByScope[s].map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}
               </select>
             )}
@@ -1877,7 +1892,7 @@
             <strong>Restructure draft {'—'} not published</strong>
             <span>{draftState === 'pending_approval' ? (ver.approvedBy ? 'Approved by the HR Director, ready to publish.' : 'Waiting for the HR Director.') : 'Effective ' + (ddmmyyyy(doc && doc.effectiveDate) || 'date not set') + '.'}</span>
             {drafts.length > 1 && (
-              <select aria-label="Draft" value={ver.id} onChange={(e) => refreshDraft(Number(e.target.value)).catch((x) => setErr(errText(x)))}>
+              <select aria-label="Draft" value={ver.id} onChange={(e) => { const id = Number(e.target.value); ensureSaved().then((ok) => (ok ? refreshDraft(id) : null)).catch((x) => setErr(errText(x))); }}>
                 {drafts.map((v) => <option key={v.id} value={v.id}>{v.label || 'Draft ' + v.id}</option>)}
               </select>
             )}
@@ -1887,7 +1902,7 @@
             {draftState === 'draft' && <button type="button" className="btn btn-sm" onClick={() => step('submit')}>Submit for approval</button>}
             {draftState === 'pending_approval' && director && !ver.approvedBy && <button type="button" className="btn btn-sm" onClick={() => step('approve')}>Approve</button>}
             {draftState === 'pending_approval' && director && <button type="button" className="btn btn-sm btn-danger" onClick={() => step('reject')}>Reject</button>}
-            {draftState === 'pending_approval' && director && ver.approvedBy && <button type="button" className="btn btn-sm" onClick={() => step('publish')}>Publish</button>}
+            {draftState === 'pending_approval' && manage && ver.approvedBy && <button type="button" className="btn btn-sm" onClick={() => step('publish')}>Publish</button>}
           </div>
         )}
         {stale && (

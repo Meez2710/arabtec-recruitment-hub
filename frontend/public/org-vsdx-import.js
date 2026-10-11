@@ -410,7 +410,9 @@
         stats.skipped++;
         continue;
       }
-      const dotted = /dotted/i.test(c.name);
+      const lp = cell(c.s, "LinePattern");
+      const dotted =
+        /dotted/i.test(c.name) || (lp !== null && lp !== "" && Number(lp) !== 1);
       if (!dotted && cInfo.box.parentKey === pInfo.box.key) continue; // the same line drawn twice
       if (
         !dotted &&
@@ -486,6 +488,7 @@
       const link = {
         childKey: cInfo.box.key,
         kind: dotted ? "dotted" : "reports",
+        ...(dotted ? { fromKey: pInfo.box.key } : {}),
         fromSide: (cn && cn.begin && sideFrom(cn.begin)) || nearestSide(pInfo, clean[0]),
         toSide: (cn && cn.end && sideFrom(cn.end)) || nearestSide(cInfo, clean[clean.length - 1]),
       };

@@ -193,7 +193,9 @@
         L.pts.map((q) => r1(q[0]) + "," + r1(q[1])).join(" L") +
         '" fill="none" stroke="' +
         CLEAN.line +
-        '" stroke-width="1"/>';
+        '" stroke-width="1"' +
+        (L.dotted ? ' stroke-dasharray="4 3"' : "") +
+        "/>";
     for (const b of m.boxes) {
       const st = strokeOf(b);
       o +=
@@ -301,7 +303,9 @@
       o +=
         '<path d="M' +
         L.pts.map((q) => r1(q[0]) + "," + r1(q[1])).join(" L") +
-        '" fill="none" stroke="#000" stroke-width="0.75"/>';
+        '" fill="none" stroke="#000" stroke-width="0.75"' +
+        (L.dotted ? ' stroke-dasharray="4 3"' : "") +
+        "/>";
       o +=
         '<path d="M' +
         arrowHead(L.pts, 5)
@@ -459,7 +463,9 @@
         rel = [];
       for (let k = 1; k < P.length; k++)
         rel.push([X(P[k][0] - P[k - 1][0]), Y(P[k][1] - P[k - 1][1])]);
+      if (L.dotted) doc.setLineDashPattern([3 * s, 2 * s], 0);
       doc.lines(rel, X(P[0][0]), Y(P[0][1]), [1, 1], "S", false);
+      if (L.dotted) doc.setLineDashPattern([], 0);
     }
     for (const b of m.boxes) {
       const st = strokeOf(b);
@@ -525,7 +531,9 @@
         rel = [];
       for (let k = 1; k < P.length; k++)
         rel.push([X(P[k][0] - P[k - 1][0]), Y(P[k][1] - P[k - 1][1])]);
+      if (L.dotted) doc.setLineDashPattern([3, 2], 0);
       doc.lines(rel, X(P[0][0]), Y(P[0][1]), [1, 1], "S", false);
+      if (L.dotted) doc.setLineDashPattern([], 0);
       const a = arrowHead(P, 5);
       doc.triangle(
         X(a[0][0]),
@@ -772,7 +780,7 @@
           cell("ShapeRouteStyle", 1) +
           cell("ConFixedCode", 2) +
           cell("LineColor", cleanStyle ? CLEAN.line : "#000000") +
-          cell("LinePattern", 1) +
+          cell("LinePattern", L.dotted ? 2 : 1) +
           cell("LineWeight", f6(0.75 / 72), "PT") +
           cell("BeginArrow", 0) +
           cell("EndArrow", cleanStyle ? 0 : 4) +
@@ -805,7 +813,7 @@
           : '<Connect FromSheet="' +
               cid +
               '" FromCell="EndX" FromPart="12" ToSheet="' +
-              bid[L.key] +
+              bid[L.child || L.key] +
               '" ToCell="Connections.X' +
               (ta + 1) +
               '" ToPart="' +
@@ -1138,7 +1146,9 @@
   /* ----------------------------- CSV and download ----------------------------- */
   function csv(rows) {
     const q = (v) => {
-      const s = v == null ? "" : String(v);
+      let s = v == null ? "" : String(v);
+      // Spreadsheet formula injection: a leading = + - @ tab or CR makes Excel evaluate the cell.
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
       return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     return new Blob(
