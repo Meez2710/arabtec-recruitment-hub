@@ -1042,6 +1042,77 @@ export function ensureSchema() {
   CREATE INDEX IF NOT EXISTS idx_msoauth_expires ON microsoft_oauth_state(expires_at);
   `);
 
+  // Organization Structure v2 (docs/org-chart/ORG_CHART_V2_PLAN.md section 3).
+  // org_chart.current_version_id is a plain integer (no FK): it points at a row of
+  // org_chart_version, which itself references org_chart, so an FK would be circular.
+  // org_assignment.employee_id has no FK: the employee register arrives in Phase C.
+  exec(`
+  CREATE TABLE IF NOT EXISTS org_chart (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    project_id INTEGER REFERENCES project(id),
+    department_id INTEGER REFERENCES department(id),
+    scope TEXT NOT NULL DEFAULT 'project',
+    status TEXT NOT NULL DEFAULT 'active',
+    current_version_id INTEGER,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS org_chart_version (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chart_id INTEGER NOT NULL REFERENCES org_chart(id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'draft',
+    based_on_version_id INTEGER,
+    based_on_updated_at TEXT,
+    base_payload_json TEXT,
+    payload_json TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    submitted_by INTEGER REFERENCES users(id),
+    approved_by INTEGER REFERENCES users(id),
+    published_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_orgver_chart ON org_chart_version(chart_id);
+  CREATE TABLE IF NOT EXISTS org_position (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chart_id INTEGER NOT NULL REFERENCES org_chart(id) ON DELETE CASCADE,
+    box_key TEXT NOT NULL,
+    slot_no INTEGER NOT NULL DEFAULT 1,
+    approval TEXT NOT NULL DEFAULT 'approved',
+    requisition_seat_id INTEGER,
+    created_in_version_id INTEGER,
+    closed_in_version_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_orgpos_chart ON org_position(chart_id);
+  CREATE INDEX IF NOT EXISTS idx_orgpos_chart_box ON org_position(chart_id, box_key);
+  CREATE TABLE IF NOT EXISTS org_assignment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chart_id INTEGER NOT NULL REFERENCES org_chart(id) ON DELETE CASCADE,
+    box_key TEXT NOT NULL,
+    position_id INTEGER REFERENCES org_position(id),
+    person_name TEXT NOT NULL,
+    employee_id INTEGER,
+    user_id INTEGER REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'in_post',
+    effective_date TEXT,
+    share REAL NOT NULL DEFAULT 1,
+    suffix TEXT,
+    application_id INTEGER,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_orgasg_chart ON org_assignment(chart_id);
+  CREATE INDEX IF NOT EXISTS idx_orgasg_chart_box ON org_assignment(chart_id, box_key);
+  CREATE INDEX IF NOT EXISTS idx_orgasg_employee ON org_assignment(employee_id);
+  `);
+
   // AFTER the DDL above, not before it. These same three calls used to sit in
   // the migration block ~180 lines earlier, which runs before microsoft_connection
   // is created — so addColumnIfMissing caught "no such table", the CREATE TABLE
@@ -1063,6 +1134,10 @@ export function ensureSchema() {
   // Offer expiry: the date after which an unanswered offer lapses. Display and
   // entry only; nothing expires an offer automatically.
   addColumnIfMissing('offer', 'expiry_date', 'TEXT');
+  addColumnIfMissing('org_chart_version', 'based_on_updated_at', 'TEXT');
+  addColumnIfMissing('org_chart_version', 'base_payload_json', 'TEXT');
+  addColumnIfMissing('org_chart', 'legacy_root_node_id', 'INTEGER');
+  ensureOrgSeatUniqueIndex();
   relaxStandaloneLinks();
 
   migrateWorkflowStages();
@@ -1219,6 +1294,29 @@ function syncCatalogAdditions() {
  */
 let joinedUniquenessState = { enforced: false, reason: 'not_attempted', duplicates: [] };
 export function joinedUniqueness() { return joinedUniquenessState; }
+
+/**
+ * One person per seat: partial unique index on org_assignment(position_id).
+ * Skipped (and reported) when historical duplicates exist; created under an
+ * advisory lock on PostgreSQL so concurrent boots cannot collide on the catalog.
+ */
+function ensureOrgSeatUniqueIndex() {
+  try {
+    const dup = get(
+      'SELECT COUNT(*) AS c FROM (SELECT position_id FROM org_assignment WHERE position_id IS NOT NULL GROUP BY position_id HAVING COUNT(*) > 1) d',
+    )?.c || 0;
+    if (dup) {
+      console.error('  x org_assignment: several people share a seat; seat uniqueness not enforced until resolved.');
+      return;
+    }
+    tx(() => {
+      if (driverKind() === 'postgres') get('SELECT pg_advisory_xact_lock(8402117003) AS locked');
+      run('CREATE UNIQUE INDEX IF NOT EXISTS idx_orgasg_position ON org_assignment(position_id) WHERE position_id IS NOT NULL');
+    });
+  } catch (e) {
+    console.error(`  x could not create the org seat uniqueness index: ${e.message}`);
+  }
+}
 
 /**
  * Install the partial unique index: one `joined` application per candidate.

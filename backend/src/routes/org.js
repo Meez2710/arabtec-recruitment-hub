@@ -5,10 +5,12 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { registerOrgChartRoutes } from './org-chart-routes.js';
+import { registerOrgChartV2Routes } from './org-chart-v2-routes.js';
 
 const router = Router();
 router.use(requireAuth);
 registerOrgChartRoutes(router);
+registerOrgChartV2Routes(router);
 
 const userName = (id) => { const u = id ? Users.byId(id) : null; return u ? { id: u.id, name: u.full_name } : null; };
 
