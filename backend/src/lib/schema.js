@@ -1063,6 +1063,8 @@ export function ensureSchema() {
     label TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL DEFAULT 'draft',
     based_on_version_id INTEGER,
+    based_on_updated_at TEXT,
+    base_payload_json TEXT,
     payload_json TEXT NOT NULL,
     created_by INTEGER REFERENCES users(id),
     submitted_by INTEGER REFERENCES users(id),
@@ -1130,6 +1132,8 @@ export function ensureSchema() {
   // Offer expiry: the date after which an unanswered offer lapses. Display and
   // entry only; nothing expires an offer automatically.
   addColumnIfMissing('offer', 'expiry_date', 'TEXT');
+  addColumnIfMissing('org_chart_version', 'based_on_updated_at', 'TEXT');
+  addColumnIfMissing('org_chart_version', 'base_payload_json', 'TEXT');
   relaxStandaloneLinks();
 
   migrateWorkflowStages();

@@ -706,6 +706,8 @@ model OrgChartVersion {
   label            String    @default("")
   state            String    @default("draft") // draft | pending_approval | published | superseded
   basedOnVersionId Int?
+  basedOnUpdatedAt String?
+  basePayloadJson  String?
   payloadJson      String
   createdBy        Int?
   submittedBy      Int?

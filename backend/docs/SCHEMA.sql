@@ -510,6 +510,8 @@ CREATE TABLE org_chart_version (
   label TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL DEFAULT 'draft',          -- draft | pending_approval | published | superseded
   based_on_version_id BIGINT,
+  based_on_updated_at TEXT,                     -- published updated_at when the draft started (live-change check)
+  base_payload_json TEXT,                       -- published payload at that moment (for rebase)
   payload_json TEXT NOT NULL,
   created_by BIGINT REFERENCES users(id),
   submitted_by BIGINT REFERENCES users(id),

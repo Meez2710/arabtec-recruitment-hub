@@ -150,6 +150,23 @@ export function registerOrgChartV2Routes(parent) {
     }),
   );
 
+  router.post(
+    "/versions/:vid/rebase",
+    manage,
+    h((req, res) => {
+      const vid = id(req.params.vid);
+      const out = Charts.rebaseDraft(vid);
+      writeAudit(req, {
+        action: "org_chart_v2.draft_rebased",
+        entityType: "org_chart_version",
+        entityId: vid,
+        oldValue: { payload: out.before.payload },
+        newValue: { payload: out.after.payload },
+      });
+      res.json({ version: out.after });
+    }),
+  );
+
   const step = (name, fn, { director = false } = {}) =>
     router.post(
       `/versions/:vid/${name}`,

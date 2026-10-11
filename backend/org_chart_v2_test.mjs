@@ -484,6 +484,65 @@ await check('a draft whose base is no longer the published version cannot be sub
   assert.equal((await api(`/api/org/charts/versions/${stale.id}/submit`, { method: 'POST', tok: manager })).status, 409);
 });
 
+/* --------------------- live edits after a draft started ---------------------- */
+
+{
+  const mkc = (await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Stale Tower', payload: basePayload() } })).json;
+  const sc = mkc.chart.id;
+  const liveEdit = async (mutate) => {
+    const cur = (await api(`/api/org/charts/versions/${mkc.chart.currentVersionId}`)).json.version;
+    const p = structuredClone(cur.payload);
+    mutate(p.pages[0]);
+    const r = await api(`/api/org/charts/versions/${cur.id}`, { method: 'PUT', tok: manager, body: { payload: p, updatedAt: cur.updatedAt } });
+    assert.equal(r.status, 200, r.text);
+    return r.json.version;
+  };
+  const box = (pg, k) => pg.boxes.find((b) => b.key === k);
+  const dr = (await api(`/api/org/charts/${sc}/drafts`, { method: 'POST', tok: manager, body: {} })).json.version;
+  // The draft itself retitles "eng" and moves "qa".
+  const dv = (await api(`/api/org/charts/versions/${dr.id}`)).json.version;
+  const dp = structuredClone(dv.payload);
+  box(dp.pages[0], 'eng').title = 'Draft Engineer';
+  box(dp.pages[0], 'qa').x = 555;
+  const saved = await api(`/api/org/charts/versions/${dr.id}`, { method: 'PUT', tok: manager, body: { payload: dp, updatedAt: dv.updatedAt } });
+  // Live edits: retitle eng (draft also changed it), retitle pm, widen qa, re-route a line.
+  await liveEdit((pg) => {
+    box(pg, 'eng').title = 'Live Engineer';
+    box(pg, 'pm').title = 'Live Manager';
+    box(pg, 'qa').w = 120;
+    pg.links[0].points = [{ x: 5, y: 6 }];
+  });
+  await check('stale draft: submit returns 409 with a live-changes summary', async () => {
+    assert.equal(saved.status, 200, saved.text);
+    const r = await api(`/api/org/charts/versions/${dr.id}/submit`, { method: 'POST', tok: manager });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.error, 'The live chart changed after this draft started.');
+    assert.ok(Array.isArray(r.json.liveChanges) && r.json.liveChanges.length >= 3);
+    assert.ok(r.json.liveChanges.some((x) => /Live Manager/.test(x)));
+  });
+  await check('rebase brings live changes in; the draft\'s own changes win', async () => {
+    assert.equal((await api(`/api/org/charts/versions/${dr.id}/rebase`, { method: 'POST', tok: viewer })).status, 403);
+    const r = await api(`/api/org/charts/versions/${dr.id}/rebase`, { method: 'POST', tok: manager });
+    assert.equal(r.status, 200, r.text);
+    const pg = r.json.version.payload.pages[0];
+    assert.equal(box(pg, 'eng').title, 'Draft Engineer', 'draft title wins');
+    assert.equal(box(pg, 'qa').x, 555, 'draft position wins');
+    assert.equal(box(pg, 'pm').title, 'Live Manager', 'live-only change copied');
+    assert.equal(box(pg, 'qa').w, 120, 'live-only width copied');
+    assert.deepEqual(pg.links[0].points, [{ x: 5, y: 6 }], 'live route copied');
+  });
+  await check('after rebase the draft submits, and a newer live edit blocks publish again', async () => {
+    assert.equal((await api(`/api/org/charts/versions/${dr.id}/submit`, { method: 'POST', tok: manager })).status, 200);
+    assert.equal((await api(`/api/org/charts/versions/${dr.id}/approve`, { method: 'POST', tok: director })).status, 200);
+    // approved drafts are pending; live edit now makes publish stale
+    await liveEdit((pg) => { box(pg, 'plan').title = 'Live Planner'; });
+    const r = await api(`/api/org/charts/versions/${dr.id}/publish`, { method: 'POST', tok: manager });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.error, 'The live chart changed after this draft started.');
+    assert.ok(r.json.liveChanges.some((x) => /Live Planner/.test(x)));
+  });
+}
+
 console.log(`\n${failures.length === 0 ? 'ALL PASS' : 'FAILURES'} — ${passed} passed, ${failures.length} failed`);
 if (failures.length) console.log('failed:', failures.join(' | '));
 process.exit(failures.length === 0 ? 0 : 1);

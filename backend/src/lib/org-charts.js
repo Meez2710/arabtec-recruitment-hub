@@ -605,13 +605,15 @@ export function createDraft(chartId, { label } = {}, userId = null) {
   const t = nowISO();
   const vid = Number(
     run(
-      `INSERT INTO org_chart_version (chart_id, label, state, based_on_version_id, payload_json, created_by, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO org_chart_version (chart_id, label, state, based_on_version_id, based_on_updated_at, base_payload_json, payload_json, created_by, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
         chartId,
         String(label || "Restructure draft").slice(0, 120),
         "draft",
         base.id,
+        base.updated_at,
+        base.payload_json,
         base.payload_json,
         userId,
         t,
@@ -699,6 +701,106 @@ export function deleteBoxInDraft(vid, boxKey, mode, confirm) {
   return { ...out, removed: res.removed, promoted: res.promoted };
 }
 
+/* ------------------------- live changes since a draft started ---------------- */
+
+const BOX_LIVE_FIELDS = ["title", "text", "w", "x", "y"];
+const LINK_LIVE_FIELDS = ["points", "fromSide", "toSide"];
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/** Non-structural differences between the payload a draft started from and the live one. */
+function liveDelta(base, live) {
+  const out = [];
+  const bb = new Map(allBoxes(base).map((b) => [b.key, b]));
+  for (const nb of allBoxes(live)) {
+    const o = bb.get(nb.key);
+    if (!o) continue;
+    const f = BOX_LIVE_FIELDS.filter((k) => !same(o[k], nb[k]));
+    if (f.length) out.push({ kind: "box", key: nb.key, title: nb.title, fields: f });
+  }
+  const bl = new Map(base.pages.flatMap((p) => p.links).map((l) => [`${l.childKey}|${l.kind}`, l]));
+  for (const l of live.pages.flatMap((p) => p.links)) {
+    const o = bl.get(`${l.childKey}|${l.kind}`);
+    if (!o) continue;
+    const f = LINK_LIVE_FIELDS.filter((k) => !same(o[k], l[k]));
+    if (f.length) out.push({ kind: "link", key: l.childKey, fields: f });
+  }
+  return out;
+}
+
+const describeDelta = (d) =>
+  d.map((x) =>
+    x.kind === "box"
+      ? `Box "${x.title || x.key}": ${x.fields.join(", ")} changed`
+      : `Line to "${x.key}": route changed`,
+  );
+
+/** Throws 409 with a summary when the live chart was edited after this draft started. */
+function assertNotStale(row, chart) {
+  if (!row.based_on_updated_at) return;
+  const live = getVersionRow(chart.currentVersionId);
+  if (live.updated_at <= row.based_on_updated_at) return;
+  const base = JSON.parse(row.base_payload_json || row.payload_json);
+  throw new OrgChartError(409, "The live chart changed after this draft started.", {
+    liveChanges: describeDelta(liveDelta(base, JSON.parse(live.payload_json))),
+  });
+}
+
+/**
+ * Copy the live chart's non-structural changes into a draft. A change is skipped when the draft
+ * changed the same field itself (the draft wins) or the box/line no longer exists in the draft.
+ */
+export function rebaseDraft(vid) {
+  const row = getVersionRow(vid);
+  if (row.state !== "draft")
+    throw new OrgChartError(409, "Only a draft can be updated with live changes.");
+  const chart = getChart(row.chart_id);
+  if (row.based_on_version_id !== chart.currentVersionId)
+    throw new OrgChartError(
+      409,
+      "The published chart has changed since this draft was started. Start a new draft from the current chart.",
+    );
+  const live = getVersionRow(chart.currentVersionId);
+  const base = JSON.parse(row.base_payload_json || row.payload_json);
+  const livePayload = JSON.parse(live.payload_json);
+  const draft = JSON.parse(row.payload_json);
+  const before = toVersion(row, true);
+  const dBoxes = new Map(allBoxes(draft).map((b) => [b.key, b]));
+  // allBoxes spreads copies, so look the real box objects up on the pages.
+  const real = new Map(draft.pages.flatMap((p) => p.boxes).map((b) => [b.key, b]));
+  const bBoxes = new Map(allBoxes(base).map((b) => [b.key, b]));
+  for (const lb of allBoxes(livePayload)) {
+    const o = bBoxes.get(lb.key);
+    const d = real.get(lb.key);
+    if (!o || !d || !dBoxes.has(lb.key)) continue;
+    for (const k of BOX_LIVE_FIELDS)
+      if (!same(o[k], lb[k]) && same(o[k], d[k])) {
+        if (lb[k] === undefined) delete d[k];
+        else d[k] = lb[k];
+      }
+  }
+  const dl = new Map(draft.pages.flatMap((p) => p.links).map((l) => [`${l.childKey}|${l.kind}`, l]));
+  const bl = new Map(base.pages.flatMap((p) => p.links).map((l) => [`${l.childKey}|${l.kind}`, l]));
+  for (const l of livePayload.pages.flatMap((p) => p.links)) {
+    const key = `${l.childKey}|${l.kind}`;
+    const o = bl.get(key);
+    const d = dl.get(key);
+    if (!o || !d) continue;
+    for (const k of LINK_LIVE_FIELDS)
+      if (!same(o[k], l[k]) && same(o[k], d[k])) {
+        if (l[k] === undefined) delete d[k];
+        else d[k] = l[k];
+      }
+  }
+  const doc = validatePayload(draft);
+  const r = run(
+    `UPDATE org_chart_version SET payload_json=?, base_payload_json=?, based_on_updated_at=?, updated_at=? WHERE id=? AND updated_at=? AND state='draft'`,
+    [JSON.stringify(doc), live.payload_json, live.updated_at, stamp(row.updated_at), vid, row.updated_at],
+  );
+  if (!r.changes)
+    throw new OrgChartError(409, "Someone else saved this draft. Reload to see their changes.");
+  return { before, after: getVersion(vid) };
+}
+
 /* ------------------------------- state machine ------------------------------ */
 
 function transition(vid, fromState, sets, params, failMsg) {
@@ -720,6 +822,7 @@ export function submitVersion(vid, userId) {
       "The published chart has changed since this draft was started. Start a new draft from the current chart.",
     );
   }
+  assertNotStale(row, chart);
   const before = toVersion(row);
   transition(
     vid,
@@ -783,6 +886,7 @@ export function publishVersion(vid, userId, moves = {}) {
         "The published chart has changed since this draft was started. Start a new draft from the current chart.",
       );
     }
+    assertNotStale(row, chart);
     const before = toVersion(row);
     const payload = JSON.parse(row.payload_json);
     const keys = new Set(allBoxes(payload).map((b) => b.key));
