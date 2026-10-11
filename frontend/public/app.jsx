@@ -9618,6 +9618,7 @@ const IV_STATUS = {
   cancelled: { label: 'Cancelled', variant: 'critical' },
   rescheduled: { label: 'Rescheduled', variant: 'warning' },
 };
+const IV_ACTIVITY_LABEL = { message_whatsapp: 'WhatsApp', message_call: 'Phone call', message_email: 'Email', candidate_response: 'Candidate answer', panel_changed: 'Panel changed', feedback_submitted: 'Feedback', feedback_updated: 'Feedback updated', no_show: 'No-show' };
 const IV_OUTCOME = { positive: { label: 'Positive', variant: 'success' }, negative: { label: 'Negative', variant: 'critical' }, mixed: { label: 'Mixed', variant: 'warning' } };
 const REC_LABEL = { strong_yes: 'Strong Yes', yes: 'Yes', no: 'No', strong_no: 'Strong No' };
 function IvStatusBadge({ status }) { const s = IV_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
@@ -9682,6 +9683,7 @@ function StandaloneLinkFields({ user, link, setLink }) {
         <>
           <div className="field"><label>Full name *</label><input value={link.newName} onChange={(e) => set('newName', e.target.value)} /></div>
           <div className="field"><label>Email</label><input type="email" value={link.newEmail} onChange={(e) => set('newEmail', e.target.value)} /></div>
+          <div className="field"><label>Mobile (for WhatsApp and calls)</label><input type="tel" inputMode="tel" placeholder="010 0000 0000" value={link.newPhone} onChange={(e) => set('newPhone', e.target.value)} /></div>
         </>
       )}
       <div className="field full">
@@ -9694,7 +9696,7 @@ function StandaloneLinkFields({ user, link, setLink }) {
     </div>
   );
 }
-const EMPTY_LINK = { mode: 'pick', candidate: null, newName: '', newEmail: '', requestId: '' };
+const EMPTY_LINK = { mode: 'pick', candidate: null, newName: '', newEmail: '', newPhone: '', requestId: '' };
 function standaloneLinkReady(link) {
   return link.mode === 'pick' ? !!link.candidate : !!link.newName.trim();
 }
@@ -9702,7 +9704,7 @@ function standaloneLinkReady(link) {
 async function resolveStandaloneLink(link) {
   let candidateId = link.candidate?.id;
   if (link.mode === 'new') {
-    const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, source: 'manual' });
+    const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, phone: (link.newPhone || '').trim() || undefined, source: 'manual' });
     candidateId = r.candidate.id;
   }
   return { candidateId, requestId: link.requestId ? Number(link.requestId) : undefined };
@@ -9716,6 +9718,10 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
   const [link, setLink] = useState(EMPTY_LINK);
   const [busy, setBusy] = useState(false);
   const [clashes, setClashes] = useState([]);
+  // How the candidate hears about it. Email goes out automatically on save;
+  // WhatsApp and a call happen on the scheduler's own device, right after.
+  const [notify, setNotify] = useState({ email: true, whatsapp: true, call: false });
+  const [contact, setContact] = useState(null); // { id, channel } once saved
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { api.get('/interviews/meta/form').then(setMeta); }, []);
   // Who on the chosen panel is already booked then. A warning, never a block:
@@ -9735,29 +9741,39 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
   }, [f.scheduledAt, f.durationMin, panelKey]);
   function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
 
-  async function save() {
+  async function save(andContact) {
     setBusy(true);
     try {
       const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
-      await api.post('/interviews', {
+      const r = await api.post('/interviews', {
         ...target, interviewType: f.interviewType, mode: f.mode,
         scheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : null,
         durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink,
         panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
+        notify: { email: andContact && notify.email },
       });
-      toast('Interview scheduled'); onScheduled();
+      const channel = andContact ? (notify.whatsapp ? 'whatsapp' : notify.call ? 'call' : null) : null;
+      toast(r.candidateEmailed ? 'Interview scheduled · invitation emailed'
+        : andContact && notify.email ? 'Interview scheduled · not emailed (no mailbox connected, or no email address)' : 'Interview scheduled',
+        andContact && notify.email && !r.candidateEmailed ? 'error' : undefined);
+      if (channel && r.interview) setContact({ id: r.interview.id, channel }); else onScheduled();
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+  if (contact) return <ContactCandidateModal interviewId={contact.id} kind="invite" channel={contact.channel} onClose={onScheduled} />;
   if (!meta) return <Modal title="Schedule Interview" onClose={onClose}><Skeleton /></Modal>;
+  const ready = !busy && f.scheduledAt && f.panel.length > 0 && (application || standaloneLinkReady(link));
+  const anyChannel = notify.email || notify.whatsapp || notify.call;
   return (
     <Modal title={application ? `Schedule Interview — ${application.candidate?.fullName || ''}` : 'Schedule interview'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !f.scheduledAt || f.panel.length === 0 || (!application && !standaloneLinkReady(link))}>{busy ? 'Scheduling…' : 'Schedule'}</button></>}>
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-secondary" onClick={() => save(false)} disabled={!ready} title="Book it without telling the candidate yet">Save only</button>
+        <button className="btn" onClick={() => save(true)} disabled={!ready || !anyChannel}>{busy ? 'Scheduling…' : 'Schedule & tell candidate'}</button></>}>
       {application
         ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Scheduling does <strong>not</strong> change the application's pipeline status.</p>
         : <StandaloneLinkFields user={user} link={link} setLink={setLink} />}
       <div className="form-grid">
-        <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
-        <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
+        <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{IV_TYPE_LABEL[t] || t}</option>)}</select></div>
+        <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{IV_MODE_LABEL[m] || m}</option>)}</select></div>
         <div className="field"><label>Date &amp; Time *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
         <div className="field"><label>Duration (min)</label><input type="number" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
         <div className="field"><label>Round</label><input type="number" min="1" value={f.round} onChange={(e) => set('round', e.target.value)} /></div>
@@ -9780,6 +9796,211 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
           {' '}You can still schedule; panels sometimes overlap on purpose.
         </div>
       )}
+      <div className="section-title">Tell the candidate</div>
+      <div className="notify-choices">
+        <label className="switch"><input type="checkbox" checked={notify.email} onChange={(e) => setNotify((n) => ({ ...n, email: e.target.checked }))} /> Email (sent automatically)</label>
+        <label className="switch"><input type="checkbox" checked={notify.whatsapp} onChange={(e) => setNotify((n) => ({ ...n, whatsapp: e.target.checked }))} /> WhatsApp</label>
+        <label className="switch"><input type="checkbox" checked={notify.call} onChange={(e) => setNotify((n) => ({ ...n, call: e.target.checked }))} /> Phone call</label>
+      </div>
+      <p className="muted notify-note">The wording comes from Interviews → Message templates. After saving, WhatsApp opens with the message filled in, or the call screen shows the number and what to say.</p>
+    </Modal>
+  );
+}
+
+/* ============================ Contacting the candidate ============================
+   One window, three ways: WhatsApp (opens the scheduler's own WhatsApp with
+   the message filled in), a phone call (dials, with the script on screen) and
+   email (sent from the company mailbox). The wording comes from Message
+   templates and can be edited for this one message. Every contact is written
+   to the interview's history, and the candidate's answer is recorded here. */
+const MSG_KIND_LABEL = { invite: 'Interview invitation', reschedule: 'New interview time', cancel: 'Interview cancelled', reminder: 'Reminder' };
+const CAND_RESPONSE = {
+  pending: { label: 'No answer yet', variant: 'soft' },
+  confirmed: { label: 'Confirmed', variant: 'success' },
+  change_requested: { label: 'Wants another time', variant: 'warning' },
+  declined: { label: 'Declined', variant: 'critical' },
+};
+function CandidateResponseBadge({ value }) {
+  const r = CAND_RESPONSE[value] || CAND_RESPONSE.pending;
+  return <Badge variant={r.variant}>{r.label}</Badge>;
+}
+function CandidateResponsePicker({ interviewId, value, onSaved }) {
+  const toast = useToast();
+  async function pick(response) {
+    if (response === value) return;
+    try { const r = await api.post(`/interviews/${interviewId}/response`, { response }); toast('Answer recorded: ' + CAND_RESPONSE[response].label); onSaved?.(r.interview); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  return (
+    <div className="seg-tabs resp-picker" role="radiogroup" aria-label="Candidate's answer">
+      {Object.entries(CAND_RESPONSE).map(([k, v]) => (
+        <button key={k} type="button" role="radio" aria-checked={value === k} className={'seg-tab' + (value === k ? ' active' : '')} onClick={() => pick(k)}>{v.label}</button>
+      ))}
+    </div>
+  );
+}
+
+function ContactCandidateModal({ interviewId, kind: initialKind = 'invite', channel: initialChannel = 'whatsapp', onClose }) {
+  const toast = useToast();
+  const [kind, setKind] = useState(initialKind);
+  const [channel, setChannel] = useState(initialChannel);
+  const [msg, setMsg] = useState(null);
+  const [err, setErr] = useState(null);
+  const [draft, setDraft] = useState({ whatsapp: '', subject: '', email: '' });
+  const [busy, setBusy] = useState(false);
+  const [response, setResponse] = useState(null);
+  useEffect(() => {
+    let live = true; setMsg(null); setErr(null);
+    api.get(`/interviews/${interviewId}/messages/${kind}`)
+      .then((r) => { if (!live) return; setMsg(r.message); setDraft({ whatsapp: r.message.whatsapp, subject: r.message.subject, email: r.message.email }); })
+      .catch((e) => { if (live) setErr(e.message); });
+    return () => { live = false; };
+  }, [interviewId, kind]);
+  useEffect(() => { api.get('/interviews/' + interviewId).then((r) => setResponse(r.interview.candidateResponse)).catch(() => {}); }, [interviewId]);
+  const log = (ch) => api.post(`/interviews/${interviewId}/messages/${kind}/${ch}`, {}).catch(() => {});
+  function openWhatsApp() {
+    window.open(`https://wa.me/${msg.to.whatsapp}?text=${encodeURIComponent(draft.whatsapp)}`, '_blank', 'noopener');
+    log('whatsapp'); toast('WhatsApp opened — press Send there');
+  }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Copy did not work — select the text and copy it', 'error'); }
+  }
+  async function sendEmail() {
+    setBusy(true);
+    try { await api.post(`/interviews/${interviewId}/messages/${kind}/email`, { subject: draft.subject, text: draft.email }); toast('Email sent to ' + msg.to.email); }
+    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  const tabs = [['whatsapp', 'WhatsApp'], ['call', 'Phone call'], ['email', 'Email']];
+  return (
+    <Modal title="Contact the candidate" onClose={onClose} wide footer={<button className="btn btn-secondary" onClick={onClose}>Done</button>}>
+      <div className="form-grid">
+        <div className="field"><label htmlFor="cc-kind">Message</label>
+          <select id="cc-kind" value={kind} onChange={(e) => setKind(e.target.value)}>{Object.entries(MSG_KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+      </div>
+      <div className="seg-tabs" role="tablist" aria-label="How to contact">
+        {tabs.map(([k, v]) => <button key={k} type="button" role="tab" aria-selected={channel === k} className={'seg-tab' + (channel === k ? ' active' : '')} onClick={() => setChannel(k)}>{v}</button>)}
+      </div>
+      {err ? <div className="notice notice-warn">{err}</div> : !msg ? <Skeleton rows={4} /> : (
+        <div className="contact-panel">
+          {channel === 'whatsapp' && (msg.to.whatsapp ? <>
+            <div className="contact-to">To <strong>+{msg.to.whatsapp}</strong></div>
+            <textarea className="contact-text" rows={7} value={draft.whatsapp} onChange={(e) => setDraft((d) => ({ ...d, whatsapp: e.target.value }))} aria-label="WhatsApp message" />
+            <div className="contact-actions">
+              <button className="btn" onClick={openWhatsApp} disabled={!draft.whatsapp.trim()}>Open WhatsApp</button>
+              <button className="btn btn-secondary" onClick={() => copy(draft.whatsapp)}>Copy text</button>
+            </div>
+            <p className="muted contact-note">WhatsApp opens on this computer or phone with the message ready. Check it and press Send there.</p>
+          </> : <div className="notice notice-warn">No mobile number on this candidate's profile. Add one to their profile, or use email.</div>)}
+          {channel === 'call' && (msg.to.whatsapp ? <>
+            <div className="contact-to">Number <strong>+{msg.to.whatsapp}</strong></div>
+            <div className="contact-actions">
+              <a className="btn" href={msg.callLink} onClick={() => log('call')}>Call +{msg.to.whatsapp}</a>
+              <button className="btn btn-secondary" onClick={() => copy('+' + msg.to.whatsapp)}>Copy number</button>
+            </div>
+            <div className="section-title">What to say</div>
+            <div className="call-script">{msg.call}</div>
+            <p className="muted contact-note">On a phone this dials straight away; on a computer it opens your phone app or Teams. After the call, record the answer below.</p>
+          </> : <div className="notice notice-warn">No phone number on this candidate's profile. Add one to their profile, or use email.</div>)}
+          {channel === 'email' && (msg.to.email ? <>
+            <div className="contact-to">To <strong>{msg.to.email}</strong></div>
+            <div className="field"><label htmlFor="cc-subject">Subject</label><input id="cc-subject" value={draft.subject} onChange={(e) => setDraft((d) => ({ ...d, subject: e.target.value }))} /></div>
+            <textarea className="contact-text" rows={10} value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} aria-label="Email message" />
+            <div className="contact-actions">
+              <button className="btn" onClick={sendEmail} disabled={busy || !draft.subject.trim() || !draft.email.trim()}>{busy ? 'Sending…' : 'Send email'}</button>
+            </div>
+          </> : <div className="notice notice-warn">No email address on this candidate's profile. Use WhatsApp or a call.</div>)}
+        </div>
+      )}
+      {response && <>
+        <div className="section-title">What did the candidate say?</div>
+        <CandidateResponsePicker interviewId={interviewId} value={response} onSaved={(iv) => setResponse(iv.candidateResponse)} />
+      </>}
+    </Modal>
+  );
+}
+
+/* Message templates: the wording HR controls for every interview message.
+   Placeholders like {candidate_name} are filled in for each candidate. */
+function InterviewTemplatesModal({ onClose }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [kind, setKind] = useState('invite');
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const focused = useRef({ field: 'whatsapp', el: null });
+  useEffect(() => { api.get('/interviews/messages/templates').then((r) => { setData(r); setDraft(r.templates.invite); }).catch((e) => toast(e.message, 'error')); }, []);
+  const dirty = data && draft && ['subject', 'email', 'whatsapp', 'call'].some((f) => draft[f] !== data.templates[kind][f]);
+  function pickKind(k) {
+    if (k === kind) return;
+    if (dirty && !window.confirm('Discard your changes to this message?')) return;
+    setKind(k); setDraft(data.templates[k]);
+  }
+  function insert(name) {
+    const { field, el } = focused.current;
+    const token = '{' + name + '}';
+    const cur = draft[field] || '';
+    const start = el && typeof el.selectionStart === 'number' ? el.selectionStart : cur.length;
+    const end = el && typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    setDraft((d) => ({ ...d, [field]: cur.slice(0, start) + token + cur.slice(end) }));
+  }
+  async function save(reset) {
+    setBusy(true);
+    try {
+      const r = await api.put('/interviews/messages/templates/' + kind, reset ? { reset: true } : draft);
+      setData((d) => ({ ...d, templates: r.templates })); setDraft(r.templates[kind]);
+      toast(reset ? 'Back to the standard wording' : 'Message saved');
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  const track = (field) => ({ onFocus: (e) => { focused.current = { field, el: e.target }; }, onSelect: (e) => { focused.current = { field, el: e.target }; } });
+  if (!data || !draft) return <Modal title="Message templates" onClose={onClose}><Skeleton rows={6} /></Modal>;
+  return (
+    <Modal title="Message templates" onClose={onClose} wide
+      footer={<>
+        {data.templates[kind].customised && <button className="btn btn-ghost" onClick={() => save(true)} disabled={busy}>Use standard wording</button>}
+        <button className="btn btn-secondary" onClick={onClose}>Close</button>
+        <button className="btn" onClick={() => save(false)} disabled={busy || !dirty}>Save</button>
+      </>}>
+      <p className="muted tpl-intro">What candidates receive for each interview message. Words in braces are filled in for each candidate; click one below to add it where your cursor is. Arabic is fine.</p>
+      <div className="seg-tabs" role="tablist" aria-label="Message">
+        {data.kinds.map((k) => <button key={k} type="button" role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => pickKind(k)}>{MSG_KIND_LABEL[k]}{data.templates[k].customised ? ' •' : ''}</button>)}
+      </div>
+      <div className="ph-chips" aria-label="Placeholders">
+        {Object.entries(data.placeholders).map(([name, label]) => <button key={name} type="button" className="chip ph-chip" title={label} onMouseDown={(e) => e.preventDefault()} onClick={() => insert(name)}>{'{' + name + '}'}</button>)}
+      </div>
+      <div className="form-grid">
+        <div className="field full"><label htmlFor="tpl-wa">WhatsApp text</label><textarea id="tpl-wa" rows={4} value={draft.whatsapp} onChange={(e) => setDraft((d) => ({ ...d, whatsapp: e.target.value }))} {...track('whatsapp')} /></div>
+        <div className="field full"><label htmlFor="tpl-call">Call script (what to say on the phone)</label><textarea id="tpl-call" rows={5} value={draft.call} onChange={(e) => setDraft((d) => ({ ...d, call: e.target.value }))} {...track('call')} /></div>
+        <div className="field full"><label htmlFor="tpl-subj">Email subject</label><input id="tpl-subj" value={draft.subject} onChange={(e) => setDraft((d) => ({ ...d, subject: e.target.value }))} {...track('subject')} /></div>
+        <div className="field full"><label htmlFor="tpl-email">Email text</label><textarea id="tpl-email" rows={9} value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} {...track('email')} /></div>
+      </div>
+    </Modal>
+  );
+}
+
+/* Move an interview: new time, length, mode or place. Saving then offers to
+   tell the candidate with the "New interview time" message. */
+function RescheduleInterviewModal({ iv, onClose, onSaved }) {
+  const toast = useToast();
+  const [f, setF] = useState({ scheduledAt: iv.scheduledAt ? toLocalInput(new Date(iv.scheduledAt)) : '', durationMin: iv.durationMin || 60, mode: iv.mode, locationOrLink: iv.locationOrLink || '' });
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  async function save() {
+    setBusy(true);
+    try {
+      const r = await api.put('/interviews/' + iv.id, { scheduledAt: new Date(f.scheduledAt).toISOString(), durationMin: Number(f.durationMin), mode: f.mode, locationOrLink: f.locationOrLink });
+      toast('Interview moved'); onSaved(r.interview);
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={'Reschedule — ' + (iv.candidate?.fullName || '')} onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !f.scheduledAt}>{busy ? 'Saving…' : 'Save new time'}</button></>}>
+      <div className="form-grid">
+        <div className="field"><label htmlFor="rs-at">New date &amp; time *</label><input id="rs-at" type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
+        <div className="field"><label htmlFor="rs-dur">Duration (min)</label><input id="rs-dur" type="number" min="15" step="15" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+        <div className="field"><label htmlFor="rs-mode">Mode</label><select id="rs-mode" value={f.mode} onChange={(e) => set('mode', e.target.value)}>{Object.entries(IV_MODE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+        <div className="field"><label htmlFor="rs-where">{f.mode === 'video' ? 'Google Meet link' : f.mode === 'phone' ? 'Phone number' : 'Location'}</label><input id="rs-where" value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} /></div>
+      </div>
+      <p className="muted">After saving you can tell the candidate by WhatsApp, a call or email.</p>
     </Modal>
   );
 }
@@ -10025,6 +10246,7 @@ function InterviewsPage({ user, initialFilters }) {
   useRecordUrl('interviews', selected);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [templates, setTemplates] = useState(false);
   const [createAt, setCreateAt] = useState(null); // the calendar slot that opened the form
   const loadSeq = useRef(0);
   // The calendar is the first screen; a dashboard link that carries list
@@ -10085,8 +10307,10 @@ function InterviewsPage({ user, initialFilters }) {
           {data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>}
           <ViewToggle value={view} onChange={setView}
             options={isPhone ? [['day', 'Day'], ['list', 'List']] : [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['list', 'List']]} />
+          {can(user, 'notification.manage') && <button className="btn btn-secondary" onClick={() => setTemplates(true)}>Message templates</button>}
           {can(user, 'interview.schedule') && <button className="btn" onClick={() => setCreating(true)}>Schedule interview</button>}
         </>} />
+      {templates && <InterviewTemplatesModal onClose={() => setTemplates(false)} />}
       {(creating || createAt) && (
         <ScheduleInterviewModal user={user} initialAt={createAt}
           onClose={() => { setCreating(false); setCreateAt(null); }}
@@ -10136,10 +10360,10 @@ function InterviewsPage({ user, initialFilters }) {
                     </span>
                   </div>
                 </td>
-                <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
+                <td data-label="Request">{iv.request ? <><span className="code-pill" title={iv.request.ticketNo}>{shortReqCode(iv.request.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request.title || undefined}>{iv.request.title || '—'}</div></> : <span className="muted">— <span className="cell-sub">Standalone</span></span>}</td>
                 <td data-label="Type / Mode"><span className="cell-strong">{ivType(iv.interviewType)}</span><div className="cell-sub">{ivMode(iv.mode)}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
-                <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
+                <td data-label="Status"><IvStatusBadge status={iv.status} />{['scheduled', 'rescheduled'].includes(iv.status) && <div className="cell-sub">{(CAND_RESPONSE[iv.candidateResponse] || CAND_RESPONSE.pending).label}</div>}</td>
                 <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
                 <td data-priority="secondary" data-label="Application" title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
               </tr>
@@ -10157,15 +10381,20 @@ function InterviewDetail({ id, user, onBack }) {
   const [loadError, setLoadError] = useState(null);
   const [fbOpen, setFbOpen] = useState(false);
   const [action, setAction] = useState(null);
+  const [contact, setContact] = useState(null);   // { kind, channel }
+  const [moving, setMoving] = useState(false);
   const btns = useResolvedButtons();
+  const canContact = can(user, 'interview.schedule') || can(user, 'interview.edit');
   const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!iv) return <Skeleton rows={8} />;
 
   async function setStatus(status, reason) {
-    try { await api.post(`/interviews/${id}/status`, { status, reason }); toast('Interview ' + status); load(); }
-    catch (e) { toast(e.message, 'error'); }
+    try {
+      await api.post(`/interviews/${id}/status`, { status, reason }); toast('Interview ' + (IV_STATUS[status]?.label || status).toLowerCase()); load();
+      if (status === 'cancelled' && canContact) setContact({ kind: 'cancel', channel: 'whatsapp' });
+    } catch (e) { toast(e.message, 'error'); }
   }
   const canEdit = btns.cancel_interview?.visible || btns.complete_interview?.visible;
   const canFeedback = btns.add_feedback?.visible;
@@ -10176,7 +10405,9 @@ function InterviewDetail({ id, user, onBack }) {
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Interviews</button>}
         title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
-          {canFeedback && iv.status !== 'cancelled' && <button className="btn" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
+          {canContact && active && <button className="btn" onClick={() => setContact({ kind: iv.candidateResponse === 'confirmed' ? 'reminder' : 'invite', channel: 'whatsapp' })}>Contact candidate</button>}
+          {canContact && active && <button className="btn btn-secondary" onClick={() => setMoving(true)}>Reschedule</button>}
+          {canFeedback && iv.status !== 'cancelled' && <button className={canContact && active ? 'btn btn-secondary' : 'btn'} onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
           {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
@@ -10191,6 +10422,10 @@ function InterviewDetail({ id, user, onBack }) {
           <Info label="Request">{iv.request ? <><span title={iv.request.ticketNo}>{shortReqCode(iv.request.ticketNo)}</span> — {iv.request.title}</> : <span className="muted">None — standalone</span>}</Info>
           <Info label="Application">{iv.application ? <>{iv.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={iv.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <p className="muted">The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
+          <div className="section-title">Candidate's answer</div>
+          {canContact && active
+            ? <CandidateResponsePicker interviewId={iv.id} value={iv.candidateResponse} onSaved={setIv} />
+            : <CandidateResponseBadge value={iv.candidateResponse} />}
           <div className="section-title">Details</div>
           <Info label="Type / Mode">{ivType(iv.interviewType)} · {ivMode(iv.mode)}</Info>
           <Info label="Round">{iv.round}</Info>
@@ -10216,11 +10451,13 @@ function InterviewDetail({ id, user, onBack }) {
             </div>
           ))}
           <div className="section-title">Activity</div>
-          {(iv.activity || []).map((a) => <div key={a.id} style={{ fontSize: 12.5, padding: '4px 0' }}><strong style={{ textTransform: 'capitalize' }}>{a.type.replace(/_/g, ' ')}</strong>{a.note ? ' — ' + a.note : ''} <span className="muted">· {a.actor_name} · {fmtDate(a.occurred_at)}</span></div>)}
+          {(iv.activity || []).map((a) => <div key={a.id} style={{ fontSize: 12.5, padding: '4px 0' }}><strong>{IV_ACTIVITY_LABEL[a.type] || (a.type.charAt(0).toUpperCase() + a.type.slice(1).replace(/_/g, ' '))}</strong>{a.note ? ' — ' + a.note : ''} <span className="muted">· {a.actor_name} · {fmtDate(a.occurred_at)}</span></div>)}
         </div>
       </div>
 
       {fbOpen && <FeedbackModal interviewId={id} onClose={() => setFbOpen(false)} onSaved={() => { setFbOpen(false); load(); }} />}
+      {contact && <ContactCandidateModal interviewId={id} kind={contact.kind} channel={contact.channel} onClose={() => { setContact(null); load(); }} />}
+      {moving && <RescheduleInterviewModal iv={iv} onClose={() => setMoving(false)} onSaved={() => { setMoving(false); load(); setContact({ kind: 'reschedule', channel: 'whatsapp' }); }} />}
       {action && <Confirm title={action.title} message="Provide a reason. Recorded in the audit trail." requireReason danger onConfirm={action.run} onClose={() => setAction(null)} />}
     </div>
   );

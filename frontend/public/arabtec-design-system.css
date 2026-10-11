@@ -1543,3 +1543,7 @@ th.recip-external { color: var(--warning-ink); }
 th.recip-external::after { content: none; }
 td.recip-external { background: var(--warning-tint); }
 .notif-grid td:first-child, .notif-grid th:first-child { background: var(--surface); }
+
+/* Interviews: the call script reads as a card to read out loud. */
+.call-script { background: var(--surface-2); border-color: var(--line); color: var(--text-strong); }
+.contact-to strong { color: var(--text-strong); }

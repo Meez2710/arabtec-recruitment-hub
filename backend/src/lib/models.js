@@ -1238,6 +1238,7 @@ export const Interviews = {
     return this.byId(id);
   },
   setOutcome(id, outcome) { run('UPDATE interview SET overall_outcome=?, updated_at=? WHERE id=?', [outcome, nowISO(), id]); },
+  setCandidateResponse(id, response) { run('UPDATE interview SET candidate_response=?, updated_at=? WHERE id=?', [response, nowISO(), id]); },
   forApplication(appId) { return all('SELECT * FROM interview WHERE application_id=? ORDER BY round, scheduled_at', [appId]); },
   forCandidate(candId) { return all('SELECT * FROM interview WHERE candidate_id=? ORDER BY scheduled_at DESC', [candId]); },
   forRequest(reqId) { return all('SELECT * FROM interview WHERE request_id=? ORDER BY scheduled_at DESC', [reqId]); },

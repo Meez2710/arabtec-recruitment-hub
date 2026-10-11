@@ -1842,3 +1842,17 @@ button.cal-slot:focus-visible { outline: 0; }
 .perm-area-count { margin-right: auto; }
 .perm-area-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-5); }
 @media (max-width: 900px) { .perm-area-grid { grid-template-columns: 1fr; } }
+
+/* Interviews: telling the candidate (schedule form, contact window, message
+   templates). Geometry only; colours live in the design-system layer. */
+.notify-choices { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); }
+.notify-note, .contact-note, .tpl-intro { margin: var(--sp-2) 0 0; }
+.tpl-intro { margin-top: 0; margin-bottom: var(--sp-3); }
+.contact-panel { display: grid; gap: var(--sp-3); margin-top: var(--sp-4); }
+.contact-text { width: 100%; resize: vertical; }
+.contact-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.contact-actions a.btn { text-decoration: none; }
+.call-script { white-space: pre-wrap; padding: var(--sp-3) var(--sp-4); border-width: 1px; border-style: solid; border-radius: var(--cl-r-sm, 8px); line-height: 1.6; }
+.ph-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); margin: var(--sp-3) 0; }
+.ph-chip { cursor: pointer; }
+.resp-picker { flex-wrap: wrap; }

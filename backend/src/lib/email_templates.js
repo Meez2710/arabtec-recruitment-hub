@@ -76,9 +76,23 @@ export function rejection({ candidateName, position }) {
 }
 
 // 3. Interview invitation
-export function interviewInvite({ candidateName, position, dateText, mode, locationOrLink }) {
+// A message HR wrote (Interviews → Message templates), already filled in.
+// Plain text in, safe HTML out: every character is escaped, blank lines make
+// paragraphs, and a web address becomes a link.
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const linkify = (s) => s.replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" style="color:${GREEN};">${u}</a>`);
+export function candidateMessage({ title, subject, text }) {
+  const paras = String(text || '').split(/\n\s*\n/).map((block) => p(linkify(esc(block.trim())).replace(/\n/g, '<br/>'))).join('');
+  return { subject: subject || title || 'Arabtec Recruitment', html: shell(esc(title || subject || 'Arabtec Recruitment'), paras) };
+}
+
+export function interviewInvite({ candidateName, position, dateText, mode, locationOrLink, message }) {
+  // The invitation HR wrote, when the scheduler sent one along.
+  if (message && message.text) return candidateMessage({ title: 'You’re invited to an interview', subject: message.subject, text: message.text });
   const name = candidateName || 'there';
-  const where = mode === 'online'
+  // A video interview's link is clickable (the mode is 'video'; 'online' is the
+  // older name, kept so stored rows still read correctly).
+  const where = (mode === 'video' || mode === 'online') && /^https?:\/\//.test(locationOrLink || '')
     ? `Online${locationOrLink ? ` — join link: <a href="${locationOrLink}" style="color:${BRAND};">${locationOrLink}</a>` : ''}`
     : (locationOrLink || 'Details to follow');
   return {
