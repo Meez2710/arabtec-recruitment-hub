@@ -62,6 +62,7 @@ const SUITES = [
   'intake_entered_name_test.mjs', // Candidate Review: typed name when the CV reader found none
   'intake_route_http_test.mjs', // HTTP: /candidates/intakes is not shadowed by /:id
   'org_chart_test.mjs',        // Phase 1 organization structure chart
+  'org_chart_v2_test.mjs',     // Organization Structure v2: versions, approval, migration, flag
   'fixture_probe_test.mjs',    // fixture determinism, before anything relies on it
   'bl21_test.mjs',             // BL-21/BL-23 headcount + seat reconciliation
   'reconciliation_test.mjs',   // BL-21/BL-23 seat reconciliation helper
