@@ -18,7 +18,11 @@
   const BOX_FONT = 'Arial, "Liberation Sans", Helvetica, sans-serif';
   const HEAD_FONT = 'Calibri, Carlito, Arial, "Liberation Sans", sans-serif';
   // Soft-warning thresholds (plan section 4). No client-readable system_setting getter exists yet, so constants.
-  const LIMITS = { spanMax: 12, spanMin: 3, layersMax: 6 };
+  // Site charts routinely have one report per manager, so there is no "too few reports" rule.
+  const LIMITS = { spanMax: 12, layersMax: 6 };
+  // The Hub logo: top-right, just under the header band, drawn whole (object-fit contain). Auto-arrange treats it as an obstacle.
+  const LOGO = { x: PAGE_W - 25 - 58, y: 83, w: 58, h: 56 };
+  const hitsLogo = (x, y, w, h) => x < LOGO.x + LOGO.w + 4 && x + w > LOGO.x - 4 && y < LOGO.y + LOGO.h + 4 && y + h > LOGO.y - 4;
   const ARRANGES = [['row', 'Row'], ['col-left', 'Column left'], ['col-right', 'Column right'], ['two-col', 'Two columns']];
   const SCOPE_LABEL = { project: 'Project charts', head_office: 'Head Office', department: 'Department charts' };
   const STATE_LABEL = { draft: 'Draft', pending_approval: 'Waiting for approval', published: 'Published', superseded: 'Superseded' };
@@ -246,17 +250,19 @@
     const sh = shapeOf(pages);
     return { planned, inPost, joining, open, proposed, layers: sh.layers, widest: sh.widest };
   }
+  // Soft warnings. Team and text boxes are never evaluated; only role boxes can carry one.
   function computeWarnings(pages, assignments) {
     const sh = shapeOf(pages), w = new Map();
     const add = (k, msg) => { if (!w.has(k)) w.set(k, []); w.get(k).push(msg); };
     for (const [k, list] of sh.kids) {
+      const b = sh.byKey.get(k);
+      if (!b || b.kind !== 'role') continue;
       const staff = list.filter((c) => !c.zati).length;
       if (staff > LIMITS.spanMax) add(k, 'Manages ' + staff + ' boxes (more than ' + LIMITS.spanMax + ').');
-      else if (staff > 0 && staff < LIMITS.spanMin) add(k, 'Manages only ' + staff + (staff === 1 ? ' box' : ' boxes') + ' (fewer than ' + LIMITS.spanMin + ').');
-      const b = sh.byKey.get(k);
-      if (b.kind === 'role' && !assignments.some((a) => a.boxKey === k && a.status === 'in_post')) add(k, 'Manager box with nobody in post.');
+      if (!assignments.some((a) => a.boxKey === k && a.status === 'in_post')) add(k, 'Manager box with nobody in post.');
     }
     for (const b of sh.byKey.values()) {
+      if (b.kind !== 'role') continue;
       let d = 1, p = b.parentKey, seen = new Set();
       while (p && sh.byKey.has(p) && !seen.has(p)) { d++; seen.add(p); p = sh.byKey.get(p).parentKey; }
       if (d > LIMITS.layersMax && !sh.kids.has(b.key)) add(b.key, 'More than ' + LIMITS.layersMax + ' layers deep.');
@@ -345,8 +351,17 @@
     rows.forEach((r) => {
       const tw = r.reduce((s, b) => s + b.w, 0) + GAPX * 2 * (r.length - 1);
       let x = PAGE_W / 2 - tw / 2;
-      r.forEach((b) => { b.items.forEach((it) => out.set(it.key, { x: r1(x + it.x), y: r1(y + it.y) })); x += b.w + GAPX * 2; });
-      y += Math.max(...r.map((b) => b.h)) + GAPY * 2;
+      const placed = [];
+      r.forEach((b) => { b.items.forEach((it) => placed.push({ key: it.key, x: x + it.x, y: y + it.y })); x += b.w + GAPX * 2; });
+      // never place anything under the logo: push the row down until it clears
+      let dy = 0;
+      for (let i = 0; i < 8; i++) {
+        const hit = placed.filter((it) => hitsLogo(it.x, it.y + dy, size(it.key).w, size(it.key).h));
+        if (!hit.length) break;
+        dy += LOGO.y + LOGO.h + 6 - Math.min(...hit.map((it) => it.y + dy));
+      }
+      placed.forEach((it) => out.set(it.key, { x: r1(it.x), y: r1(it.y + dy) }));
+      y += Math.max(...r.map((b) => b.h)) + GAPY * 2 + dy;
     });
     return out;
   }
@@ -443,7 +458,7 @@
         <text x={PAGE_W / 2} y={BAND.hy + 20} textAnchor="middle" fill="#fff" fontFamily={HEAD_FONT} fontWeight="bold" fontSize="18">{page.title1}</text>
         <text x={PAGE_W / 2} y={BAND.hy + 42} textAnchor="middle" fill="#fff" fontFamily={HEAD_FONT} fontWeight="bold" fontSize="18">{page.title2}</text>
         <rect x={BAND.x} y={BAND.fy} width={BAND.w} height={BAND.fh} fill={MAROON} stroke="#000" strokeWidth="0.75" />
-        <image href="/arabtec-logo.svg" x="1078" y="84" width="90" height="69" preserveAspectRatio="xMaxYMin meet" />
+        <image href="/arabtec-logo.svg" x={LOGO.x} y={LOGO.y} width={LOGO.w} height={LOGO.h} preserveAspectRatio="xMaxYMin meet" />
         {date && <text x="1168" y="787" textAnchor="end" fontFamily={HEAD_FONT} fontSize="7" fill="#333">{'Date: ' + date}</text>}
 
         <g>
@@ -652,7 +667,10 @@
         {box.kind === 'role' && tab === 'people' && (
           liveKeys.has(box.key)
             ? <PeopleList chartId={chartId} box={box} people={people} boxes={allBoxes.filter((b) => liveKeys.has(b.key))} canEdit={editing} onChanged={onChanged} onError={onError} />
-            : <p className="page-sub">This box is new in the draft. People can be added once the restructure is published.</p>
+            : people.length
+              ? <div><p className="page-sub">These people come from the imported file. They become assignments when the draft is published.</p>
+                {people.map((a) => { const l = personLine(a, todayISO()); return <div key={a.id} style={{ fontSize: 12, color: l.red ? JOIN_RED : 'inherit', marginBottom: 2 }}>{l.t}</div>; })}</div>
+              : <p className="page-sub">This box is new in the draft. People can be added once the restructure is published.</p>
         )}
         {box.kind === 'role' && tab === 'seats' && (
           <div>
@@ -864,9 +882,165 @@
   }
 
 
-  /* ------------------------------- export hook ----------------------------- */
-  // HOOK for the export task (PDF, Visio, SVG, CSV, JSON). Intentionally a no-op for now.
-  function exportCurrent(format, ctx) { /* TODO(export task): render ctx.doc / ctx.assignments to `format` */ return false; }
+  /* ------------------------------- import / export ------------------------- */
+  const slug = (t) => String(t || 'org-chart').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'org-chart';
+
+  // Unwrapped lines of a box (Visio does its own wrapping inside the box width).
+  function logicalLines(b, people, today) {
+    if (b.kind === 'text') return String(b.text || '').split('\n').map((t) => ({ t, red: false }));
+    const out = [{ t: b.title || 'Untitled', red: false }];
+    if (b.kind === 'role') {
+      const c = countLine(b);
+      if (c) out.push({ t: c, red: false });
+      if (b.proposed > 0) out.push({ t: 'Proposed X' + b.proposed, red: false });
+      (people || []).forEach((a) => out.push(personLine(a, today)));
+    }
+    return out;
+  }
+  // Exactly what the sheet shows for one page, in the neutral shape org-export-v2.js draws.
+  function sheetModel(page, peopleByBox, today, dateFallback) {
+    const geo = buildGeo(page, peopleByBox, today);
+    const lines = pageLines(page, geo, new Set());
+    return {
+      name: page.name, title1: page.title1 || '', title2: page.title2 || '', date: page.date || dateFallback || '',
+      boxes: page.boxes.map((b) => { const g = geo.get(b.key); return { key: b.key, kind: b.kind, x: g.x, y: g.y, w: g.w, h: g.h, lines: g.m.lines, logical: logicalLines(b, peopleByBox.get(b.key), today), left: g.m.left, dashed: g.m.dashed }; }),
+      lines: lines.map((L) => ({ key: L.key, parent: L.parent, pts: L.route.pts, fs: L.route.fs, ts: L.route.ts })),
+    };
+  }
+  function peopleCsvRows(chartName, doc, people) {
+    const rows = [['Chart', 'Page', 'Box title', 'Team', 'Name', 'Suffix', 'Status', 'Effective date', 'Share', 'Employee ID']];
+    for (const pg of doc.pages) {
+      const byKey = new Map(pg.boxes.map((b) => [b.key, b]));
+      const teamOf = (b) => { let p = b.parentKey && byKey.get(b.parentKey), n = 0; while (p && n++ < 100) { if (p.kind === 'team') return p.title || ''; p = p.parentKey && byKey.get(p.parentKey); } return ''; };
+      for (const b of pg.boxes) {
+        people.filter((a) => a.boxKey === b.key).sort((x, y) => x.sortOrder - y.sortOrder).forEach((a) => rows.push([chartName, pg.name || '', b.title || '', teamOf(b), a.personName, a.suffix || '', a.status, a.effectiveDate || '', a.share, a.employeeId || '']));
+      }
+    }
+    return rows;
+  }
+  // Imported files keep the file's positions but box heights are recomputed here, which can make a few stacked boxes touch.
+  // Nudge the lower box (with its team) down until nothing overlaps and a 7 pt gap is left for the arrow.
+  function separateOverlaps(page, peopleByBox, today) {
+    for (let pass = 0; pass < 60; pass++) {
+      const geo = buildGeo(page, peopleByBox, today);
+      const list = [...geo.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+      let moved = false;
+      for (let i = 0; i < list.length && !moved; i++) for (let j = i + 1; j < list.length && !moved; j++) {
+        const a = list[i], b = list[j];
+        const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), oy = a.y + a.h + 7 - b.y; // keep room for the arrow
+        if (ox > 0.5 && oy > 0.5 && b.y >= a.y) {
+          const dy = r1(oy), gone = new Set([b.b.key, ...descendants(page, b.b.key)]);
+          page.boxes.forEach((x) => { if (gone.has(x.key)) x.y = r1(x.y + dy); });
+          page.links.forEach((l) => { if (l.points && gone.has(l.childKey) && gone.has(((page.boxes.find((x) => x.key === l.childKey)) || {}).parentKey)) l.points = l.points.map((q) => ({ x: q.x, y: r1(q.y + dy) })); });
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+  }
+  function planSummary(payload) {
+    const pages = payload.pages || [];
+    const ppl = pages.flatMap((p) => p.importPeople || []);
+    return { pages: pages.length, boxes: pages.reduce((n, p) => n + p.boxes.length, 0), people: ppl.length, joiners: ppl.filter((x) => x.status === 'joining').length, links: pages.reduce((n, p) => n + p.boxes.filter((b) => b.parentKey).length, 0) };
+  }
+
+  /* ctx: { doc, people (assignments incl. imported), peopleByBox, chart, version, today, dateFallback, pageIdx, paper, scope } */
+  async function exportCurrent(format, ctx) {
+    const X = window.ArabtecOrgExport;
+    if (!X) throw new Error('The export tools did not load. Reload the page and try again.');
+    const doc = ctx.doc, name = (ctx.chart && ctx.chart.name) || 'Org chart';
+    const idxs = ctx.scope === 'current' || format === 'svg' ? [Math.min(ctx.pageIdx, doc.pages.length - 1)] : doc.pages.map((_, i) => i);
+    const models = () => idxs.map((i) => sheetModel(doc.pages[i], ctx.peopleByBox, ctx.today, ctx.dateFallback));
+    if (format === 'pdf') X.download(await X.pdf(models(), { paper: ctx.paper, title: name }), slug(name) + '-' + ctx.paper.toLowerCase() + '.pdf');
+    else if (format === 'vsdx') X.download(await X.vsdx(doc.pages.map((_, i) => sheetModel(doc.pages[i], ctx.peopleByBox, ctx.today, ctx.dateFallback)), { title: name }), slug(name) + '.vsdx');
+    else if (format === 'svg') X.download(await X.svg(models()[0]), slug(name) + '-' + slug(doc.pages[idxs[0]].name || 'page') + '.svg');
+    else if (format === 'csv') X.download(X.csv(peopleCsvRows(name, doc, ctx.people)), slug(name) + '-people.csv');
+    else if (format === 'json') X.download(new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), chart: ctx.chart ? { id: ctx.chart.id, name: ctx.chart.name, scope: ctx.chart.scope } : null,
+      version: ctx.version ? { id: ctx.version.id, state: ctx.version.state, label: ctx.version.label } : null, payload: doc, assignments: ctx.people }, null, 2)], { type: 'application/json' }), slug(name) + '-backup.json');
+    else throw new Error('Unknown export format.');
+    return true;
+  }
+
+  function PdfModal({ pageCount, onClose, onExport }) {
+    const [paper, setPaper] = useState('A3'), [scope, setScope] = useState('all');
+    const a = useAction(() => onExport(paper, scope));
+    return (
+      <Modal title="Export PDF" onClose={onClose} footer={<><button type="button" className="btn btn-ghost" onClick={onClose} disabled={a.busy}>Cancel</button>
+        <button type="button" className="btn" disabled={a.busy} onClick={() => a.go()}>{a.busy ? 'Preparing…' : 'Download PDF'}</button></>}>
+        {a.error && <div className="error-banner" role="alert">{a.error}</div>}
+        <p className="page-sub" style={{ marginTop: 0 }}>Vector PDF of exactly what the sheet shows. Pages with Arabic or other non-Latin text are printed as a sharp image.</p>
+        <div className="form-grid">
+          <div className="field"><label>Paper (landscape)</label><select value={paper} onChange={(e) => setPaper(e.target.value)}>{['A4', 'A3', 'A2', 'A1'].map((z) => <option key={z} value={z}>{z}</option>)}</select></div>
+          <div className="field"><label>Pages</label><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="all">All pages ({pageCount})</option><option value="current">Current page only</option></select></div>
+        </div>
+      </Modal>
+    );
+  }
+
+  function ImportModal({ current, onClose, onImport }) {
+    const [file, setFile] = useState(null), [parsed, setParsed] = useState(null), [target, setTarget] = useState('new'), [name, setName] = useState('');
+    const [date, setDate] = useState(todayISO()), [reading, setReading] = useState(false), [error, setError] = useState(null);
+    const a = useAction(async () => {
+      const payload = clone(parsed.payload);
+      payload.effectiveDate = date;
+      if (target === 'new') {
+        const r = await api().post('/org/charts', { name: name.trim(), scope: 'project', payload, asDraft: true });
+        await onImport({ chartId: r.chart.id, versionId: r.version.id });
+      } else {
+        payload.importReplacesPeople = true;
+        const r = await api().post('/org/charts/' + current.id + '/drafts', { label: ('Import: ' + file.name).slice(0, 100), payload });
+        await onImport({ chartId: current.id, versionId: r.version.id });
+      }
+    });
+    async function pick(f) {
+      setError(null); setParsed(null); setFile(f || null);
+      if (!f) return;
+      const base = f.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+      setName(base); setReading(true);
+      try {
+        let payload;
+        if (/\.vsdx$/i.test(f.name)) {
+          if (!window.ArabtecOrgVsdx) throw new Error('The import tool did not load. Reload the page and try again.');
+          payload = (await window.ArabtecOrgVsdx.parse(await f.arrayBuffer())).payload;
+        } else if (/\.csv$/i.test(f.name)) {
+          const rows = window.ArabtecOrgCsv.parse(await f.text()).rows;
+          payload = (await api().post('/org/charts/import/csv', { rows, name: base })).payload;
+        } else throw new Error('Choose a Visio (.vsdx) or a CSV (.csv) file.');
+        payload.pages.forEach((pg) => {
+          const by = new Map();
+          (pg.importPeople || []).forEach((x, i) => { if (!by.has(x.boxKey)) by.set(x.boxKey, []); by.get(x.boxKey).push({ id: i, personName: x.personName, suffix: x.suffix, status: x.status, effectiveDate: x.effectiveDate, sortOrder: x.sortOrder == null ? i : x.sortOrder }); });
+          separateOverlaps(pg, by, todayISO());
+        });
+        setParsed({ payload, stats: planSummary(payload) });
+      } catch (e) { setError(errText(e, 'That file could not be read.')); }
+      setReading(false);
+    }
+    const st = parsed && parsed.stats;
+    const ready = parsed && !a.busy && (target === 'draft' || name.trim());
+    return (
+      <Modal title="Import a chart" onClose={onClose} footer={<><button type="button" className="btn btn-ghost" onClick={onClose} disabled={a.busy}>Cancel</button>
+        <button type="button" className="btn" disabled={!ready} onClick={() => a.go()}>{a.busy ? 'Importing…' : 'Import as draft'}</button></>}>
+        {(error || a.error) && <div className="error-banner" role="alert">{error || a.error}</div>}
+        <p className="page-sub" style={{ marginTop: 0 }}>Choose a Visio file (.vsdx) or a CSV with one row per person. Nothing is published: the import opens as a draft in Restructure, and its people are only created when the draft is published.</p>
+        <div className="field"><label>File</label><input type="file" accept=".vsdx,.csv" aria-label="Import file" onChange={(e) => pick(e.target.files && e.target.files[0])} /></div>
+        {reading && <p className="page-sub">Reading the file{'…'}</p>}
+        {st && (
+          <>
+            <div className="ocv2-metrics" aria-label="Import preview">
+              {[['Pages', st.pages], ['Boxes', st.boxes], ['People', st.people], ['Joiners', st.joiners], ['Links', st.links]].map(([l, v]) => <div key={l} className="ocv2-metric"><b>{v}</b><span>{l}</span></div>)}
+            </div>
+            <div className="ocv2-checks" style={{ flexDirection: 'column', gap: 8 }}>
+              <label><input type="radio" name="imt" checked={target === 'new'} onChange={() => setTarget('new')} /> A new chart</label>
+              <label><input type="radio" name="imt" checked={target === 'draft'} disabled={!current} onChange={() => setTarget('draft')} /> A new draft on the current chart{current ? ' (' + current.name + ')' : ' (no published chart is open)'}</label>
+            </div>
+            {target === 'new' && <div className="field"><label>Chart name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>}
+            {target === 'draft' && <p className="page-sub">When this draft is published, the chart's current people are replaced by the people in the file.</p>}
+            <div className="field"><label>Effective date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          </>
+        )}
+      </Modal>
+    );
+  }
 
   function useNoPhone() { return false; }
 
@@ -905,7 +1079,7 @@
     const docRef = useRef(null), verRef = useRef(null), viewRef = useRef(view), stageRef = useRef(null);
     const drag = useRef(null), spaceRef = useRef(false), undoRef = useRef({ u: [], r: [], co: null });
     const saver = useRef({ timer: null, inflight: false, dirty: false });
-    const fitted = useRef(false), toastTimer = useRef(null);
+    const fitted = useRef(false), toastTimer = useRef(null), pendingDraft = useRef(null);
 
     const setDoc = (d) => { docRef.current = d; setDocState(d); };
     const setVer = (v) => { verRef.current = v; setVerState(v); };
@@ -951,7 +1125,10 @@
       let live = true;
       setLoadingChart(true); setErr(null); setMode('view'); setSel(new Set()); setSelLine(null); setCompare(null); setPageIdx(0); setCollapsed(new Set()); fitted.current = false;
       try { localStorage.setItem('ocv2.chart', String(chartId)); } catch (e) { /* storage blocked */ }
-      reloadChart(chartId).catch((e) => { if (live) setErr(errText(e, 'Could not load this chart.')); }).finally(() => { if (live) setLoadingChart(false); });
+      reloadChart(chartId)
+        .then(async () => { const pd = pendingDraft.current; if (pd && live) { pendingDraft.current = null; setMode('restructure'); await openDraft(pd); } })
+        .catch((e) => { if (live) setErr(errText(e, 'Could not load this chart.')); })
+        .finally(() => { if (live) setLoadingChart(false); });
       return () => { live = false; };
     }, [chartId, reloadChart]);
 
@@ -1015,7 +1192,7 @@
       if (co && u.co && u.co.key === co && now - u.co.t < 1200) { u.co.t = now; return; }
       u.u.push(str); if (u.u.length > 150) u.u.shift(); u.r = []; u.co = co ? { key: co, t: now } : null;
     };
-    const warnCount = (d) => { let n = 0; computeWarnings(d.pages, assignments).forEach((l) => { n += l.length; }); return n; };
+    const warnCount = (d) => { let n = 0; computeWarnings(d.pages, viewAssignments).forEach((l) => { n += l.length; }); return n; };
     const commit = (mut, opts) => {
       const cur = docRef.current;
       if (!cur || !(mode === 'edit' || (restr && verRef.current && verRef.current.state === 'draft'))) return false;
@@ -1039,12 +1216,17 @@
     };
 
     /* ------------------------------- derived data ---------------------------- */
+    // People read from an imported file live in the draft (page.importPeople) until it is published; show them like assignments.
+    const importList = useMemo(() => (doc ? doc.pages.flatMap((p) => (p.importPeople || []).map((x, i) => ({
+      id: 'imp:' + p.key + ':' + i, boxKey: x.boxKey, personName: x.personName, status: x.status || 'in_post', effectiveDate: x.effectiveDate || null,
+      suffix: x.suffix || null, share: x.share || 1, sortOrder: x.sortOrder == null ? i : x.sortOrder, updatedAt: '', positionId: null }))) : []), [doc]);
+    const viewAssignments = useMemo(() => (importList.length ? (doc && doc.importReplacesPeople ? importList : assignments.concat(importList)) : assignments), [assignments, importList, doc]);
     const peopleByBox = useMemo(() => {
       const m = new Map();
-      for (const a of assignments) { if (!m.has(a.boxKey)) m.set(a.boxKey, []); m.get(a.boxKey).push(a); }
-      m.forEach((l) => l.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id));
+      for (const a of viewAssignments) { if (!m.has(a.boxKey)) m.set(a.boxKey, []); m.get(a.boxKey).push(a); }
+      m.forEach((l) => l.sort((a, b) => a.sortOrder - b.sortOrder || (typeof a.id === 'number' && typeof b.id === 'number' ? a.id - b.id : 0)));
       return m;
-    }, [assignments]);
+    }, [viewAssignments]);
     const geo = useMemo(() => (page ? buildGeo(page, peopleByBox, today) : null), [page, peopleByBox, today]);
     const hidden = useMemo(() => {
       const h = new Set();
@@ -1053,8 +1235,8 @@
     }, [page, collapsed]);
     const rawKey = drag.current && drag.current.type === 'seg' ? drag.current.key : null;
     const lines = page && geo ? pageLines(page, geo, hidden, rawKey) : [];
-    const metrics = useMemo(() => (doc ? computeMetrics(doc.pages, assignments) : null), [doc, assignments]);
-    const warnings = useMemo(() => (doc && editing ? computeWarnings(doc.pages, assignments) : null), [doc, assignments, editing]);
+    const metrics = useMemo(() => (doc ? computeMetrics(doc.pages, viewAssignments) : null), [doc, viewAssignments]);
+    const warnings = useMemo(() => (doc && editing ? computeWarnings(doc.pages, viewAssignments) : null), [doc, viewAssignments, editing]);
     const liveKeys = useMemo(() => new Set(detail && detail.version ? detail.version.payload.pages.flatMap((p) => p.boxes).filter((b) => b.kind === 'role').map((b) => b.key) : []), [detail]);
     const allBoxes = useMemo(() => (doc ? doc.pages.flatMap((p) => p.boxes) : []), [doc]);
     const selKeys = [...sel].filter((k) => geo && geo.has(k));
@@ -1149,6 +1331,7 @@
         else { gone = new Set([key]); p.boxes.filter((c) => c.parentKey === key).forEach((c) => { c.parentKey = b.parentKey || null; resetLink(p, c.key); }); }
         p.boxes = p.boxes.filter((x) => !gone.has(x.key));
         p.links = p.links.filter((l) => !gone.has(l.childKey));
+        if (p.importPeople) p.importPeople = p.importPeople.filter((x) => !gone.has(x.boxKey));
       }
     };
     const arrangeTeam = (key, arr) => {
@@ -1492,8 +1675,26 @@
         setStale(null); setVer(r.version); setDoc(clone(r.version.payload)); say('Live changes brought into this draft.');
       } catch (e) { setErr(errText(e)); }
     }
+    async function afterImport({ chartId: cid, versionId }) {
+      await waitSaved();
+      setModal(null); setErr(null);
+      await loadCharts();
+      if (cid === chartId) {
+        const vs = await api().get('/org/charts/' + cid + '/versions'); setVersions(vs.versions || []);
+        setMode('restructure'); await openDraft(versionId);
+      } else { pendingDraft.current = versionId; setChartId(cid); }
+      say('Imported as a draft. Review it, then submit it for approval.');
+    }
+    async function runExport(format, extra) {
+      try {
+        await exportCurrent(format, { doc: docRef.current, people: viewAssignments, peopleByBox, chart: detail && detail.chart, version: verRef.current, today, pageIdx,
+          dateFallback: ver && ver.publishedAt ? ddmmyyyy(ver.publishedAt) : '', paper: 'A3', scope: 'all', ...(extra || {}) });
+        say('Export ready.');
+      } catch (e) { setErr(errText(e, 'The export could not be created.')); }
+    }
     async function openCompare() {
       if (compare) { setCompare(null); return; }
+      if (!detail.chart.currentVersionId) { say('Nothing is published yet to compare with.', 'warn'); return; }
       try {
         await waitSaved();
         const pub = await api().get('/org/charts/versions/' + detail.chart.currentVersionId);
@@ -1554,8 +1755,13 @@
       );
     }
 
-    const exportItems = [['pdf', 'PDF (A4 to A1)'], ['vsdx', 'Visio (.vsdx)'], ['svg', 'SVG'], ['csv', 'CSV of assignments'], ['json', 'JSON backup']]
-      .map(([f, l]) => ({ label: l, onClick: () => { exportCurrent(f, { doc: docRef.current, assignments, chart: detail && detail.chart }); say('Export is not available yet. It arrives in the next update.'); } }));
+    const exportItems = [
+      { label: 'PDF…', onClick: () => setModal({ type: 'pdf' }) },
+      { label: 'Visio (.vsdx)', onClick: () => runExport('vsdx') },
+      { label: 'SVG (this page)', onClick: () => runExport('svg') },
+      { label: 'CSV of people', onClick: () => runExport('csv') },
+      { label: 'JSON backup', onClick: () => runExport('json') },
+    ];
     const manageable = manage && !!detail;
 
     return (
@@ -1575,13 +1781,14 @@
             {manage && <button type="button" className="btn btn-secondary" onClick={() => setModal({ type: 'new' })}>New chart</button>}
             <div className="ocv2-seg" role="group" aria-label="Mode">
               <button type="button" aria-pressed={mode === 'view'} onClick={() => switchMode('view')}>View</button>
-              <button type="button" aria-pressed={mode === 'edit'} disabled={!manageable} title={manage ? undefined : 'You need organization chart permission'} onClick={() => switchMode('edit')}>Edit</button>
+              <button type="button" aria-pressed={mode === 'edit'} disabled={!manageable || !detail.version} title={manage ? undefined : 'You need organization chart permission'} onClick={() => switchMode('edit')}>Edit</button>
               <button type="button" aria-pressed={restr} disabled={!manageable} title={manage ? undefined : 'You need organization chart permission'} onClick={() => switchMode('restructure')}>Restructure</button>
             </div>
             {pill}
-            <button type="button" className="btn btn-secondary" disabled={!detail} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left, y: r.bottom + 4, items: exportItems }); }}>Export</button>
-            {manageable && mode === 'view' && <button type="button" className="btn" onClick={() => switchMode('edit')}>Edit chart</button>}
-            {manageable && mode === 'edit' && <button type="button" className="btn" onClick={() => switchMode('restructure')}>Start restructure</button>}
+            {manage && <button type="button" className="btn btn-secondary" onClick={() => setModal({ type: 'import' })}>Import</button>}
+            <button type="button" className="btn btn-secondary" disabled={!doc} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left, y: r.bottom + 4, items: exportItems }); }}>Export</button>
+            {manageable && detail.version && mode === 'view' && <button type="button" className="btn" onClick={() => switchMode('edit')}>Edit chart</button>}
+            {manageable && detail.version && mode === 'edit' && <button type="button" className="btn" onClick={() => switchMode('restructure')}>Start restructure</button>}
           </div>
         </div>
 
@@ -1597,8 +1804,8 @@
               </select>
             )}
             <span className="ocv2-grow" />
-            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setModal({ type: 'start' })}>New draft</button>
-            <button type="button" className="btn btn-sm btn-secondary" aria-pressed={!!compare} onClick={openCompare}>{compare ? 'Back to sheet' : 'Compare'}</button>
+            {detail && detail.chart.currentVersionId && <button type="button" className="btn btn-sm btn-secondary" onClick={() => setModal({ type: 'start' })}>New draft</button>}
+            <button type="button" className="btn btn-sm btn-secondary" aria-pressed={!!compare} disabled={!detail || !detail.chart.currentVersionId} onClick={openCompare}>{compare ? 'Back to sheet' : 'Compare'}</button>
             {draftState === 'draft' && <button type="button" className="btn btn-sm" onClick={() => step('submit')}>Submit for approval</button>}
             {draftState === 'pending_approval' && director && !ver.approvedBy && <button type="button" className="btn btn-sm" onClick={() => step('approve')}>Approve</button>}
             {draftState === 'pending_approval' && director && <button type="button" className="btn btn-sm btn-danger" onClick={() => step('reject')}>Reject</button>}
@@ -1619,6 +1826,11 @@
             {manage && <button type="button" className="btn" onClick={() => setModal({ type: 'new' })}>New chart</button>}</div>
         )}
         {loadingChart && !doc && <p className="page-sub">Loading chart{'…'}</p>}
+        {!loadingChart && !doc && detail && !detail.version && (
+          <div className="card card-pad"><h3 style={{ marginTop: 0 }}>Nothing is published for this chart yet</h3>
+            <p className="page-sub">{manage ? 'It only exists as a draft. Open the draft in Restructure to review it, submit it for approval and publish it.' : 'It has not been published yet.'}</p>
+            {manageable && <button type="button" className="btn" onClick={() => switchMode('restructure')}>Open the draft</button>}</div>
+        )}
 
         {doc && page && geo && metrics && (
           <>
@@ -1680,6 +1892,8 @@
 
         {menu && <Menu x={menu.x} y={menu.y} items={menu.items || menuItems(menu.keys)} onClose={() => setMenu(null)} />}
         {modal && modal.type === 'new' && <NewChartModal onClose={() => setModal(null)} onCreate={async (b) => { const r = await api().post('/org/charts', b); await loadCharts(); setChartId(r.chart.id); setModal(null); }} />}
+        {modal && modal.type === 'import' && <ImportModal current={detail && detail.chart.currentVersionId ? detail.chart : null} onClose={() => setModal(null)} onImport={afterImport} />}
+        {modal && modal.type === 'pdf' && <PdfModal pageCount={doc ? doc.pages.length : 1} onClose={() => setModal(null)} onExport={async (paper, scope) => { await runExport('pdf', { paper, scope }); setModal(null); }} />}
         {modal && modal.type === 'start' && <StartModal hasDraft={drafts.length > 0} onClose={() => setModal(null)} onStart={async (l, d) => { await startRestructure(l, d); setModal(null); }} />}
         {modal && modal.type === 'delete' && <DeleteModal keys={modal.keys} initial={modal.mode} page={page} assignments={assignments} onClose={() => setModal(null)} onDelete={(m) => { commit((d, p) => { removeBoxes(p, modal.keys, m); }); setSel(new Set()); setModal(null); }} />}
         {modal && modal.type === 'move' && <MoveModal box={geo.get(modal.key).b} people={peopleByBox.get(modal.key) || []} boxes={allBoxes.filter((b) => b.kind === 'role' && liveKeys.has(b.key) && b.key !== modal.key)} onClose={() => setModal(null)}
