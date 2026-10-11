@@ -691,6 +691,7 @@ model OrgChart {
   scope            String   @default("project") // project | head_office | department
   status           String   @default("active")  // active | archived
   currentVersionId Int?
+  legacyRootNodeId Int? // organization_node root this chart was migrated from
   createdBy        Int?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -764,4 +765,5 @@ model OrgAssignment {
   @@index([chartId])
   @@index([chartId, boxKey])
   @@index([employeeId])
+  // partial unique index idx_orgasg_position (position_id WHERE NOT NULL) is created in schema.js / SCHEMA.sql
 }

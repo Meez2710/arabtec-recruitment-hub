@@ -500,6 +500,7 @@ CREATE TABLE org_chart (
   scope TEXT NOT NULL DEFAULT 'project',        -- project | head_office | department
   status TEXT NOT NULL DEFAULT 'active',        -- active | archived
   current_version_id BIGINT,
+  legacy_root_node_id BIGINT,                   -- organization_node root this chart was migrated from
   created_by BIGINT REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -556,3 +557,4 @@ CREATE TABLE org_assignment (
 CREATE INDEX idx_orgasg_chart ON org_assignment(chart_id);
 CREATE INDEX idx_orgasg_chart_box ON org_assignment(chart_id, box_key);
 CREATE INDEX idx_orgasg_employee ON org_assignment(employee_id);
+CREATE UNIQUE INDEX idx_orgasg_position ON org_assignment(position_id) WHERE position_id IS NOT NULL;

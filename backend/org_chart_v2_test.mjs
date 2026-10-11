@@ -28,7 +28,7 @@ const check = async (name, fn) => {
 };
 
 await import('./src/server.js');
-const { all, get } = await import('./src/lib/db.js');
+const { all, get, run: run2 } = await import('./src/lib/db.js');
 const { migrateOrganizationNodesToCharts } = await import('./src/lib/org-chart-v2-migrate.js');
 const Charts = await import('./src/lib/org-charts.js');
 
@@ -522,7 +522,7 @@ await check('a draft whose base is no longer the published version cannot be sub
     p.pages[0].links.push({ childKey: 'qa', kind: 'reports', fromSide: 'bottom', toSide: 'top', points: [{ x: 1, y: 2 }, { x: 3, y: 2 }] });
     const r = await api(`/api/org/charts/versions/${cur.id}`, { method: 'PUT', tok: manager, body: { payload: p, updatedAt: cur.updatedAt } });
     assert.equal(r.status, 200, r.text);
-    p.pages[0].links.push({ childKey: 'qa', kind: 'dotted', fromSide: 'bottom', toSide: 'top' });
+    p.pages[0].links.push({ childKey: 'qa', kind: 'dotted', fromKey: 'eng', fromSide: 'bottom', toSide: 'top' });
     assert.equal((await api(`/api/org/charts/versions/${cur.id}`, { method: 'PUT', tok: manager, body: { payload: p, updatedAt: r.json.version.updatedAt } })).status, 409, 'dotted line stays structural');
   });
   await check('stale draft: submit returns 409 with a live-changes summary', async () => {
@@ -718,6 +718,130 @@ await check('a draft whose base is no longer the published version cannot be sub
     assert.equal((await api('/api/org/charts/import/csv', { method: 'POST', tok: manager, body: { rows: [] } })).status, 400);
     const asNew = await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'CSV Site', payload: r.json.payload, asDraft: true } });
     assert.equal(asNew.status, 201, asNew.text);
+  });
+}
+
+/* ------------------------------ review fixes --------------------------------- */
+
+{
+  const mkChart = async (name) => (await api('/api/org/charts', { method: 'POST', tok: manager, body: { name, payload: basePayload() } })).json;
+  const draftOf = async (chartId, edit) => {
+    const d = (await api(`/api/org/charts/${chartId}/drafts`, { method: 'POST', tok: manager, body: {} })).json.version;
+    if (edit) {
+      const p = structuredClone(d.payload);
+      edit(p.pages[0]);
+      const r = await api(`/api/org/charts/versions/${d.id}`, { method: 'PUT', tok: manager, body: { payload: p, updatedAt: d.updatedAt } });
+      assert.equal(r.status, 200, r.text);
+    }
+    return d;
+  };
+  const approveDraft = async (d) => {
+    assert.equal((await api(`/api/org/charts/versions/${d.id}/submit`, { method: 'POST', tok: manager })).status, 200);
+    assert.equal((await api(`/api/org/charts/versions/${d.id}/approve`, { method: 'POST', tok: director })).status, 200);
+  };
+  const pub = (d, moves) => api(`/api/org/charts/versions/${d.id}/publish`, { method: 'POST', tok: manager, body: moves ? { moves } : undefined });
+  const asgn = (chartId, body) => api(`/api/org/charts/${chartId}/assignments`, { method: 'POST', tok: manager, body });
+
+  await check('migration still converts legacy roots when v2 charts already exist; per-root idempotent', async () => {
+    const before = all('SELECT id FROM org_chart').length;
+    assert.ok(before > 0);
+    const late = await mk({ positionTitle: 'Late Annex', nodeType: 'project', projectOrLocation: 'Late Annex' });
+    await mk({ employeeName: 'Dina Karam', positionTitle: 'Annex Lead', parentId: late.id, nodeType: 'employee_position' });
+    const r = migrateOrganizationNodesToCharts();
+    assert.equal(r.migrated, true);
+    assert.equal(r.charts, 1);
+    assert.equal(all('SELECT id FROM org_chart').length, before + 1);
+    assert.equal(get('SELECT name FROM org_chart WHERE legacy_root_node_id=?', [late.id]).name, 'Late Annex');
+    assert.equal(migrateOrganizationNodesToCharts().migrated, false);
+    assert.equal(all('SELECT id FROM org_chart').length, before + 1);
+    assert.equal(all("SELECT id FROM org_assignment WHERE person_name='Dina Karam'").length, 1);
+  });
+
+  await check('publish: a second approved draft on the same base is refused with 409 and stays approved', async () => {
+    const c = await mkChart('Race Plaza');
+    const a = await draftOf(c.chart.id, (pg) => { pg.boxes.find((b) => b.key === 'qa').planned = 2; });
+    const b = await draftOf(c.chart.id, (pg) => { pg.boxes.find((x) => x.key === 'qa').planned = 3; });
+    await approveDraft(a);
+    await approveDraft(b);
+    assert.equal((await pub(a)).status, 200);
+    const r = await pub(b);
+    assert.equal(r.status, 409, r.text);
+    const row = get('SELECT state, approved_by FROM org_chart_version WHERE id=?', [b.id]);
+    assert.equal(row.state, 'pending_approval');
+    assert.ok(row.approved_by);
+    assert.equal(get('SELECT current_version_id AS v FROM org_chart WHERE id=?', [c.chart.id]).v, a.id);
+  });
+  await check('publish: current_version_id is claimed with a compare-and-set (stale expectation changes 0 rows)', async () => {
+    const c = await mkChart('CAS Plaza');
+    const r = run2('UPDATE org_chart SET current_version_id=?, updated_at=? WHERE id=? AND current_version_id=?', [999, 'x', c.chart.id, c.version.id + 12345]);
+    assert.equal(r.changes, 0);
+  });
+
+  await check('people only sit in role boxes: team destinations refused live and at publish', async () => {
+    const c = await mkChart('Roles Plaza');
+    const cidR = c.chart.id;
+    assert.equal((await asgn(cidR, { boxKey: 'eng', personName: 'Hana Selim' })).status, 201);
+    const live = await asgn(cidR, { boxKey: 'root', personName: 'Team Target' });
+    assert.equal(live.status, 400);
+    assert.match(live.json.error, /only be placed in role boxes/);
+    const ok = (await asgn(cidR, { boxKey: 'qa', personName: 'Samir Aziz' })).json.assignment;
+    const mv = await api(`/api/org/charts/${cidR}/assignments/${ok.id}`, { method: 'PUT', tok: manager, body: { boxKey: 'root' } });
+    assert.equal(mv.status, 400);
+    assert.match(mv.json.error, /only be placed in role boxes/);
+    const d = await draftOf(cidR, (pg) => { pg.boxes.find((b) => b.key === 'eng').kind = 'team'; });
+    await approveDraft(d);
+    const blocked = await pub(d);
+    assert.equal(blocked.status, 409, blocked.text);
+    assert.ok(blocked.json.orphanBoxKeys.includes('eng'));
+    const toTeam = await pub(d, { eng: 'eng' });
+    assert.equal(toTeam.status, 400);
+    assert.equal((await pub(d, { eng: 'pm' })).status, 200);
+  });
+
+  await check('shares are validated for employee_id AND user_id independently', async () => {
+    const c = await mkChart('Shares Plaza');
+    const uid = get('SELECT id FROM users ORDER BY id LIMIT 1').id;
+    assert.equal((await asgn(c.chart.id, { boxKey: 'eng', personName: 'Wael Hamed', employeeId: 5001, userId: uid, share: 1 })).status, 201);
+    const r = await asgn(c.chart.id, { boxKey: 'qa', personName: 'Wael Hamed', employeeId: 5002, userId: uid, share: 1 });
+    assert.equal(r.status, 409, r.text);
+    assert.equal((await asgn(c.chart.id, { boxKey: 'qa', personName: 'Other Person', employeeId: 5003, share: 1 })).status, 201);
+  });
+  await check('share locks: one advisory-lock name per identity, employee first', async () => {
+    assert.deepEqual(Charts.identityLockKeys(7, 9), ['org_assign:emp:7', 'org_assign:user:9']);
+    assert.deepEqual(Charts.identityLockKeys(null, 9), ['org_assign:user:9']);
+    assert.deepEqual(Charts.identityLockKeys(null, null), []);
+  });
+
+  await check('a seat holds one person: explicit occupied seat is 409; auto-pick skips occupied seats', async () => {
+    const c = await mkChart('Seats Plaza');
+    const a = (await asgn(c.chart.id, { boxKey: 'eng', personName: 'Nour Atef' })).json.assignment;
+    assert.ok(a.positionId);
+    const dup = await asgn(c.chart.id, { boxKey: 'eng', personName: 'Ziad Fares', positionId: a.positionId });
+    assert.equal(dup.status, 409, dup.text);
+    assert.match(dup.json.error, /already taken/);
+    const b = (await asgn(c.chart.id, { boxKey: 'eng', personName: 'Ziad Fares' })).json.assignment;
+    assert.ok(b.positionId && b.positionId !== a.positionId);
+    const third = (await asgn(c.chart.id, { boxKey: 'eng', personName: 'Third Person' })).json.assignment;
+    assert.equal(third.positionId, null, 'both seats taken');
+    const mv = await api(`/api/org/charts/${c.chart.id}/assignments/${b.id}`, { method: 'PUT', tok: manager, body: { positionId: a.positionId } });
+    assert.equal(mv.status, 409);
+    const same = await api(`/api/org/charts/${c.chart.id}/assignments/${a.id}`, { method: 'PUT', tok: manager, body: { positionId: a.positionId } });
+    assert.equal(same.status, 200, same.text);
+    assert.throws(() => run2('INSERT INTO org_assignment (chart_id, box_key, position_id, person_name, created_at, updated_at) VALUES (?,?,?,?,?,?)', [c.chart.id, 'eng', a.positionId, 'Raw', 'x', 'x']));
+  });
+
+  await check('dotted link without fromKey is rejected; with fromKey it saves', async () => {
+    const c = await mkChart('Dotted Plaza');
+    const d = await draftOf(c.chart.id);
+    const put = (link) => {
+      const p = structuredClone(d.payload);
+      p.pages[0].links.push(link);
+      return api(`/api/org/charts/versions/${d.id}`, { method: 'PUT', tok: manager, body: { payload: p, updatedAt: d.updatedAt } });
+    };
+    assert.equal((await put({ childKey: 'qa', kind: 'dotted' })).status, 400);
+    assert.equal((await put({ childKey: 'qa', kind: 'dotted', fromKey: 'ghost' })).status, 400);
+    const ok = await put({ childKey: 'qa', kind: 'dotted', fromKey: 'plan' });
+    assert.equal(ok.status, 200, ok.text);
   });
 }
 

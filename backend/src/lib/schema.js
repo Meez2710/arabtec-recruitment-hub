@@ -1136,6 +1136,8 @@ export function ensureSchema() {
   addColumnIfMissing('offer', 'expiry_date', 'TEXT');
   addColumnIfMissing('org_chart_version', 'based_on_updated_at', 'TEXT');
   addColumnIfMissing('org_chart_version', 'base_payload_json', 'TEXT');
+  addColumnIfMissing('org_chart', 'legacy_root_node_id', 'INTEGER');
+  ensureOrgSeatUniqueIndex();
   relaxStandaloneLinks();
 
   migrateWorkflowStages();
@@ -1292,6 +1294,29 @@ function syncCatalogAdditions() {
  */
 let joinedUniquenessState = { enforced: false, reason: 'not_attempted', duplicates: [] };
 export function joinedUniqueness() { return joinedUniquenessState; }
+
+/**
+ * One person per seat: partial unique index on org_assignment(position_id).
+ * Skipped (and reported) when historical duplicates exist; created under an
+ * advisory lock on PostgreSQL so concurrent boots cannot collide on the catalog.
+ */
+function ensureOrgSeatUniqueIndex() {
+  try {
+    const dup = get(
+      'SELECT COUNT(*) AS c FROM (SELECT position_id FROM org_assignment WHERE position_id IS NOT NULL GROUP BY position_id HAVING COUNT(*) > 1) d',
+    )?.c || 0;
+    if (dup) {
+      console.error('  x org_assignment: several people share a seat; seat uniqueness not enforced until resolved.');
+      return;
+    }
+    tx(() => {
+      if (driverKind() === 'postgres') get('SELECT pg_advisory_xact_lock(8402117003) AS locked');
+      run('CREATE UNIQUE INDEX IF NOT EXISTS idx_orgasg_position ON org_assignment(position_id) WHERE position_id IS NOT NULL');
+    });
+  } catch (e) {
+    console.error(`  x could not create the org seat uniqueness index: ${e.message}`);
+  }
+}
 
 /**
  * Install the partial unique index: one `joined` application per candidate.

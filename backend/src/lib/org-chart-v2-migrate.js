@@ -255,8 +255,6 @@ export function buildPayloadFromRows(rows, chartName = "Imported chart") {
 
 export function migrateOrganizationNodesToCharts() {
   return lockedTx(() => {
-    if ((get("SELECT COUNT(*) AS c FROM org_chart")?.c || 0) > 0)
-      return { migrated: false, reason: "charts_exist" };
     const nodes = all(
       "SELECT * FROM organization_node ORDER BY sort_order ASC, id ASC",
     );
@@ -266,7 +264,11 @@ export function migrateOrganizationNodesToCharts() {
       if (nd.parent_id == null) continue;
       kidsOf.set(nd.parent_id, [...(kidsOf.get(nd.parent_id) || []), nd]);
     }
-    const roots = nodes.filter((nd) => nd.parent_id == null);
+    const done = new Set(
+      all("SELECT legacy_root_node_id AS id FROM org_chart WHERE legacy_root_node_id IS NOT NULL").map((r) => Number(r.id)),
+    );
+    const roots = nodes.filter((nd) => nd.parent_id == null && !done.has(Number(nd.id)));
+    if (!roots.length) return { migrated: false, reason: "already_migrated" };
     let charts = 0;
     let assignments = 0;
     for (const root of roots) {
@@ -284,6 +286,7 @@ export function migrateOrganizationNodesToCharts() {
         },
         null,
       );
+      run("UPDATE org_chart SET legacy_root_node_id=? WHERE id=?", [root.id, chart.id]);
       run(
         "UPDATE org_chart_version SET label='Migrated from organization_node' WHERE chart_id=?",
         [chart.id],

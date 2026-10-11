@@ -2,7 +2,7 @@
 // One module owns every write to org_chart / org_chart_version / org_position / org_assignment,
 // the way lib/join.js owns the join transaction. Routes stay thin; this throws OrgChartError.
 import { z } from "zod";
-import { get, all, run, tx } from "./db.js";
+import { get, all, run, tx, driverKind } from "./db.js";
 
 export class OrgChartError extends Error {
   constructor(status, message, extra = {}) {
@@ -47,8 +47,11 @@ const boxSchema = z.looseObject({
   text: z.string().max(5000).nullish(),
 });
 
-const linkSchema = z.looseObject({
+const linkSchema = z
+  .looseObject({
   childKey: z.string().min(1).max(64),
+  // Dotted lines have no parent to infer the start from, so they name it.
+  fromKey: z.string().min(1).max(64).nullish(),
   kind: z.enum(["reports", "dotted"]).default("reports"),
   fromSide: z.enum(SIDES).default("bottom"),
   toSide: z.enum(SIDES).default("top"),
@@ -56,7 +59,11 @@ const linkSchema = z.looseObject({
     .array(z.object({ x: z.number().finite(), y: z.number().finite() }))
     .nullish(),
   style: z.union([z.string().max(60), z.record(z.string(), z.any())]).nullish(),
-});
+  })
+  .refine((l) => l.kind !== "dotted" || !!l.fromKey, {
+    message: "A dotted line needs fromKey.",
+    path: ["fromKey"],
+  });
 
 // A person read from an imported file. Lives in the draft only; publishing turns each into an org_assignment.
 const importPersonSchema = z.looseObject({
@@ -181,6 +188,11 @@ export function validatePayload(raw) {
       if (!p.importPeople.length) delete p.importPeople;
     }
     for (const l of p.links) {
+      if (l.fromKey && !keys.has(l.fromKey))
+        throw new OrgChartError(
+          400,
+          `A line starts at box "${l.fromKey}", which does not exist.`,
+        );
       if (!keys.has(l.childKey))
         throw new OrgChartError(
           400,
@@ -216,7 +228,7 @@ export function structuralChanges(oldP, newP) {
   // its route and may be added or dropped live. Dotted lines are real extra relationships.
   const ls = (p) =>
     p.pages
-      .flatMap((x) => x.links.filter((l) => l.kind === "dotted").map((l) => `${l.childKey}|${l.kind}`))
+      .flatMap((x) => x.links.filter((l) => l.kind === "dotted").map((l) => `${l.fromKey}>${l.childKey}|${l.kind}`))
       .sort()
       .join(",");
   if (ls(oldP) !== ls(newP)) out.push("lines added or removed");
@@ -786,9 +798,9 @@ function liveDelta(base, live) {
     const f = BOX_LIVE_FIELDS.filter((k) => !same(o[k], nb[k]));
     if (f.length) out.push({ kind: "box", key: nb.key, title: nb.title, fields: f });
   }
-  const bl = new Map(base.pages.flatMap((p) => p.links).map((l) => [`${l.childKey}|${l.kind}`, l]));
+  const bl = new Map(base.pages.flatMap((p) => p.links).map((l) => [`${l.fromKey}>${l.childKey}|${l.kind}`, l]));
   for (const l of live.pages.flatMap((p) => p.links)) {
-    const o = bl.get(`${l.childKey}|${l.kind}`);
+    const o = bl.get(`${l.fromKey}>${l.childKey}|${l.kind}`);
     if (!o) {
       if (l.kind !== "dotted") out.push({ kind: "link", key: l.childKey, fields: ["route"] });
       continue;
@@ -852,10 +864,10 @@ export function rebaseDraft(vid) {
         else d[k] = lb[k];
       }
   }
-  const dl = new Map(draft.pages.flatMap((p) => p.links).map((l) => [`${l.childKey}|${l.kind}`, l]));
-  const bl = new Map(base.pages.flatMap((p) => p.links).map((l) => [`${l.childKey}|${l.kind}`, l]));
+  const dl = new Map(draft.pages.flatMap((p) => p.links).map((l) => [`${l.fromKey}>${l.childKey}|${l.kind}`, l]));
+  const bl = new Map(base.pages.flatMap((p) => p.links).map((l) => [`${l.fromKey}>${l.childKey}|${l.kind}`, l]));
   for (const l of livePayload.pages.flatMap((p) => p.links)) {
-    const key = `${l.childKey}|${l.kind}`;
+    const key = `${l.fromKey}>${l.childKey}|${l.kind}`;
     const o = bl.get(key);
     const d = dl.get(key);
     if (!o && !d && l.kind !== "dotted" && real.has(l.childKey)) {
@@ -969,8 +981,29 @@ export function publishVersion(vid, userId, moves = {}) {
     assertNotStale(row, chart);
     const before = toVersion(row);
     const payload = JSON.parse(row.payload_json);
-    const keys = new Set(allBoxes(payload).map((b) => b.key));
+    // People can only sit in role boxes, so team/text boxes are not valid destinations.
+    const keys = new Set(
+      allBoxes(payload)
+        .filter((b) => b.kind === "role")
+        .map((b) => b.key),
+    );
     const t = nowISO();
+    // Compare-and-set on the published pointer: of two approved drafts on the same base, only one wins.
+    const claimed =
+      chart.currentVersionId == null
+        ? run(
+            "UPDATE org_chart SET current_version_id=?, updated_at=? WHERE id=? AND current_version_id IS NULL",
+            [vid, t, chart.id],
+          )
+        : run(
+            "UPDATE org_chart SET current_version_id=?, updated_at=? WHERE id=? AND current_version_id=?",
+            [vid, t, chart.id, chart.currentVersionId],
+          );
+    if (!claimed.changes)
+      throw new OrgChartError(
+        409,
+        "Another restructure was published first — rebase this draft.",
+      );
     // A re-import brings the whole roster, so the chart's current people are replaced by the file's.
     let replaced = 0;
     if (payload.importReplacesPeople && payload.pages.some((p) => p.importPeople?.length))
@@ -979,7 +1012,7 @@ export function publishVersion(vid, userId, moves = {}) {
       if (!keys.has(to))
         throw new OrgChartError(
           400,
-          `Cannot move people to "${to}": that box is not in this draft.`,
+          `Cannot move people to "${to}": that is not a role box in this draft.`,
         );
       run(
         "UPDATE org_assignment SET box_key=?, updated_at=? WHERE chart_id=? AND box_key=?",
@@ -1008,11 +1041,6 @@ export function publishVersion(vid, userId, moves = {}) {
       "UPDATE org_chart_version SET state='published', published_at=?, updated_at=? WHERE id=?",
       [t, t, vid],
     );
-    run("UPDATE org_chart SET current_version_id=?, updated_at=? WHERE id=?", [
-      vid,
-      t,
-      chart.id,
-    ]);
     const clean = stripImportPeople(payload);
     run("UPDATE org_chart_version SET payload_json=? WHERE id=?", [
       JSON.stringify(clean),
@@ -1105,6 +1133,34 @@ function publishedBoxKeys(chart) {
   );
 }
 
+function assertRoleBox(chart, boxKey) {
+  const roles = publishedBoxKeys(chart);
+  if (roles.has(boxKey)) return;
+  const box = allBoxes(
+    JSON.parse(getVersionRow(chart.currentVersionId).payload_json),
+  ).find((b) => b.key === boxKey);
+  throw new OrgChartError(
+    400,
+    box
+      ? "People can only be placed in role boxes."
+      : "That box is not on the published chart.",
+  );
+}
+
+/** Advisory-lock names that serialise share checks per identity (PostgreSQL only). */
+export function identityLockKeys(employeeId, userId) {
+  return [
+    employeeId ? `org_assign:emp:${employeeId}` : null,
+    userId ? `org_assign:user:${userId}` : null,
+  ].filter(Boolean);
+}
+
+function lockIdentities(employeeId, userId) {
+  if (driverKind() !== "postgres") return;
+  for (const k of identityLockKeys(employeeId, userId))
+    get("SELECT pg_advisory_xact_lock(hashtext(?)) AS locked", [k]);
+}
+
 /** One person's shares across ALL charts must not exceed 1. Only enforced for people with an employee_id or user_id; names are not identities. */
 export function assertSharesWithinOne({
   employeeId,
@@ -1114,22 +1170,24 @@ export function assertSharesWithinOne({
   exceptId = 0,
 }) {
   if (!employeeId && !userId) return;
-  const others = employeeId
-    ? all("SELECT share FROM org_assignment WHERE employee_id=? AND id<>?", [
-        employeeId,
+  lockIdentities(employeeId, userId);
+  for (const [col, id] of [
+    ["employee_id", employeeId],
+    ["user_id", userId],
+  ]) {
+    if (!id) continue;
+    const total =
+      all(`SELECT share FROM org_assignment WHERE ${col}=? AND id<>?`, [
+        id,
         exceptId,
-      ])
-    : all("SELECT share FROM org_assignment WHERE user_id=? AND id<>?", [
-        userId,
-        exceptId,
-      ]);
-  const total = others.reduce((s, r) => s + Number(r.share), 0) + share;
-  if (total > 1 + EPS) {
-    throw new OrgChartError(
-      409,
-      `${personName} would be allocated ${Math.round(total * 100)}% across charts. A person's shares can add up to 100% at most.`,
-      { totalShare: total },
-    );
+      ]).reduce((s, r) => s + Number(r.share), 0) + share;
+    if (total > 1 + EPS) {
+      throw new OrgChartError(
+        409,
+        `${personName} would be allocated ${Math.round(total * 100)}% across charts. A person's shares can add up to 100% at most.`,
+        { totalShare: total },
+      );
+    }
   }
 }
 
@@ -1171,7 +1229,7 @@ export function possibleDuplicates(chartId) {
   return [...groups.values()].filter((g) => g.occurrences.length > 1);
 }
 
-function checkPosition(chartId, boxKey, positionId) {
+function checkPosition(chartId, boxKey, positionId, exceptId = 0) {
   const p = get(
     "SELECT box_key, closed_in_version_id FROM org_position WHERE id=? AND chart_id=?",
     [positionId, chartId],
@@ -1180,6 +1238,13 @@ function checkPosition(chartId, boxKey, positionId) {
     throw new OrgChartError(400, "That seat was not found on this chart.");
   if (p.box_key !== boxKey)
     throw new OrgChartError(400, "That seat belongs to a different box.");
+  if (
+    get("SELECT id FROM org_assignment WHERE position_id=? AND id<>?", [
+      positionId,
+      exceptId,
+    ])
+  )
+    throw new OrgChartError(409, "That seat is already taken.");
 }
 
 export function getAssignment(chartId, aid) {
@@ -1195,8 +1260,7 @@ export function createAssignment(chartId, body) {
   const chart = getChart(chartId);
   const d = cleanAssignment(body || {}, false);
   return tx(() => {
-    if (!publishedBoxKeys(chart).has(d.boxKey))
-      throw new OrgChartError(400, "That box is not on the published chart.");
+    assertRoleBox(chart, d.boxKey);
     const share = d.share ?? 1;
     assertSharesWithinOne({
       employeeId: d.employeeId ?? null,
@@ -1248,8 +1312,7 @@ export function updateAssignment(chartId, aid, body) {
   return tx(() => {
     const next = { ...before, ...d };
     const moved = d.boxKey !== undefined && d.boxKey !== before.boxKey;
-    if (moved && !publishedBoxKeys(chart).has(d.boxKey))
-      throw new OrgChartError(400, "That box is not on the published chart.");
+    if (moved) assertRoleBox(chart, d.boxKey);
     if (
       d.share !== undefined ||
       d.personName !== undefined ||
@@ -1264,7 +1327,7 @@ export function updateAssignment(chartId, aid, body) {
         exceptId: aid,
       });
     }
-    if (d.positionId != null) checkPosition(chartId, next.boxKey, d.positionId);
+    if (d.positionId != null) checkPosition(chartId, next.boxKey, d.positionId, aid);
     else if (moved && d.positionId === undefined)
       next.positionId = freeSeat(chartId, next.boxKey, aid);
     run(
