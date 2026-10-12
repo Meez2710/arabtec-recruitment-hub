@@ -156,7 +156,8 @@ router.get('/', (req, res) => {
     rows = [...byPanel, ...owned].filter((iv) => (seen.has(iv.id) ? false : seen.add(iv.id)));
     rows.sort((a, b) => String(b.scheduled_at || '').localeCompare(String(a.scheduled_at || '')));
   }
-  res.json({ interviews: rows.map((iv) => serialize(iv, req.user)), scoped: !canViewAll(req.user) });
+  // The calendar draws the organisation's working week (Scheduling Setup).
+  res.json({ interviews: rows.map((iv) => serialize(iv, req.user)), scoped: !canViewAll(req.user), workingWeek: workingWeek() });
 });
 
 /* ---------------- PANEL CLASHES (warning, never a block) ---------------- */
@@ -201,7 +202,9 @@ router.get('/application/:applicationId', (req, res) => {
 // organisation's defaults needs notification.manage (the existing Notifications
 // permission). Templates carry placeholders only — never salary or HR data —
 // and never touch sender credentials.
-router.get('/message-templates', requireAnyPermission('interview.schedule', 'interview.edit'), (req, res) => {
+// notification.manage may change these, so it may also open them (HR Director
+// holds it without the scheduling permissions and was refused the panel).
+router.get('/message-templates', requireAnyPermission('interview.schedule', 'interview.edit', 'notification.manage'), (req, res) => {
   res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: Object.fromEntries(Object.entries(AUDIENCES).map(([k, v]) => [k, withoutCall(v)])), hasSubject: HAS_SUBJECT, phoneCalls: phoneCalls(), headOfficeAddress: SystemSettings.get(HQ_SETTING) || '', workingWeek: workingWeek(),
     placeholders: Object.entries(PLACEHOLDERS).map(([name, p]) => ({ name, label: p.label, in: p.in })),
     canEdit: req.user.permissions.includes('notification.manage') });

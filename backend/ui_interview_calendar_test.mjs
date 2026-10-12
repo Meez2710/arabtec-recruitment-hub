@@ -196,5 +196,27 @@ check('working week (audit A9): a plain warning in both forms, never a block; ed
   assert.match(app, /id="iv-ww-start"/, 'working days and hours are set in Invitation templates');
 });
 
+// Scheduling Setup (12 Oct): the calendar follows the SAVED working week, not
+// constants. Default behaviour above is unchanged; these use a changed week.
+console.log('\n— the calendar follows Scheduling Setup —');
+const sunThu = { days: [0, 1, 2, 3, 4], start: '08:30', end: '16:00' };    // Saturday made non-working, 08:30–16:00
+const satThu = { days: [0, 1, 2, 3, 4, 6], start: '09:00', end: '17:00' }; // the approved default, as the server sends it
+check('the default week from the server gives Saturday–Thursday columns', () => assert.deepEqual([...calWeekdays([], satThu)], [6, 0, 1, 2, 3, 4]));
+check('Friday stays a non-working day unless something is booked on it', () => {
+  assert.ok(![...calWeekdays([], satThu)].includes(5));
+  assert.ok([...calWeekdays([iv(1, D(2026, 10, 2, 10))], satThu)].includes(5));
+});
+check('a day switched off in Scheduling Setup leaves the week', () => assert.deepEqual([...calWeekdays([], sunThu)], [0, 1, 2, 3, 4]));
+check('the grid opens at the saved start hour and closes after the saved end', () => assert.deepEqual([...calHourSpan([], sunThu)], [8, 16]));
+check('an end time with minutes rounds the grid up to the next hour', () => assert.deepEqual([...calHourSpan([], { ...sunThu, end: '16:30' })], [8, 17]));
+check('clicking a future day books the saved start time', () => assert.equal(toLocalInput(calFirstOpenSlot(D(2026, 9, 29), D(2026, 9, 28, 11, 10), sunThu)), '2026-09-29T08:30'));
+check('day-by-day skips every non-working day from the setting', () => assert.equal(ymd(calStep('day', D(2026, 10, 1), 1, sunThu)), '2026-10-04'));
+check('Scheduling Setup is reachable by name for schedulers and settings managers', () => {
+  assert.match(app, /can\(user, 'notification\.manage'\)\) && <button className="btn btn-secondary" onClick=\{\(\) => setTemplatesOpen\(true\)\}>Scheduling Setup<\/button>/);
+  assert.match(app, /<Modal title="Scheduling Setup"/);
+  assert.match(app, /ww=\{data\.workingWeek\}/, 'the page passes the saved week to the calendar');
+  assert.match(app, /setTemplatesOpen\(false\); load\(\);/, 'closing the panel reloads, so a saved week shows at once');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

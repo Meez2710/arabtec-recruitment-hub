@@ -69,6 +69,7 @@ const SUITES = [
   'ui_layout_containers_test.mjs', // card rhythm and responsive container contract
   'ui_gallery_test.mjs',      // the component gallery stays in step with the product
   'ui_overlays_test.mjs',     // dialogs, the stacked parse review, and the CV review side panel
+  'scheduling_setup_test.mjs', // 12 Oct: Scheduling Setup — who opens it, Sat–Thu default, saved week drives calendar + warning, survives restart
   'ui_interview_calendar_test.mjs', // Sat–Thu calendar date arithmetic and wiring
   'branding_migration_test.mjs', // legacy red actions migrate without overwriting custom values
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider
