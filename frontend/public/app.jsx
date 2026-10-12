@@ -10899,13 +10899,32 @@ function DispatchList({ rows }) {
   );
 }
 
+// Open WhatsApp from a click. Browsers (Safari always, Chrome after a slow
+// response) block a window opened after a server round trip, so the window is
+// opened at once, inside the click, and pointed at wa.me when the hand-off is
+// recorded. If the browser still blocks it, the link is shown to copy.
+async function openWhatsAppWindow(record, toast) {
+  let w = null;
+  try { w = window.open('about:blank', '_blank'); } catch { w = null; }
+  try {
+    const r = await record();
+    if (w && !w.closed) { try { w.opener = null; } catch { /* cross-origin later */ } w.location.href = r.link; }
+    else { window.prompt ? window.prompt('Your browser blocked the WhatsApp window. Copy this link and open it:', r.link) : toast('Your browser blocked the WhatsApp window.', 'error'); }
+    return r;
+  } catch (e) {
+    if (w && !w.closed) w.close();
+    toast(e.message, 'error');
+    return null;
+  }
+}
+
 // The WhatsApp hand-off: edit, copy, open. Opening is a person sending it.
 function WhatsAppHandoff({ phone, text, onText, onOpen, editable = true }) {
   const toast = useToast();
   const ok = INTL_PHONE(phone);
   return (
     <div className="iv-wa">
-      <div className="iv-wa-head"><strong>WhatsApp message</strong><span className="muted">{ok ? phone : phone ? `${phone} — not in international format (e.g. +201001234567)` : 'No phone number'}</span></div>
+      <div className="iv-wa-head"><strong>WhatsApp message</strong><span className="muted">{ok ? toIntlPhone(phone) : phone ? `${phone} — not a mobile or international number (e.g. 01001234567 or +201001234567)` : 'No phone number'}</span></div>
       {editable
         ? <textarea rows="4" value={text} onChange={(e) => onText(e.target.value)} aria-label="WhatsApp message" />
         : <div className="iv-preview-body">{text}</div>}
@@ -11124,9 +11143,8 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
     setMsgs(tpl?.templates ? { ...tpl.templates.invite } : null); waTouched.current = false; setWaText('');
     keys.current = { create: ivKey(), send: ivKey() }; setResult(null);
   }
-  async function openWhatsApp(ivId) {
-    try { const r = await api.post(`/interviews/${ivId}/whatsapp-handoff`, { kind: 'invite' }); window.open(r.link, '_blank', 'noopener'); }
-    catch (e) { toast(e.message, 'error'); }
+  function openWhatsApp(ivId) {
+    return openWhatsAppWindow(() => api.post(`/interviews/${ivId}/whatsapp-handoff`, { kind: 'invite' }), toast);
   }
 
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
@@ -11372,8 +11390,11 @@ function CommunicateModal({ iv, kind, onClose, onDone }) {
     } catch (e) { toast(e.message, 'error'); } finally { busyRef.current = false; setBusy(false); }
   }
   async function openWhatsApp() {
-    try { await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { whatsapp: { body: waText } } }); const r = await api.post(`/interviews/${iv.id}/whatsapp-handoff`, { kind }); window.open(r.link, '_blank', 'noopener'); load(); }
-    catch (e) { toast(e.message, 'error'); }
+    const r = await openWhatsAppWindow(async () => {
+      await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { whatsapp: { body: waText } } });
+      return api.post(`/interviews/${iv.id}/whatsapp-handoff`, { kind });
+    }, toast);
+    if (r) load();
   }
   async function openCall() {
     try { const r = await api.post(`/interviews/${iv.id}/call-handoff`, { kind }); window.location.href = r.tel; load(); }
