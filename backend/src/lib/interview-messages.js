@@ -94,10 +94,63 @@ export const LIMITS = { subject: 200, body: 5000 };
 
 /* ------------------------------------------------------------ templates */
 
+// GitHub PR #46 kept its own templates under this same settings key, as
+// { kind: { subject, email, whatsapp, call } } with {snake_case} tokens and a
+// "reschedule" kind. A database that ran it is read through this conversion,
+// never spread as-is (a string spread into an object becomes one field per
+// character). A converted part that fails our placeholder rules is dropped, so
+// the default is used rather than an unchecked text.
+const LEGACY_KIND = { invite: 'invite', reschedule: 'update', cancel: 'cancel' };
+const LEGACY_FIELD = { email: ['candidate', 'body'], subject: ['candidate', 'subject'], whatsapp: ['whatsapp', 'body'] };
+const LEGACY_TOKEN = { candidate_name: 'candidateName', position: 'position', date: 'date', time: 'time', duration: 'duration',
+  interview_type: 'interviewType', where: 'where', interviewers: 'panelNames', recruiter_name: 'recruiterName',
+  reference: 'interviewNo', reason: 'cancelReason' };
+const isLegacyEntry = (v) => !!v && typeof v === 'object' && ['subject', 'email', 'whatsapp', 'call'].some((f) => typeof v[f] === 'string');
+
+function fromLegacy(entry) {
+  const out = {};
+  for (const [field, [aud, part]] of Object.entries(LEGACY_FIELD)) {
+    if (typeof entry[field] !== 'string') continue;
+    let unknown = false;
+    const text = entry[field].replace(/\{([a-z_]+)\}/gi, (m, name) => {
+      if (!LEGACY_TOKEN[name]) { unknown = true; return m; }
+      return `{{${LEGACY_TOKEN[name]}}}`;
+    });
+    if (unknown || validateText(part === 'subject' ? text.replace(/\s*\n\s*/g, ' ') : text, aud, part)) continue;
+    (out[aud] ||= {})[part] = text;
+  }
+  return out;
+}
+
+/** Stored overrides in our format, whatever format the setting was saved in. */
+export function storedTemplates(raw = SystemSettings.all()[TEMPLATE_SETTING]) {
+  let parsed = {};
+  try { parsed = JSON.parse(raw || '{}') || {}; } catch { parsed = {}; }
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  const out = {};
+  for (const [kind, val] of Object.entries(parsed)) {
+    if (isLegacyEntry(val)) {
+      const ours = LEGACY_KIND[kind];
+      if (!ours) continue; // e.g. "reminder" — not a kind we send (yet)
+      const conv = fromLegacy(val);
+      for (const [aud, parts] of Object.entries(conv)) out[ours] = { ...(out[ours] || {}), [aud]: { ...(out[ours]?.[aud] || {}), ...parts } };
+      continue;
+    }
+    if (!KINDS.includes(kind) || !val || typeof val !== 'object') continue;
+    for (const [aud, parts] of Object.entries(val)) {
+      if (!AUDIENCES[kind].includes(aud) || !parts || typeof parts !== 'object' || Array.isArray(parts)) continue;
+      const clean = {};
+      for (const p of ['subject', 'body']) if (typeof parts[p] === 'string') clean[p] = parts[p];
+      // An entry written in our format wins over one converted from the old format.
+      out[kind] = { ...(out[kind] || {}), [aud]: { ...(out[kind]?.[aud] || {}), ...clean } };
+    }
+  }
+  return out;
+}
+
 /** The organisation's templates: stored overrides on top of the defaults. */
 export function globalTemplates() {
-  let stored = {};
-  try { stored = JSON.parse(SystemSettings.all()[TEMPLATE_SETTING] || '{}') || {}; } catch { stored = {}; }
+  const stored = storedTemplates();
   const out = {};
   for (const kind of KINDS) {
     out[kind] = {};

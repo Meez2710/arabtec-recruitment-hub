@@ -680,6 +680,8 @@ export function ensureSchema() {
   addColumnIfMissing('candidate', 'parse_status', "TEXT");
   addColumnIfMissing('candidate', 'parse_confidence', 'REAL');
   addColumnIfMissing('candidate', 'parsed_at', 'TEXT');
+  // What the candidate answered to their interview invitation (HR records it).
+  addColumnIfMissing('interview', 'candidate_response', "TEXT NOT NULL DEFAULT 'pending'");
 
   // Broad professional grouping, for SEARCH ONLY. Never a hiring-request match
   // and never grounds for rejection: an accountant is a real hire for a

@@ -11,7 +11,7 @@ import { schedulingGuard, evaluateConflicts, conflictRefusal } from '../lib/inte
 import { tx, run as dbRun } from '../lib/db.js';
 import { canSeeCandidate } from '../lib/candidate-scope.js';
 import {
-  PLACEHOLDERS, DEFAULT_TEMPLATES, AUDIENCES, HAS_SUBJECT, KINDS, TEMPLATE_SETTING, globalTemplates, validateTemplateSet, validateText,
+  PLACEHOLDERS, DEFAULT_TEMPLATES, AUDIENCES, HAS_SUBJECT, KINDS, TEMPLATE_SETTING, globalTemplates, storedTemplates, validateTemplateSet, validateText,
   messageValues, fill, cairoParts, intlPhone, whatsappLink, detailsProblem, EMAIL_OK,
 } from '../lib/interview-messages.js';
 import {
@@ -199,11 +199,15 @@ router.get('/message-templates', requireAnyPermission('interview.schedule', 'int
 });
 router.put('/message-templates', requirePermission('notification.manage'), (req, res) => {
   const d = req.body || {};
-  let stored = {};
-  try { stored = JSON.parse(SystemSettings.get(TEMPLATE_SETTING) || '{}') || {}; } catch { stored = {}; }
+  // `raw` is what is in the setting (audit shows it as it was); `stored` is it
+  // read in our format, so a value written by the old GitHub format is
+  // converted on this save instead of being merged character by character.
+  const raw = SystemSettings.get(TEMPLATE_SETTING) || '{}';
+  let rawParsed = {}; try { rawParsed = JSON.parse(raw) || {}; } catch { rawParsed = {}; }
+  const stored = storedTemplates(raw);
   if (d.reset) {
     SystemSettings.upsert(TEMPLATE_SETTING, '{}');
-    writeAudit(req, { action: 'interview.templates_reset', entityType: 'setting', entityId: TEMPLATE_SETTING, oldValue: stored });
+    writeAudit(req, { action: 'interview.templates_reset', entityType: 'setting', entityId: TEMPLATE_SETTING, oldValue: rawParsed });
     return res.json({ templates: globalTemplates() });
   }
   const err = validateTemplateSet(d.templates);
@@ -215,7 +219,7 @@ router.put('/message-templates', requirePermission('notification.manage'), (req,
   }
   SystemSettings.upsert(TEMPLATE_SETTING, JSON.stringify(merged));
   writeAudit(req, { action: 'interview.templates_updated', entityType: 'setting', entityId: TEMPLATE_SETTING,
-    oldValue: stored, newValue: merged });
+    oldValue: rawParsed, newValue: merged });
   res.json({ templates: globalTemplates() });
 });
 

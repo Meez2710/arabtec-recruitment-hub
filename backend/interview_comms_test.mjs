@@ -102,6 +102,28 @@ try {
   const ok = await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { templates: { invite: { candidate: { subject: 'Your Arabtec interview — {{position}}' } } } } });
   c('a valid change to the organisation template is saved (200)', ok.status === 200 && ok.json.templates.invite.candidate.subject === 'Your Arabtec interview — {{position}}');
 
+  // GitHub PR #46 stored its own template format under the SAME settings key
+  // ({kind: {subject, email, whatsapp, call}}, {snake_case} tokens). A database
+  // that ran it must not leak characters into, or block saving of, ours.
+  console.log('\n— templates saved by the GitHub (PR #46) format —');
+  const keep = db.get("SELECT value FROM system_setting WHERE key='interview_message_templates'")?.value ?? null;
+  const legacy = { invite: { subject: 'Interview — {position}', email: 'Dear {candidate_name},\nSee you on {date} at {time}.\n{recruiter_name}', whatsapp: 'Hello {candidate_name}, your interview is on {date} at {time}. Where: {where}.', call: 'Hello {candidate_name}…' },
+    reschedule: { subject: 'New time — {position}', email: 'Dear {candidate_name},\nNew time: {date} {time}.', whatsapp: 'Hello {candidate_name}, new time {date} {time}. Interviewers: {interviewers}.', call: 'x' },
+    reminder: { subject: 'Reminder', email: 'Reminder {date}', whatsapp: 'Reminder {date}', call: 'x' } };
+  db.run("UPDATE system_setting SET value=? WHERE key='interview_message_templates'", [JSON.stringify(legacy)]);
+  const lg = await api('/api/interviews/message-templates', { token: recruiter });
+  const lgT = lg.json?.templates || {};
+  const noCharKeys = Object.values(lgT).every((k) => Object.values(k).every((p) => Object.keys(p).every((f) => f === 'subject' || f === 'body')));
+  c('a GitHub-format value loads without stray character fields', lg.status === 200 && noCharKeys, JSON.stringify(lgT.invite?.whatsapp || {}).slice(0, 160));
+  c('…its candidate email is converted to our tokens', lgT.invite?.candidate?.subject === 'Interview — {{position}}' && lgT.invite?.candidate?.body.startsWith('Dear {{candidateName}},'), JSON.stringify(lgT.invite?.candidate || {}).slice(0, 160));
+  c('…its WhatsApp text is converted', lgT.invite?.whatsapp?.body === 'Hello {{candidateName}}, your interview is on {{date}} at {{time}}. Where: {{where}}.');
+  c('…"reschedule" becomes our "update"', lgT.update?.candidate?.body === 'Dear {{candidateName}},\nNew time: {{date}} {{time}}.');
+  c('…a token not allowed in that message keeps our default instead', lgT.update?.whatsapp?.body === M.DEFAULT_TEMPLATES.update.whatsapp.body);
+  const save2 = await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { templates: { cancel: { candidate: { subject: 'Interview cancelled — {{position}}' } } } } });
+  const stored2 = JSON.parse(db.get("SELECT value FROM system_setting WHERE key='interview_message_templates'").value);
+  c('saving after a GitHub-format value works and stores only our format', save2.status === 200 && !('reschedule' in stored2) && typeof stored2.invite?.whatsapp === 'object' && stored2.invite.whatsapp.body.includes('{{candidateName}}'), save2.text.slice(0, 160));
+  if (keep === null) db.run("DELETE FROM system_setting WHERE key='interview_message_templates'"); else db.run("UPDATE system_setting SET value=? WHERE key='interview_message_templates'", [keep]);
+
   console.log('\n— one interview: preview, edit, send —');
   const A = await booked({ panel: [mona.id, p2.id] });
   // Attach a CV so the panel CV option can be exercised.
