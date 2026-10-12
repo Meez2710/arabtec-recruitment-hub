@@ -10685,6 +10685,24 @@ const IV_OUTCOME = { positive: { label: 'Positive', variant: 'success' }, negati
 const REC_LABEL = { strong_yes: 'Strong Yes', yes: 'Yes', no: 'No', strong_no: 'Strong No' };
 function IvStatusBadge({ status }) { const s = IV_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
 
+// The candidate's answer to the invitation (audit A3, from GitHub PR #46).
+// Only meaningful while the interview is still to happen.
+const IV_RESPONSE = {
+  pending: { label: 'No answer yet', variant: 'soft' },
+  confirmed: { label: 'Confirmed', variant: 'success' },
+  change_requested: { label: 'Wants another time', variant: 'warning' },
+  declined: { label: 'Declined', variant: 'critical' },
+};
+const ivUpcoming = (iv) => ['scheduled', 'rescheduled'].includes(iv.status);
+const ivResponseLabel = (iv) => (ivUpcoming(iv) ? (IV_RESPONSE[iv.candidateResponse] || IV_RESPONSE.pending).label : '');
+function IvResponseBadge({ iv }) {
+  if (!ivUpcoming(iv)) return null;
+  const r = IV_RESPONSE[iv.candidateResponse] || IV_RESPONSE.pending;
+  // "No answer yet" with less than a day to go needs attention.
+  const soon = (iv.candidateResponse || 'pending') === 'pending' && Date.parse(iv.scheduledAt) - Date.now() < 86400000;
+  return <Badge variant={soon ? 'warning' : r.variant}>{r.label}</Badge>;
+}
+
 // Candidate + optional hiring request, for an interview or offer created
 // standalone (from the Interviews / Offers list, not from an application).
 // The candidate is picked from the Talent Pool, or typed in and created as a
@@ -11613,7 +11631,7 @@ function CalEvent({ iv, style, onOpen }) {
   const status = IV_STATUS[iv.status];
   return (
     <button type="button" className={'cal-ev cal-s-' + iv.status} style={style} onClick={() => onOpen(iv.id)}
-      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}`}>
+      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}${ivResponseLabel(iv) ? ' · ' + ivResponseLabel(iv) : ''}`}>
       <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {ivType(iv.interviewType)}</span>
       <span className="cal-ev-who">{iv.candidate?.fullName || '—'}</span>
       {iv.status !== 'scheduled' && <span className="cal-ev-status">{status ? status.label : iv.status}</span>}
@@ -11691,7 +11709,7 @@ function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, on
                 <button type="button" className="cal-mdate" aria-label={'Open ' + d.toDateString() + ' in day view'} onClick={() => onPickDay(d)}>{d.getDate()}</button>
                 {items.slice(0, 3).map((iv) => (
                   <button key={iv.id} type="button" className={'cal-mev cal-s-' + iv.status} onClick={() => onOpen(iv.id)}
-                    title={`${iv.candidate?.fullName || 'Candidate'} · ${fmtWhen(iv.scheduledAt)}`}>
+                    title={`${iv.candidate?.fullName || 'Candidate'} · ${fmtWhen(iv.scheduledAt)}${ivResponseLabel(iv) ? ' · ' + ivResponseLabel(iv) : ''}`}>
                     <span className="cal-ev-time">{timeOf(iv.scheduledAt)}</span> {iv.candidate?.fullName || '—'}
                   </button>
                 ))}
@@ -11870,7 +11888,7 @@ function InterviewsPage({ user, initialFilters }) {
                 <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
                 <td data-label="Type / Mode"><span className="cell-strong">{ivType(iv.interviewType)}</span><div className="cell-sub">{ivMode(iv.mode)}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
-                <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
+                <td data-label="Status"><IvStatusBadge status={iv.status} />{ivUpcoming(iv) && <> <IvResponseBadge iv={iv} /></>}</td>
                 <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
                 <td data-priority="secondary" data-label="Application" title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
               </tr>
@@ -11954,6 +11972,7 @@ function InterviewDetail({ id, user, onBack }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [reopenAsk, setReopenAsk] = useState(false);
   const [resched, setResched] = useState(false);
+  const [answerBusy, setAnswerBusy] = useState(false);
   const [comm, setComm] = useState(null); // 'invite' | 'update' | 'cancel'
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
@@ -11961,6 +11980,13 @@ function InterviewDetail({ id, user, onBack }) {
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!iv) return <Skeleton rows={8} />;
 
+  async function setAnswer(response) {
+    if (response === (iv.candidateResponse || 'pending')) return;
+    setAnswerBusy(true);
+    try { await api.post(`/interviews/${id}/response`, { response }); toast('Answer saved: ' + IV_RESPONSE[response].label); await load(); }
+    catch (e) { toast(e.message, 'error'); }
+    finally { setAnswerBusy(false); }
+  }
   async function setStatus(status, reason) {
     try {
       await api.post(`/interviews/${id}/status`, { status, reason }); toast(status === 'scheduled' ? 'Interview reopened' : 'Interview ' + status.replace('_', '-')); await load();
@@ -12012,6 +12038,16 @@ function InterviewDetail({ id, user, onBack }) {
           <Info label="Type / Mode">{ivType(iv.interviewType)} · {ivMode(iv.mode)}</Info>
           <Info label="Round">{iv.round}</Info>
           <Info label="When">{cairoLabel(iv.scheduledAt)}</Info>
+          {upcoming && <Info label="Candidate's answer">{canManageComms
+            ? <div className="seg-tabs resp-picker" role="radiogroup" aria-label="Candidate's answer">
+                {Object.entries(IV_RESPONSE).map(([k, r]) => (
+                  <button key={k} type="button" role="radio" aria-checked={(iv.candidateResponse || 'pending') === k}
+                    className={'seg-tab' + ((iv.candidateResponse || 'pending') === k ? ' active' : '')}
+                    disabled={answerBusy} onClick={() => setAnswer(k)}>{r.label}</button>
+                ))}
+              </div>
+            : <IvResponseBadge iv={iv} />}
+            {iv.candidateResponse === 'declined' && btns.cancel_interview?.visible && <p className="field-hint">The candidate declined. The interview stays booked until you cancel it.</p>}</Info>}
           <Info label="Duration">{iv.durationMin} min</Info>
           <Info label="Location / Link">{/^https?:\/\//i.test(iv.locationOrLink || '')
             ? <a className="btn btn-secondary btn-sm" href={iv.locationOrLink} target="_blank" rel="noopener noreferrer" title={iv.locationOrLink}>Join {iv.mode === 'video' ? 'video call' : 'link'}</a>

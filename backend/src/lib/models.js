@@ -1266,6 +1266,8 @@ export const Interviews = {
     return this.byId(id);
   },
   setOutcome(id, outcome) { run('UPDATE interview SET overall_outcome=?, updated_at=? WHERE id=?', [outcome, nowISO(), id]); },
+  // What the candidate answered to the invitation, as recorded by HR (audit A3).
+  setCandidateResponse(id, response) { run('UPDATE interview SET candidate_response=?, updated_at=? WHERE id=?', [response, nowISO(), id]); },
   // Attach a standalone interview to the candidate's application (and its request).
   linkApplication(id, applicationId, requestId) {
     run('UPDATE interview SET application_id=?, request_id=?, updated_at=? WHERE id=? AND application_id IS NULL', [applicationId, requestId, nowISO(), id]);

@@ -96,6 +96,8 @@ function serialize(iv, user, { detail = false } = {}) {
     calendarSeq: Number(iv.calendar_seq || 0),
     // From when Completed / No-Show / feedback may be recorded (audit A4/A5).
     actionsOpenAt: actionsOpenAt(iv),
+    // The candidate's answer to the invitation (audit A3): pending | confirmed | change_requested | declined.
+    candidateResponse: iv.candidate_response || 'pending',
     // A change or cancellation that has not been communicated yet.
     notice: (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })(),
     createdAt: iv.created_at,
@@ -364,6 +366,29 @@ router.post('/:id/whatsapp-handoff', requirePermission('interview.edit'), (req, 
   res.json({ link: r.link, text: r.text, dispatches: dispatchesFor(iv.id).filter((x) => x.batchKey === batchKey) });
 });
 
+/* ---------------- CANDIDATE'S ANSWER (audit A3, from GitHub PR #46) ----------------
+   What the candidate said back by phone, WhatsApp or email, recorded by the
+   people who arrange interviews so everyone can see who has confirmed. Only
+   for an interview still to happen; moving the time resets it (they agreed to
+   the old time, not the new one). "Declined" does not cancel anything. */
+export const RESPONSES = ['pending', 'confirmed', 'change_requested', 'declined'];
+const RESPONSE_WORDS = { pending: 'No answer yet', confirmed: 'Candidate confirmed', change_requested: 'Candidate asked for another time', declined: 'Candidate declined' };
+router.post('/:id/response', (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const response = (req.body || {}).response;
+  if (!RESPONSES.includes(response)) return res.status(400).json({ error: 'The answer must be one of: no answer yet, confirmed, wants another time, declined.' });
+  if (!['scheduled', 'rescheduled'].includes(iv.status)) {
+    return res.status(409).json({ code: 'interview_not_upcoming', error: 'The candidate\'s answer can only be recorded for an interview that is still to happen.' });
+  }
+  const before = iv.candidate_response || 'pending';
+  if (before !== response) {
+    Interviews.setCandidateResponse(iv.id, response);
+    InterviewActivity.add(iv.id, req.user, 'candidate_response', RESPONSE_WORDS[response]);
+    writeAudit(req, { action: 'interview.candidate_response', entityType: 'interview', entityId: iv.id, oldValue: { response: before }, newValue: { response } });
+  }
+  res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
+});
+
 router.get('/:id/dispatches', (req, res) => {
   const iv = loadForMessages(req, res); if (!iv) return;
   res.json({ dispatches: dispatchesFor(iv.id) });
@@ -547,6 +572,11 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
     if (overlapReason) {
       Interviews.setOverlapReason(iv.id, overlapReason);
       InterviewActivity.add(iv.id, req.user, 'panel_overlap_acknowledged', overlapReason);
+    }
+    // The candidate agreed to the old time, not the new one (audit A3).
+    if (rescheduled && (iv.candidate_response || 'pending') !== 'pending') {
+      Interviews.setCandidateResponse(iv.id, 'pending');
+      InterviewActivity.add(iv.id, req.user, 'candidate_response', 'Answer reset to "No answer yet" — the time changed');
     }
     if (rescheduled) { Interviews.setStatus(iv.id, 'rescheduled'); { const p = cairoParts(scheduledAt); InterviewActivity.add(iv.id, req.user, 'rescheduled', `Moved to ${p.date}, ${p.time} (${p.timezone})`); } }
     else if (!added.length && !removed.length) InterviewActivity.add(iv.id, req.user, 'updated');

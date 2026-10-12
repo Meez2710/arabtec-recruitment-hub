@@ -127,5 +127,15 @@ check('the schedule form checks conflicts live: candidate blocks, panel needs a 
   assert.doesNotMatch(modal, /formReady = [^;]*avail\.location/, 'a location overlap never blocks saving');
 });
 
+check('candidate answer (audit A3): four answers, shown only while the interview is upcoming', () => {
+  const labels = Object.values(get('IV_RESPONSE')).map((r) => r.label);
+  assert.deepEqual(labels, ['No answer yet', 'Confirmed', 'Wants another time', 'Declined']);
+  const label = get('ivResponseLabel');
+  assert.equal(label({ status: 'scheduled', candidateResponse: 'confirmed' }), 'Confirmed');
+  assert.equal(label({ status: 'rescheduled' }), 'No answer yet', 'a missing answer reads as No answer yet');
+  assert.equal(label({ status: 'completed', candidateResponse: 'confirmed' }), '', 'no answer chip once the interview is over');
+  assert.match(app, /className="seg-tabs resp-picker" role="radiogroup"/, 'the detail page offers the four answers as one radio group');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);
