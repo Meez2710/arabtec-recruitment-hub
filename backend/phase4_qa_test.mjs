@@ -11,6 +11,9 @@ process.env.SEED_ADMIN_PASSWORD ||= ADMIN_BOOTSTRAP_PASSWORD;
 
 await import('./prisma/seed.js');
 await import('./src/server.js');
+// Attendance/feedback need an interview that has started (audit A4/A5); see test-support/backdate.mjs.
+const db = await import('./src/lib/db.js');
+const { backdateInterview } = await import('./test-support/backdate.mjs');
 await new Promise((r) => setTimeout(r, 700));
 const B = 'http://localhost:4160';
 let pass = 0, fail = 0;
@@ -84,6 +87,7 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
 
   console.log('\n— 2. Status separation —');
   const appBefore = (await api(`/api/applications/${appId}`, { token: recruiter })).json.application.status;
+  backdateInterview(db, ivId, -90);
   await api(`/api/interviews/${ivId}/status`, { method: 'POST', token: recruiter, body: { status: 'no_show', reason: 'did not attend' } });
   const appAfterNoShow = (await api(`/api/applications/${appId}`, { token: recruiter })).json.application.status;
   c('no_show does not change application status', appAfterNoShow === appBefore, `${appAfterNoShow} vs ${appBefore}`);
@@ -117,6 +121,7 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
   c('panel updated to 2', panelChange.json.interview.panel.length === 2);
 
   console.log('\n— 6. Feedback: submit vs update (distinct audit), permission, scope —');
+  backdateInterview(db, iv2, -90);
   const fb1 = await api(`/api/interviews/${iv2}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'yes', overallScore: 4 } });
   c('panelist submits feedback (201)', fb1.status === 201);
   const fb1b = await api(`/api/interviews/${iv2}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'strong_yes', overallScore: 5 } });

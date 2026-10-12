@@ -11972,7 +11972,15 @@ function InterviewDetail({ id, user, onBack }) {
   const canManageComms = can(user, 'interview.edit');
   const canEdit = btns.cancel_interview?.visible || btns.complete_interview?.visible;
   const canFeedback = btns.add_feedback?.visible;
-  const active = !['cancelled', 'completed'].includes(iv.status);
+  // A No-Show is the attendance record (audit A8): reopen it, don't cancel it.
+  const active = !['cancelled', 'completed', 'no_show'].includes(iv.status);
+  // Completed / No-Show / feedback open only once the interview has happened
+  // (audit A4/A5). The server decides when; this only hides early buttons.
+  const opensAt = (k) => (iv.actionsOpenAt && iv.actionsOpenAt[k] ? Date.parse(iv.actionsOpenAt[k]) : Infinity); // missing = not open (server refuses too)
+  const isOpen = (k) => Date.now() >= opensAt(k);
+  const upcoming = ['scheduled', 'rescheduled'].includes(iv.status);
+  const firstOpen = Math.min(opensAt('completed'), opensAt('no_show'), opensAt('feedback'));
+  const showWhenOpens = upcoming && !isOpen('completed') && (canFeedback || btns.complete_interview?.visible);
 
   return (
     <div>
@@ -11980,9 +11988,9 @@ function InterviewDetail({ id, user, onBack }) {
         title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
           {can(user, 'candidate.view') && (iv.application || iv.status !== 'cancelled') && <button className="btn" onClick={() => (iv.application ? setAssessOpen(true) : setLinkOpen(true))}>Open assessment</button>}
-          {canFeedback && iv.status !== 'cancelled' && <button className="btn btn-secondary" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
-          {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
-          {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
+          {canFeedback && (iv.status === 'completed' || (upcoming && isOpen('feedback'))) && <button className="btn btn-secondary" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
+          {btns.complete_interview?.visible && upcoming && isOpen('completed') && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
+          {btns.complete_interview?.visible && upcoming && isOpen('no_show') && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
           {btns.complete_interview?.visible && ['completed', 'no_show'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setReopenAsk(true)}>Reopen interview</button>}
           {can(user, 'interview.edit') && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setResched(true)}>Reschedule / edit</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
@@ -11990,6 +11998,9 @@ function InterviewDetail({ id, user, onBack }) {
 
 
 
+      {showWhenOpens && <p className="muted" style={{ margin: '0 0 16px' }}>{Number.isFinite(firstOpen)
+        ? <>Feedback opens at the start ({cairoTime(iv.actionsOpenAt.feedback)}), No-Show 15 minutes after it ({cairoTime(iv.actionsOpenAt.no_show)}) and Completed at the scheduled end ({cairoTime(iv.actionsOpenAt.completed)}), Cairo time.</>
+        : <>This interview has no valid time, so it cannot be marked or given feedback. Reschedule it first.</>}</p>}
       <div className="detail-grid">
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Links</div>

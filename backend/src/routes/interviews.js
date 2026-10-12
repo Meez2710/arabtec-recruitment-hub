@@ -7,7 +7,7 @@ import { requireAuth, requirePermission, requireAnyPermission } from '../middlew
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
 import { APP_TERMINAL, APP_LABELS, appNorm, REQ_TERMINAL, REQ_LABELS, reqNorm } from '../lib/stages.js';
-import { schedulingGuard, evaluateConflicts, conflictRefusal } from '../lib/interview-rules.js';
+import { schedulingGuard, evaluateConflicts, conflictRefusal, attendanceRefusal, actionsOpenAt } from '../lib/interview-rules.js';
 import { tx, run as dbRun } from '../lib/db.js';
 import { canSeeCandidate } from '../lib/candidate-scope.js';
 import {
@@ -94,6 +94,8 @@ function serialize(iv, user, { detail = false } = {}) {
     panel: InterviewPanel.forInterview(iv.id).map((m) => ({ id: m.interviewer_id, name: m.full_name, isLead: m.is_lead === 1 })),
     overlapReason: iv.overlap_reason || null,
     calendarSeq: Number(iv.calendar_seq || 0),
+    // From when Completed / No-Show / feedback may be recorded (audit A4/A5).
+    actionsOpenAt: actionsOpenAt(iv),
     // A change or cancellation that has not been communicated yet.
     notice: (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })(),
     createdAt: iv.created_at,
@@ -602,6 +604,15 @@ router.post('/:id/status', requirePermission('interview.edit'), (req, res) => {
   if (!['completed', 'no_show', 'cancelled', 'scheduled'].includes(status)) return res.status(400).json({ error: 'Invalid interview status.' });
   if (status === 'cancelled' && (!reason || !reason.trim())) return res.status(400).json({ error: 'A reason is required to cancel an interview.' });
   if (iv.status === 'cancelled') return res.status(409).json({ error: 'Interview is already cancelled.' });
+  if (['completed', 'no_show'].includes(status) && ['scheduled', 'rescheduled'].includes(iv.status)) {
+    const early = attendanceRefusal(iv, status);
+    if (early) return res.status(early.status).json(early.body);
+  }
+  // A No-Show is the attendance record (audit A8): it is not overwritten by a
+  // cancellation. Reopening it first is the deliberate, audited route.
+  if (status === 'cancelled' && iv.status === 'no_show') {
+    return res.status(409).json({ code: 'no_show_recorded', error: 'This interview is recorded as a No-Show, which is kept as the attendance record. Reopen it first if it should be cancelled instead.' });
+  }
   if (status === 'scheduled' && ['completed', 'no_show'].includes(iv.status)) {
     // Reopening returns the interview to the schedule, so the request and
     // application must still allow scheduling; a future slot must still be free.
@@ -634,6 +645,14 @@ router.post('/:id/feedback', requirePermission('interview.feedback'), (req, res)
   const isPanelist = Interviews.isPanelist(iv.id, req.user.id);
   if (!isPanelist && !canViewAll(req.user) && iv.organizer_id !== req.user.id) {
     return res.status(403).json({ error: 'Only assigned panel members can submit feedback for this interview.' });
+  }
+  // Feedback describes an interview that took place (audit A5).
+  if (['cancelled', 'no_show'].includes(iv.status)) {
+    return res.status(409).json({ code: 'interview_not_held', error: iv.status === 'no_show' ? 'The candidate did not attend this interview, so there is nothing to give feedback on.' : 'This interview was cancelled, so there is nothing to give feedback on.' });
+  }
+  if (iv.status !== 'completed') {
+    const early = attendanceRefusal(iv, 'feedback');
+    if (early) return res.status(early.status).json(early.body);
   }
   const d = req.body || {};
   if (d.recommendation && !RECS.includes(d.recommendation)) return res.status(400).json({ error: 'Invalid recommendation.' });

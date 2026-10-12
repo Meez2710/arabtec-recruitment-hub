@@ -104,3 +104,56 @@ export function conflictRefusal(conflicts, body = {}) {
   }
   return null;
 }
+
+/* ------------------------------------------------------------------------
+ * Attendance and feedback describe an interview that has happened
+ * (audit 2026-10-12, findings A4/A5). Completed, No-Show and feedback open at
+ * a moment derived from the start; before it, the routes refuse with
+ * `interview_not_started` and the UI hides the buttons. One rule, shared by
+ * the routes and by serialize(), so the UI and the server cannot disagree.
+ * --------------------------------------------------------------------- */
+export const ATTENDANCE_ACTIONS = ['completed', 'no_show', 'feedback'];
+
+/**
+ * When may `action` ('completed' | 'no_show' | 'feedback') first be recorded
+ * for this interview? Returns epoch milliseconds. `iv.scheduled_at` is the
+ * start (ISO, UTC); `iv.duration_min` its length in minutes.
+ */
+// Owner rules (12 Oct 2026): Completed from the scheduled END; No-Show 15
+// minutes after the start (a late candidate is not marked absent); feedback
+// from the start. A missing or unreadable start or duration returns NaN,
+// which attendanceRefusal() REFUSES — bad data never bypasses the guard.
+export const NO_SHOW_AFTER_MIN = 15;
+export function attendanceOpensAt(iv, action) {
+  const start = Date.parse(iv?.scheduled_at ?? '');
+  if (!Number.isFinite(start)) return NaN;
+  if (action === 'feedback') return start;
+  if (action === 'no_show') return start + NO_SHOW_AFTER_MIN * 60000;
+  if (action === 'completed') {
+    const dur = Number(iv.duration_min);
+    return Number.isFinite(dur) && dur > 0 ? start + dur * 60000 : NaN;
+  }
+  return NaN; // an unknown action is never open
+}
+
+const cairoClock = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ms));
+const ACTION_WORD = { completed: 'mark it Completed', no_show: 'mark it No-Show', feedback: 'add feedback' };
+
+/** null to proceed, or { status, body } refusing an action that is not open yet. */
+export function attendanceRefusal(iv, action, now = Date.now()) {
+  const opens = attendanceOpensAt(iv, action);
+  if (!Number.isFinite(opens)) {
+    return { status: 409, body: { code: 'interview_time_invalid',
+      error: 'This interview has no valid date, time or length, so it cannot be marked or given feedback. Reschedule it with a correct time first.' } };
+  }
+  if (now >= opens) return null;
+  return { status: 409, body: { code: 'interview_not_started', opensAt: new Date(opens).toISOString(),
+    error: `This interview has not happened yet. You can ${ACTION_WORD[action]} from ${cairoClock(opens)} (Cairo time).` } };
+}
+
+/** { completed, no_show, feedback } → ISO instant each action opens, for the UI. */
+export function actionsOpenAt(iv) {
+  const out = {};
+  for (const a of ATTENDANCE_ACTIONS) { const ms = attendanceOpensAt(iv, a); if (Number.isFinite(ms)) out[a] = new Date(ms).toISOString(); }
+  return out;
+}

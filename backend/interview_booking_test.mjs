@@ -147,6 +147,56 @@ try {
   const hmCv = await fetch(`${B}/api/candidates/${cI}/resume`, { headers: { Authorization: 'Bearer ' + hm } });
   c('an unrelated hiring manager cannot (403)', hmCv.status === 403, String(hmCv.status));
   void p3Token;
+
+  // Audit A4/A5/A8 (2026-10-12): attendance and feedback describe an interview
+  // that has happened; a No-Show is the attendance record.
+  console.log('\n— lifecycle: nothing is recorded before the interview starts —');
+  const { backdateInterview } = await import('./test-support/backdate.mjs');
+  const cL = await candidate('life'); const aL = await app(rid, cL);
+  const ivL = (await book({ applicationId: aL, scheduledAt: at(9, 9), panel: [{ interviewerId: mona.id, isLead: true }] })).json.interview;
+  const status = (id, body) => api(`/api/interviews/${id}/status`, { method: 'POST', token: recruiter, body });
+  const early = await status(ivL.id, { status: 'completed' });
+  c('Completed before the start is refused (409 interview_not_started)', early.status === 409 && early.json?.code === 'interview_not_started', `${early.status} ${early.text.slice(0, 160)}`);
+  const earlyNs = await status(ivL.id, { status: 'no_show', reason: 'x' });
+  c('No-Show before the start is refused (409)', earlyNs.status === 409 && earlyNs.json?.code === 'interview_not_started', `${earlyNs.status}`);
+  const earlyFb = await api(`/api/interviews/${ivL.id}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'yes', comments: 'too early' } });
+  c('feedback before the start is refused (409)', earlyFb.status === 409 && earlyFb.json?.code === 'interview_not_started', `${earlyFb.status} ${earlyFb.text.slice(0, 160)}`);
+  const lDetail = (await must(`/api/interviews/${ivL.id}`, { token: recruiter })).interview;
+  c('the interview says from when each action opens', ['completed', 'no_show', 'feedback'].every((k) => typeof lDetail.actionsOpenAt?.[k] === 'string' && !Number.isNaN(Date.parse(lDetail.actionsOpenAt[k]))), JSON.stringify(lDetail.actionsOpenAt));
+  backdateInterview(db, ivL.id, -90);
+  c('Completed after it started is accepted', (await status(ivL.id, { status: 'completed' })).status === 200);
+  c('feedback after it was completed is accepted (201)', (await api(`/api/interviews/${ivL.id}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'yes', comments: 'held' } })).status === 201);
+
+  const cN = await candidate('noshow'); const aN = await app(rid, cN);
+  const ivN = (await book({ applicationId: aN, scheduledAt: at(9, 12), panel: [{ interviewerId: mona.id, isLead: true }] })).json.interview;
+  backdateInterview(db, ivN.id, -90);
+  c('No-Show after it started is accepted', (await status(ivN.id, { status: 'no_show', reason: 'Candidate did not attend' })).status === 200);
+  const nsFb = await api(`/api/interviews/${ivN.id}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'no', comments: 'absent' } });
+  c('feedback on a No-Show is refused (409)', nsFb.status === 409, `${nsFb.status}`);
+  const nsCancel = await status(ivN.id, { status: 'cancelled', reason: 'tidy up' });
+  c('cancelling a No-Show is refused — it is the attendance record (409)', nsCancel.status === 409, `${nsCancel.status} ${nsCancel.text.slice(0, 120)}`);
+  c('…reopen, then cancel, is allowed', (await status(ivN.id, { status: 'scheduled' })).status === 200 && (await status(ivN.id, { status: 'cancelled', reason: 'Withdrawn' })).status === 200);
+
+  console.log('\n— lifecycle: owner windows (feedback at start, No-Show +15 min, Completed at the end) —');
+  const cW = await candidate('window'); const aW = await app(rid, cW);
+  const ivW = (await book({ applicationId: aW, scheduledAt: at(9, 15), durationMin: 60, panel: [{ interviewerId: mona.id, isLead: true }] })).json.interview;
+  backdateInterview(db, ivW.id, -10); // started 10 minutes ago, ends in 50
+  c('10 min in: No-Show is still refused (opens at +15)', (await status(ivW.id, { status: 'no_show', reason: 'late' })).json?.code === 'interview_not_started');
+  c('10 min in: Completed is refused (opens at the end)', (await status(ivW.id, { status: 'completed' })).json?.code === 'interview_not_started');
+  c('10 min in: feedback is accepted (opens at the start)', (await api(`/api/interviews/${ivW.id}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'yes', comments: 'in progress' } })).status === 201);
+  backdateInterview(db, ivW.id, -20);
+  c('20 min in: No-Show is accepted', (await status(ivW.id, { status: 'no_show', reason: 'Candidate did not attend' })).status === 200);
+  c('…reopened', (await status(ivW.id, { status: 'scheduled' })).status === 200);
+  backdateInterview(db, ivW.id, -61);
+  c('after the scheduled end: Completed is accepted', (await status(ivW.id, { status: 'completed' })).status === 200);
+
+  const cX = await candidate('badtime'); const aX = await app(rid, cX);
+  const ivX = (await book({ applicationId: aX, scheduledAt: at(9, 18), panel: [{ interviewerId: mona.id, isLead: true }] })).json.interview;
+  db.run('UPDATE interview SET scheduled_at = ? WHERE id = ?', ['not-a-date', ivX.id]);
+  const bad = await status(ivX.id, { status: 'completed' });
+  c('an unreadable start time refuses Completed — bad data never bypasses the guard (409)', bad.status === 409 && bad.json?.code === 'interview_time_invalid', `${bad.status} ${bad.text.slice(0, 120)}`);
+  c('…and refuses feedback too', (await api(`/api/interviews/${ivX.id}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'yes' } })).json?.code === 'interview_time_invalid');
+  db.run('UPDATE interview SET status = ? WHERE id = ?', ['cancelled', ivX.id]); // keep later suites' data sane
 } catch (e) { console.error(e); fail++; }
 finally {
   console.log(`\n=== INTERVIEW BOOKING: ${pass} passed, ${fail} failed ===\n`);
