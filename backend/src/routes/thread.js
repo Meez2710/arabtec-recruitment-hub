@@ -7,6 +7,7 @@ import { Posts, Requests, Candidates, Applications, Users } from '../lib/models.
 import { requireAuth } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile } from '../lib/upload.js';
+import { sendDocxPreview } from '../lib/cv-preview.js';
 import { run as dbRun } from '../lib/db.js';
 import fs from 'node:fs';
 
@@ -100,6 +101,8 @@ router.get('/post/:postId/file', (req, res) => {
   const r = Requests.byId(post.request_id);
   if (!r || !canView(req.user, r)) return res.status(403).json({ error: 'Not allowed.' });
   if (!post.file_path) return res.status(404).json({ error: 'No file on this post.' });
+  // `?as=html`: a Word file rendered for the in-app side panel (same check as above).
+  if (req.query.as === 'html') return sendDocxPreview(post.file_path, post.file_name, res);
   streamFile(post.file_path, res, post.file_name || 'file');
 });
 

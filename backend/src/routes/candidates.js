@@ -6,7 +6,7 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile, uploadPath, readBlob } from '../lib/upload.js';
-import { isDocx, docxPreviewHtml } from '../lib/cv-preview.js';
+import { sendDocxPreview } from '../lib/cv-preview.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
@@ -24,6 +24,7 @@ import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '..
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
 import { hasBroadCandidateAccess, visibleCandidateIds, canSeeCandidate, applicationScopeFilter } from '../lib/candidate-scope.js';
+import { resolveCandidateCv, loadCandidateCv, loadCvDocument, cvDocumentStatus } from '../lib/candidate-cv.js';
 import { importInboxFile, inboxDirectory, isInboxFile } from '../lib/cv-import.js';
 import { interpretSearch } from '../lib/ai/recruiter-ai.js';
 import fs from 'node:fs';
@@ -83,7 +84,8 @@ function serialize(c, user, { withDetail = false } = {}) {
     // enhancement fields (HR-leadership requested)
     employer: c.employer, currentProject: c.current_project,
     graduationYear: c.graduation_year, university: c.university, major: c.major,
-    resumeName: c.resume_name, hasResume: !!c.resume_path,
+    // An auto-ingested CV is the intake's stored file (see lib/candidate-cv.js).
+    ...(() => { const cv = resolveCandidateCv(c); return { resumeName: cv ? cv.fileName : c.resume_name, hasResume: !!cv }; })(),
     tags: c.tags ? JSON.parse(c.tags) : [], candidateState: c.candidate_state,
     // Always arrays through the API, even when the column is NULL.
     skills: decodeList(c.skills), languages: decodeList(c.languages),
@@ -146,7 +148,9 @@ function serialize(c, user, { withDetail = false } = {}) {
     customFields: CustomFields.valuesFor('candidate', c.id),
   };
   if (withDetail) {
-    out.documents = CandidateDocuments.forCandidate(c.id);
+    // Each CV row says whether ITS OWN bytes can be opened (by document id).
+    out.documents = CandidateDocuments.forCandidate(c.id).map((d) => (d.doc_type === 'cv'
+      ? { ...d, cvViewable: cvDocumentStatus(c.id, d).ok, cvProblem: cvDocumentStatus(c.id, d).problem || null } : d));
     // A note or activity tied to an application outside the caller's scope
     // would reveal that application/request; candidate-level ones stay.
     const appInScope = new Set(applications.map((a) => Number(a.id)));
@@ -616,18 +620,6 @@ router.get('/intakes/:iid', requirePermission('candidate.view'), requireBroadCan
 // it was read from. Uses the existing upload storage and the existing auth.
 // `?as=html`: a Word CV rendered for the side panel, where the browser cannot
 // preview .docx itself. Same permission as the file; see cv-preview.js.
-async function sendDocxPreview(storedName, fallbackName, res) {
-  const f = readBlob(storedName);
-  if (!f) return res.status(404).json({ error: 'File not found.' });
-  if (!isDocx(f.mime, f.originalName || fallbackName)) {
-    return res.status(415).json({ error: 'Only Word (.docx) CVs are rendered here; PDFs and images preview directly.' });
-  }
-  try {
-    return res.json({ html: await docxPreviewHtml(f.data) });
-  } catch {
-    return res.status(422).json({ error: 'This Word file could not be read. Download it instead.' });
-  }
-}
 
 router.get('/intakes/:iid/document', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const intake = intakeById(Number(req.params.iid));
@@ -1161,9 +1153,23 @@ router.post('/:id/reparse', requirePermission('candidate.edit'), async (req, res
 router.get('/:id/resume', requirePermission('candidate.view'), (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
-  if (!c.resume_path) return res.status(404).json({ error: 'No resume on file.' });
-  if (req.query.as === 'html') return sendDocxPreview(c.resume_path, c.resume_name, res);
-  streamFile(c.resume_path, res, c.resume_name || 'resume');
+  // Profile upload, or the auto-ingested intake file (provenance-checked and
+  // re-hashed). Scope was already enforced by router.param('id').
+  const cv = loadCandidateCv(c);
+  if (cv.error) return res.status(cv.status).json({ error: cv.error });
+  if (req.query.as === 'html') return sendDocxPreview(cv.ref.storedName, cv.ref.fileName, res);
+  streamFile(cv.ref.storedName, res, cv.ref.fileName || 'resume');
+});
+
+// One CV document's own bytes (an older or newer version), by document id —
+// never by filename. Same scope (router.param) and permission as /resume.
+router.get('/:id/documents/:docId/file', requirePermission('candidate.view'), (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  const cv = loadCvDocument(c.id, Number(req.params.docId));
+  if (cv.error) return res.status(cv.status).json({ error: cv.error, problem: cv.problem || null });
+  if (req.query.as === 'html') return sendDocxPreview(cv.ref.storedName, cv.ref.fileName, res);
+  streamFile(cv.ref.storedName, res, cv.ref.fileName || 'cv');
 });
 
 /* ---------------- NOTES ---------------- */
