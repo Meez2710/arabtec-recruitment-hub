@@ -43,6 +43,7 @@ const SUITES = [
   'rate_limit_test.mjs',      // C1.4 global rate limiter
   'cv_inbox_backfill_pg_test.mjs', // transactional migration under PostgreSQL semantics
   'audit_regression_test.mjs', // role backfill, SMTP validation, image discovery and historical metadata
+  'thread_access_test.mjs', // 12 Oct security: request threads and their CV files are request-specific (no cross-request CV access)
   'cv_side_panel_test.mjs', // 12 Oct: new intake candidates carry their CV; thread files open in the side panel, not a new tab
   'cv_viewer_ingest_test.mjs', // production fix 12 Oct: an auto-ingested CV opens (read-time resolution, provenance + hash checked)
   'cv_auto_ingest_test.mjs',  // clean CV -> Talent Pool without a human; exceptions -> Candidate Review

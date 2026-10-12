@@ -81,9 +81,8 @@ try {
   const pdfHtml = await get(`/thread/post/${postPdf.id}/file?as=html`, hrMgr);
   c('?as=html on a PDF is refused (415) — PDFs preview directly', pdfHtml.status === 415, `${pdfHtml.status}`);
   // `?as=html` adds no new access: for every role it answers exactly as the raw
-  // file does (thread.js canView). Note: today every seeded role passes canView
-  // (isParticipant admits request.create and interview.feedback holders) —
-  // pre-existing breadth, reported separately, deliberately not changed here.
+  // file does (thread.js canView). Who may open which thread is covered by
+  // thread_access_test.mjs (request-specific since 12 Oct).
   const roles = { interviewer, pm: await login('pm@arabtec.com'), hm: await login('hiring.manager@arabtec.com'), viewer: await login('viewer@arabtec.com') };
   const seen = [];
   for (const [role, tok] of Object.entries(roles)) {
