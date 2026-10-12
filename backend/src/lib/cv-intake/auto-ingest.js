@@ -27,6 +27,7 @@ import {
 import { Candidates, CandidateDocuments } from '../models.js';
 import { egyptVerdict } from './egypt-rule.js';
 import { raiseProposal, reviewProposal } from '../proposal-store.js';
+import { run } from '../db.js';
 
 /* --------------------------------------------------------------------------
    Identity sufficiency.
@@ -438,12 +439,21 @@ function applyFlags(candidateId, flags) {
 
 /** Keep the document itself, so the CV history is real and hash dedup works. */
 function attachDocument(candidateId, intake, actor) {
-  if (!candidateId || !intake?.fileHash) return;
+  if (!candidateId || !intake?.storedName) return;
   try {
-    const already = CandidateDocuments.byHash(intake.fileHash)
-      .some((d) => Number(d.candidate_id) === Number(candidateId));
-    if (already) return;
-    CandidateDocuments.add({
+    const existing = intake.fileHash
+      ? CandidateDocuments.byHash(intake.fileHash)
+          .find((d) => Number(d.candidate_id) === Number(candidateId))
+      : null;
+    if (existing) {
+      // Older auto-ingests persisted document metadata without its blob key.
+      if (!existing.stored_path) {
+        run('UPDATE candidate_document SET stored_path=? WHERE id=?',
+          [intake.storedName, existing.id]);
+      }
+      return;
+    }
+    const document = CandidateDocuments.add({
       candidateId,
       docType: 'cv',
       fileName: intake.fileName || intake.storedName || 'cv',
@@ -452,6 +462,8 @@ function attachDocument(candidateId, intake, actor) {
       note: null,
       uploadedBy: actor?.id ?? null,
     });
+    run('UPDATE candidate_document SET stored_path=? WHERE id=?',
+      [intake.storedName, document.id]);
   } catch { /* the candidate and the intake both stand without the document row */ }
 }
 
@@ -533,6 +545,12 @@ export async function autoIngest(intake, actor, opts = {}) {
   if (existing && !conflicted) {
     let refresh = { refreshed: [], held: [], proposalId: null };
     attachDocument(existing.id, intake, actor);
+    // The preview must show the latest CV from a verified same-person intake.
+    // Identity/contact fields remain protected by refreshExisting below.
+    if (intake.storedName) {
+      run('UPDATE candidate SET resume_path=?, resume_name=? WHERE id=?',
+        [intake.storedName, intake.fileName || intake.storedName, existing.id]);
+    }
     try {
       refresh = await refreshExisting(existing, intake, assessment.values, actor);
       if (refresh.refreshed.length > 0) {
