@@ -1910,3 +1910,6 @@ button.cal-slot:focus-visible { outline: 0; }
 .perm-area-count { margin-right: auto; }
 .perm-area-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-5); }
 @media (max-width: 900px) { .perm-area-grid { grid-template-columns: 1fr; } }
+
+/* Document-only side panel (thread attachments): the file takes the full width. */
+.cvrev-body.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }

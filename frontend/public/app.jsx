@@ -1594,6 +1594,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       {/* One CV review panel for the whole app; every entry point reaches it
           through the `ats:open-cv-review` event rather than owning its state. */}
       <CvReviewHost user={user} />
+      <DocumentPanelHost />
 
       <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
     </>
@@ -6025,7 +6026,11 @@ function TicketThread({ req, user }) {
     try { await api.uploadTo('/thread/request/' + req.id + '/file', file, { body: text, parentPostId: parentPostId || '' }); setText(''); load(); }
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  async function viewPostFile(postId) { try { await api.download('/thread/post/' + postId + '/file'); } catch (e) { toast(e.message, 'error'); } }
+  // Opens in the side panel (was a blob URL in a new tab, which is how thread CVs left the ATS).
+  function viewPostFile(postId) {
+    const p = (posts || []).find((x) => x.id === postId);
+    openDocumentPanel('/thread/post/' + postId + '/file', p?.fileName, p?.type === 'cv' && p?.payload?.candidateName ? p.payload.candidateName + ' — CV' : null);
+  }
 
   if (!posts) return <Skeleton rows={5} />;
 
@@ -9732,6 +9737,62 @@ function CvReviewPanel({ candidateId, seed, doc, user, onClose }) {
       </div>
     </div>
   );
+}
+
+/**
+ * A file that is not a candidate's own CV (a CV or attachment posted in a
+ * request thread) opened in the same side panel, never a new tab. `path` is
+ * the existing authenticated API path; Download stays a separate action.
+ */
+function openDocumentPanel(path, fileName, title) {
+  if (!path) return;
+  window.dispatchEvent(new CustomEvent('ats:open-document', { detail: { path, fileName: fileName || null, title: title || null } }));
+}
+function DocumentPanel({ path, fileName, title, onClose }) {
+  const toast = useToast();
+  const titleId = useId();
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const { doc, error, busy } = useCvDocument(path, fileName);
+  async function download() {
+    try { await api.download(path, fileName || 'file'); } catch (e) { toast(e.message || 'Download failed', 'error'); }
+  }
+  return (
+    <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head cvrev-head">
+          <div className="cvrev-head-id">
+            <h3 id={titleId}>{title || fileName || 'Document'}</h3>
+            {title && fileName && <span className="cvrev-head-sub">{fileName}</span>}
+          </div>
+          <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
+        <div className="cvrev-body cvrev-body--doc">
+          <div className="cvrev-cv">
+            {busy
+              ? <div className="cvrev-cv-state"><Skeleton rows={5} /></div>
+              : error
+                ? <div className="cvrev-cv-state"><Empty art="failed" tone="error" text={error} /></div>
+                : <CvFilePreview fileUrl={doc?.url} fileName={fileName} mimeType={doc?.mimeType} html={doc?.html} />}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-secondary" onClick={download}>Download</button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function DocumentPanelHost() {
+  const [open, setOpen] = useState(null);      // { path, fileName, title }
+  useEffect(() => {
+    const onOpen = (e) => { if (e.detail?.path) setOpen({ path: e.detail.path, fileName: e.detail.fileName, title: e.detail.title }); };
+    window.addEventListener('ats:open-document', onOpen);
+    return () => window.removeEventListener('ats:open-document', onOpen);
+  }, []);
+  if (!open) return null;
+  return <DocumentPanel key={open.path} {...open} onClose={() => setOpen(null)} />;
 }
 
 /**

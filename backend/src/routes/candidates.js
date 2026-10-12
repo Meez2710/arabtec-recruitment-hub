@@ -6,7 +6,7 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile, uploadPath, readBlob } from '../lib/upload.js';
-import { isDocx, docxPreviewHtml } from '../lib/cv-preview.js';
+import { sendDocxPreview } from '../lib/cv-preview.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
@@ -620,18 +620,6 @@ router.get('/intakes/:iid', requirePermission('candidate.view'), requireBroadCan
 // it was read from. Uses the existing upload storage and the existing auth.
 // `?as=html`: a Word CV rendered for the side panel, where the browser cannot
 // preview .docx itself. Same permission as the file; see cv-preview.js.
-async function sendDocxPreview(storedName, fallbackName, res) {
-  const f = readBlob(storedName);
-  if (!f) return res.status(404).json({ error: 'File not found.' });
-  if (!isDocx(f.mime, f.originalName || fallbackName)) {
-    return res.status(415).json({ error: 'Only Word (.docx) CVs are rendered here; PDFs and images preview directly.' });
-  }
-  try {
-    return res.json({ html: await docxPreviewHtml(f.data) });
-  } catch {
-    return res.status(422).json({ error: 'This Word file could not be read. Download it instead.' });
-  }
-}
 
 router.get('/intakes/:iid/document', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const intake = intakeById(Number(req.params.iid));
