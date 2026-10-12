@@ -160,12 +160,12 @@ export function actionsOpenAt(iv) {
 
 /* ------------------------------------------------------------------------
  * Working week (audit A9). A booking outside the organisation's working
- * days or hours is WARNED about, never refused. Default until the owner
- * decides (D1): Sunday–Thursday, 09:00–17:00 Cairo time; adjustable in
+ * days or hours is WARNED about, never refused. Owner decision (12 Oct):
+ * Saturday–Thursday, Friday off, 09:00–17:00 Cairo time; adjustable in
  * Invitation templates (setting interview_working_week).
  * --------------------------------------------------------------------- */
 export const WORK_WEEK_SETTING = 'interview_working_week';
-export const DEFAULT_WORK_WEEK = { days: [0, 1, 2, 3, 4], start: '09:00', end: '17:00' };
+export const DEFAULT_WORK_WEEK = { days: [0, 1, 2, 3, 4, 6], start: '09:00', end: '17:00' };
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const toMin = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));

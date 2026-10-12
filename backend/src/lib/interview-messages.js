@@ -284,7 +284,10 @@ export function fill(text, values) {
     .replace(/(\S)[ \t]{2,}/g, '$1 ')
     .replace(/ — (?:— )+/g, ' — ')
     .replace(/[ \t]*\([ \t]*\)/g, '')
-    .replace(/(\S) +([,.])/g, '$1$2');
+    .replace(/(\S) +([,.])/g, '$1$2')
+    // A standalone interview has no position: "an interview for the role on…"
+    // reads as "an interview on…" (only reachable when {{position}} is empty).
+    .replace(/ for the role\b/g, '');
 }
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');

@@ -55,7 +55,7 @@ try {
     const T = M.DEFAULT_TEMPLATES.invite;
     const subj = M.fill(T.candidate.subject, v), body = M.fill(T.candidate.body, v), pan = M.fill(T.panel.body, v), wa = M.fill(T.whatsapp.body, v);
     c('unknown position reads cleanly in the subject', subj === 'Interview invitation — Arabtec', subj);
-    c('…and in the bodies (no gap, no stray brackets)', /interview for the role\./.test(body) && /for Synthetic Person\.\n/.test(pan) && /for the role on /.test(wa) && !/the the|\(\)|— —/.test(body + pan + wa));
+    c('…and in the bodies (no gap, no stray brackets)', /invite you to an interview\./.test(body) && /for Synthetic Person\.\n/.test(pan) && /to an interview on /.test(wa) && !/for the role/.test(body + wa) && !/the the|\(\)|— —/.test(body + pan + wa));
     const named = M.fill(T.candidate.subject, M.messageValues({ iv: { scheduled_at: '2026-10-08T07:00:00Z' }, candidate: { full_name: 'X' }, request: { title: 'Senior Site Engineer' } }));
     c('a known position is used as given', named === 'Interview invitation — Senior Site Engineer — Arabtec', named);
   }
@@ -65,6 +65,9 @@ try {
   const ics = M.interviewIcs({ iv: ivx, summary: 's', description: 'd', cancelled: true });
   c('cancellation calendar entry: same UID, SEQUENCE = revision, STATUS:CANCELLED, UTC start',
     ics.includes('UID:INT-09@arabtec-recruitment-hub') && ics.includes('SEQUENCE:3') && ics.includes('STATUS:CANCELLED') && ics.includes('DTSTART:20261215T080000Z'));
+  c('no position (standalone interview): "for the role" is dropped, nothing else changes',
+    M.fill('We would like to invite you to an interview for the {{position}} role on {{date}}.', { position: '', date: 'Monday' }) === 'We would like to invite you to an interview on Monday.'
+    && M.fill('an interview for the {{position}} role.', { position: 'Site Engineer' }) === 'an interview for the Site Engineer role.');
   // Audit A11 (from PR #46): what people type and what CVs contain.
   for (const [input, want] of [
     ['+20 100 123 4567', '+201001234567'], ['01001234567', '+201001234567'], ['0100 123 4567', '+201001234567'],
@@ -227,6 +230,25 @@ try {
   const onsite = await booked({ mode: 'onsite', link: 'Head Office — 12 Synthetic St, New Cairo' });
   const om = await must(`/api/interviews/${onsite.iv.id}/messages?kind=invite`, { token: recruiter });
   c('the chosen place and address go into the candidate email and WhatsApp automatically', om.rendered.candidate.body.includes('Head Office — 12 Synthetic St, New Cairo') && om.whatsapp.text.includes('12 Synthetic St'), om.rendered.candidate.body.slice(0, 200));
+
+  console.log('\n— Arabic templates and online meeting links (Step 8) —');
+  const keepTpl = db.get("SELECT value FROM system_setting WHERE key='interview_message_templates'")?.value ?? null;
+  const ar = await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { templates: { invite: { whatsapp: { body: 'مرحباً {{candidateFirstName}}، ندعوك لمقابلة يوم {{date}} الساعة {{time}}. {{where}}' } } } } });
+  c('an Arabic template is accepted', ar.status === 200, ar.text.slice(0, 120));
+  for (const [name, url] of [['Teams', 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_synthetic%40thread.v2/0'], ['Google Meet', 'https://meet.google.com/abc-defg-hij'], ['Zoom', 'https://us02web.zoom.us/j/12345678901?pwd=synthetic']]) {
+    const O = await booked({ mode: 'video', link: url });
+    const om2 = await must(`/api/interviews/${O.iv.id}/messages?kind=invite`, { token: recruiter });
+    c(`${name} link: in the candidate email and the Arabic WhatsApp text, names filled in`, om2.rendered.candidate.body.includes(url) && om2.whatsapp.text.includes(url) && om2.whatsapp.text.startsWith('مرحباً Synthetic') && !om2.whatsapp.text.includes('{{'), om2.whatsapp.text.slice(0, 120));
+    if (name === 'Zoom') {
+      const moved = await must(`/api/interviews/${O.iv.id}`, { method: 'PUT', token: recruiter, body: { scheduledAt: at(25, 8) } });
+      const upd = await must(`/api/interviews/${O.iv.id}/messages?kind=update`, { token: recruiter });
+      c('…and the reschedule message keeps the link and says what changed', moved.changes.includes('date_time') && upd.rendered.candidate.body.includes(url) && /date and time/.test(upd.rendered.candidate.body));
+    }
+  }
+  const httpCand = (await must('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Synthetic Http Link', email: 'http-link@example.invalid', phone: '+201001119999' } })).candidate.id;
+  const httpBook = await api('/api/interviews', { method: 'POST', token: recruiter, body: { candidateId: httpCand, scheduledAt: at(26, 8), mode: 'video', locationOrLink: 'http://zoom.us/j/1', panel: [{ interviewerId: mona.id }], sendInvitations: true, batchKey: key() } });
+  c('a non-https link: the interview is saved but nothing is sent, with the reason', httpBook.status === 201 && httpBook.json.delivery?.state === 'not_sent' && httpBook.json.delivery?.reason === 'details_incomplete', httpBook.text.slice(0, 200));
+  if (keepTpl === null) db.run("DELETE FROM system_setting WHERE key='interview_message_templates'"); else db.run("UPDATE system_setting SET value=? WHERE key='interview_message_templates'", [keepTpl]);
 
   console.log('\n— reminders (audit A7) —');
   const R = await booked({ panel: [mona.id] });

@@ -198,9 +198,10 @@ try {
   c('…and refuses feedback too', (await api(`/api/interviews/${ivX.id}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'yes' } })).json?.code === 'interview_time_invalid');
   db.run('UPDATE interview SET status = ? WHERE id = ?', ['cancelled', ivX.id]); // keep later suites' data sane
 
-  console.log('\n— working week: a warning, never a block (audit A9; default Sun–Thu 09:00–17:00 Cairo) —');
+  console.log('\n— working week: a warning, never a block (audit A9; owner default Sat–Thu, Friday off, 09:00–17:00 Cairo) —');
   const R = await import('./src/lib/interview-rules.js');
   c('Friday 10:00 Cairo → not a working day', R.workingHoursWarning('2026-12-04T08:00:00Z', 60)?.reason === 'non_working_day');
+  c('Saturday 10:00 Cairo → a working day by default (owner, 12 Oct)', R.workingHoursWarning('2026-12-05T08:00:00Z', 60) === null);
   c('Sunday 10:00 Cairo (winter, UTC+2) → fine', R.workingHoursWarning('2026-12-06T08:00:00Z', 60) === null);
   c('Sunday 10:00 Cairo (summer, UTC+3) → fine', R.workingHoursWarning('2026-07-05T07:00:00Z', 60) === null);
   c('Sunday 08:30 → before hours', R.workingHoursWarning('2026-12-06T06:30:00Z', 60)?.reason === 'before_hours');
