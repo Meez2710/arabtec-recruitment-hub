@@ -13,6 +13,8 @@ const SUITES = process.argv.slice(2).length ? process.argv.slice(2) : [
   'candidate_scope_test.mjs', 'scheduler_validation_test.mjs', 'interview_calendar_test.mjs',
   'assessment_review_fixes_test.mjs', 'assessment_pdf_test.mjs', 'assessment_policy_test.mjs',
   'phase4_test.mjs', 'phase5_test.mjs', 'interview_assessment_link_test.mjs', 'dashboard_director_test.mjs', 'request_control_test.mjs',
+  'workflow_integrity_test.mjs', 'offer_letter_test.mjs', 'assessment_team_edit_test.mjs',
+  'interview_booking_test.mjs', 'interview_comms_test.mjs', 'interview_response_test.mjs',
 ];
 const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
 const admin = new pg.Client({ connectionString: ADMIN }); await admin.connect();

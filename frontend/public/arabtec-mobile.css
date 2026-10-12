@@ -687,3 +687,7 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
 .shell-phone .dash-root .empty .ico { display: none; }
 .shell-phone .dash-root .empty { padding-top: 16px; padding-bottom: 16px; }
 
+
+/* Interviews: the candidate's-answer picker wraps instead of scrolling, so all
+   four answers are visible on a phone. */
+.shell-phone .seg-tabs.resp-picker { flex-wrap: wrap; overflow-x: visible; }

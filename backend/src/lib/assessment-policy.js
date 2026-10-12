@@ -74,13 +74,19 @@ const VE = { view: true, edit: true };
 const H = { view: false, edit: false };
 const candidateDefaults = (salary) => Object.fromEntries(POLICY_SECTIONS[0].fields.map((f) => [f.key, f.confidential ? (salary ? V : H) : V]));
 export const DEFAULT_POLICY = {
+  // Owner decision, 5 Oct 2026: the recruitment team controls the whole
+  // assessment — both sections, their justifications, the flags and the final
+  // decision. Editing still needs interview.feedback and scope (layer 1), so
+  // in practice this is the System Administrator, HR Manager, Recruitment
+  // Manager and Recruiter; the HR Director (no interview.feedback) views only.
+  // Technical interviewers and hiring managers keep their narrower defaults.
   hr: {
     ...candidateDefaults(true),
     'assessment.behavioral': VE,
-    'assessment.technical': V,
+    'assessment.technical': VE,
     'assessment.criticalFlags': VE,
     'assessment.finalRecommendation': VE,
-    'assessment.finalRecommendation.technicalJustification': V,
+    'assessment.finalRecommendation.technicalJustification': VE,
   },
   technical: {
     ...candidateDefaults(false),

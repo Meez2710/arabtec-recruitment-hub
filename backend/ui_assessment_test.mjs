@@ -619,4 +619,44 @@ await check('AR-06: unsaved assessment edits survive the drawer being unmounted 
   qv.dispose();
 });
 
+await check('changing a submitted evaluation needs a reason, which is sent and recorded (audit 2026-10-05)', async () => {
+  const p = await openPanel(bundleOf({ hr: submittedHr() }));
+  const T = 'HR Assessment — Behavioral (Big Five Model)';
+  let t = p.view();
+  assert.equal(nodes(t).some((n) => n.type === 'textarea' && n.props.id === 'assess-7-hr-reason'), false, 'no reason field before Edit');
+  byAria(t, 'Edit behavioral evaluation').props.onClick(); t = p.view();
+  const reason = nodes(t).find((n) => n.type === 'textarea' && n.props.id === 'assess-7-hr-reason');
+  assert.ok(reason, 'a reason field appears when a submitted evaluation is edited');
+  assert.ok(byAria(t, 'Submit behavioral evaluation').props.disabled && byAria(t, 'Save behavioral draft').props.disabled, 'save and submit wait for a reason');
+  pick(rowOf(section(t, T), 'Openness'), '3');
+  reason.props.onChange({ target: { value: 'Corrected after the reference call' } }); t = p.view();
+  assert.equal(byAria(t, 'Submit behavioral evaluation').props.disabled, false);
+  await byAria(t, 'Submit behavioral evaluation').props.onClick();
+  const sent = p.posts.find((x) => x.path === '/assessments/application/7');
+  assert.equal(sent?.body?.editReason, 'Corrected after the reference call', 'the reason travels with the save');
+  p.dispose();
+});
+
+await check('"Reopen for revision" sends a submission back to draft through …/reopen with a reason', async () => {
+  const p = await openPanel(bundleOf({ hr: submittedHr() }));
+  let t = p.view();
+  button(t, 'Reopen for revision').props.onClick(); t = p.view();
+  const dlg = nodes(t).find((n) => n.props && typeof n.props.onConfirm === 'function' && n.props.requireReason);
+  assert.ok(dlg, 'a reason dialog opens');
+  await dlg.props.onConfirm('Please add evidence for the scores');
+  const call = p.posts.find((x) => x.path === '/assessments/application/7/reopen');
+  assert.equal(JSON.stringify(call?.body), JSON.stringify({ evaluatorType: 'hr', reason: 'Please add evidence for the scores' }));
+  p.dispose();
+});
+
+await check('the form opens with where each part stands', async () => {
+  const p = await openPanel(bundleOf({ hr: submittedHr(), technical: null }));
+  const AP = get('AssessmentProgress');
+  const el = nodes(p.view()).find((n) => n.type === AP);
+  const nav = el && AP(el.props);
+  const strip = text(nav);
+  assert.ok(nav && strip.includes('Behavioral (HR)') && strip.includes('Submitted') && strip.includes('Technical') && strip.includes('Not started') && strip.includes('Final decision') && strip.includes('Not recorded'), strip);
+  p.dispose();
+});
+
 console.log(`\n=== UI ASSESSMENT: ${passed} passed ===\n`);

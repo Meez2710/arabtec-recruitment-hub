@@ -18,7 +18,12 @@ const SUITES = [
   'interview_calendar_test.mjs', // calendar range filter + panel clash warning
   'scheduler_validation_test.mjs', // interview date/duration contract on POST/PUT; refused updates never half-apply
   'interview_assessment_link_test.mjs', // interviews reach their assessment: link, unlock on active interview, reopen
+  'interview_booking_test.mjs', // audit 2026-10-06: simultaneous appointments, conflicts, request guards, idempotent create, CV
+  'interview_response_test.mjs', // audit 2026-10-12 A3: the candidate's answer (from PR #46), reset when the time changes
+  'interview_comms_test.mjs', // audit 2026-10-06: templates, explicit per-recipient sends, truthful outcomes, retry, WhatsApp hand-off, updates/cancellations
   'phase5_test.mjs',          // offers, approval, joining
+  'workflow_integrity_test.mjs', // audit 2026-10-05: stale send, contractual re-approval, sent-offer lock, interview terminals
+  'offer_letter_test.mjs',    // audit 2026-10-05: offer letter fidelity, live letter, issued vs emailed, handoffs
   'phase6_test.mjs',          // dashboards, scope, no-leak
   'dashboard_director_test.mjs', // director dashboard: narrowing filters, approval-based aging, scope never widened
   'request_control_test.mjs', // only RM + admin control requests; recruiters see all; unassign; recruiter status; one-time migration
@@ -28,6 +33,7 @@ const SUITES = [
   'assessment_pdf_test.mjs',  // PDF-faithful assessment: scores, lifecycle, scope, audit, preview
   'assessment_policy_test.mjs', // field policy: resolver, API filtering, field-level writes, preview, settings
   'assessment_review_fixes_test.mjs', // AR-02/03/04/07: submit state, parent/child policy, print parity, document CSP
+  'assessment_team_edit_test.mjs', // audit 2026-10-05: recruitment team edits both sections; reopen/edit with reason; history
   'candidate_scope_test.mjs', // AR-01: candidate visibility follows assignment scope (API, nested data, ids, assistant tools)
   'ui_assessment_test.mjs',   // assessment UI: PDF document, policy-driven views, draft/submit/edit, settings
   'hardening_test.mjs',       // security hardening gate items
@@ -37,6 +43,7 @@ const SUITES = [
   'rate_limit_test.mjs',      // C1.4 global rate limiter
   'cv_inbox_backfill_pg_test.mjs', // transactional migration under PostgreSQL semantics
   'audit_regression_test.mjs', // role backfill, SMTP validation, image discovery and historical metadata
+  'thread_access_test.mjs', // 12 Oct security: request threads and their CV files are request-specific (no cross-request CV access)
   'cv_side_panel_test.mjs', // 12 Oct: new intake candidates carry their CV; thread files open in the side panel, not a new tab
   'cv_viewer_ingest_test.mjs', // production fix 12 Oct: an auto-ingested CV opens (read-time resolution, provenance + hash checked)
   'cv_auto_ingest_test.mjs',  // clean CV -> Talent Pool without a human; exceptions -> Candidate Review
@@ -65,6 +72,7 @@ const SUITES = [
   'ui_layout_containers_test.mjs', // card rhythm and responsive container contract
   'ui_gallery_test.mjs',      // the component gallery stays in step with the product
   'ui_overlays_test.mjs',     // dialogs, the stacked parse review, and the CV review side panel
+  'scheduling_setup_test.mjs', // 12 Oct: Scheduling Setup — who opens it, Sat–Thu default, saved week drives calendar + warning, survives restart
   'ui_interview_calendar_test.mjs', // Sat–Thu calendar date arithmetic and wiring
   'branding_migration_test.mjs', // legacy red actions migrate without overwriting custom values
   'parser_seam_test.mjs',     // CV parser injection seam + selected provider

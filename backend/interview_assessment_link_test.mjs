@@ -19,6 +19,9 @@ const { adminToken, ADMIN_BOOTSTRAP_PASSWORD } = await import('./test-support/ad
 process.env.SEED_ADMIN_PASSWORD ||= ADMIN_BOOTSTRAP_PASSWORD;
 await import('./prisma/seed.js');
 await import('./src/server.js');
+// Attendance/feedback need an interview that has started (audit A4/A5); see test-support/backdate.mjs.
+const db = await import('./src/lib/db.js');
+const { backdateInterview } = await import('./test-support/backdate.mjs');
 const { waitForReady } = await import('./test-support/wait-ready.mjs');
 const B = 'http://localhost:' + process.env.PORT;
 await waitForReady(B);
@@ -92,6 +95,7 @@ try {
   c('a cancelled interview cannot be linked (409)', (await api(`/api/interviews/${ivC.id}/link-application`, { method: 'POST', token: recruiter, body: { applicationId: appC } })).status === 409);
 
   console.log('\n— a completed interview can be reopened —');
+  backdateInterview(db, iv.id, -90);
   await api(`/api/interviews/${iv.id}/status`, { method: 'POST', token: recruiter, body: { status: 'completed' } });
   c('marked completed', (await api(`/api/interviews/${iv.id}`, { token: recruiter })).json.interview.status === 'completed');
   const reopen = await api(`/api/interviews/${iv.id}/status`, { method: 'POST', token: recruiter, body: { status: 'scheduled', reason: 'Reopened after Completed' } });

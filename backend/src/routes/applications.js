@@ -9,6 +9,7 @@ import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
 import { hasOpenSeat } from '../lib/vacancy.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
+import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
 import {
   APP, APP_STATUSES as STAGES, APP_REASON_REQUIRED, APP_TERMINAL,
   appNorm, appCanMove, APP_LABELS,
@@ -63,14 +64,12 @@ function maybeNotifyRejection(a, toStatus, req) {
     linkType: 'candidate', linkId: candidate.id,
     vars: { candidateName: candidate.full_name, position: request ? request.title : candidate.current_position },
     title: 'Application update',
+    onExternalResult: candidateEmailReporter({ candidateId: candidate.id, applicationId: a.id, actorId: req.user.id, what: 'Rejection email' }),
   });
-  if (r.sent) {
-    try {
-      CandidateActivity.add({ candidateId: candidate.id, applicationId: a.id, actorId: req.user.id,
-        actorName: 'System', type: 'email_sent', note: 'Rejection email sent' });
-    } catch { /* the activity note must never fail the move */ }
-  }
-  return { sent: r.sent, reason: r.reason || null, to: r.sent && candidate.email ? candidate.email : null };
+  // Queued is not delivered: the outcome is recorded on the candidate's
+  // activity by the reporter when the mailer finishes (lib/candidate-email.js).
+  const plan = deliveryPlan(r, candidate);
+  return { sent: plan.state === 'queued', reason: plan.reason || r.reason || null, to: plan.state === 'queued' ? plan.to : null, delivery: plan };
 }
 const TERMINAL = APP_TERMINAL;
 // hasOpenSeat / fillSeatAndCount now live in lib/vacancy.js (shared with offers).

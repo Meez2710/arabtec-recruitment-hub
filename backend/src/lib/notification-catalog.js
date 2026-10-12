@@ -131,6 +131,21 @@ export const NOTIFICATION_EVENTS = [
     template: 'interviewInvite',
     defaults: { enabled: true, inApp: true, email: true, recipients: ['candidate', 'panel'] },
   },
+  // Interview updates and cancellations are sent explicitly from the interview
+  // (audit 2026-10-06): the recruiter previews and chooses recipients. These
+  // rows are the global switches for them; recipients are chosen per send.
+  {
+    key: 'interview.updated', label: 'Interview changed', category: 'Interviews',
+    description: 'Tells the candidate and panel about a new time, place, link or panel, when the recruiter sends it.',
+    template: null,
+    defaults: { enabled: true, inApp: true, email: true, recipients: ['candidate', 'panel'] },
+  },
+  {
+    key: 'interview.cancelled', label: 'Interview cancelled', category: 'Interviews',
+    description: 'Tells the candidate and panel that an interview is cancelled, when the recruiter sends it.',
+    template: null,
+    defaults: { enabled: true, inApp: true, email: true, recipients: ['candidate', 'panel'] },
+  },
   // NOTE: an "interview feedback outstanding" reminder belongs here, but it is a
   // DERIVED state (completed interview + no scorecard), not an event any route
   // fires. It needs a scheduled sweep, which this product does not have yet.

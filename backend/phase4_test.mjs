@@ -11,6 +11,9 @@ process.env.SEED_ADMIN_PASSWORD ||= ADMIN_BOOTSTRAP_PASSWORD;
 
 await import('./prisma/seed.js');
 await import('./src/server.js');
+// Attendance/feedback need an interview that has started (audit A4/A5); see test-support/backdate.mjs.
+const db = await import('./src/lib/db.js');
+const { backdateInterview } = await import('./test-support/backdate.mjs');
 await new Promise((r) => setTimeout(r, 700));
 const B = 'http://localhost:4150';
 let pass = 0, fail = 0;
@@ -81,6 +84,7 @@ async function approvedRequest(token, recMgr, headcount = 1) {
   console.log('\n— Interview status does NOT replace application status —');
   const appAfter = await api(`/api/applications/${appId}`, { token: recruiter });
   c('application status unchanged after scheduling', appAfter.json.application.status === appStatusBefore, `${appAfter.json.application.status} vs ${appStatusBefore}`);
+  backdateInterview(db, ivId, -90);
   await api(`/api/interviews/${ivId}/status`, { method: 'POST', token: recruiter, body: { status: 'completed' } });
   const appAfter2 = await api(`/api/applications/${appId}`, { token: recruiter });
   c('completing interview does NOT change application status', appAfter2.json.application.status === appStatusBefore);

@@ -1086,6 +1086,96 @@ c('a running scan can renew its own lease', store.renewSyncLease('long-runner') 
 c('another owner cannot renew it', store.renewSyncLease('someone-else') === false);
 store.releaseSyncLease('long-runner');
 
+/* ----------- Automatic parsing of NEW mailbox CVs (opt-in, 12 Oct) ---------- */
+// Production: every scan is discover-only, so a new CV reached the Talent Pool
+// only after a person picked its category. Opt-in automatic parsing reads NEW
+// waiting CVs through the same parseWaiting → ingestIntake path — never the
+// backlog, bounded per scan and per attachment, and one reader at a time.
+console.log('\n- Automatic parsing of new CVs (opt-in) -');
+{
+  const { autoParseConfig } = await import('./src/lib/microsoft/config.js');
+  const { parseWaiting } = await import('./src/lib/microsoft/mailbox-sync.js');
+  c('automatic parsing is off by default', autoParseConfig({}).enabled === false);
+  c('switching it on WITHOUT a start date keeps it off (no backlog sweep)',
+    autoParseConfig({ MS_AUTO_PARSE_NEW: 'true' }).enabled === false
+    && autoParseConfig({ MS_AUTO_PARSE_NEW: 'true', MS_AUTO_PARSE_SINCE: 'soon' }).enabled === false);
+  const cfg = autoParseConfig({ MS_AUTO_PARSE_NEW: 'true', MS_AUTO_PARSE_SINCE: '2026-10-13T00:00:00Z', MS_AUTO_PARSE_MAX: '999', MS_AUTO_PARSE_ATTEMPTS: '0' });
+  c('limits are bounded: at most 50 per scan, default 3 attempts',
+    cfg.enabled && cfg.since === '2026-10-13T00:00:00.000Z' && cfg.max === 50 && cfg.maxAttempts === 3, JSON.stringify(cfg));
+
+  // Earlier sections end disconnected with faults armed; reset them and connect again through the real flow.
+  cloud.refreshFails = false; cloud.failDownload.clear(); cloud.throttleOnce.clear(); cloud.pageSize = 0; cloud.attachPageSize = 0;
+  cloud.account = { tid: TENANT, oid: OID, username: MAILBOX };
+  const reconnected = await connectAs();
+  c('connected for this section', store.connectionRow()?.status === store.STATUS.CONNECTED, `${store.connectionRow()?.status} ${JSON.stringify(reconnected?.j ?? reconnected).slice(0, 200)}`);
+  const row = (id) => db.get('SELECT status, parse_attempts FROM mailbox_ingestion WHERE message_id=?', [id]);
+  const bytesFor = (tag) => Buffer.from(`%PDF-1.4\n% auto ${tag}\n%%EOF\n`);
+  const seedCv = (id, receivedDateTime) => seedMessage({ id, internetMessageId: `<${id}@example.test>`, receivedDateTime,
+    subject: 'Site Engineer application', attachments: [{ id: `${id}-a`, name: `${id}.pdf`, bytes: bytesFor(id), size: bytesFor(id).length }] });
+  // Reconnecting sets the scan baseline to "now" (historic mail is never
+  // imported), so every message here is dated after it; "old" means older than
+  // the automatic-parsing start date, not older than the connection.
+  const base = Date.now();
+  const at = (ms) => new Date(base + ms).toISOString();
+  const SINCE = at(1000);
+
+  // Off: a normal scan discovers and reads nothing.
+  for (const k of ['MS_AUTO_PARSE_NEW', 'MS_AUTO_PARSE_SINCE', 'MS_AUTO_PARSE_MAX', 'MS_AUTO_PARSE_ATTEMPTS']) delete process.env[k];
+  seedCv('auto-off-1', at(1500));
+  let reads = 0;
+  const counting = (name) => async () => { reads += 1; return fakeParse(NAME_FIELD(name))(); };
+  const offScan = await runMailboxSync({ parse: counting('Auto Off') });
+  c('with the switch off, a scan reads no CV', reads === 0 && !offScan.autoParse, `${reads} reads ${JSON.stringify(offScan.autoParse)}`);
+  c('…and leaves the new CV waiting for a person', row('auto-off-1')?.status === 'WAITING', JSON.stringify(row('auto-off-1')));
+
+  // On: only mail received on/after SINCE, at most MAX per scan.
+  process.env.MS_AUTO_PARSE_NEW = 'true';
+  process.env.MS_AUTO_PARSE_SINCE = SINCE;
+  process.env.MS_AUTO_PARSE_MAX = '2';
+  seedCv('auto-old-1', at(500));         // before SINCE: backlog
+  seedCv('auto-new-1', at(2000));
+  seedCv('auto-new-2', at(3000));
+  const candidatesBefore = countCandidates();
+  const appsBefore = countApplications();
+  reads = 0;
+  const onScan = await runMailboxSync({ parse: counting('Auto New Person') });
+  c('a scan reads new waiting CVs on its own, capped per scan (2)', onScan.autoParse?.parsed === 2 && reads === 2, `${JSON.stringify(onScan.autoParse)} reads=${reads}`);
+  c('mail received before the start date is never read automatically', row('auto-old-1')?.status === 'WAITING' && Number(row('auto-old-1')?.parse_attempts || 0) === 0, JSON.stringify(row('auto-old-1')));
+  c('the oldest new CV goes first; the one over the cap waits for the next scan',
+    row('auto-off-1')?.status === 'IMPORTED' && row('auto-new-1')?.status === 'IMPORTED' && row('auto-new-2')?.status === 'WAITING',
+    JSON.stringify([row('auto-off-1'), row('auto-new-1'), row('auto-new-2')]));
+  c('automatically read CVs reach the Talent Pool', countCandidates() > candidatesBefore, `${candidatesBefore} -> ${countCandidates()}`);
+  c('automatic parsing NEVER creates an application', countApplications() === appsBefore, `${appsBefore} -> ${countApplications()}`);
+  const autoAudit = db.get("SELECT new_value FROM audit_log WHERE action='candidate.intake_created' ORDER BY id DESC LIMIT 1");
+  c('the audit records the CV as read automatically', /"via":"auto"/.test(autoAudit?.new_value || ''), autoAudit?.new_value);
+  reads = 0;
+  const next = await runMailboxSync({ parse: counting('Auto New Person Two') });
+  c('the next scan picks up what the cap left', next.autoParse?.parsed === 1 && row('auto-new-2')?.status === 'IMPORTED', JSON.stringify(next.autoParse));
+
+  // A reader that keeps failing is tried a bounded number of times, then left for a person.
+  process.env.MS_AUTO_PARSE_ATTEMPTS = '2';
+  seedCv('auto-bad-1', at(4000));
+  let badReads = 0;
+  const flaky = async () => { badReads += 1; return { ok: false, fields: [], error: 'reader timed out' }; }; // not permanent
+  for (let i = 0; i < 4; i++) await runMailboxSync({ parse: flaky });
+  c('a failing CV is retried at most MS_AUTO_PARSE_ATTEMPTS times, then waits for a person',
+    badReads === 2 && row('auto-bad-1')?.status === 'WAITING' && Number(row('auto-bad-1')?.parse_attempts) === 2,
+    `reads=${badReads} ${JSON.stringify(row('auto-bad-1'))}`);
+
+  // One reader at a time: a selection while the lease is held is refused, not doubled.
+  const held = store.acquireSyncLease('test-holder');
+  let refused = null;
+  try { await parseWaiting({ limit: 5, parse: counting('Never') }); } catch (e) { refused = e; }
+  store.releaseSyncLease('test-holder');
+  c('a manual selection during a scan is refused as busy (already-running), never run twice',
+    held.acquired && refused?.code === 'already-running', `${held.acquired} ${refused?.code} ${refused?.message}`);
+  const after = await parseWaiting({ limit: 1, categories: ['__none__'], parse: counting('Never') });
+  c('…and the lease is free again afterwards', after.selected === 0 && !!store.acquireSyncLease('probe').acquired);
+  store.releaseSyncLease('probe');
+
+  for (const k of ['MS_AUTO_PARSE_NEW', 'MS_AUTO_PARSE_SINCE', 'MS_AUTO_PARSE_MAX', 'MS_AUTO_PARSE_ATTEMPTS']) delete process.env[k];
+}
+
 /* ------------------------------ disconnect -------------------------------- */
 console.log('\n- Disconnect -');
 await connectAs();

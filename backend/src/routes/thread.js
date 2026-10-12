@@ -8,7 +8,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile } from '../lib/upload.js';
 import { sendDocxPreview } from '../lib/cv-preview.js';
-import { run as dbRun } from '../lib/db.js';
+import { run as dbRun, get as dbGet } from '../lib/db.js';
 import fs from 'node:fs';
 
 const router = Router();
@@ -16,15 +16,29 @@ router.use(requireAuth);
 
 // The ticket is a shared hiring conversation. Reading is open to everyone involved
 // (request.view_all holders incl. read-only viewers, owner/requester/creator, the
-// assigned hiring manager, and interviewers). Posting requires an active participant
+// assigned hiring manager, and the interviewers on its panels). Posting requires an active participant
 // role — viewers (read-only) can follow the thread but cannot contribute.
+//
+// Request-specific (security fix, 12 Oct 2026): request.create and
+// interview.feedback used to admit their holders to EVERY thread, so project
+// managers, hiring managers and interviewers could read CVs posted in requests
+// they have no link to. Those grants now apply only to roles that already see
+// every request (view_all / view_team); everyone else needs a link to THIS one.
+function onInterviewPanelFor(userId, requestId) {
+  return !!dbGet(`SELECT 1 AS x FROM interview_panel ip JOIN interview i ON i.id = ip.interview_id
+                   LEFT JOIN application a ON a.id = i.application_id
+                  WHERE ip.interviewer_id = ? AND (i.request_id = ? OR a.request_id = ?) LIMIT 1`,
+  [userId, requestId, requestId]);
+}
 function isParticipant(user, r) {
+  const p = user.permissions;
   if (r.hiring_manager_id && r.hiring_manager_id === user.id) return true;
-  if (user.permissions.includes('request.view_own') &&
+  if (p.includes('request.view_own') &&
       (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id)) return true;
-  if (user.permissions.includes('request.create')) return true;       // recruiters / HR / HM
-  if (user.permissions.includes('interview.feedback')) return true;   // interviewers
-  if (user.permissions.includes('request.assign_recruiter')) return true; // recruitment managers
+  if (p.includes('request.assign_recruiter')) return true;             // recruitment managers
+  const orgWide = p.includes('request.view_all') || p.includes('request.view_team');
+  if (orgWide && (p.includes('request.create') || p.includes('interview.feedback'))) return true; // HR / recruiters
+  if (p.includes('interview.feedback') && onInterviewPanelFor(user.id, r.id)) return true;       // this request's panelists
   return false;
 }
 function canView(user, r) {

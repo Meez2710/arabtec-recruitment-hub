@@ -99,9 +99,12 @@ try {
   c('the same instant in another spelling is not a second reschedule', same.status === 200
     && (await api(`/api/audit?pageSize=50`, { token: await adminToken(B) })).json.logs.find((l) => l.action === 'interview.updated' && String(l.entityId) === String(ivId))?.newValue?.rescheduled === false);
 
-  console.log('\n— intentional overlap is a warning, not a block —');
+  // Audit 2026-10-06 (decision 2): the SAME candidate in two overlapping
+  // interviews is blocked; a shared panelist needs an acknowledged reason
+  // (interview_booking_test.mjs covers both in full).
+  console.log('\n— overlap rules —');
   const overlap = await post({ scheduledAt: T(15, 45), durationMin: 30, panel: [{ interviewerId: mona.id }, { interviewerId: hassan.id }] });
-  c('an overlapping panel booking is still accepted (201)', overlap.status === 201, overlap.text.slice(0, 120));
+  c('the same candidate in an overlapping booking is blocked (409 candidate_conflict)', overlap.status === 409 && overlap.json?.code === 'candidate_conflict', overlap.text.slice(0, 120));
   const cl = await api(`/api/interviews/clashes?start=${encodeURIComponent(T(15, 45))}&durationMin=30&panel=${mona.id}`, { token: recruiter });
   c('…and the clash check warns about Mona', cl.status === 200 && cl.json.clashes.some((x) => x.interviewerId === mona.id), cl.text.slice(0, 160));
 } catch (e) { console.error(e); fail++; }

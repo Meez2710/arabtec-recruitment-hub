@@ -55,7 +55,7 @@ export function notifyByPermission(permCode, payload, { excludeUserId } = {}) {
 
 /* ------------------------------------------------------------------ config */
 
-function configFor(eventKey) {
+export function configFor(eventKey) {
   const event = EVENT_BY_KEY[eventKey];
   if (!event) return null;
   let row = null;
@@ -148,14 +148,22 @@ function render(event, vars) {
  *   vars                                     — template variables
  *   title/body                               — fallback copy for templateless events
  *   linkType/linkId                          — what the in-app alert points at
- * @returns {{sent:boolean, reason?:string, inApp:number, emails:number}}
+ *   onExternalResult(email, result)          — optional; called once per external
+ *                                              (candidate) email when the mailer
+ *                                              has actually finished, with its
+ *                                              { ok, skipped?, reason?, error? }
+ * @returns {{sent:boolean, reason?:string, inApp:number, emails:number, external:number, externalTo:string[]}}
+ *
+ * `emails` and `external` count messages QUEUED to the mailer, not delivered:
+ * sendMail is asynchronous and may skip (mail not configured) or fail. A caller
+ * that tells a person "the email went" must wait for onExternalResult.
  */
 export function notifyEvent(eventKey, ctx = {}) {
   const cfg = configFor(eventKey);
-  if (!cfg) return { sent: false, reason: 'unknown-event', inApp: 0, emails: 0 };
-  if (!cfg.enabled) return { sent: false, reason: 'disabled', inApp: 0, emails: 0 };
-  if (!cfg.inApp && !cfg.email) return { sent: false, reason: 'no-channel', inApp: 0, emails: 0 };
-  if (!cfg.recipients.length) return { sent: false, reason: 'no-recipients', inApp: 0, emails: 0 };
+  if (!cfg) return { sent: false, reason: 'unknown-event', inApp: 0, emails: 0, external: 0, externalTo: [] };
+  if (!cfg.enabled) return { sent: false, reason: 'disabled', inApp: 0, emails: 0, external: 0, externalTo: [] };
+  if (!cfg.inApp && !cfg.email) return { sent: false, reason: 'no-channel', inApp: 0, emails: 0, external: 0, externalTo: [] };
+  if (!cfg.recipients.length) return { sent: false, reason: 'no-recipients', inApp: 0, emails: 0, external: 0, externalTo: [] };
 
   const { staff, external } = resolveRecipients(cfg.recipients, ctx, eventKey);
   const vars = { ...(ctx.vars || {}), title: ctx.title, body: ctx.body };
@@ -180,11 +188,22 @@ export function notifyEvent(eventKey, ctx = {}) {
   }
 
   // External addressees are mail-only, and only when the email channel is on.
+  const externalTo = [];
   if (cfg.email) {
-    for (const r of external) { sendMail({ to: r.email, subject, html, attachments }).catch(() => {}); emails += 1; }
+    for (const r of external) {
+      const pending = sendMail({ to: r.email, subject, html, attachments });
+      emails += 1; externalTo.push(r.email);
+      const report = typeof ctx.onExternalResult === 'function'
+        ? (result) => { try { ctx.onExternalResult(r.email, result || { ok: false, error: 'No result from mailer' }); } catch { /* a report must never throw */ } }
+        : null;
+      Promise.resolve(pending).then(
+        (result) => { if (report) report(result); },
+        (e) => { if (report) report({ ok: false, error: String((e && e.message) || e) }); },
+      );
+    }
   }
 
-  return { sent: inApp > 0 || emails > 0, inApp, emails };
+  return { sent: inApp > 0 || emails > 0, inApp, emails, external: externalTo.length, externalTo };
 }
 
 /** Does this event reach anyone outside the company? Used by the console to

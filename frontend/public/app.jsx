@@ -23,6 +23,18 @@ const api = {
   post(p, body) { return this.call(p, { method: 'POST', body }); },
   put(p, body) { return this.call(p, { method: 'PUT', body }); },
   del(p) { return this.call(p, { method: 'DELETE' }); },
+  // An authenticated HTML document (the offer letter), returned as text so it
+  // can be shown in a sandboxed frame. Errors carry the server's message.
+  async html(p, { method = 'GET', body, signal } = {}) {
+    const res = await fetch('/api' + p, {
+      method, signal,
+      headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    if (!res.ok) { let msg = 'Request failed'; try { msg = JSON.parse(text).error || msg; } catch {} throw Object.assign(new Error(msg), { status: res.status }); }
+    return text;
+  },
   async upload(p, file, fields = {}) {
     const fd = new FormData(); fd.append('file', file);
     for (const [k, v] of Object.entries(fields)) fd.append(k, v);
@@ -313,14 +325,15 @@ const ToastCtx = createContext(() => {});
 function ToastProvider({ children }) {
   const [toast, setToast] = useState(null);
   const show = useCallback((msg, type = 'success') => {
-    setToast({ msg, type }); setTimeout(() => setToast(null), 3200);
+    // A warning or error carries more to read than a confirmation.
+    setToast({ msg, type }); setTimeout(() => setToast(null), type === 'success' ? 3200 : 6500);
   }, []);
   return (
     <ToastCtx.Provider value={show}>
       {children}
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 200,
-          background: toast.type === 'error' ? 'var(--critical)' : 'var(--success)',
+          background: toast.type === 'error' ? 'var(--critical)' : toast.type === 'warn' ? 'var(--warning-ink, #8a5a00)' : 'var(--success)',
           color: '#fff', padding: '12px 18px', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.2)', fontSize: 13.5, fontWeight: 600 }}>
           {toast.msg}
         </div>
@@ -4259,6 +4272,7 @@ const NOTIF_WHO_SHORT = {
   approvers: 'Approvers', panel: 'Panel', candidate: 'Candidate', actor: 'Who acted',
 };
 function NotificationsPanel({ user }) {
+  const [ivTemplates, setIvTemplates] = useState(false);
   const toast = useToast();
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -4303,6 +4317,12 @@ function NotificationsPanel({ user }) {
 
   return (
     <div>
+      {/* The words of interview invitations live with the interviews; this is the second way in. */}
+      <div className="iv-tpl-link">
+        <span className="muted">Interview working days and hours, the Head Office address, and the wording of invitations, updates and cancellations live in Scheduling Setup.</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIvTemplates(true)}>Scheduling Setup</button>
+      </div>
+      {ivTemplates && <InterviewTemplatesModal onClose={() => setIvTemplates(false)} />}
       {!data.emailConfigured && (
         <div className="notice notice-warn card-pad" style={{ marginBottom: 14 }}>
           <strong>No mailbox is configured.</strong> In-app alerts still work; anything ticked
@@ -7277,6 +7297,11 @@ function assessSummary(rows, criteria, fitLevels) {
   const fit = average == null ? null : (fitLevels || []).find((f) => average >= f.min) || null;
   return { average, scored, na, open, fit };
 }
+// One part's state for the progress strip, from the saved record.
+function assessStepStatus(ev) {
+  if (!ev) return { status: 'Not started', variant: 'soft' };
+  return ev.submitted ? { status: 'Submitted', variant: 'success' } : { status: 'Draft', variant: 'warning' };
+}
 function assessStatusLine(ev) {
   if (!ev) return 'Status: Not started';
   return ev.submitted
@@ -7300,6 +7325,18 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   const [error, setError] = useState(null); // { text, submit, retry }
   const [stale, setStale] = useState(false);
   const [restored, setRestored] = useState(false);
+  // Why a SUBMITTED evaluation is being changed — required by the form, sent
+  // with the save, and kept in the audit trail and the assessment history.
+  const [editReason, setEditReason] = useState('');
+  // Send a submission back to draft for its evaluator to revise — no edits of
+  // one's own, a reason on record (POST …/reopen, audited as assessment.reopened).
+  const [reopening, setReopening] = useState(false);
+  async function reopen(reason) {
+    setReopening(false);
+    try { const r = await api.post(`/assessments/application/${appId}/reopen`, { evaluatorType: type, reason }); toast(`${s.short} evaluation reopened as a draft`); onSaved(r && r.assessment); }
+    catch (e) { toast(e.message || 'Could not reopen', 'error'); }
+  }
+  const changingSubmitted = !!existing?.submitted && editing;
   const dirty = JSON.stringify(form) !== JSON.stringify(base);
   useEffect(() => { onDirtyChange && onDirtyChange(type, dirty); }, [dirty]);
   const unsavedKey = `${appId}:${type}`;
@@ -7339,6 +7376,7 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   async function save(submit) {
     if (busyRef.current) return; // one save at a time — no duplicate submissions
     setError(null);
+    if (changingSubmitted && !editReason.trim()) { setError({ text: 'Give a reason for changing a submitted evaluation.' }); return; }
     if (submit) {
       const missing = visibleCriteria.filter((cr) => !form.rows[cr.key]?.score).map((cr) => cr.label);
       if (missing.length) { setError({ text: `Answer every criterion (a score or N/A) before submitting. Missing: ${missing.join(', ')}.` }); return; }
@@ -7354,11 +7392,12 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
       section[cr.key] = { score: !r.score ? null : r.score === 'na' ? 'na' : Number(r.score), notes: r.notes };
     });
     const body = { evaluatorType: type, submitted: !!submit, recommendation: sent.recommendation || null, [s.field]: section };
+    if (changingSubmitted) body.editReason = editReason.trim();
     if (perm('assessment.criticalFlags').canEdit) body.criticalFlags = sent.flags;
     if (perm(s.justPolicy).canEdit) body[s.just] = sent.justification;
     try {
       const r = await api.post('/assessments/application/' + appId, body);
-      setBase(sent); setStale(false); setEditing(!submit); setRestored(false);
+      setBase(sent); setStale(false); setEditing(!submit); setRestored(false); setEditReason('');
       toast(submit ? 'Evaluation submitted' : 'Draft saved');
       onSaved(r && r.assessment);
     } catch (e) {
@@ -7369,10 +7408,11 @@ function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSav
   }
   function cancelEdit() {
     if (dirty && !window.confirm('Discard your unsaved changes to this evaluation?')) return;
-    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false); setRestored(false);
+    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false); setRestored(false); setEditReason('');
   }
   return { type, criteria, visibleCriteria, form, dirty, editing, setEditing, editable, locked, busy, error, stale, restored, summary, existing,
-    setRow, setFlag, setRecommendation, setJustification, save, cancelEdit };
+    setRow, setFlag, setRecommendation, setJustification, save, cancelEdit, editReason, setEditReason, changingSubmitted,
+    appId, reopening, setReopening, reopen };
 }
 
 function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
@@ -7466,6 +7506,11 @@ function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
       {loadError && <RefetchError text={`Could not refresh this assessment: ${loadError}. Showing the last loaded evaluation.`} onRetry={load} />}
       <article className="assess-doc" aria-label="Interview assessment">
         {/* No document title here: the drawer header already names the assessment. The printed form keeps its title. */}
+        <AssessmentProgress appId={app.id} steps={[
+          ...(show.hr ? [{ key: 'hr', anchor: `assess-${app.id}-hr-title`, label: 'Behavioral (HR)', ...assessStepStatus(bundle.hr) }] : []),
+          ...(show.technical ? [{ key: 'technical', anchor: `assess-${app.id}-technical-title`, label: 'Technical', ...assessStepStatus(bundle.technical) }] : []),
+          ...(showFinal ? [{ key: 'final', anchor: `assess-${app.id}-final`, label: 'Final decision', ...(bundle.finalDecision ? { status: 'Recorded', variant: 'success' } : { status: 'Not recorded', variant: 'soft' }) }] : []),
+        ]} />
 
         {infoFields.length > 0 && (
           <section className="assess-sec" aria-labelledby={`assess-${app.id}-info`}>
@@ -7496,6 +7541,7 @@ function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
             {editableDrafts.map((d) => <AssessmentSaveRow key={d.type} draft={d} />)}
           </div>
         )}
+        <AssessmentHistory appId={app.id} refreshKey={`${bundle.hr?.updatedAt || ''}|${bundle.technical?.updatedAt || ''}|${bundle.finalDecision?.decidedAt || ''}`} />
       </article>
       <div className="assess-actions">
         <button type="button" className="btn btn-secondary" onClick={() => api.download(`/assessments/application/${app.id}/preview`).catch((e) => toast(e.message || 'Could not open the preview', 'error'))}>Preview printable form</button>
@@ -7650,9 +7696,12 @@ function AssessmentFit({ draft, meta, appId, perm }) {
 }
 
 // Save / submit controls for one evaluation the user may edit.
+// Stateless, like the other document sections: the draft hook owns the state.
 function AssessmentSaveRow({ draft }) {
   const s = ASSESS_SECTIONS[draft.type];
   const ev = draft.existing;
+  const reasonId = `assess-${draft.appId}-${draft.type}-reason`;
+  const needReason = draft.changingSubmitted && !draft.editReason.trim();
   return (
     <div className="assess-bar-row">
       <div className="assess-bar-state"><strong>{s.short} assessment</strong> <span className="assess-muted">{assessStatusLine(ev).replace('Status: ', '')}{draft.dirty ? ' · Unsaved changes' : ''}</span></div>
@@ -7662,16 +7711,81 @@ function AssessmentSaveRow({ draft }) {
           {draft.error.retry && <> <button type="button" className="btn btn-sm btn-secondary" disabled={draft.busy} onClick={() => draft.save(draft.error.submit)}>Retry</button></>}
         </div>
       )}
+      {draft.changingSubmitted && (
+        <div className="assess-reason">
+          <label htmlFor={reasonId}>Reason for changing a submitted evaluation *</label>
+          <textarea id={reasonId} rows="2" value={draft.editReason} onChange={(e) => draft.setEditReason(e.target.value)} placeholder="Recorded in the assessment history" />
+        </div>
+      )}
       <div className="btn-row">
         {!draft.editing
-          ? <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.setEditing(true)}>Edit evaluation</button>
+          ? <>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.setEditing(true)}>Edit evaluation</button>
+            {ev?.submitted && <button type="button" className="btn btn-sm btn-ghost" onClick={() => draft.setReopening(true)}>Reopen for revision</button>}
+          </>
           : <>
-            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Save ${s.short.toLowerCase()} draft`} onClick={() => draft.save(false)} disabled={draft.busy}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Save as draft (withdraws submission)' : 'Save draft'}</button>
-            <button type="button" className="btn btn-sm" aria-label={`Submit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.save(true)} disabled={draft.busy}>{draft.busy ? 'Saving…' : 'Submit evaluation'}</button>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Save ${s.short.toLowerCase()} draft`} onClick={() => draft.save(false)} disabled={draft.busy || needReason}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Save as draft (withdraws submission)' : 'Save draft'}</button>
+            <button type="button" className="btn btn-sm" aria-label={`Submit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.save(true)} disabled={draft.busy || needReason}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Submit changes' : 'Submit evaluation'}</button>
             {ev?.submitted && <button type="button" className="btn btn-sm btn-ghost" onClick={draft.cancelEdit} disabled={draft.busy}>Cancel edit</button>}
           </>}
       </div>
+      {draft.reopening && <Confirm title={`Reopen the ${s.short.toLowerCase()} evaluation`} message="It goes back to draft so it can be revised and submitted again. The scores are kept. Give a reason — it is recorded in the assessment history." requireReason confirmLabel="Reopen" onConfirm={draft.reopen} onClose={() => draft.setReopening(false)} />}
     </div>
+  );
+}
+
+// Where each part of the assessment stands, at the top of the form, each
+// linked to its section. Statuses come from the saved record, not the form.
+function AssessmentProgress({ appId, steps }) {
+  return (
+    <nav className="assess-progress" aria-label="Assessment progress">
+      <ol>
+        {steps.map((st) => (
+          <li key={st.key}>
+            <a href={`#${st.anchor}`} onClick={(e) => { e.preventDefault(); document.getElementById(st.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+              <span className="assess-progress-label">{st.label}</span>
+              <Badge variant={st.variant}>{st.status}</Badge>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+// Who saved, submitted or reopened each part, when and why (GET …/history).
+function AssessmentHistory({ appId, refreshKey }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    api.get(`/assessments/application/${appId}/history`).then((r) => { setRows(r.history || []); setErr(null); }).catch((e) => setErr(e.message));
+  }, [open, appId, refreshKey]);
+  const what = (h) => ({
+    'assessment.draft_saved': h.previousState === 'submitted' ? 'Withdrew to draft' : 'Saved a draft',
+    // An update only follows a submission, so an update to draft is a withdrawal.
+    'assessment.submitted': 'Submitted', 'assessment.updated': h.state === 'draft' ? 'Withdrew to draft' : 'Changed after submission',
+    'assessment.reopened': 'Reopened for revision', 'assessment.final_decision': 'Recorded the final decision',
+  })[h.action] || h.action;
+  const part = (h) => (h.part === 'final' ? 'Final decision' : `${ASSESS_SECTIONS[h.part]?.short || h.part} evaluation`);
+  return (
+    <section className="assess-sec assess-history" aria-label="Assessment history">
+      <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? 'Hide history' : 'Show history'}
+      </button>
+      {open && (err ? <p className="assess-muted">{err}</p> : !rows ? <Skeleton rows={2} /> : rows.length === 0 ? <p className="assess-muted">Nothing recorded yet.</p> : (
+        <ol className="assess-history-list">
+          {rows.map((h, i) => (
+            <li key={i}>
+              <span className="assess-history-when">{fmtDate(h.at)}</span>
+              <span><strong>{h.actor || 'System'}</strong> · {what(h)} — {part(h)}{h.decision ? `: ${h.decision}` : ''}{h.previous ? ` (was ${h.previous})` : ''}</span>
+              {h.reason && <span className="assess-history-reason">Reason: {h.reason}</span>}
+            </li>
+          ))}
+        </ol>
+      ))}
+    </section>
   );
 }
 
@@ -10643,6 +10757,30 @@ const IV_OUTCOME = { positive: { label: 'Positive', variant: 'success' }, negati
 const REC_LABEL = { strong_yes: 'Strong Yes', yes: 'Yes', no: 'No', strong_no: 'Strong No' };
 function IvStatusBadge({ status }) { const s = IV_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
 
+// The candidate's answer to the invitation (audit A3, from GitHub PR #46).
+// Only meaningful while the interview is still to happen.
+const IV_RESPONSE = {
+  pending: { label: 'No answer yet', variant: 'soft' },
+  confirmed: { label: 'Confirmed', variant: 'success' },
+  change_requested: { label: 'Wants another time', variant: 'warning' },
+  declined: { label: 'Declined', variant: 'critical' },
+};
+const ivUpcoming = (iv) => ['scheduled', 'rescheduled'].includes(iv.status);
+// Needs a reminder (audit A7): still ahead, within the next 24 hours, and either
+// not yet confirmed by the candidate or not yet reminded for this version.
+const ivNeedsReminder = (iv, now = Date.now()) => {
+  const t = Date.parse(iv.scheduledAt);
+  return ivUpcoming(iv) && t > now && t - now <= 86400000 && (iv.candidateResponse !== 'confirmed' || !iv.remindedAt);
+};
+const ivResponseLabel = (iv) => (ivUpcoming(iv) ? (IV_RESPONSE[iv.candidateResponse] || IV_RESPONSE.pending).label : '');
+function IvResponseBadge({ iv }) {
+  if (!ivUpcoming(iv)) return null;
+  const r = IV_RESPONSE[iv.candidateResponse] || IV_RESPONSE.pending;
+  // "No answer yet" with less than a day to go needs attention.
+  const soon = (iv.candidateResponse || 'pending') === 'pending' && Date.parse(iv.scheduledAt) - Date.now() < 86400000;
+  return <Badge variant={soon ? 'warning' : r.variant}>{r.label}</Badge>;
+}
+
 // Candidate + optional hiring request, for an interview or offer created
 // standalone (from the Interviews / Offers list, not from an application).
 // The candidate is picked from the Talent Pool, or typed in and created as a
@@ -10741,82 +10879,872 @@ async function ensureApplication(candidateId, requestId) {
   return created.application.id;
 }
 
+/* ===================== Interview scheduling & communications =====================
+   Audit 2026-10-06 (INTERVIEW_IMPLEMENTATION_BRIEF.md). One interview per
+   candidate; candidate & CV, interview & panel, and invitations in one form;
+   explicit "Save" or "Save & send"; Cairo time throughout; truthful outcomes.
+   ================================================================================ */
+const IV_TZ = 'Africa/Cairo';
+// Cairo wall time "YYYY-MM-DDTHH:mm" ↔ UTC instant, DST-correct.
+function cairoOffsetMin(ms) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: IV_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    .formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - ms) / 60000;
+}
+function cairoInputToIso(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v || '');
+  if (!m) return null;
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  let t = wall - cairoOffsetMin(wall) * 60000;
+  t = wall - cairoOffsetMin(t) * 60000; // settle across a DST change
+  return new Date(t).toISOString();
+}
+function isoToCairoInput(iso) {
+  if (!iso) return '';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: IV_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+function cairoTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d) ? "—" : d.toLocaleTimeString("en-GB", { timeZone: IV_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+}
+function cairoLabel(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const s = d.toLocaleString('en-GB', { timeZone: IV_TZ, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const off = new Intl.DateTimeFormat('en-US', { timeZone: IV_TZ, timeZoneName: 'shortOffset' }).formatToParts(d).find((x) => x.type === 'timeZoneName')?.value || '';
+  return `${s} · Cairo (${off})`;
+}
+const ivKey = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now() + Math.random().toString(16).slice(2));
+// Mirrors intlPhone() in backend/src/lib/interview-messages.js (audit A11):
+// first of several numbers, Arabic-Indic digits, 00 prefix, and Egyptian
+// mobiles in local form (010… → +2010…). The server decides; this only lets
+// the form accept what the server will accept.
+const toIntlPhone = (v) => {
+  const first = String(v || '').split(/\s*(?:[,;|\/]|\bor\b|\s{2,})\s*/i).find((x) => /[0-9\u0660-\u0669\u06F0-\u06F9]/.test(x)) || '';
+  let d = first.trim().replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660)).replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06F0)).replace(/[\s\-().\u200e\u200f]/g, '');
+  if (/^00[1-9]/.test(d)) d = '+' + d.slice(2);
+  else if (/^01[0125]\d{8}$/.test(d)) d = '+20' + d.slice(1);
+  else if (/^201[0125]\d{8}$/.test(d)) d = '+' + d;
+  return /^\+[1-9]\d{7,14}$/.test(d) ? d : null;
+};
+const INTL_PHONE = (v) => !!toIntlPhone(v);
+const EMAIL_FMT = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
+const HTTPS_LINK = (v) => { try { return new URL(String(v || '').trim()).protocol === 'https:'; } catch { return false; } };
+function ivDetailsProblem(mode, where) {
+  const v = String(where || '').trim();
+  if (mode === 'video' && !HTTPS_LINK(v)) return 'Add the meeting link (https://…) to send invitations.';
+  if (mode === 'onsite' && !v) return 'Add the location to send invitations.';
+  if (mode === 'phone' && !v) return 'Add the phone number or call arrangement to send invitations.';
+  return null;
+}
+
+// Outcome of one recipient, in words that never overstate.
+const DISPATCH_STATUS = {
+  queued: { label: 'Queued', variant: 'soft' },
+  accepted: { label: 'Accepted by the mail server', variant: 'success' },
+  dry_run: { label: 'Test transport — not delivered', variant: 'warning' },
+  not_sent: { label: 'Not sent', variant: 'warning' },
+  failed: { label: 'Failed', variant: 'critical' },
+  manual_handoff: { label: 'Opened in WhatsApp — not confirmed', variant: 'soft' },
+};
+// A phone call is also a person's action: started, not confirmed as reached.
+const CALL_HANDOFF = { label: 'Call started — not confirmed', variant: 'soft' };
+function DispatchList({ rows }) {
+  if (!rows || !rows.length) return null;
+  return (
+    <ul className="iv-dispatch-list">
+      {rows.map((r) => {
+        const st = (r.channel === 'call' && r.status === 'manual_handoff' ? CALL_HANDOFF : DISPATCH_STATUS[r.status]) || { label: r.status, variant: 'soft' };
+        return (
+          <li key={r.id}>
+            <span className="iv-dispatch-who"><strong>{r.recipientName || 'Recipient'}</strong>
+              <span className="muted">{r.audience === 'candidate' ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from panel' : 'Panel'}{r.channel === 'whatsapp' ? ' · WhatsApp' : r.channel === 'call' ? ' · Phone call' : r.recipientAddress ? ' · ' + r.recipientAddress : ''}{r.attachCv ? ' · CV attached' : ''}</span></span>
+            <Badge variant={st.variant}>{st.label}</Badge>
+            {r.reason && r.status !== 'manual_handoff' && <span className="iv-dispatch-reason">{r.reason}</span>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// Open WhatsApp from a click. Browsers (Safari always, Chrome after a slow
+// response) block a window opened after a server round trip, so the window is
+// opened at once, inside the click, and pointed at wa.me when the hand-off is
+// recorded. If the browser still blocks it, the link is shown to copy.
+async function openWhatsAppWindow(record, toast) {
+  let w = null;
+  try { w = window.open('about:blank', '_blank'); } catch { w = null; }
+  try {
+    const r = await record();
+    if (w && !w.closed) { try { w.opener = null; } catch { /* cross-origin later */ } w.location.href = r.link; }
+    else { window.prompt ? window.prompt('Your browser blocked the WhatsApp window. Copy this link and open it:', r.link) : toast('Your browser blocked the WhatsApp window.', 'error'); }
+    return r;
+  } catch (e) {
+    if (w && !w.closed) w.close();
+    toast(e.message, 'error');
+    return null;
+  }
+}
+
+// The WhatsApp hand-off: edit, copy, open. Opening is a person sending it.
+function WhatsAppHandoff({ phone, text, onText, onOpen, editable = true }) {
+  const toast = useToast();
+  const ok = INTL_PHONE(phone);
+  return (
+    <div className="iv-wa">
+      <div className="iv-wa-head"><strong>WhatsApp message</strong><span className="muted">{ok ? toIntlPhone(phone) : phone ? `${phone} — not a mobile or international number (e.g. 01001234567 or +201001234567)` : 'No phone number'}</span></div>
+      {editable
+        ? <textarea rows="4" value={text} onChange={(e) => onText(e.target.value)} aria-label="WhatsApp message" />
+        : <div className="iv-preview-body">{text}</div>}
+      <div className="btn-row">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(text).then(() => toast('Message copied')).catch(() => toast('Copy failed — select the text instead', 'error')); }}>Copy message</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!ok || !onOpen} onClick={onOpen}>Open WhatsApp</button>
+      </div>
+      <p className="field-hint">WhatsApp opens on this device with the message ready; you press send. The Hub records that it was opened, not that it was sent. No CV or private link is ever included.</p>
+    </div>
+  );
+}
+
+// The phone call (audit A11, from PR #46): the number as it is dialled, a
+// Call button and the script to read. Calling is a person's action; the Hub
+// records that the call was started, never that the candidate was reached.
+function CallHandoff({ phone, valid, script, onCall }) {
+  const toast = useToast();
+  return (
+    <div className="iv-wa">
+      <div className="iv-wa-head"><strong>Phone call</strong><span className="muted">{valid ? phone : phone ? `${phone} — cannot be dialled; use a mobile (01001234567) or +20… form` : 'No phone number'}</span></div>
+      <div className="iv-preview-body" aria-label="Call script">{script}</div>
+      <div className="btn-row">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(script).then(() => toast('Script copied')).catch(() => toast('Copy failed — select the text instead', 'error')); }}>Copy script</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!valid || !onCall} onClick={onCall}>Call</button>
+      </div>
+      <p className="field-hint">Call opens your phone app (on a computer: Teams or your phone link). The Hub records that the call was started, not that the candidate answered — record their answer on the interview.</p>
+    </div>
+  );
+}
+
+// Subject + body editor with placeholder chips that insert at the cursor.
+function MessageEditor({ label, value, onChange, hasSubject = true, placeholders = [], error }) {
+  const bodyRef = useRef(null);
+  const insert = (name) => {
+    const el = bodyRef.current; const token = `{{${name}}}`;
+    if (!el) { onChange({ ...value, body: (value.body || '') + token }); return; }
+    const s = el.selectionStart ?? (value.body || '').length; const e = el.selectionEnd ?? s;
+    const body = (value.body || '').slice(0, s) + token + (value.body || '').slice(e);
+    onChange({ ...value, body });
+    setTimeout(() => { el.focus(); el.setSelectionRange(s + token.length, s + token.length); }, 0);
+  };
+  return (
+    <div className="iv-editor">
+      <div className="iv-editor-label">{label}</div>
+      {hasSubject && <input aria-label={label + ' subject'} value={value.subject || ''} onChange={(e) => onChange({ ...value, subject: e.target.value })} placeholder="Subject" />}
+      <textarea ref={bodyRef} rows="8" aria-label={label + ' message'} value={value.body || ''} onChange={(e) => onChange({ ...value, body: e.target.value })} />
+      {placeholders.length > 0 && (
+        <div className="iv-chips" aria-label="Insert a placeholder">
+          {placeholders.map((p) => <button key={p.name} type="button" className="chip-btn" title={`${p.label} — inserts {{${p.name}}}`} onClick={() => insert(p.name)}>{phShort(p.label)}</button>)}
+        </div>
+      )}
+      {error && <div className="iv-error" role="alert">{error}</div>}
+    </div>
+  );
+}
+// "What changed" / "Previous date|time" only mean something in an update.
+const UPDATE_ONLY_PH = ['changes', 'previousDate', 'previousTime'];
+const phFor = (all, code, kind = null) => (all || []).filter((p) => p.in.includes(code) && (kind === 'update' || kind === null || !UPDATE_ONLY_PH.includes(p.name)));
+// "Time zone, e.g. Cairo time (GMT+3)" -> "Time zone": a chip names the value it fills in.
+const phShort = (label) => String(label || '').split(/,| \(|:/)[0].trim();
+
+// Messages are written ONCE as organisation templates (Interviews → Invitation
+// templates) with variables — candidate name, position, place, date and time —
+// filled in for each interview. Scheduling shows the finished text; changing
+// the wording for one interview is an exception, folded away (owner, 12 Oct).
+function TemplateNote({ custom, onCustom, children }) {
+  return (
+    <div className="iv-template-note">
+      <p className="field-hint">These messages come from your <strong>invitation templates</strong>. The candidate’s name, the position, the place and the interview time are filled in for you — check the preview{custom ? '' : ', then send'}. To change the standard wording for everyone, use <strong>Interviews → Scheduling Setup</strong>.</p>
+      <details className="iv-customize" open={custom} onToggle={(e) => onCustom(e.currentTarget.open)}>
+        <summary>Change the wording for this interview only</summary>
+        {custom && children}
+      </details>
+    </div>
+  );
+}
+
+/* ----------------------------- Schedule form ----------------------------- */
+// On-site interviews happen at Head Office or a company site (owner, 12 Oct):
+// the place is chosen, not typed, and its name + address become the location
+// that {{where}} puts in every message. "Other place" keeps free text.
+const placeText = (p) => (p.address ? `${p.name} — ${p.address}` : p.name);
+function InterviewPlacePicker({ places = [], value, onChange }) {
+  const match = places.find((p) => placeText(p) === (value || '').trim());
+  const [other, setOther] = useState(!!(value && !match));
+  const sel = other ? 'other' : match ? match.key : '';
+  return (
+    <>
+      <select value={sel} aria-label="Interview place" onChange={(e) => {
+        const k = e.target.value;
+        if (k === 'other') { setOther(true); if (match) onChange(''); return; }
+        setOther(false);
+        const p = places.find((x) => x.key === k);
+        onChange(p ? placeText(p) : '');
+      }}>
+        <option value="">Choose the place…</option>
+        {places.map((p) => <option key={p.key} value={p.key}>{p.key === 'hq' ? 'Head Office' : `Site — ${p.name}`}{p.project ? ` (${p.project})` : ''}</option>)}
+        <option value="other">Other place…</option>
+      </select>
+      {other && <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Office, meeting room or address" aria-label="Other place" />}
+      {sel && sel !== 'other' && <span className="field-hint">{value}{match && !match.address ? ' — add the address in Scheduling Setup so candidates can find it' : ''}</span>}
+    </>
+  );
+}
+
+const IV_FORM_BLANK = { interviewType: 'technical', mode: 'video', scheduledAt: '', durationMin: 60, round: 1, locationOrLink: '', panel: [] };
+const IV_LINK_BLANK = { mode: 'pick', candidate: null, newName: '', newEmail: '', newPhone: '', requestId: '' };
+const IV_PROGRESS_BLANK = { candidateId: null, cvDone: false, applicationId: null, interviewId: null };
+
 // `initialAt` is the slot clicked on the calendar; the form opens on that time.
 function ScheduleInterviewModal({ application, user, onClose, onScheduled, initialAt }) {
   const toast = useToast();
+  const [customMsgs, setCustomMsgs] = useState(false); // per-interview wording is the exception (TemplateNote)
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ interviewType: 'technical', mode: 'video', scheduledAt: initialAt ? toLocalInput(initialAt) : '', durationMin: 60, round: 1, locationOrLink: '', panel: [] });
-  const [link, setLink] = useState(EMPTY_LINK);
+  const [tpl, setTpl] = useState(null);
+  const [f, setF] = useState(() => ({ ...IV_FORM_BLANK, scheduledAt: initialAt ? isoToCairoInput(new Date(initialAt).toISOString()) : '' }));
+  const [link, setLink] = useState(IV_LINK_BLANK);
+  const [cvFile, setCvFile] = useState(null);
+  const [requests, setRequests] = useState(null);
+  const [q, setQ] = useState(''); const [hits, setHits] = useState([]);
+  const [dups, setDups] = useState(null);
+  const [progress, setProgress] = useState(IV_PROGRESS_BLANK);
+  const [stepError, setStepError] = useState(null); // { step, message }
+  const [avail, setAvail] = useState({ state: 'idle' }); // idle|checking|ok|conflicts|unavailable
+  const [ack, setAck] = useState(false); const [overlapReason, setOverlapReason] = useState('');
+  const [msgs, setMsgs] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [rcpt, setRcpt] = useState({ candidate: true, panel: null, attachCv: [] });
   const [busy, setBusy] = useState(false);
-  const [clashes, setClashes] = useState([]);
+  const [result, setResult] = useState(null); // { interview, dispatches, summary, sent }
+  const [waText, setWaText] = useState('');
+  const keys = useRef({ create: ivKey(), send: ivKey() });
+  const busyRef = useRef(false);
+  const waTouched = useRef(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  useEffect(() => { api.get('/interviews/meta/form').then(setMeta); }, []);
-  // Who on the chosen panel is already booked then. A warning, never a block:
-  // panels overlap on purpose, and the scheduler decides.
-  const panelKey = f.panel.join(',');
+  const canAdd = can(user, 'candidate.add');
+
   useEffect(() => {
-    const start = f.scheduledAt ? new Date(f.scheduledAt) : null;
-    if (!start || isNaN(start) || !panelKey) { setClashes([]); return undefined; }
+    api.get('/interviews/meta/form').then(setMeta).catch((e) => toast(e.message, 'error'));
+    api.get('/interviews/message-templates').then((t) => { setTpl(t); setMsgs({ ...t.templates.invite }); setWaText(''); }).catch(() => setTpl({ templates: null, placeholders: [] }));
+    if (!application) api.get('/requests?pageSize=100').then((r) => setRequests(r.requests || [])).catch(() => setRequests([]));
+  }, []);
+  // Talent Pool search for an existing candidate.
+  useEffect(() => {
+    const term = q.trim();
+    if (application || link.mode !== 'pick' || !term) { setHits([]); return undefined; }
+    const t = setTimeout(() => api.get('/candidates?q=' + encodeURIComponent(term) + '&pageSize=8').then((r) => setHits(r.candidates || [])).catch(() => setHits([])), 180);
+    return () => clearTimeout(t);
+  }, [q, link.mode]);
+
+  const candidateId = application ? application.candidate?.id || application.candidateId : (link.mode === 'pick' ? link.candidate?.id : progress.candidateId);
+  const startIso = cairoInputToIso(f.scheduledAt);
+  const panelKey = f.panel.join(',');
+  // Availability: candidate (block), panel (acknowledge), same place (warn).
+  // A failed check is shown as "unavailable", never as "no conflict".
+  useEffect(() => {
+    if (!startIso || !panelKey) { setAvail({ state: 'idle' }); return undefined; }
     let live = true;
+    setAvail((a) => ({ ...a, state: 'checking' }));
     const t = setTimeout(() => {
-      const qs = new URLSearchParams({ start: start.toISOString(), durationMin: String(Number(f.durationMin) || 60), panel: panelKey });
+      const qs = new URLSearchParams({ start: startIso, durationMin: String(Number(f.durationMin) || 60), panel: panelKey });
+      if (candidateId) qs.set('candidateId', String(candidateId));
+      if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
       api.get('/interviews/clashes?' + qs.toString())
-        .then((r) => { if (live) setClashes(r.clashes || []); })
-        .catch(() => { if (live) setClashes([]); });
+        .then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length;
+          setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [], hours: r.hoursWarning || null }); })
+        .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
     }, 300);
     return () => { live = false; clearTimeout(t); };
-  }, [f.scheduledAt, f.durationMin, panelKey]);
-  function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
+  }, [startIso, f.durationMin, panelKey, candidateId, f.locationOrLink]);
 
+  // Panel recipients default to everyone on the panel.
+  const panelSel = rcpt.panel === null ? f.panel : rcpt.panel.filter((id) => f.panel.includes(id));
+  const candEmail = application ? application.candidate?.email : link.mode === 'pick' ? link.candidate?.email : link.newEmail;
+  const candPhone = application ? application.candidate?.phone : link.mode === 'pick' ? link.candidate?.phone : link.newPhone;
+  const candName = application ? application.candidate?.fullName : link.mode === 'pick' ? link.candidate?.fullName : link.newName;
+  // Live preview of the invitations from the server's own renderer.
+  const previewKey = JSON.stringify({ msgs, startIso, f, candidateId, candName, candEmail, candPhone, req: link.requestId, app: application?.id });
+  useEffect(() => {
+    if (!msgs) return undefined;
+    const t = setTimeout(() => {
+      api.post('/interviews/message-preview', {
+        applicationId: application?.id, candidateId: !application && link.mode === 'pick' ? link.candidate?.id : (progress.candidateId || undefined),
+        candidateName: candName, candidateEmail: candEmail, candidatePhone: candPhone, requestId: link.requestId || undefined,
+        scheduledAt: startIso, durationMin: Number(f.durationMin), mode: f.mode, interviewType: f.interviewType, locationOrLink: f.locationOrLink,
+        panel: f.panel, messages: msgs,
+      }).then((p) => { setPreview(p); if (!waTouched.current) setWaText(p.preview.whatsapp.body); }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [previewKey]);
+
+  function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
+  const candReady = application ? true : link.mode === 'pick' ? !!link.candidate : !!link.newName.trim() && (!!link.newEmail.trim() || !!link.newPhone.trim());
+  const contactProblem = !application && link.mode === 'new'
+    ? (link.newEmail.trim() && !EMAIL_FMT(link.newEmail) ? 'The email address is not valid.' : link.newPhone.trim() && !INTL_PHONE(link.newPhone) ? 'Enter a mobile number (e.g. 01001234567) or the international form (+201001234567).' : null) : null;
+  const blockedByCandidate = avail.state === 'conflicts' && (avail.candidate || []).length > 0;
+  const needsAck = avail.state === 'conflicts' && (avail.panel || []).length > 0;
+  const formReady = candReady && !contactProblem && !!startIso && f.panel.length > 0 && !blockedByCandidate && (!needsAck || (ack && overlapReason.trim()));
+  const sendProblem = ivDetailsProblem(f.mode, f.locationOrLink) || (preview && Object.values(preview.errors || {})[0]) || null;
+
+  // Each step keeps its result, so a failure part-way can be retried without
+  // creating the candidate, application or interview a second time.
+  async function save(send) {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setStepError(null);
+    let p = { ...progress };
+    try {
+      let cid = application ? (application.candidate?.id || application.candidateId) : link.mode === 'pick' ? link.candidate?.id : p.candidateId;
+      if (!application && link.mode === 'new' && !p.candidateId) {
+        try {
+          const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, phone: link.newPhone.trim() ? link.newPhone.replace(/[\s\-().]/g, '') : undefined, source: 'manual' });
+          cid = r.candidate.id; p = { ...p, candidateId: cid }; setProgress(p);
+        } catch (e) {
+          if (e.status === 409 && e.data?.duplicates) { setDups(e.data.duplicates); throw Object.assign(new Error('This person may already be in the Talent Pool. Choose the existing record below, or change the details.'), { step: 'candidate' }); }
+          throw Object.assign(e, { step: 'candidate' });
+        }
+      }
+      if (cvFile && !p.cvDone && cid) {
+        try { await api.upload(`/candidates/${cid}/resume?parse=0`, cvFile); p = { ...p, cvDone: true }; setProgress(p); }
+        catch (e) { throw Object.assign(new Error(`The CV did not upload: ${e.message}. Try again, or remove the file to continue without a CV.`), { step: 'cv' }); }
+      }
+      let target = application ? { applicationId: application.id } : { candidateId: cid, requestId: link.requestId ? Number(link.requestId) : undefined };
+      if (!application && link.requestId) {
+        if (!p.applicationId) { p = { ...p, applicationId: await ensureApplication(cid, Number(link.requestId)) }; setProgress(p); }
+        target = { applicationId: p.applicationId };
+      }
+      let iv = null;
+      if (!p.interviewId) {
+        try {
+          const r = await api.post('/interviews', {
+            ...target, idempotencyKey: keys.current.create, interviewType: f.interviewType, mode: f.mode, scheduledAt: startIso,
+            durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink.trim(),
+            panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
+            ...(needsAck ? { ackPanelOverlap: true, overlapReason: overlapReason.trim() } : {}),
+          });
+          iv = r.interview; p = { ...p, interviewId: iv.id }; setProgress(p);
+        } catch (e) {
+          if (e.data?.code === 'candidate_conflict') setAvail((a) => ({ ...a, state: 'conflicts', candidate: e.data.conflicts || [] }));
+          if (e.data?.code === 'panel_conflict') setAvail((a) => ({ ...a, state: 'conflicts', panel: e.data.clashes || [] }));
+          throw Object.assign(e, { step: 'interview' });
+        }
+      } else iv = (await api.get('/interviews/' + p.interviewId)).interview;
+      let out = { interview: iv, dispatches: [], summary: null, sent: false };
+      if (send) {
+        try {
+          await api.put(`/interviews/${iv.id}/messages`, { kind: 'invite', messages: { candidate: msgs.candidate, panel: msgs.panel, whatsapp: { body: waText || msgs.whatsapp.body } } });
+          const r = await api.post(`/interviews/${iv.id}/send`, { kind: 'invite', batchKey: keys.current.send, candidate: !!rcpt.candidate, panel: panelSel, attachCv: rcpt.attachCv.filter((id) => panelSel.includes(id)) });
+          out = { interview: r.interview || iv, dispatches: r.dispatches || [], summary: r.summary, sent: true };
+        } catch (e) { throw Object.assign(new Error(`The interview is saved (${iv.interviewNo}), but the invitations were not sent: ${e.message}`), { step: 'send' }); }
+      } else if (waTouched.current) {
+        await api.put(`/interviews/${iv.id}/messages`, { kind: 'invite', messages: { whatsapp: { body: waText } } }).catch(() => {});
+      }
+      setResult(out);
+      toast(send ? `Interview ${iv.interviewNo} saved` : `Interview ${iv.interviewNo} saved — no invitations sent`);
+    } catch (e) {
+      setStepError({ step: e.step || 'interview', message: e.message || 'Something went wrong' });
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  function scheduleAnother() {
+    // Keep the slot shape (time, type, mode, length); clear everything personal.
+    setF((s) => ({ ...IV_FORM_BLANK, interviewType: s.interviewType, mode: s.mode, scheduledAt: s.scheduledAt, durationMin: s.durationMin, round: s.round }));
+    setLink(IV_LINK_BLANK); setCvFile(null); setDups(null); setQ(''); setProgress(IV_PROGRESS_BLANK); setStepError(null);
+    setAck(false); setOverlapReason(''); setRcpt({ candidate: true, panel: null, attachCv: [] });
+    setMsgs(tpl?.templates ? { ...tpl.templates.invite } : null); waTouched.current = false; setWaText('');
+    keys.current = { create: ivKey(), send: ivKey() }; setResult(null);
+  }
+  function openWhatsApp(ivId) {
+    return openWhatsAppWindow(() => api.post(`/interviews/${ivId}/whatsapp-handoff`, { kind: 'invite' }), toast);
+  }
+
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const title = application ? `Schedule interview — ${application.candidate?.fullName || ''}` : 'Schedule interview';
+  if (!meta || !msgs) return <Modal title={title} onClose={onClose}><Skeleton /></Modal>;
+  const nameOf = (id) => meta.interviewers.find((u) => u.id === id)?.name || 'Panel member';
+
+  if (result) {
+    const iv = result.interview;
+    return toPageLevel(
+      <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) { onScheduled(); } }}>
+        <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label="Interview saved" tabIndex="-1" onKeyDown={onDialogKeyDown}>
+          <div className="modal-head"><h3>Interview {iv.interviewNo} saved</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={() => onScheduled()}><Icon name="close" size={16} /></button></div>
+          <div className="modal-body iv-result">
+            <p><strong>{iv.candidate?.fullName}</strong> · {cairoLabel(iv.scheduledAt)} · {iv.durationMin} min · {ivMode(iv.mode)}</p>
+            {result.sent ? <>
+              <div className="section-title">Invitations</div>
+              {result.summary?.dryRun && <div className="notice notice-warn">This server uses a test mail transport: messages were prepared but <strong>not delivered</strong>.</div>}
+              <DispatchList rows={result.dispatches} />
+            </> : <p className="muted">No invitations were sent. You can send them from the interview at any time.</p>}
+            <WhatsAppHandoff phone={iv.candidate ? candPhone : null} text={waText} editable={false} onOpen={() => openWhatsApp(iv.id)} />
+          </div>
+          <div className="modal-foot">
+            <button className="btn btn-ghost" onClick={() => onScheduled(iv.id)}>Open interview</button>
+            <button className="btn btn-secondary" onClick={scheduleAnother}>Schedule another</button>
+            <button className="btn" onClick={() => onScheduled()}>Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const progressNote = (progress.candidateId || progress.cvDone || progress.applicationId || progress.interviewId)
+    ? [progress.candidateId && 'candidate created', progress.cvDone && 'CV uploaded', progress.applicationId && 'linked to the request', progress.interviewId && 'interview saved'].filter(Boolean).join(' · ') : null;
+  return toPageLevel(
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="iv-compose-body">
+          <div className="iv-compose-form">
+            {/* 1 — Candidate & CV */}
+            <section className="iv-step" aria-labelledby="iv-step-1">
+              <h4 id="iv-step-1"><span className="iv-step-n">1</span>Candidate &amp; CV</h4>
+              {application ? (
+                <p className="muted">Application <strong>{application.applicationNo}</strong> — {application.candidate?.fullName}. Scheduling does not change the pipeline status.</p>
+              ) : <>
+                {canAdd && (
+                  <div className="seg-tabs" role="tablist" aria-label="Candidate source">
+                    <button type="button" role="tab" aria-selected={link.mode === 'pick'} className={'seg-tab' + (link.mode === 'pick' ? ' active' : '')} disabled={!!progress.candidateId} onClick={() => setLink((s) => ({ ...s, mode: 'pick' }))}>From Talent Pool</button>
+                    <button type="button" role="tab" aria-selected={link.mode === 'new'} className={'seg-tab' + (link.mode === 'new' ? ' active' : '')} disabled={!!progress.candidateId} onClick={() => setLink((s) => ({ ...s, mode: 'new' }))}>New candidate</button>
+                  </div>
+                )}
+                {link.mode === 'pick' ? (
+                  link.candidate ? (
+                    <div className="standalone-picked"><strong>{link.candidate.fullName}</strong>
+                      <span className="muted">{link.candidate.candidateNo}{link.candidate.email ? ' · ' + link.candidate.email : ''}{link.candidate.hasResume ? ' · CV on file' : ''}</span>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLink((s) => ({ ...s, candidate: null }))}>Change</button></div>
+                  ) : <>
+                    <input aria-label="Search the Talent Pool" placeholder="Search name, email, phone…" value={q} onChange={(e) => setQ(e.target.value)} />
+                    {hits.length > 0 && <ul className="standalone-results" role="listbox">{hits.map((c) => (
+                      <li key={c.id} role="option" aria-selected="false" onClick={() => { setLink((s) => ({ ...s, candidate: c })); setQ(''); }}>
+                        <strong>{c.fullName}</strong> <span className="muted">{c.candidateNo}{c.currentPosition ? ' · ' + c.currentPosition : ''}</span></li>))}</ul>}
+                  </>
+                ) : (
+                  <div className="form-grid">
+                    <div className="field full"><label>Full name *</label><input value={link.newName} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newName: e.target.value }))} /></div>
+                    <div className="field"><label>Email</label><input type="email" value={link.newEmail} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newEmail: e.target.value }))} placeholder="name@example.com" /></div>
+                    <div className="field"><label>Phone (international)</label><input value={link.newPhone} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newPhone: e.target.value }))} placeholder="+20 100 123 4567" inputMode="tel" /></div>
+                    <p className="field-hint full">An email or a phone number is required. The phone is used for WhatsApp.</p>
+                  </div>
+                )}
+                {dups && dups.length > 0 && link.mode === 'new' && !progress.candidateId && (
+                  <div className="notice notice-warn" role="status"><strong>Already in the Talent Pool?</strong>
+                    <ul className="iv-dups">{dups.map((d) => (
+                      <li key={d.id}><span>{d.fullName} · {d.candidateNo}{d.email ? ' · ' + d.email : ''}{d.phone ? ' · ' + d.phone : ''}</span>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setLink((s) => ({ ...s, mode: 'pick', candidate: { id: d.id, fullName: d.fullName, candidateNo: d.candidateNo, email: d.email, phone: d.phone } })); setDups(null); setStepError(null); }}>Use this candidate</button></li>))}</ul></div>
+                )}
+                <div className="field"><label>Hiring request (optional)</label>
+                  <select value={link.requestId} disabled={!!progress.applicationId} onChange={(e) => setLink((s) => ({ ...s, requestId: e.target.value }))}>
+                    <option value="">None — standalone interview</option>
+                    {(requests || []).map((r) => {
+                      const pending = r.status === 'pending_approval' || r.status === 'draft';
+                      const paused = r.status === 'on_hold';
+                      return <option key={r.id} value={r.id} disabled={pending || paused}>{r.ticketNo} — {r.title}{pending ? ' (awaiting approval)' : paused ? ' (on hold)' : ''}</option>;
+                    })}
+                  </select>
+                  <span className="field-hint">Requests awaiting approval or on hold can match candidates, but their interviews wait.</span></div>
+              </>}
+              <div className="iv-cv">
+                <span className="iv-cv-label">CV</span>
+                {cvFile ? <span className="iv-cv-file">{cvFile.name}{progress.cvDone ? ' · uploaded' : ''}
+                  {!progress.cvDone && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCvFile(null)}>Remove</button>}</span>
+                  : (application?.candidate?.hasResume || link.candidate?.hasResume) ? <span className="muted">A CV is already on file.</span>
+                    : <span className="muted">No CV attached</span>}
+                {!progress.cvDone && (
+                  <label className="btn btn-secondary btn-sm iv-file">{cvFile ? 'Replace file' : 'Attach CV'}
+                    <input type="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => { const file = e.target.files && e.target.files[0]; if (file) setCvFile(file); e.target.value = ''; }} hidden /></label>
+                )}
+                <span className="field-hint">PDF, Word, text or image, up to 20 MB. Stored on the candidate; not read by AI for this booking.</span>
+              </div>
+            </section>
+
+            {/* 2 — Interview & panel */}
+            <section className="iv-step" aria-labelledby="iv-step-2">
+              <h4 id="iv-step-2"><span className="iv-step-n">2</span>Interview &amp; panel</h4>
+              <div className="form-grid">
+                <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{ivType(t)}</option>)}</select></div>
+                <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{ivMode(m)}</option>)}</select></div>
+                <div className="field"><label>Date &amp; time (Cairo) *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} />
+                  {startIso && <span className="field-hint">{cairoLabel(startIso)}</span>}</div>
+                <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+                <div className="field full">
+                  <label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone number or call arrangement' : 'Location'}</label>
+                  {f.mode === 'onsite'
+                    ? <InterviewPlacePicker places={meta?.places || []} value={f.locationOrLink} onChange={(v) => set('locationOrLink', v)} />
+                    : <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
+                      placeholder={f.mode === 'video' ? 'https://… (paste the link from your calendar)' : '+20 100 000 0000'} />}
+                  {f.mode === 'video' && f.locationOrLink.trim() && !HTTPS_LINK(f.locationOrLink) && <span className="iv-error">Use a full https:// meeting link.</span>}
+                </div>
+              </div>
+              <div className="iv-sub">Panel *</div>
+              <div className="iv-panel-pick">{meta.interviewers.map((u) => (
+                <button key={u.id} type="button" title={u.name} aria-pressed={f.panel.includes(u.id)} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => togglePanel(u.id)}>{u.name}{f.panel[0] === u.id ? ' · lead' : ''}</button>))}</div>
+              <div className="iv-avail" role="status" aria-live="polite">
+                {avail.state === 'checking' && <span className="muted">Checking availability…</span>}
+                {avail.state === 'ok' && <span className="iv-avail-ok">No conflicts for the candidate or the panel at this time.</span>}
+                {avail.state === 'unavailable' && <div className="notice notice-warn">The availability check could not run, so conflicts are <strong>unknown</strong>. Saving still re-checks on the server.</div>}
+                {avail.state === 'conflicts' && <>
+                  {(avail.candidate || []).length > 0 && <div className="notice notice-danger"><strong>The candidate is already booked</strong> {avail.candidate.map((c) => `${cairoTime(c.start)}–${cairoTime(c.end)}`).join(', ')}. Choose another time.</div>}
+                  {(avail.panel || []).length > 0 && <div className="notice notice-warn">
+                    <strong>Panel already booked:</strong> {avail.panel.map((c) => `${c.name} (${cairoTime(c.start)}–${cairoTime(c.end)})`).join(' · ')}
+                    <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
+                    {ack && <input aria-label="Reason for the overlap" placeholder="Reason, e.g. joins for the first 15 minutes" value={overlapReason} onChange={(e) => setOverlapReason(e.target.value)} />}
+                  </div>}
+                  {avail.hours && <div className="notice">Outside the working week: {avail.hours.message} You can still book it.</div>}
+                  {(avail.location || []).length > 0 && <div className="notice">Another interview uses the same {f.mode === 'video' ? 'meeting link' : 'location'} at an overlapping time ({avail.location.map((c) => `${cairoTime(c.start)}–${cairoTime(c.end)}`).join(', ')}). Check it is free.</div>}
+                </>}
+              </div>
+            </section>
+
+            {/* 3 — Invitations */}
+            <section className="iv-step" aria-labelledby="iv-step-3">
+              <h4 id="iv-step-3"><span className="iv-step-n">3</span>Invitations</h4>
+              <div className="iv-recipients">
+                <label className="iv-rcpt"><input type="checkbox" checked={!!rcpt.candidate} onChange={(e) => setRcpt((r) => ({ ...r, candidate: e.target.checked }))} />
+                  <span><strong>{candName || 'Candidate'}</strong> <span className="muted">{candEmail ? candEmail : 'no email — use WhatsApp or add one'}</span></span></label>
+                {f.panel.map((id) => {
+                  const on = panelSel.includes(id);
+                  const cvOk = !!cvFile || application?.candidate?.hasResume || link.candidate?.hasResume;
+                  return (
+                    <div key={id} className="iv-rcpt">
+                      <label><input type="checkbox" checked={on} onChange={(e) => setRcpt((r) => ({ ...r, panel: e.target.checked ? [...panelSel, id] : panelSel.filter((x) => x !== id) }))} />
+                        <span><strong>{nameOf(id)}</strong> <span className="muted">panel</span></span></label>
+                      {on && cvOk && <label className="iv-attach"><input type="checkbox" checked={rcpt.attachCv.includes(id)} onChange={(e) => setRcpt((r) => ({ ...r, attachCv: e.target.checked ? [...r.attachCv, id] : r.attachCv.filter((x) => x !== id) }))} /> Attach the CV to this email</label>}
+                    </div>
+                  );
+                })}
+              </div>
+              {preview?.channel?.blocked && <div className="notice notice-warn">{preview.channel.blocked.message} Saving still works; invitations would be recorded as not sent.</div>}
+              {preview?.channel?.dryRun && <div className="notice">Test mail transport on this server: invitations are prepared, <strong>not delivered</strong>.</div>}
+              <TemplateNote custom={customMsgs || !!preview?.errors?.candidate || !!preview?.errors?.panel} onCustom={setCustomMsgs}>
+                <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tpl.placeholders, 'c', 'invite')} error={preview?.errors?.candidate} />
+                <MessageEditor label="Panel email (each panelist gets their own)" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tpl.placeholders, 'p', 'invite')} error={preview?.errors?.panel} />
+              </TemplateNote>
+              <WhatsAppHandoff phone={candPhone} text={waText} editable={customMsgs} onText={(v) => { waTouched.current = true; setWaText(v); }} onOpen={progress.interviewId ? () => openWhatsApp(progress.interviewId) : null} />
+              {!progress.interviewId && <p className="field-hint">“Open WhatsApp” is available once the interview is saved.</p>}
+            </section>
+          </div>
+
+          <aside className="iv-preview" aria-label="Invitation preview">
+            <div className="iv-preview-title">Preview</div>
+            {!preview ? <Skeleton rows={4} /> : <>
+              <div className="iv-preview-card">
+                <div className="iv-preview-meta">To {preview.preview.candidate.to || <em>no email</em>}</div>
+                <div className="iv-preview-subject">{preview.preview.candidate.subject}</div>
+                <div className="iv-preview-body">{preview.preview.candidate.body}</div>
+              </div>
+              {preview.preview.panel.slice(0, 1).map((pm) => (
+                <div key={pm.userId} className="iv-preview-card">
+                  <div className="iv-preview-meta">To {pm.name}{pm.to ? ` <${pm.to}>` : ''}{preview.preview.panel.length > 1 ? ` · and ${preview.preview.panel.length - 1} more, each addressed separately` : ''}</div>
+                  <div className="iv-preview-subject">{pm.subject}</div>
+                  <div className="iv-preview-body">{pm.body}</div>
+                </div>
+              ))}
+              <p className="field-hint">The calendar entry (.ics) is attached to each email in Cairo time. The interview reference is assigned on save.</p>
+            </>}
+          </aside>
+        </div>
+        <div className="modal-foot iv-foot">
+          {stepError && <div className="iv-error iv-foot-error" role="alert">{stepError.message}{progressNote ? ` (Kept: ${progressNote}.)` : ''}</div>}
+          {!stepError && progressNote && <span className="muted">Kept: {progressNote}</span>}
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-secondary" onClick={() => save(false)} disabled={busy || !formReady}>{busy ? 'Saving…' : 'Save interview'}</button>
+          <button className="btn" onClick={() => save(true)} disabled={busy || !formReady || !!sendProblem || (!rcpt.candidate && panelSel.length === 0)}
+            title={sendProblem || undefined}>{busy ? 'Saving…' : 'Save & send invitations'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------- Communicate (invite / update / cancel) ---------------- */
+function CommunicateModal({ iv, kind, onClose, onDone }) {
+  const toast = useToast();
+  const [customMsgs, setCustomMsgs] = useState(false); // per-interview wording is the exception (TemplateNote)
+  const [data, setData] = useState(null);
+  const [tplPh, setTplPh] = useState([]);
+  const [msgs, setMsgs] = useState(null);
+  const [rendered, setRendered] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [sel, setSel] = useState(null);
+  const [cv, setCv] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [waText, setWaText] = useState('');
+  const [skipAsk, setSkipAsk] = useState(false);
+  const batch = useRef(ivKey());
+  const busyRef = useRef(false);
+  const resultRef = useRef(null);
+  useEffect(() => { if (result && resultRef.current) resultRef.current.scrollIntoView({ block: 'start' }); }, [result]);
+  const load = useCallback(async () => {
+    try {
+      const d = await api.get(`/interviews/${iv.id}/messages?kind=${kind}`);
+      setData(d); setRendered(d.rendered); setWaText(d.whatsapp.text || '');
+      setMsgs({ candidate: { subject: d.messages.candidate.subject, body: d.messages.candidate.body }, panel: { subject: d.messages.panel.subject, body: d.messages.panel.body },
+        ...(d.messages.panel_removed ? { panel_removed: { subject: d.messages.panel_removed.subject, body: d.messages.panel_removed.body } } : {}) });
+      // A reminder is for the candidate; the panel can be ticked if wanted.
+      setSel((s) => s || { candidate: d.recipients.some((r) => r.audience === 'candidate' && r.reachable), panel: kind === 'reminder' ? [] : d.recipients.filter((r) => r.audience !== 'candidate' && r.reachable).map((r) => r.userId) });
+    } catch (e) { toast(e.message, 'error'); onClose(); }
+  }, [iv.id, kind]);
+  useEffect(() => { load(); api.get('/interviews/message-templates').then((t) => setTplPh(t.placeholders || [])).catch(() => {}); }, [load]);
+  useEffect(() => {
+    if (!msgs) return undefined;
+    const t = setTimeout(() => {
+      api.post(`/interviews/${iv.id}/messages/preview`, { kind, messages: { ...msgs, whatsapp: { body: data?.messages?.whatsapp?.body } } })
+        .then((r) => { setErrors(r.errors || {}); if (r.rendered) setRendered(r.rendered); }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [JSON.stringify(msgs)]);
+  const verb = { invite: 'invitation', update: 'update', cancel: 'cancellation', reminder: 'reminder' }[kind];
+  async function send(retryFailed = false) {
+    if (busyRef.current) return; busyRef.current = true; setBusy(true);
+    try {
+      await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { ...msgs, whatsapp: { body: waText } } });
+      const r = await api.post(`/interviews/${iv.id}/send`, retryFailed ? { kind, batchKey: batch.current, retryFailed: true }
+        : { kind, batchKey: batch.current, candidate: !!sel.candidate, panel: sel.panel, attachCv: cv.filter((id) => sel.panel.includes(id)) });
+      setResult(r); toast(r.replayed ? 'Already sent — nothing sent twice' : `${verb[0].toUpperCase() + verb.slice(1)} processed`);
+      batch.current = ivKey();
+    } catch (e) { toast(e.message, 'error'); } finally { busyRef.current = false; setBusy(false); }
+  }
+  async function openWhatsApp() {
+    const r = await openWhatsAppWindow(async () => {
+      await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { whatsapp: { body: waText } } });
+      return api.post(`/interviews/${iv.id}/whatsapp-handoff`, { kind });
+    }, toast);
+    if (r) load();
+  }
+  async function openCall() {
+    try { const r = await api.post(`/interviews/${iv.id}/call-handoff`, { kind }); window.location.href = r.tel; load(); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  async function skip(reason) {
+    setSkipAsk(false);
+    try { await api.post(`/interviews/${iv.id}/notice/skip`, { reason }); toast('Recorded: not sent'); onDone(); } catch (e) { toast(e.message, 'error'); }
+  }
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const title = { invite: 'Send invitations', update: 'Send the update', cancel: 'Send the cancellation', reminder: 'Send a reminder' }[kind];
+  const failedLatest = (data?.dispatches || []).filter((r) => r.kind === kind && r.revision === iv.calendarSeq && r.channel === 'email');
+  const hasFailed = (() => { const seen = new Set(); return failedLatest.some((r) => { if (seen.has(r.recipientKey)) return false; seen.add(r.recipientKey); return r.status === 'failed'; }); })();
+  return toPageLevel(
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title} — {iv.interviewNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        {!data || !msgs || !sel ? <div className="modal-body"><Skeleton rows={6} /></div> : (
+          <div className="iv-compose-body">
+            <div className="iv-compose-form">
+              <p className="muted">{cairoLabel(iv.scheduledAt)} · {iv.durationMin} min · {ivMode(iv.mode)}{data.notice?.changes?.length && kind === 'update' ? ` · changed: ${data.notice.changes.map((c) => ({ date_time: 'date & time', duration: 'duration', location_or_link: 'location/link', mode: 'mode', panel: 'panel' })[c] || c).join(', ')}` : ''}</p>
+              {result && <div className="iv-result-block" ref={resultRef}><div className="iv-sub">Result</div>{result.summary?.dryRun && <div className="notice notice-warn">Test transport — <strong>not delivered</strong>.</div>}<DispatchList rows={result.dispatches} /></div>}
+              {data.detailsProblem && <div className="notice notice-warn">{data.detailsProblem}</div>}
+              {data.channel.blocked && <div className="notice notice-warn">{data.channel.blocked.message}</div>}
+              {data.channel.dryRun && <div className="notice">Test mail transport on this server: messages are prepared, <strong>not delivered</strong>.</div>}
+              <div className="iv-sub">Recipients</div>
+              <div className="iv-recipients">
+                {data.recipients.map((r) => {
+                  const isCand = r.audience === 'candidate';
+                  const on = isCand ? sel.candidate : sel.panel.includes(r.userId);
+                  return (
+                    <div key={r.key + r.audience} className="iv-rcpt">
+                      <label><input type="checkbox" disabled={!r.reachable} checked={on && r.reachable}
+                        onChange={(e) => setSel((s) => (isCand ? { ...s, candidate: e.target.checked } : { ...s, panel: e.target.checked ? [...s.panel, r.userId] : s.panel.filter((x) => x !== r.userId) }))} />
+                        <span><strong>{r.name}</strong> <span className="muted">{isCand ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from the panel' : r.added ? 'Added to the panel' : 'Panel'}{r.address ? ' · ' + r.address : ''}</span>
+                          {r.problem && <span className="iv-error">{r.problem}</span>}</span></label>
+                      {r.audience === 'panel' && on && r.canAttachCv && kind !== 'cancel' && <label className="iv-attach"><input type="checkbox" checked={cv.includes(r.userId)} onChange={(e) => setCv((x) => (e.target.checked ? [...x, r.userId] : x.filter((y) => y !== r.userId)))} /> Attach the CV</label>}
+                    </div>
+                  );
+                })}
+              </div>
+              <TemplateNote custom={customMsgs || !!errors.candidate || !!errors.panel || !!errors.panel_removed} onCustom={setCustomMsgs}>
+              <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tplPh, 'c', kind)} error={errors.candidate} />
+              <MessageEditor label="Panel email" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tplPh, 'p', kind)} error={errors.panel} />
+              {msgs.panel_removed && data.recipients.some((r) => r.audience === 'panel_removed') && <MessageEditor label="Removed panelist" value={msgs.panel_removed} onChange={(v) => setMsgs((m) => ({ ...m, panel_removed: v }))} placeholders={phFor(tplPh, 'r')} error={errors.panel_removed} />}
+              </TemplateNote>
+              <WhatsAppHandoff phone={data.whatsapp.phone} text={waText} editable={customMsgs} onText={setWaText} onOpen={data.whatsapp.valid ? openWhatsApp : null} />
+              {data.call && <CallHandoff phone={data.call.phone} valid={data.call.valid} script={data.call.script} onCall={data.call.valid ? openCall : null} />}
+            </div>
+            <aside className="iv-preview" aria-label="Preview">
+              <div className="iv-preview-title">Preview</div>
+              {rendered && <>
+                <div className="iv-preview-card"><div className="iv-preview-meta">Candidate</div><div className="iv-preview-subject">{rendered.candidate.subject}</div><div className="iv-preview-body">{rendered.candidate.body}</div></div>
+                {Object.entries(rendered.panel || {}).slice(0, 1).map(([uid, pm]) => (
+                  <div key={uid} className="iv-preview-card"><div className="iv-preview-meta">Panel{pm.asInvite ? ' (new member — invitation)' : ''}</div><div className="iv-preview-subject">{pm.subject}</div><div className="iv-preview-body">{pm.body}</div></div>))}
+                {Object.entries(rendered.panelRemoved || {}).slice(0, 1).map(([uid, pm]) => (
+                  <div key={uid} className="iv-preview-card"><div className="iv-preview-meta">Removed panelist</div><div className="iv-preview-subject">{pm.subject}</div><div className="iv-preview-body">{pm.body}</div></div>))}
+              </>}
+            </aside>
+          </div>
+        )}
+        <div className="modal-foot iv-foot">
+          {!result && data?.notice && !data.notice.communicated && !data.notice.skipped && kind !== 'invite' && <button className="btn btn-ghost" onClick={() => setSkipAsk(true)}>Don’t send</button>}
+          {hasFailed && <button className="btn btn-secondary" disabled={busy} onClick={() => send(true)}>Retry failed</button>}
+          <button className={result ? 'btn' : 'btn btn-ghost'} onClick={result ? onDone : onClose}>{result ? 'Done' : 'Cancel'}</button>
+          {!result && <button className="btn" disabled={busy || !sel || !!(data && data.detailsProblem) || Object.keys(errors).length > 0 || !(sel?.candidate || sel?.panel?.length)} onClick={() => send(false)}>{busy ? 'Sending…' : `Send ${verb}`}</button>}
+        </div>
+        {skipAsk && <Confirm title="Don’t send this change" message="Record why the candidate and panel are not being told (e.g. agreed by phone)." requireReason confirmLabel="Record" onConfirm={skip} onClose={() => setSkipAsk(false)} />}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- Reschedule / edit --------------------------- */
+function RescheduleModal({ iv, onClose, onSaved }) {
+  const toast = useToast();
+  const [meta, setMeta] = useState(null);
+  const [f, setF] = useState({ scheduledAt: isoToCairoInput(iv.scheduledAt), durationMin: iv.durationMin || 60, mode: iv.mode, locationOrLink: iv.locationOrLink || '', panel: iv.panel.map((m) => m.id) });
+  const [avail, setAvail] = useState({ state: 'idle' });
+  const [ack, setAck] = useState(false); const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  useEffect(() => { api.get('/interviews/meta/form').then(setMeta).catch(() => {}); }, []);
+  const startIso = cairoInputToIso(f.scheduledAt);
+  const panelKey = f.panel.join(',');
+  useEffect(() => {
+    if (!startIso || !panelKey) { setAvail({ state: 'idle' }); return undefined; }
+    let live = true; setAvail((a) => ({ ...a, state: 'checking' }));
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ start: startIso, durationMin: String(Number(f.durationMin) || 60), panel: panelKey, candidateId: String(iv.candidate?.id || ''), excludeId: String(iv.id) });
+      if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
+      api.get('/interviews/clashes?' + qs.toString()).then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length; setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [], hours: r.hoursWarning || null }); })
+        .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [startIso, f.durationMin, panelKey, f.locationOrLink]);
+  const needsAck = avail.state === 'conflicts' && (avail.panel || []).length > 0;
+  const blocked = avail.state === 'conflicts' && (avail.candidate || []).length > 0;
   async function save() {
     setBusy(true);
     try {
-      let target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
-      // With a hiring request chosen, schedule on the candidate's application so
-      // the interview assessment is available for this interview.
-      if (!application && target.requestId) target = { applicationId: await ensureApplication(target.candidateId, target.requestId) };
-      await api.post('/interviews', {
-        ...target, interviewType: f.interviewType, mode: f.mode,
-        scheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : null,
-        durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink,
-        panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
-      });
-      toast('Interview scheduled'); onScheduled();
+      const r = await api.put(`/interviews/${iv.id}`, { scheduledAt: startIso, durationMin: Number(f.durationMin), mode: f.mode, locationOrLink: f.locationOrLink.trim(),
+        panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })), ...(needsAck ? { ackPanelOverlap: true, overlapReason: reason.trim() } : {}) });
+      toast(r.changes?.length ? 'Interview updated — review the update to send' : 'Saved — nothing changed that needs telling');
+      onSaved(r.changes || []);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  if (!meta) return <Modal title="Schedule Interview" onClose={onClose}><Skeleton /></Modal>;
   return (
-    <Modal title={application ? `Schedule Interview — ${application.candidate?.fullName || ''}` : 'Schedule interview'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !f.scheduledAt || f.panel.length === 0 || (!application && !standaloneLinkReady(link))}>{busy ? 'Scheduling…' : 'Schedule'}</button></>}>
-      {application
-        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Scheduling does <strong>not</strong> change the application's pipeline status.</p>
-        : <StandaloneLinkFields user={user} link={link} setLink={setLink} />}
-      <div className="form-grid">
-        <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
-        <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
-        <div className="field"><label>Date &amp; Time *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
-        <div className="field"><label>Duration (min)</label><input type="number" min="1" max="480" step="1" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
-        <div className="field"><label>Round</label><input type="number" min="1" value={f.round} onChange={(e) => set('round', e.target.value)} /></div>
-        <div className="field">
-          <label>{f.mode === 'video' ? 'Google Meet link' : f.mode === 'phone' ? 'Phone number' : 'Location'}</label>
-          <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
-            placeholder={f.mode === 'video' ? 'https://meet.google.com/abc-defg-hij' : f.mode === 'phone' ? '+20 100 000 0000' : 'Meeting room / site address'} />
-          {f.mode === 'video' && (
-            <div className="field-hint">Google Meet is the standard for video interviews. Paste the link from Google Calendar — it is sent verbatim in the candidate's invite email.</div>
-          )}
+    <Modal title={`Reschedule / edit — ${iv.interviewNo}`} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy || !startIso || !f.panel.length || blocked || (needsAck && !(ack && reason.trim()))} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button></>}>
+      {!meta ? <Skeleton /> : <>
+        <div className="form-grid">
+          <div className="field"><label>Date &amp; time (Cairo)</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} />{startIso && <span className="field-hint">{cairoLabel(startIso)}</span>}</div>
+          <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+          <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{ivMode(m)}</option>)}</select></div>
+          <div className="field"><label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone / arrangement' : 'Place'}</label>{f.mode === 'onsite'
+            ? <InterviewPlacePicker places={meta?.places || []} value={f.locationOrLink} onChange={(v) => set('locationOrLink', v)} />
+            : <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} />}</div>
         </div>
-      </div>
-      <div className="section-title">Panel (interviewers) *</div>
-      <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} title={u.name} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
-      <p className="muted" style={{ marginTop: 8 }}>First selected is the lead. Only selected interviewers will see this interview and may submit feedback.</p>
-      {clashes.length > 0 && (
-        <div className="notice notice-warn cal-clash" role="status">
-          <strong>Already booked at this time:</strong>{' '}
-          {clashes.map((c) => `${c.name} (${timeOf(c.start)}–${timeOf(c.end)})`).join(' · ')}.
-          {' '}You can still schedule; panels sometimes overlap on purpose.
+        <div className="iv-sub">Panel</div>
+        <div className="iv-panel-pick">{meta.interviewers.map((u) => <button key={u.id} type="button" title={u.name} aria-pressed={f.panel.includes(u.id)} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => setF((s) => ({ ...s, panel: s.panel.includes(u.id) ? s.panel.filter((x) => x !== u.id) : [...s.panel, u.id] }))}>{u.name}</button>)}</div>
+        <div className="iv-avail" role="status">
+          {avail.state === 'checking' && <span className="muted">Checking availability…</span>}
+          {avail.state === 'ok' && <span className="iv-avail-ok">No conflicts at this time.</span>}
+          {avail.state === 'unavailable' && <div className="notice notice-warn">Availability could not be checked; conflicts are unknown. Saving re-checks on the server.</div>}
+          {avail.hours && <div className="notice">Outside the working week: {avail.hours.message} You can still book it.</div>}
+          {blocked && <div className="notice notice-danger"><strong>The candidate is already booked then.</strong> Choose another time.</div>}
+          {needsAck && <div className="notice notice-warn"><strong>Panel already booked:</strong> {avail.panel.map((c) => c.name).join(', ')}
+            <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
+            {ack && <input aria-label="Reason for the overlap" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />}</div>}
+        </div>
+        <p className="muted">After saving, you choose whether and how to tell the candidate and panel.</p>
+      </>}
+    </Modal>
+  );
+}
+
+/* ------------- Scheduling Setup (working week, places, templates) ---------- */
+function InterviewTemplatesModal({ onClose }) {
+  const toast = useToast();
+  const [t, setT] = useState(null);
+  const [kind, setKind] = useState('invite');
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [hqAddr, setHqAddr] = useState('');
+  const [ww, setWw] = useState(null);
+  useEffect(() => { api.get('/interviews/message-templates').then((r) => { setT(r); setDraft(JSON.parse(JSON.stringify(r.templates))); setHqAddr(r.headOfficeAddress || ''); setWw(r.workingWeek || null); }).catch((e) => toast(e.message, 'error')); }, []);
+  async function save() {
+    setBusy(true); setErr(null);
+    try { const r = await api.put('/interviews/message-templates', { templates: draft, headOfficeAddress: hqAddr, ...(ww ? { workingWeek: ww } : {}) }); setT((x) => ({ ...x, templates: r.templates, headOfficeAddress: r.headOfficeAddress })); toast('Scheduling Setup saved'); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  async function reset() {
+    setBusy(true);
+    try { const r = await api.put('/interviews/message-templates', { reset: true }); setDraft(JSON.parse(JSON.stringify(r.templates))); toast('Templates reset to the defaults'); }
+    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  const labels = { candidate: 'Candidate email', panel: 'Panel email', whatsapp: 'WhatsApp (candidate)', call: 'Phone call script (candidate)', panel_removed: 'Removed panelist' };
+  const codes = { candidate: 'c', panel: 'p', whatsapp: 'w', call: 'k', panel_removed: 'r' };
+  return (
+    <Modal title="Scheduling Setup" onClose={onClose} wide
+      footer={t?.canEdit ? <><button className="btn btn-ghost" onClick={reset} disabled={busy}>Reset templates to defaults</button><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save Scheduling Setup'}</button></> : <button className="btn" onClick={onClose}>Close</button>}>
+      {!t || !draft ? <Skeleton /> : <div className="iv-tpl-body">
+        <p className="muted">The organisation’s interview scheduling rules and default wording. Each interview starts from these templates and can be edited before sending. Placeholders are filled in for each recipient; only the ones listed under each message can be used there.{t.canEdit ? '' : ' You can view these; changing them needs the Notifications permission.'}</p>
+        {ww && <div className="field">
+          <label>Working week</label>
+          <div className="btn-row" role="group" aria-label="Working days">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+              <label key={d} className="iv-rcpt"><input type="checkbox" disabled={!t.canEdit} checked={ww.days.includes(i)}
+                onChange={(e) => setWw((w) => ({ ...w, days: e.target.checked ? [...w.days, i].sort() : w.days.filter((x) => x !== i) }))} /> {d}</label>
+            ))}
+          </div>
+          <div className="btn-row">
+            <label htmlFor="iv-ww-start" className="muted">From</label><input id="iv-ww-start" type="time" disabled={!t.canEdit} value={ww.start} onChange={(e) => setWw((w) => ({ ...w, start: e.target.value }))} />
+            <label htmlFor="iv-ww-end" className="muted">to</label><input id="iv-ww-end" type="time" disabled={!t.canEdit} value={ww.end} onChange={(e) => setWw((w) => ({ ...w, end: e.target.value }))} />
+            <span className="muted">Cairo time</span>
+          </div>
+          <span className="field-hint">The interview calendar shows these days and hours. Booking outside them shows a warning; it is never blocked.</span>
+        </div>}
+        <div className="field">
+          <label htmlFor="iv-hq-addr">Head Office address</label>
+          <input id="iv-hq-addr" value={hqAddr} disabled={!t.canEdit} maxLength={300} onChange={(e) => setHqAddr(e.target.value)} placeholder="Street, district, city — shown to candidates for Head Office interviews" />
+          <span className="field-hint">On-site interviews pick Head Office or a company site; the place and its address fill {'{{where}}'} in every message. Site addresses come from Organization Structure.</span>
+        </div>
+        <div className="seg-tabs" role="tablist">{[['invite', 'Invitation'], ['update', 'Update'], ['cancel', 'Cancellation'], ['reminder', 'Reminder']].map(([k, l]) => <button key={k} role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => setKind(k)}>{l}</button>)}</div>
+        {err && <div className="notice notice-danger">{err}</div>}
+        {t.audiences[kind].map((aud) => (
+          <MessageEditor key={kind + aud} label={labels[aud]} hasSubject={t.hasSubject[aud]} value={draft[kind][aud]}
+            onChange={(v) => setDraft((d) => ({ ...d, [kind]: { ...d[kind], [aud]: t.hasSubject[aud] ? v : { body: v.body } } }))}
+            placeholders={t.canEdit ? phFor(t.placeholders, codes[aud], kind) : []} />
+        ))}
+      </div>}
+    </Modal>
+  );
+}
+
+/* ---------------------- Communications on an interview -------------------- */
+function InterviewComms({ iv, canManage, onOpen }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { if (canManage) api.get(`/interviews/${iv.id}/dispatches`).then((r) => setRows(r.dispatches || [])).catch(() => setRows([])); }, [iv.id, iv.calendarSeq, canManage]);
+  if (!canManage) return null;
+  const n = iv.notice;
+  const pending = n && !n.communicated && !n.skipped;
+  const batches = [];
+  for (const r of rows || []) { let b = batches.find((x) => x.key === r.batchKey); if (!b) { b = { key: r.batchKey, kind: r.kind, at: r.createdAt, rows: [] }; batches.push(b); } b.rows.push(r); }
+  return (
+    <div className="card card-pad iv-comms">
+      <div className="row-between"><div className="section-title" style={{ marginTop: 0 }}>Communications</div>
+        {['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary btn-sm" onClick={() => onOpen('invite')}>Send invitations</button>}</div>
+      {pending && (
+        <div className="notice notice-warn" role="status">
+          {n.kind === 'cancel' ? 'The cancellation has not been sent to anyone yet.' : 'The changes to this interview have not been sent yet.'}
+          <div className="btn-row"><button className="btn btn-sm" onClick={() => onOpen(n.kind)}>{n.kind === 'cancel' ? 'Review & send cancellation' : 'Review & send update'}</button></div>
         </div>
       )}
-    </Modal>
+      {n && n.skipped && <p className="muted">Not sent on purpose by {n.skippedBy}: {n.skipReason}</p>}
+      {rows === null ? <Skeleton rows={2} /> : batches.length === 0 ? <p className="muted">Nothing sent yet.</p> : batches.map((b) => (
+        <div key={b.key} className="iv-batch">
+          <div className="iv-batch-head"><strong>{{ invite: 'Invitation', update: 'Update', cancel: 'Cancellation', reminder: 'Reminder' }[b.kind] || b.kind}</strong> <span className="muted">{fmtDate(b.at)}</span></div>
+          <DispatchList rows={b.rows} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -10828,8 +11756,14 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
    time; the server keeps storing ISO UTC.
    ========================================================================== */
 const CAL_WORK_DAYS = [6, 0, 1, 2, 3, 4];   // Sat..Thu, in display order (Date#getDay)
-const CAL_FRIDAY = 5;
-const CAL_HOURS = [9, 17];                  // visible working hours [start, end)
+const CAL_HOURS = [9, 17];                  // visible working hours [start, end) when no setting is loaded
+// The organisation's working week (Scheduling Setup → interview_working_week),
+// sent with the interview list. Defaults match the server: Sat–Thu, 09:00–17:00.
+const CAL_DEFAULT_WEEK = { days: [0, 1, 2, 3, 4, 6], start: '09:00', end: '17:00' };
+const CAL_WEEK_ORDER = [6, 0, 1, 2, 3, 4, 5]; // Saturday first, as the calendar is laid out
+const calWeekOf = (ww) => (ww && Array.isArray(ww.days) && ww.days.length ? ww : CAL_DEFAULT_WEEK);
+const calIsWorkDay = (d, ww) => calWeekOf(ww).days.includes(d.getDay());
+const calHHMM = (t) => { const [h, m] = String(t || '').split(':').map(Number); return { h: h || 0, m: m || 0 }; };
 const CAL_SLOT_MIN = 30;                    // a click books on the half hour
 const CAL_HOUR_PX = 56;                     // desktop; phones use 88 so a slot is a 44px target
 
@@ -10855,14 +11789,20 @@ function calRange(view, anchor) {
   const from = calWeekStart(anchor);
   return { from, to: calAddDays(from, 7) };
 }
-// Weekday columns, Saturday first. Friday joins only when something is booked on it.
-function calWeekdays(interviews) {
-  return interviews.some((iv) => calStart(iv)?.getDay() === CAL_FRIDAY) ? [...CAL_WORK_DAYS, CAL_FRIDAY] : CAL_WORK_DAYS;
+// Weekday columns, Saturday first: the working days from Scheduling Setup; a
+// non-working day (Friday by default) joins only when something is booked on it.
+function calWeekdays(interviews, ww) {
+  const work = calWeekOf(ww).days;
+  const booked = new Set(interviews.map((iv) => calStart(iv)?.getDay()).filter((d) => d != null));
+  return CAL_WEEK_ORDER.filter((d) => work.includes(d) || booked.has(d));
 }
 function calWeekDates(weekStart, weekdays) { return weekdays.map((w) => calAddDays(weekStart, (w - CAL_WORK_DAYS[0] + 7) % 7)); }
-// Hours the grid shows: 09–17, widened to fit anything booked outside them.
-function calHourSpan(interviews) {
-  let [start, end] = CAL_HOURS;
+// Hours the grid shows: the working hours from Scheduling Setup (09–17 by
+// default), widened to fit anything booked outside them.
+function calHourSpan(interviews, ww) {
+  const w = calWeekOf(ww), ws = calHHMM(w.start), we = calHHMM(w.end);
+  let start = ww ? ws.h : CAL_HOURS[0];
+  let end = ww ? we.h + (we.m ? 1 : 0) : CAL_HOURS[1];
   for (const iv of interviews) {
     const s = calStart(iv); if (!s) continue;
     const e = calEnd(iv);
@@ -10893,20 +11833,22 @@ function calLayoutDay(interviews, hourStart, hourPx = CAL_HOUR_PX) {
 }
 // The server refuses a start in the past, so the calendar never offers one.
 function calSlotOpen(start, now) { return start.getTime() > now.getTime(); }
-// Clicking a day (month view) books its first open half hour: 09:00, or the
-// next half hour if the day has already started. Null when the day is over.
-function calFirstOpenSlot(day, now) {
-  const at = new Date(day); at.setHours(CAL_HOURS[0], 0, 0, 0);
+// Clicking a day (month view) books its first open half hour: the start of the
+// working day, or the next half hour if the day has already started. Null when the day is over.
+function calFirstOpenSlot(day, now, ww) {
+  const ws = calHHMM(calWeekOf(ww).start);
+  const at = new Date(day); at.setHours(ws.h, ws.m, 0, 0);
   if (at > now) return at;
   const next = new Date(now); next.setSeconds(0, 0);
   next.setMinutes(Math.ceil((next.getMinutes() + 1) / CAL_SLOT_MIN) * CAL_SLOT_MIN);
   return calSameDay(next, day) ? next : null;
 }
-function calStep(view, anchor, dir) {
+function calStep(view, anchor, dir, ww) {
   if (view === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1);
   if (view !== 'day') return calAddDays(anchor, dir * 7);
-  const next = calAddDays(anchor, dir);
-  return next.getDay() === CAL_FRIDAY ? calAddDays(next, dir) : next; // day-by-day skips the weekend
+  let next = calAddDays(anchor, dir);
+  for (let i = 0; i < 6 && !calIsWorkDay(next, ww); i++) next = calAddDays(next, dir); // day-by-day skips non-working days
+  return next;
 }
 function calTitle(view, anchor) {
   if (view === 'month') return anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -10921,7 +11863,7 @@ function CalEvent({ iv, style, onOpen }) {
   const status = IV_STATUS[iv.status];
   return (
     <button type="button" className={'cal-ev cal-s-' + iv.status} style={style} onClick={() => onOpen(iv.id)}
-      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}`}>
+      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}${ivResponseLabel(iv) ? ' · ' + ivResponseLabel(iv) : ''}`}>
       <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {ivType(iv.interviewType)}</span>
       <span className="cal-ev-who">{iv.candidate?.fullName || '—'}</span>
       {iv.status !== 'scheduled' && <span className="cal-ev-status">{status ? status.label : iv.status}</span>}
@@ -10929,9 +11871,9 @@ function CalEvent({ iv, style, onOpen }) {
   );
 }
 
-function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpen, onCreateAt }) {
-  const days = view === 'day' ? [calDay(anchor)] : calWeekDates(calRange('week', anchor).from, calWeekdays(interviews));
-  const [h0, h1] = calHourSpan(interviews);
+function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, ww, onOpen, onCreateAt }) {
+  const days = view === 'day' ? [calDay(anchor)] : calWeekDates(calRange('week', anchor).from, calWeekdays(interviews, ww));
+  const [h0, h1] = calHourSpan(interviews, ww);
   const slots = [];
   for (let m = h0 * 60; m < h1 * 60; m += CAL_SLOT_MIN) slots.push(m);
   const hours = [];
@@ -10942,7 +11884,7 @@ function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpe
       <div className="cal-head">
         <div className="cal-corner" />
         {days.map((d) => (
-          <div key={+d} className={'cal-dayhead' + (calSameDay(d, now) ? ' today' : '') + (d.getDay() === CAL_FRIDAY ? ' offday' : '')}>
+          <div key={+d} className={'cal-dayhead' + (calSameDay(d, now) ? ' today' : '') + (calIsWorkDay(d, ww) ? '' : ' offday')}>
             <span className="cal-dow">{d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
             <span className="cal-dom">{d.getDate()}</span>
           </div>
@@ -10955,7 +11897,7 @@ function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpe
         {days.map((d) => {
           const mine = interviews.filter((iv) => { const s = calStart(iv); return s && calSameDay(s, d); });
           return (
-            <div key={+d} className={'cal-col' + (d.getDay() === CAL_FRIDAY ? ' offday' : '')}>
+            <div key={+d} className={'cal-col' + (calIsWorkDay(d, ww) ? '' : ' offday')}>
               {slots.map((m) => {
                 const at = new Date(d); at.setHours(0, m, 0, 0);
                 return canSchedule && calSlotOpen(at, now)
@@ -10977,9 +11919,9 @@ function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpe
   );
 }
 
-function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, onPickDay }) {
+function CalMonth({ anchor, interviews, now, canSchedule, ww, onOpen, onCreateAt, onPickDay }) {
   const { from, to } = calRange('month', anchor);
-  const weekdays = calWeekdays(interviews);
+  const weekdays = calWeekdays(interviews, ww);
   const weeks = [];
   for (let w = from; w < to; w = calAddDays(w, 7)) weeks.push(calWeekDates(w, weekdays));
   return (
@@ -10992,14 +11934,14 @@ function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, on
           {week.map((d) => {
             const items = interviews.filter((iv) => { const s = calStart(iv); return s && calSameDay(s, d); })
               .sort((a, b) => calStart(a) - calStart(b));
-            const slot = canSchedule ? calFirstOpenSlot(d, now) : null;
+            const slot = canSchedule ? calFirstOpenSlot(d, now, ww) : null;
             return (
               <div key={+d} className={'cal-mcell' + (d.getMonth() === anchor.getMonth() ? '' : ' out') + (calSameDay(d, now) ? ' today' : '')}>
                 {slot && <button type="button" className="cal-mfill" aria-label={'Schedule an interview on ' + calSlotLabel(slot)} onClick={() => onCreateAt(slot)} />}
                 <button type="button" className="cal-mdate" aria-label={'Open ' + d.toDateString() + ' in day view'} onClick={() => onPickDay(d)}>{d.getDate()}</button>
                 {items.slice(0, 3).map((iv) => (
                   <button key={iv.id} type="button" className={'cal-mev cal-s-' + iv.status} onClick={() => onOpen(iv.id)}
-                    title={`${iv.candidate?.fullName || 'Candidate'} · ${fmtWhen(iv.scheduledAt)}`}>
+                    title={`${iv.candidate?.fullName || 'Candidate'} · ${fmtWhen(iv.scheduledAt)}${ivResponseLabel(iv) ? ' · ' + ivResponseLabel(iv) : ''}`}>
                     <span className="cal-ev-time">{timeOf(iv.scheduledAt)}</span> {iv.candidate?.fullName || '—'}
                   </button>
                 ))}
@@ -11014,10 +11956,10 @@ function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, on
 }
 
 // Phones get one day at a time; this strip jumps across the working week.
-function CalDayStrip({ anchor, now, onPick }) {
+function CalDayStrip({ anchor, now, ww, onPick }) {
   return (
     <div className="cal-strip" role="tablist" aria-label="Day of the week">
-      {calWeekDates(calWeekStart(anchor), CAL_WORK_DAYS).map((d) => (
+      {calWeekDates(calWeekStart(anchor), calWeekdays([], ww)).map((d) => (
         <button key={+d} type="button" role="tab" aria-selected={calSameDay(d, anchor)} onClick={() => onPick(d)}
           className={'cal-strip-day' + (calSameDay(d, anchor) ? ' active' : '') + (calSameDay(d, now) ? ' today' : '')}>
           <span>{d.toLocaleDateString(undefined, { weekday: 'short' })}</span><strong>{d.getDate()}</strong>
@@ -11027,23 +11969,23 @@ function CalDayStrip({ anchor, now, onPick }) {
   );
 }
 
-function InterviewCalendar({ view, anchor, setAnchor, setView, interviews, now, canSchedule, isPhone, onOpen, onCreateAt }) {
+function InterviewCalendar({ view, anchor, setAnchor, setView, interviews, now, canSchedule, isPhone, ww, onOpen, onCreateAt }) {
   const pickDay = (d) => { setAnchor(d); setView('day'); };
   return (
     <>
       <div className="cal-toolbar">
         <div className="cal-nav">
-          <button type="button" className="btn btn-ghost btn-sm" aria-label="Previous" onClick={() => setAnchor(calStep(view, anchor, -1))}><Icon name="chevronLeft" size={16} /></button>
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Previous" onClick={() => setAnchor(calStep(view, anchor, -1, ww))}><Icon name="chevronLeft" size={16} /></button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAnchor(new Date())}>Today</button>
-          <button type="button" className="btn btn-ghost btn-sm" aria-label="Next" onClick={() => setAnchor(calStep(view, anchor, 1))}><Icon name="chevronRight" size={16} /></button>
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Next" onClick={() => setAnchor(calStep(view, anchor, 1, ww))}><Icon name="chevronRight" size={16} /></button>
         </div>
         <h2 className="cal-title">{calTitle(view, anchor)}</h2>
       </div>
-      {isPhone && view === 'day' && <CalDayStrip anchor={anchor} now={now} onPick={setAnchor} />}
+      {isPhone && view === 'day' && <CalDayStrip anchor={anchor} now={now} ww={ww} onPick={setAnchor} />}
       {view === 'month'
-        ? <CalMonth anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule} onOpen={onOpen} onCreateAt={onCreateAt} onPickDay={pickDay} />
+        ? <CalMonth anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule} ww={ww} onOpen={onOpen} onCreateAt={onCreateAt} onPickDay={pickDay} />
         : <CalTimeGrid view={view} anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule}
-            hourPx={isPhone ? 88 : CAL_HOUR_PX} onOpen={onOpen} onCreateAt={onCreateAt} />}
+            hourPx={isPhone ? 88 : CAL_HOUR_PX} ww={ww} onOpen={onOpen} onCreateAt={onCreateAt} />}
     </>
   );
 }
@@ -11054,7 +11996,7 @@ function InterviewsPage({ user, initialFilters }) {
   // `thisWeek` is client-side only — there is no date-range param on
   // GET /interviews, so it filters the loaded rows below, the same way
   // RequestsPage's `openOnly`/`attention` do for the same reason.
-  const [filter, setFilter] = useState({ status: '', q: '', thisWeek: false });
+  const [filter, setFilter] = useState({ status: '', q: '', thisWeek: false, needsReminder: false });
   // `openId` jumps straight to one interview (a dashboard action item always
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
@@ -11062,6 +12004,7 @@ function InterviewsPage({ user, initialFilters }) {
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createAt, setCreateAt] = useState(null); // the calendar slot that opened the form
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const loadSeq = useRef(0);
   // The calendar is the first screen; a dashboard link that carries list
   // filters still lands on the list it was built for. Phones get one day.
@@ -11088,7 +12031,7 @@ function InterviewsPage({ user, initialFilters }) {
     const seq = ++loadSeq.current;
     setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
-    Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
+    Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && k !== 'needsReminder' && v) params.set(k, v); });
     if (rangeKey) { const [from, to] = rangeKey.split('|'); params.set('from', from); params.set('to', to); }
     try {
       const r = await api.get('/interviews?' + params.toString());
@@ -11107,8 +12050,10 @@ function InterviewsPage({ user, initialFilters }) {
 
   const isCalendar = view !== 'list';
   const shown = (data ? data.interviews : []).filter((iv) => {
-    if (isCalendar || !filter.thisWeek) return true;
-    if (iv.status !== 'scheduled') return false;
+    if (isCalendar) return true;
+    if (filter.needsReminder && !ivNeedsReminder(iv)) return false;
+    if (!filter.thisWeek) return true;
+    if (!ivUpcoming(iv)) return false; // a rescheduled interview is still ahead
     const days = daysUntil(iv.scheduledAt);
     return days != null && days >= 0 && days <= 7;
   });
@@ -11121,14 +12066,16 @@ function InterviewsPage({ user, initialFilters }) {
           {data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>}
           <ViewToggle value={view} onChange={setView}
             options={isPhone ? [['day', 'Day'], ['list', 'List']] : [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['list', 'List']]} />
+          {(can(user, 'interview.schedule') || can(user, 'interview.edit') || can(user, 'notification.manage')) && <button className="btn btn-secondary" onClick={() => setTemplatesOpen(true)}>Scheduling Setup</button>}
           {can(user, 'interview.schedule') && <button className="btn" onClick={() => setCreating(true)}>Schedule interview</button>}
         </>} />
       {(creating || createAt) && (
         <ScheduleInterviewModal user={user} initialAt={createAt}
           onClose={() => { setCreating(false); setCreateAt(null); }}
-          onScheduled={() => { setCreating(false); setCreateAt(null); load(); }} />
+          onScheduled={(openId) => { setCreating(false); setCreateAt(null); load(); if (openId) setSelected(openId); }} />
       )}
-      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0)}
+      {templatesOpen && <InterviewTemplatesModal onClose={() => { setTemplatesOpen(false); load(); }} />}
+      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0) + (!isCalendar && filter.needsReminder ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
         count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" suffix={isCalendar ? 'in view' : null} />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
@@ -11137,6 +12084,12 @@ function InterviewsPage({ user, initialFilters }) {
           <label className="switch" title="Scheduled interviews in the next 7 days">
             <input type="checkbox" checked={filter.thisWeek} onChange={(e) => setFilter((f) => ({ ...f, thisWeek: e.target.checked }))} />
             This week
+          </label>
+        )}
+        {!isCalendar && (
+          <label className="switch" title="Interviews in the next 24 hours that are not confirmed, or not yet reminded">
+            <input type="checkbox" checked={filter.needsReminder} onChange={(e) => setFilter((f) => ({ ...f, needsReminder: e.target.checked }))} />
+            Needs a reminder{data ? ` (${data.interviews.filter((x) => ivNeedsReminder(x)).length})` : ''}
           </label>
         )}
       </FilterToolbar>
@@ -11148,7 +12101,7 @@ function InterviewsPage({ user, initialFilters }) {
         // An empty week still draws the grid: the empty slots are how you book.
         <div className={'card flush cal-card' + (busy ? ' table-busy' : '')} aria-busy={busy}>
           <InterviewCalendar view={view} anchor={anchor} setAnchor={setAnchor} setView={setView} interviews={shown} now={now}
-            canSchedule={canSchedule} isPhone={isPhone} onOpen={setSelected} onCreateAt={setCreateAt} />
+            canSchedule={canSchedule} isPhone={isPhone} ww={data.workingWeek} onOpen={setSelected} onCreateAt={setCreateAt} />
         </div>
       ) : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
@@ -11175,7 +12128,7 @@ function InterviewsPage({ user, initialFilters }) {
                 <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
                 <td data-label="Type / Mode"><span className="cell-strong">{ivType(iv.interviewType)}</span><div className="cell-sub">{ivMode(iv.mode)}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
-                <td data-label="Status"><IvStatusBadge status={iv.status} /></td>
+                <td data-label="Status"><IvStatusBadge status={iv.status} />{ivUpcoming(iv) && <> <IvResponseBadge iv={iv} /></>}</td>
                 <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
                 <td data-priority="secondary" data-label="Application" title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
               </tr>
@@ -11249,6 +12202,44 @@ function LinkInterviewModal({ iv, user, onClose, onLinked }) {
   );
 }
 
+// After an interview is Completed (audit A10): what happens next, in one place.
+// The interview never moves the application by itself (owner rule); moving it
+// is an explicit click here, through the same /applications/:id/move route and
+// checks as the pipeline board. Reject / hold need a reason and stay on the board.
+function NextStepBox({ iv, user, onAssess, onLink, onMoved }) {
+  const toast = useToast();
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const app = iv.application;
+  const given = (iv.feedback || []).length; const panelN = (iv.panel || []).length;
+  const targets = app ? Object.keys(APP_STATUS).filter((t) => t !== app.status && !REASON_STATUSES.includes(t) && canPipelineMove(app.status, t)) : [];
+  async function move() {
+    if (!to || busy) return;
+    setBusy(true);
+    try { await api.post(`/applications/${app.id}/move`, { status: toApiStatus(to) }); toast(`Application moved to ${(APP_STATUS[to] || {}).label || to}`); setTo(''); onMoved(); }
+    catch (e) { toast(moveErrorText(e), 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <section className="card card-pad iv-next-step" aria-label="Next step" style={{ marginBottom: 16 }}>
+      <div className="section-title" style={{ marginTop: 0 }}>Next step</div>
+      <p className="muted">Feedback: <strong>{given} of {panelN}</strong> panel member{panelN === 1 ? '' : 's'}{given < panelN ? ' — waiting for the rest' : ' — complete'}.{' '}
+        {app ? <>Application: <AppStatusBadge status={app.status} /></> : 'This interview is not linked to an application yet.'}</p>
+      <div className="btn-row">
+        {app ? <button className="btn btn-secondary" onClick={onAssess}>Open assessment</button>
+          : <button className="btn btn-secondary" onClick={onLink}>Link to application</button>}
+        {app && can(user, 'candidate.move_stage') && targets.length > 0 && <>
+          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Move the application to">
+            <option value="">Move the application to…</option>
+            {targets.map((t) => <option key={t} value={t}>{APP_STATUS[t].label}</option>)}
+          </select>
+          <button className="btn" disabled={!to || busy} onClick={move}>{busy ? 'Moving…' : 'Move'}</button>
+        </>}
+      </div>
+      {app && <p className="field-hint">Nothing moves on its own. To reject or put the candidate on hold, use the pipeline — it asks for the reason.</p>}
+    </section>
+  );
+}
+
 function InterviewDetail({ id, user, onBack }) {
   const toast = useToast();
   const [iv, setIv] = useState(null);
@@ -11258,19 +12249,42 @@ function InterviewDetail({ id, user, onBack }) {
   const [assessOpen, setAssessOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [reopenAsk, setReopenAsk] = useState(false);
+  const [resched, setResched] = useState(false);
+  const [answerBusy, setAnswerBusy] = useState(false);
+  const [comm, setComm] = useState(null); // 'invite' | 'update' | 'cancel'
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!iv) return <Skeleton rows={8} />;
 
+  async function setAnswer(response) {
+    if (response === (iv.candidateResponse || 'pending')) return;
+    setAnswerBusy(true);
+    try { await api.post(`/interviews/${id}/response`, { response }); toast('Answer saved: ' + IV_RESPONSE[response].label); await load(); }
+    catch (e) { toast(e.message, 'error'); }
+    finally { setAnswerBusy(false); }
+  }
   async function setStatus(status, reason) {
-    try { await api.post(`/interviews/${id}/status`, { status, reason }); toast(status === 'scheduled' ? 'Interview reopened' : 'Interview ' + status.replace('_', '-')); load(); }
+    try {
+      await api.post(`/interviews/${id}/status`, { status, reason }); toast(status === 'scheduled' ? 'Interview reopened' : 'Interview ' + status.replace('_', '-')); await load();
+      // A cancellation is communicated explicitly: offer it straight away.
+      if (status === 'cancelled' && canManageComms) setComm('cancel');
+    }
     catch (e) { toast(e.message, 'error'); }
   }
+  const canManageComms = can(user, 'interview.edit');
   const canEdit = btns.cancel_interview?.visible || btns.complete_interview?.visible;
   const canFeedback = btns.add_feedback?.visible;
-  const active = !['cancelled', 'completed'].includes(iv.status);
+  // A No-Show is the attendance record (audit A8): reopen it, don't cancel it.
+  const active = !['cancelled', 'completed', 'no_show'].includes(iv.status);
+  // Completed / No-Show / feedback open only once the interview has happened
+  // (audit A4/A5). The server decides when; this only hides early buttons.
+  const opensAt = (k) => (iv.actionsOpenAt && iv.actionsOpenAt[k] ? Date.parse(iv.actionsOpenAt[k]) : Infinity); // missing = not open (server refuses too)
+  const isOpen = (k) => Date.now() >= opensAt(k);
+  const upcoming = ['scheduled', 'rescheduled'].includes(iv.status);
+  const firstOpen = Math.min(opensAt('completed'), opensAt('no_show'), opensAt('feedback'));
+  const showWhenOpens = upcoming && !isOpen('completed') && (canFeedback || btns.complete_interview?.visible);
 
   return (
     <div>
@@ -11278,15 +12292,21 @@ function InterviewDetail({ id, user, onBack }) {
         title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
           {can(user, 'candidate.view') && (iv.application || iv.status !== 'cancelled') && <button className="btn" onClick={() => (iv.application ? setAssessOpen(true) : setLinkOpen(true))}>Open assessment</button>}
-          {canFeedback && iv.status !== 'cancelled' && <button className="btn btn-secondary" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
-          {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
-          {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
+          {canFeedback && (iv.status === 'completed' || (upcoming && isOpen('feedback'))) && <button className="btn btn-secondary" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
+          {btns.complete_interview?.visible && upcoming && isOpen('completed') && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
+          {btns.complete_interview?.visible && upcoming && isOpen('no_show') && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
           {btns.complete_interview?.visible && ['completed', 'no_show'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setReopenAsk(true)}>Reopen interview</button>}
+          {canManageComms && upcoming && Date.parse(iv.scheduledAt) > Date.now() && <button className="btn btn-secondary" onClick={() => setComm('reminder')}>Send reminder</button>}
+          {can(user, 'interview.edit') && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setResched(true)}>Reschedule / edit</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
         </>} />
 
 
 
+      {iv.status === 'completed' && <NextStepBox iv={iv} user={user} onAssess={() => setAssessOpen(true)} onLink={() => setLinkOpen(true)} onMoved={load} />}
+      {showWhenOpens && <p className="muted" style={{ margin: '0 0 16px' }}>{Number.isFinite(firstOpen)
+        ? <>Feedback opens at the start ({cairoTime(iv.actionsOpenAt.feedback)}), No-Show 15 minutes after it ({cairoTime(iv.actionsOpenAt.no_show)}) and Completed at the scheduled end ({cairoTime(iv.actionsOpenAt.completed)}), Cairo time.</>
+        : <>This interview has no valid time, so it cannot be marked or given feedback. Reschedule it first.</>}</p>}
       <div className="detail-grid">
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Links</div>
@@ -11297,11 +12317,26 @@ function InterviewDetail({ id, user, onBack }) {
           <div className="section-title">Details</div>
           <Info label="Type / Mode">{ivType(iv.interviewType)} · {ivMode(iv.mode)}</Info>
           <Info label="Round">{iv.round}</Info>
+          <Info label="When">{cairoLabel(iv.scheduledAt)}</Info>
+          {upcoming && <Info label="Candidate's answer">{canManageComms
+            ? <div className="seg-tabs resp-picker" role="radiogroup" aria-label="Candidate's answer">
+                {Object.entries(IV_RESPONSE).map(([k, r]) => (
+                  <button key={k} type="button" role="radio" aria-checked={(iv.candidateResponse || 'pending') === k}
+                    className={'seg-tab' + ((iv.candidateResponse || 'pending') === k ? ' active' : '')}
+                    disabled={answerBusy} onClick={() => setAnswer(k)}>{r.label}</button>
+                ))}
+              </div>
+            : <IvResponseBadge iv={iv} />}
+            {iv.candidateResponse === 'declined' && btns.cancel_interview?.visible && <p className="field-hint">The candidate declined. The interview stays booked until you cancel it.</p>}</Info>}
           <Info label="Duration">{iv.durationMin} min</Info>
           <Info label="Location / Link">{/^https?:\/\//i.test(iv.locationOrLink || '')
             ? <a className="btn btn-secondary btn-sm" href={iv.locationOrLink} target="_blank" rel="noopener noreferrer" title={iv.locationOrLink}>Join {iv.mode === 'video' ? 'video call' : 'link'}</a>
             : (iv.locationOrLink || '—')}</Info>
           <Info label="Organizer">{iv.organizer?.name}</Info>
+          {iv.cv && <Info label="CV">{iv.cv.available
+            ? <button type="button" className="btn btn-secondary btn-sm" title={iv.cv.fileName || undefined} onClick={() => openCvReview(iv.cv.candidateId)}>Open CV{iv.cv.fileName ? ` — ${iv.cv.fileName}` : ''}</button>
+            : <span className="muted">No CV attached</span>}</Info>}
+          {iv.overlapReason && <Info label="Panel overlap">{iv.overlapReason}</Info>}
           {iv.cancelReason && <Info label="Cancel Reason">{iv.cancelReason}</Info>}
           <div className="section-title">Panel</div>
           <div>{iv.panel.map((m) => <span key={m.id} className="chip" title={m.name + (m.isLead ? ' (lead)' : '')}>{m.name}{m.isLead ? ' (lead)' : ''}</span>)}</div>
@@ -11318,12 +12353,15 @@ function InterviewDetail({ id, user, onBack }) {
               <div className="muted fine-key">{fmtDate(f.submittedAt)}</div>
             </div>
           ))}
+          <InterviewComms iv={iv} canManage={canManageComms} onOpen={setComm} />
           <div className="section-title">Activity</div>
           {(iv.activity || []).map((a) => <div key={a.id} style={{ fontSize: 12.5, padding: '4px 0' }}><strong style={{ textTransform: 'capitalize' }}>{a.type.replace(/_/g, ' ')}</strong>{a.note ? ' — ' + a.note : ''} <span className="muted">· {a.actor_name} · {fmtDate(a.occurred_at)}</span></div>)}
         </div>
       </div>
 
       {fbOpen && <FeedbackModal interviewId={id} onClose={() => setFbOpen(false)} onSaved={() => { setFbOpen(false); load(); }} />}
+      {resched && <RescheduleModal iv={iv} onClose={() => setResched(false)} onSaved={async (changes) => { setResched(false); await load(); if (changes.length) setComm('update'); }} />}
+      {comm && <CommunicateModal iv={iv} kind={comm} onClose={() => { setComm(null); load(); }} onDone={() => { setComm(null); load(); }} />}
       {assessOpen && <InterviewAssessmentDrawer applicationId={iv.application.id} user={user} title={`${iv.candidate?.fullName || ''} · ${iv.interviewNo}`} onClose={() => setAssessOpen(false)} />}
       {reopenAsk && <Confirm title="Reopen interview" confirmLabel="Reopen"
         message={`Move this interview back to Scheduled? It was marked ${iv.status === 'no_show' ? 'No-Show' : 'Completed'}. Feedback and the assessment are kept; the change is recorded in the audit trail.`}
@@ -11371,44 +12409,164 @@ function SalaryCell({ visible, value, currency }) {
   return <span>{value != null ? `${value} ${currency || ''}` : '—'}</span>;
 }
 
-function CreateOfferModal({ application, user, onClose, onCreated }) {
+// The offer letter beside the form. It is the server's own letter
+// (lib/offer-letter.js) — the same renderer as the issued letter — re-rendered
+// as the recruiter types, with every empty variable drawn as a blank to fill.
+// The frame is sandboxed with no scripts: the letter is a document, not an app.
+function OfferLetterPane({ draft, offerId }) {
+  const [html, setHtml] = useState('');
+  const [err, setErr] = useState(null);
+  const [scale, setScale] = useState(0.6);
+  const wrapRef = useRef(null);
+  const key = JSON.stringify(draft || {});
+  useEffect(() => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      const req = offerId ? api.html(`/offers/${offerId}/preview`, { signal: ctl.signal })
+        : api.html('/offers/letter-draft', { method: 'POST', body: draft, signal: ctl.signal });
+      req.then((h) => { setHtml(h); setErr(null); }).catch((e) => { if (e.name !== 'AbortError') setErr(e.message); });
+    }, offerId ? 0 : 350);
+    return () => { clearTimeout(t); ctl.abort(); };
+  }, [key, offerId]);
+  // The letter is an A4 page (≈ 820px wide with its margin); scale it to the pane.
+  useEffect(() => {
+    const el = wrapRef.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => setScale(Math.min(1, e.contentRect.width / 820)));
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+  if (err) return <div className="offer-letter-pane"><p className="muted">{err}</p></div>;
+  return (
+    <div className="offer-letter-pane" ref={wrapRef} aria-label="Offer letter preview">
+      <div className="offer-letter-scale" style={{ height: Math.round(2290 * scale) }}>
+        <iframe title="Offer letter" sandbox="allow-same-origin allow-modals" srcDoc={html}
+          style={{ width: 820, height: 2290, transform: `scale(${scale})`, transformOrigin: '0 0' }} />
+      </div>
+    </div>
+  );
+}
+
+// One form for creating and editing an offer, with the letter beside it.
+// `offer` (edit) pre-fills it; an edit sends only what changed.
+const OFFER_BLANK = { titlePrefix: '', salutationName: '', positionTitle: '', currency: 'EGP', salaryComponents: {}, joiningDate: '', expiryDate: '', benefits: '', notes: '' };
+function OfferFormModal({ application, offer, user, onClose, onSaved }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ positionTitle: application?.position || '', salaryOffered: '', currency: 'EGP', benefits: '', joiningDate: '', expiryDate: '', notes: '' });
+  const init = offer
+    ? { ...OFFER_BLANK, titlePrefix: offer.titlePrefix || '', salutationName: offer.salutationName || '', positionTitle: offer.positionTitle || '', currency: offer.currency || 'EGP',
+        salaryComponents: offer.salaryComponents || (offer.salaryOffered != null ? { basic: offer.salaryOffered } : {}),
+        joiningDate: offer.joiningDate || '', expiryDate: offer.expiryDate || '', benefits: offer.benefits || '', notes: offer.notes || '' }
+    : { ...OFFER_BLANK, positionTitle: application?.position || '' };
+  const [f, setF] = useState(init);
   const [link, setLink] = useState(EMPTY_LINK);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const setComp = (k, v) => setF((s) => ({ ...s, salaryComponents: { ...s.salaryComponents, [k]: v } }));
   useEffect(() => { api.get('/offers/meta/form').then(setMeta).catch(() => {}); }, []);
+  const comps = Object.fromEntries(Object.entries(f.salaryComponents).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, Number(v)]));
+  const total = Object.values(comps).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  const termsLocked = offer && ['pending_approval', 'approved'].includes(offer.status);
+  // What the letter pane renders: the form as it stands, nothing saved.
+  const draft = {
+    applicationId: application?.id, candidateId: link.candidate?.id,
+    candidateName: link.mode === 'new' ? link.newName : (offer?.candidate?.fullName || undefined),
+    requestId: link.requestId || offer?.requestId || undefined,
+    titlePrefix: f.titlePrefix, salutationName: f.salutationName, positionTitle: f.positionTitle, currency: f.currency,
+    salaryComponents: meta?.canEditSalary ? comps : undefined, expiryDate: f.expiryDate,
+  };
   async function save() {
     setBusy(true);
     try {
-      const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
-      const body = { ...target, ...f };
-      if (body.salaryOffered === '') body.salaryOffered = null;
-      const r = await api.post('/offers', body);
-      toast('Offer created: ' + r.offer.offerNo); onCreated();
+      const body = { titlePrefix: f.titlePrefix || null, salutationName: f.salutationName, positionTitle: f.positionTitle, currency: f.currency,
+        joiningDate: f.joiningDate || undefined, expiryDate: f.expiryDate || undefined, notes: f.notes,
+        ...(meta?.canSeeSalary ? { benefits: f.benefits } : {}),
+        ...(meta?.canEditSalary ? { salaryComponents: Object.keys(comps).length ? comps : null } : {}) };
+      if (offer) {
+        const r = await api.put('/offers/' + offer.id, body);
+        toast(r.offer.status === 'pending_approval' && offer.status === 'approved' ? 'Saved — the changed terms go back to the HR Director for approval' : 'Offer saved');
+        onSaved(r.offer);
+      } else {
+        const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
+        const r = await api.post('/offers', { ...target, ...body });
+        toast('Offer created: ' + r.offer.offerNo); onSaved(r.offer);
+      }
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const createBlocked = !offer && !application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim()));
+  const title = offer ? `Edit offer — ${offer.offerNo}` : application ? `Create offer — ${application.candidate?.fullName || ''}` : 'Create offer';
   return (
-    <Modal title={application ? `Generate Offer — ${application.candidate?.fullName || ''}` : 'Create offer'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || (!application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim())))}>{busy ? 'Creating…' : 'Create Offer'}</button></>}>
-      {application
-        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Offer Preparation</strong>.</p>
-        : <><StandaloneLinkFields user={user} link={link} setLink={setLink} />
-          <p className="muted">A standalone offer is not tied to a pipeline: no application moves and no seat is filled. It still needs HR Director approval before it can be sent.</p></>}
-      <div className="form-grid">
-        <div className="field full"><label>Position Title{application ? '' : ' *'}</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
-        {meta?.canEditSalary && <>
-          <div className="field"><label>Salary Offered</label><input type="number" value={f.salaryOffered} onChange={(e) => set('salaryOffered', e.target.value)} /></div>
-          <div className="field"><label>Currency</label><input value={f.currency} onChange={(e) => set('currency', e.target.value)} /></div>
-        </>}
-        <div className="field"><label>Joining Date</label><input type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></div>
-        <div className="field"><label>Offer expiry</label><input type="date" value={f.expiryDate} onChange={(e) => set('expiryDate', e.target.value)} /></div>
-        <div className="field full"><label>Benefits</label><input value={f.benefits} onChange={(e) => set('benefits', e.target.value)} placeholder="Housing, transport, medical…" /></div>
-        <div className="field full"><label>Notes</label><textarea rows="3" value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal offer-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="offer-compose-body">
+          <div className="offer-compose-form">
+            {offer ? null : application
+              ? <p className="muted">Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Issuing Offer</strong>.</p>
+              : <><StandaloneLinkFields user={user} link={link} setLink={setLink} />
+                <p className="muted">A standalone offer is not tied to a pipeline: no application moves and no seat is filled. It still needs HR Director approval before it can be sent.</p></>}
+            {termsLocked && <div className="notice notice-warn">This offer is {offer.status === 'approved' ? 'approved' : 'waiting for approval'}. Changing the salary, breakdown, currency, position or joining date sends it back to the HR Director. The title, salutation, expiry and notes do not.</div>}
+            <div className="section-title">Addressee</div>
+            <div className="form-grid">
+              <div className="field"><label>Title</label>
+                <select value={f.titlePrefix} onChange={(e) => set('titlePrefix', e.target.value)}>
+                  <option value="">Choose…</option>{(meta?.titlePrefixes || ['Mr.', 'Ms.', 'Mrs.', 'Eng.', 'Dr.']).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select></div>
+              <div className="field"><label>Salutation name</label><input value={f.salutationName} onChange={(e) => set('salutationName', e.target.value)} placeholder="First name (optional)" /></div>
+              <div className="field full"><label>Position{application || offer ? '' : ' *'}</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
+            </div>
+            {meta?.canEditSalary ? <>
+              <div className="section-title">Total monthly salary (net)</div>
+              <div className="form-grid">
+                {(meta.salaryComponents || []).map((c) => (
+                  <div key={c.key} className="field"><label>{c.label}{c.key === 'basic' ? ' *' : ''}</label>
+                    <input type="number" min="0" step="0.01" inputMode="decimal" value={f.salaryComponents[c.key] ?? ''} onChange={(e) => setComp(c.key, e.target.value)} /></div>
+                ))}
+                <div className="field"><label>Currency</label><input value={f.currency} onChange={(e) => set('currency', e.target.value)} /></div>
+                <div className="field"><label>Total</label><div className="offer-total">{f.currency} {total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
+              </div>
+            </> : meta && <p className="muted">Salary is hidden — your role cannot set offer salary.</p>}
+            <div className="section-title">Dates</div>
+            <div className="form-grid">
+              <div className="field"><label>Joining date</label><input type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></div>
+              <div className="field"><label>Offer expiry</label><input type="date" value={f.expiryDate} onChange={(e) => set('expiryDate', e.target.value)} />
+                <span className="field-hint">The letter says it is valid until this date. Left empty, it is valid for {meta?.defaultValidityDays || 5} days from the date it is sent.</span></div>
+            </div>
+            <div className="section-title">Internal</div>
+            <div className="form-grid">
+              {meta?.canSeeSalary && <div className="field full"><label>Benefits note</label><input value={f.benefits} onChange={(e) => set('benefits', e.target.value)} placeholder="Not printed on the letter" /></div>}
+              <div className="field full"><label>Notes</label><textarea rows="3" value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Not printed on the letter" /></div>
+            </div>
+          </div>
+          {meta?.canSeeSalary
+            ? <OfferLetterPane draft={draft} />
+            : <div className="offer-letter-pane"><p className="muted">The letter preview shows the salary, which your role cannot view.</p></div>}
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={save} disabled={busy || createBlocked}>{busy ? 'Saving…' : offer ? 'Save changes' : 'Create offer'}</button>
+        </div>
       </div>
-      {meta && !meta.canEditSalary && <p className="muted">Salary fields are hidden — your role cannot set offer salary.</p>}
-    </Modal>
+    </div>
+  );
+}
+// Kept as the name other screens import.
+function CreateOfferModal({ application, user, onClose, onCreated }) {
+  return <OfferFormModal application={application} user={user} onClose={onClose} onSaved={() => onCreated()} />;
+}
+
+// The saved offer's letter, exactly as it will be (or was) issued.
+function OfferLetterModal({ offer, onClose }) {
+  const frameHost = useRef(null);
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  function print() { const fr = frameHost.current?.querySelector('iframe'); try { fr?.contentWindow?.print(); } catch { /* the browser's own print still works */ } }
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal offer-letter-modal" role="dialog" aria-modal="true" aria-label={'Offer letter ' + offer.offerNo} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>Offer letter — {offer.offerNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="modal-body" ref={frameHost}><OfferLetterPane offerId={offer.id} /></div>
+        <div className="modal-foot"><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn btn-secondary" onClick={print}>Print / save as PDF</button></div>
+      </div>
+    </div>
   );
 }
 
@@ -11529,6 +12687,8 @@ function OfferDetail({ id, user, onBack }) {
   const [o, setO] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [action, setAction] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [letter, setLetter] = useState(false);
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setO((await api.get('/offers/' + id)).offer); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -11536,9 +12696,15 @@ function OfferDetail({ id, user, onBack }) {
   if (!o) return <Skeleton rows={8} />;
 
   async function act(path, body, okMsg) {
-    try { const r = await api.post(`/offers/${id}/${path}`, body || {}); setO(r.offer); toast(okMsg); }
+    try {
+      const r = await api.post(`/offers/${id}/${path}`, body || {}); setO(r.offer);
+      // Issuing and delivery are separate facts: say what is known, no more.
+      if (r.delivery) toast(r.delivery.state === 'queued' ? `${okMsg}. Email queued to ${r.delivery.to}.` : `${okMsg}. No email was sent: ${r.delivery.message}`, r.delivery.state === 'queued' ? undefined : 'warn');
+      else toast(okMsg);
+    }
     catch (e) { toast(e.message, 'error'); }
   }
+  const editable = can(user, 'offer.edit') && ['draft', 'pending_approval', 'approved'].includes(o.status);
   const s = o.status;
   // One approval layer: the HR Director. The approve/reject controls are shown
   // only to a user who actually holds the director permission the server
@@ -11555,10 +12721,12 @@ function OfferDetail({ id, user, onBack }) {
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Offers</button>}
         title={<> Offer — {o.candidate?.fullName}</>} sub={<> <strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · <span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></>}
         actions={<>
+          {o.salaryVisible && <button className="btn btn-secondary" onClick={() => setLetter(true)}>Preview letter</button>}
+          {editable && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
           {btns.submit_offer?.visible && s === 'draft' && <button className="btn" onClick={() => act('submit', {}, 'Sent to the HR Director for approval')}>Submit for approval</button>}
           {btns.approve_offer?.visible && isDirector && s === 'pending_approval' && <button className="btn" onClick={() => act('approve', {}, 'Offer approved')}>Approve</button>}
           {btns.reject_offer_approval?.visible && isDirector && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => setAction({ title: 'Reject Offer', path: 'reject-approval', body: (r) => ({ reason: r }), msg: 'Offer rejected' })}>Reject</button>}
-          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
+          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer issued')}>Send Offer</button>}
           {btns.accept_offer?.visible && s === 'sent' && <button className="btn" onClick={() => act('result', { result: 'accepted' }, 'Marked accepted')}>Mark Accepted</button>}
           {btns.reject_offer_candidate?.visible && ['sent', 'accepted'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Mark Rejected by Candidate', path: 'result', body: (r) => ({ result: 'rejected_by_candidate', reason: r }), msg: 'Marked rejected by candidate' })}>Rejected by Candidate</button>}
           {btns.withdraw_offer?.visible && !['joined', 'withdrawn', 'rejected_by_candidate'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Withdraw Offer', path: 'result', body: (r) => ({ result: 'withdrawn', reason: r }), msg: 'Offer withdrawn' })}>Withdraw</button>}
@@ -11575,10 +12743,12 @@ function OfferDetail({ id, user, onBack }) {
           <Info label="Application">{o.application ? <>{o.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={o.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <Info label="Position">{o.positionTitle}</Info>
           <Info label="Project">{o.project?.name}</Info>
+          {o.titlePrefix && <Info label="Addressed as">{o.titlePrefix} {o.candidate?.fullName}</Info>}
           {o.salaryVisible
-            ? <Info label="Salary Offered">{o.salaryOffered != null ? `${o.salaryOffered} ${o.currency}` : '—'}</Info>
+            ? <Info label="Total monthly salary (net)">{o.salaryOffered != null ? `${o.currency} ${Number(o.salaryOffered).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</Info>
             : <Info label="Salary Offered"><span className="muted">Restricted</span></Info>}
-          {o.salaryVisible && <Info label="Benefits">{o.benefits || '—'}</Info>}
+          {o.salaryVisible && o.salaryComponents && <Info label="Breakdown">{Object.entries(o.salaryComponents).map(([k, v]) => `${({ basic: 'Basic', accommodation: 'Accommodation', transportation: 'Transportation', others: 'Others', area_allowance: 'Area allowance' })[k] || k} ${Number(v).toLocaleString('en-US')}`).join(' · ')}</Info>}
+          {o.salaryVisible && o.benefits && <Info label="Benefits note">{o.benefits}</Info>}
           <Info label="Joining Date">{fmtDateShort(o.joiningDate)}</Info>
           {o.expiryDate && <Info label="Offer expiry">{fmtDateShort(o.expiryDate)}</Info>}
           <Info label="Prepared By">{o.preparedBy?.name}</Info>
@@ -11595,6 +12765,8 @@ function OfferDetail({ id, user, onBack }) {
 
       {action && <Confirm title={action.title} message="Provide a reason. Recorded in the audit trail." requireReason danger
         onConfirm={(r) => { const a = action; setAction(null); act(a.path, a.body(r), a.msg); }} onClose={() => setAction(null)} />}
+      {editing && <OfferFormModal offer={o} user={user} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
+      {letter && <OfferLetterModal offer={o} onClose={() => setLetter(false)} />}
     </div>
   );
 }

@@ -1087,6 +1087,20 @@ router.post('/:id/resume', requirePermission('candidate.edit'), multipart, async
   dbRun('UPDATE candidate SET resume_path=?, resume_name=?, updated_at=? WHERE id=?',
     [req.uploadedFile.storedName, req.uploadedFile.originalName, new Date().toISOString(), c.id]);
 
+  // ?parse=0 — store the CV as the source of truth and do nothing else. The
+  // interview scheduler attaches a CV this way: a manual booking must never
+  // wait on, or depend on, AI parsing (audit 2026-10-06, decision 3). The
+  // candidate's profile can still be re-parsed later (POST /:id/reparse).
+  if (req.query.parse === '0' || req.query.parse === 'false') {
+    try {
+      CandidateDocuments.add({ candidateId: c.id, docType: 'cv', fileName: req.uploadedFile.originalName,
+        fileHash: fileHash(uploadPath(req.uploadedFile.storedName)), uploadedBy: req.user.id });
+    } catch { /* the document row is a convenience; the file is already stored */ }
+    CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName, type: 'resume_uploaded', note: req.uploadedFile.originalName });
+    writeAudit(req, { action: 'candidate.resume_uploaded', entityType: 'candidate', entityId: c.id, newValue: { fileName: req.uploadedFile.originalName, parsed: false } });
+    return res.status(201).json({ candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }), parsed: false });
+  }
+
   // Parse the newly attached CV (D-01). A parser failure must never fail the
   // upload — the file is already stored and is the source of truth.
   let report = null;

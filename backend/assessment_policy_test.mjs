@@ -112,7 +112,8 @@ try {
   // ── HR: serialization ──
   const hb = (await get(hrMgr)).json.assessment;
   c('HR manager receives salary fields', hb.context.expectedSalary === 61234 && 'currentSalary' in hb.context);
-  c('HR manager: behavioral editable, technical view-only, final editable', hb.permissions['assessment.behavioral'].canEdit && hb.permissions['assessment.technical'].canView && !hb.permissions['assessment.technical'].canEdit && hb.permissions['assessment.finalRecommendation'].canEdit);
+  // Owner decision 2026-10-05: the recruitment team edits both sections (was: technical view-only).
+  c('HR manager: behavioral, technical and final all editable', hb.permissions['assessment.behavioral'].canEdit && hb.permissions['assessment.technical'].canEdit && hb.permissions['assessment.finalRecommendation.technicalJustification'].canEdit && hb.permissions['assessment.finalRecommendation'].canEdit);
 
   // ── Writes ──
   console.log('\n— Field-level write authorization —');
@@ -126,7 +127,9 @@ try {
   const techDraft = await post(interviewer, { evaluatorType: 'technical', technical: rows(TECH, [4, 4, 3, 'na', 4]), criticalFlags: { no_evidence: true }, recommendation: 'proceed', technicalJustification: 'Strong site planning' });
   c('technical section editable by the technical interviewer (201)', techDraft.status === 201);
   c('…saved as Mona Sami', raw(appA, 'technical').evaluator_name === 'Mona Sami');
-  c('HR manager cannot change technical scores by default (403)', (await post(hrMgr, { evaluatorType: 'technical', technical: { technical_knowledge: { score: 1 } } })).status === 403);
+  // The write itself is covered by assessment_team_edit_test.mjs; here the
+  // technical record must stay as the interviewer saved it for the checks below.
+  c('HR manager may now change technical scores (policy grants edit)', hb.permissions['assessment.technical.technicalKnowledge'].canEdit === true);
   const hrSave = await post(hrMgr, { evaluatorType: 'hr', submitted: true, behavioral: rows(HRK, [5, 4, 'na', 4, 5]), criticalFlags: { blaming: false, no_evidence: false, cv_inconsistency: false }, recommendation: 'proceed_conditions', behavioralJustification: 'Calm under pressure' });
   c('HR manager submits the behavioral section (201)', hrSave.status === 201);
   const t2 = raw(appA, 'technical');

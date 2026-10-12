@@ -680,6 +680,8 @@ export function ensureSchema() {
   addColumnIfMissing('candidate', 'parse_status', "TEXT");
   addColumnIfMissing('candidate', 'parse_confidence', 'REAL');
   addColumnIfMissing('candidate', 'parsed_at', 'TEXT');
+  // What the candidate answered to their interview invitation (HR records it).
+  addColumnIfMissing('interview', 'candidate_response', "TEXT NOT NULL DEFAULT 'pending'");
 
   // Broad professional grouping, for SEARCH ONLY. Never a hiring-request match
   // and never grounds for rejection: an accountant is a real hire for a
@@ -1038,6 +1040,52 @@ export function ensureSchema() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_msoauth_expires ON microsoft_oauth_state(expires_at);
+
+  -- Interview communications (audit 2026-10-06). A message edited for ONE
+  -- interview: kind = invite | update | cancel, audience = candidate | panel |
+  -- whatsapp | panel_removed. Absent rows fall back to the global templates.
+  CREATE TABLE IF NOT EXISTS interview_message (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interview(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    subject TEXT,
+    body TEXT NOT NULL,
+    updated_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (interview_id, kind, audience)
+  );
+  -- One row per recipient per channel per send action. batch_key is the
+  -- client's one-time key for that action: a double click or retry of the same
+  -- action finds its rows instead of sending again. status: queued | accepted
+  -- (provider accepted) | dry_run (test transport, not delivered) | not_sent
+  -- (with reason) | failed (with reason) | manual_handoff (WhatsApp opened by a
+  -- person — never counted as sent). "delivered" is never claimed: no
+  -- provider here confirms delivery.
+  CREATE TABLE IF NOT EXISTS interview_dispatch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interview(id) ON DELETE CASCADE,
+    batch_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 0,
+    audience TEXT NOT NULL,
+    recipient_key TEXT NOT NULL,
+    recipient_user_id INTEGER REFERENCES users(id),
+    recipient_name TEXT,
+    recipient_address TEXT,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT,
+    attach_cv INTEGER NOT NULL DEFAULT 0,
+    subject TEXT,
+    provider TEXT,
+    retry_of INTEGER,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (batch_key, recipient_key, channel)
+  );
+  CREATE INDEX IF NOT EXISTS idx_ivdispatch_interview ON interview_dispatch(interview_id, created_at);
   `);
 
   // AFTER the DDL above, not before it. These same three calls used to sit in
@@ -1055,12 +1103,41 @@ export function ensureSchema() {
   addColumnIfMissing('mailbox_ingestion', 'subject', 'TEXT');
   addColumnIfMissing('mailbox_ingestion', 'sender', 'TEXT');
   addColumnIfMissing('mailbox_ingestion', 'category', 'TEXT');
+  // How many times a WAITING attachment was read (automatic parsing stops at a cap). Additive.
+  addColumnIfMissing('mailbox_ingestion', 'parse_attempts', 'INTEGER DEFAULT 0');
   addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
   addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
 
   // Offer expiry: the date after which an unanswered offer lapses. Display and
   // entry only; nothing expires an offer automatically.
   addColumnIfMissing('offer', 'expiry_date', 'TEXT');
+  // Offer letter fields (lib/offer-letter.js): the addressee's title (Mr./Eng.),
+  // an optional salutation first name, and the salary breakdown the signed
+  // letters show (JSON { basic, accommodation, transportation, others,
+  // area_allowance }). salary_offered stays the total.
+  addColumnIfMissing('offer', 'title_prefix', 'TEXT');
+  addColumnIfMissing('offer', 'salutation_name', 'TEXT');
+  addColumnIfMissing('offer', 'salary_components', 'TEXT');
+  // Interview booking and communications (audit 2026-10-06,
+  // INTERVIEW_IMPLEMENTATION_BRIEF.md). All additive and nullable.
+  //   idempotency_key — a client's one-time submission key: a retried or
+  //                     double-clicked "Save" returns the same interview
+  //   overlap_reason  — why a shared panelist was knowingly double-booked
+  //   calendar_seq    — the calendar entry's revision (ICS SEQUENCE); rises on
+  //                     every material change and on cancellation, UID stays
+  //   notice_state    — JSON: the change or cancellation not yet communicated
+  addColumnIfMissing('interview', 'idempotency_key', 'TEXT');
+  addColumnIfMissing('interview', 'overlap_reason', 'TEXT');
+  addColumnIfMissing('interview', 'calendar_seq', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('interview', 'notice_state', 'TEXT');
+  try { exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_interview_idempotency ON interview(idempotency_key)'); } catch (e) { console.error('  ! interview idempotency index:', e.message); }
+  // A row that booking transactions lock first, so two concurrent bookings
+  // cannot both pass the conflict check (PostgreSQL row lock; SQLite has one writer).
+  try {
+    if (!get("SELECT key FROM system_setting WHERE key='interview_booking_lock'")) {
+      run('INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)', ['interview_booking_lock', '0', new Date().toISOString()]);
+    }
+  } catch (e) { console.error('  ! interview booking lock row:', e.message); }
   relaxStandaloneLinks();
 
   migrateWorkflowStages();

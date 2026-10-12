@@ -26,7 +26,7 @@ import { ingestIntake } from '../cv-intake/auto-ingest.js';
 import { writeAudit } from '../audit.js';
 import fs from 'node:fs';
 import { get, all, run as dbRun } from '../db.js';
-import { CV_EXTENSIONS, configuredMailbox, overlapMinutes, syncBatchSize } from './config.js';
+import { CV_EXTENSIONS, configuredMailbox, overlapMinutes, syncBatchSize, autoParseConfig } from './config.js';
 import { acquireGraphToken, classify, CODES, MicrosoftAuthError } from './msal-client.js';
 import { listInboxMessages, listAttachments, downloadAttachment } from './graph.js';
 import {
@@ -265,6 +265,22 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
     // this on `discoverOnly` meant "Scan inbox now" never saved its progress
     // and re-read the same first batch forever.
     if (!sinceOverride) markSyncSuccess(summary, watermark, scanGeneration);
+    // Opt-in (MS_AUTO_PARSE_NEW + MS_AUTO_PARSE_SINCE): read NEW waiting CVs
+    // now, under the lease this scan already holds, through the same path a
+    // recruiter's selection uses. Never on an explicit history sweep, never
+    // older than the configured date, and never fatal to the scan itself.
+    const auto = autoParseConfig();
+    if (!sinceOverride && auto.enabled) {
+      try {
+        summary.autoParse = await parseWaiting({
+          limit: auto.max, receivedSince: auto.since, maxAttempts: auto.maxAttempts,
+          via: 'auto', leaseHeld: true, actor, req, parse,
+        });
+      } catch (e) {
+        summary.autoParse = { error: classify(e).message };
+        warn({ msg: 'microsoft.auto_parse.failed', error: summary.autoParse.error });
+      }
+    }
     log({ msg: 'microsoft.sync.complete', ...summary, imported: summary.imported });
     // ALWAYS audited. This used to be gated on `req || actor`, which meant the
     // 08:00 timer — the authoritative ingestion path, and the only one that
@@ -310,25 +326,46 @@ export async function runMailboxSync({ actor = null, req = null, parse = parseDo
  * createIntake exactly as the arrival path does, against rows that path already
  * claimed — it just does it later, and only when asked.
  */
-export async function parseWaiting({ categories = null, limit = 25, actor = null, req = null, parse = parseDocument } = {}) {
+export async function parseWaiting({
+  categories = null, limit = 25, actor = null, req = null, parse = parseDocument,
+  // Automatic parsing only (see config.autoParseConfig): the received-on-or-after
+  // floor, the per-attachment read cap, and the caller already holding the lease.
+  receivedSince = null, maxAttempts = null, via = 'selection', leaseHeld = false,
+} = {}) {
   const n = Math.max(1, Math.min(Number(limit) || 25, 200));
   const groups = Array.isArray(categories) && categories.length ? categories : null;
   // The cap is the safety rail: a recruiter ticking five groups worth four
   // thousand CVs gets the first `limit`, not a four-thousand-CV model bill.
-  const rows = groups
-    ? all(`SELECT * FROM mailbox_ingestion WHERE status='WAITING'
-             AND COALESCE(NULLIF(category,''),'Unclassified') IN (${groups.map(() => '?').join(',')})
-           ORDER BY received_at DESC LIMIT ${n}`, groups)
-    : all(`SELECT * FROM mailbox_ingestion WHERE status='WAITING' ORDER BY received_at DESC LIMIT ${n}`);
+  const where = ["status='WAITING'"]; const args = [];
+  if (groups) { where.push(`COALESCE(NULLIF(category,''),'Unclassified') IN (${groups.map(() => '?').join(',')})`); args.push(...groups); }
+  if (receivedSince) { where.push('received_at >= ?'); args.push(receivedSince); }
+  if (maxAttempts) { where.push('COALESCE(parse_attempts,0) < ?'); args.push(Number(maxAttempts)); }
+  // A selection reads the newest first (what a recruiter wants to see);
+  // automatic parsing reads oldest-first so nothing new is starved.
+  const rows = all(`SELECT * FROM mailbox_ingestion WHERE ${where.join(' AND ')}
+                    ORDER BY received_at ${receivedSince ? 'ASC' : 'DESC'} LIMIT ${n}`, args);
 
-  const summary = { requested: n, categories: groups, selected: rows.length, parsed: 0, skipped: 0, failed: 0, intakeIds: [] };
+  const summary = { requested: n, categories: groups, selected: rows.length, parsed: 0, skipped: 0, failed: 0, intakeIds: [], via };
   if (!rows.length) return summary;
+
+  // One reader of the waiting backlog at a time, across processes: the 08:00
+  // timer (automatic parsing) and a recruiter's selection share the scan lease,
+  // so the same attachment is never downloaded and paid for twice.
+  const owner = leaseHeld ? null : `parse-${process.pid}@${startedAtLabel()}`;
+  if (owner) {
+    const lease = acquireSyncLease(owner);
+    if (!lease.acquired) {
+      throw Object.assign(new Error(`A mailbox scan or parse is already in progress (held until ${lease.until ?? 'unknown'}). Try again shortly.`), { code: 'already-running' });
+    }
+  }
+  try {
 
   const { accessToken } = await acquireGraphToken();
   const tokenRef = { value: accessToken };
 
   for (const row of rows) {
     try {
+      dbRun('UPDATE mailbox_ingestion SET parse_attempts=COALESCE(parse_attempts,0)+1 WHERE dedup_key=?', [row.dedup_key]);
       const bytes = await downloadAttachment(row.message_id, row.attachment_id, { tokenRef });
       const hash = crypto.createHash('sha256').update(bytes).digest('hex');
 
@@ -393,7 +430,7 @@ export async function parseWaiting({ categories = null, limit = 25, actor = null
         writeAudit(req || { user: actor, ip: null, headers: {} }, {
           action: 'candidate.intake_created', entityType: 'candidate_intake', entityId: intake.id,
           newValue: {
-            origin: 'mailbox.microsoft', via: 'selection', category: row.category || null,
+            origin: 'mailbox.microsoft', via, category: row.category || null,
             // What actually happened to it, so the audit answers "did this CV
             // reach the pool?" without joining to another table.
             outcome: outcome.outcome, candidateId: outcome.candidateId ?? null,
@@ -409,6 +446,9 @@ export async function parseWaiting({ categories = null, limit = 25, actor = null
   }
   console.log(JSON.stringify({ level: 'info', msg: 'microsoft.parse_waiting.complete', ...summary }));
   return summary;
+  } finally {
+    if (owner) { try { releaseSyncLease(owner); } catch { /* the lease expires on its own */ } }
+  }
 }
 
 /** Stable-ish label for the lease owner; the clock is only used for display. */

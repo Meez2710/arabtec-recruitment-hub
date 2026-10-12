@@ -3,7 +3,7 @@
 Plain-language updates on the improvement work. Newest step at the top of
 "Steps". Updated by Claude at every step.
 
-Last updated: 30 Sep 2026
+Last updated: 11 Oct 2026
 
 ---
 
@@ -43,6 +43,7 @@ without a hiring request. Offers still need the HR Director's approval.
 
 | # | Step | Status |
 |---|---|---|
+| 11 | Interviews: WhatsApp, phone call and email messages, templates, reschedule, candidate's answer | Done — waiting for approval (full report: `docs/reports/interview-scheduling-2026-10-11.md`) |
 | 10 | Roles & permissions grouped by area | Done — waiting for approval (PR #45) |
 | 9 | Notification settings as one simple table | Done — waiting for approval (PR #45) |
 | 8 | Neater organization chart | Done — waiting for approval (PR #45) |
@@ -55,9 +56,8 @@ without a hiring request. Offers still need the HR Director's approval.
 
 ### Coming next
 
-All the improvements you approved are now done. Once PR #45 is approved,
-the next step is **step 2: updating the company server** so staff see
-everything.
+Steps 6–10 are approved (PR #45). Step 11 waits for approval; then **step 2:
+updating the company server** so staff see everything.
 
 ---
 

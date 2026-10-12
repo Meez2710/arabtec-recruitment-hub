@@ -1,0 +1,1 @@
+Stalled 17:35 local inside ui_form_controls_test (pure CPU check); host likely slept; killed at background limit. Standalone rerun: 22/0 in 18s.
