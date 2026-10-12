@@ -350,6 +350,25 @@ export async function reviewIntake(intakeId, decisions, actor, opts = {}) {
 
     const candidate = Candidates.create(payload);
 
+    // The uploaded document belongs to the candidate, not only to the intake.
+    // Keep both references in THIS transaction: otherwise auto-ingest creates
+    // a searchable person with hasResume=false and no openable original CV.
+    // Legacy/explicit review and unattended ingestion use the same conversion.
+    if (intake.storedName) {
+      run('UPDATE candidate SET resume_path=?, resume_name=? WHERE id=?',
+        [intake.storedName, intake.fileName || intake.storedName, candidate.id]);
+      const document = CandidateDocuments.add({
+        candidateId: candidate.id,
+        docType: 'cv',
+        fileName: intake.fileName || intake.storedName,
+        fileHash: intake.fileHash,
+        fileSize: null,
+        uploadedBy: actor.id,
+      });
+      run('UPDATE candidate_document SET stored_path=? WHERE id=?',
+        [intake.storedName, document.id]);
+    }
+
     // The proposal is raised against the REAL candidate and then reviewed with
     // the very decisions that produced it, so the record carries the same
     // per-field accept/reject history an existing candidate's proposal does.
