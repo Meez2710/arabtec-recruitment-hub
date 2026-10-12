@@ -2033,3 +2033,6 @@ button.cal-slot:focus-visible { outline: 0; }
   .iv-preview { border-left-width: 0; border-top-width: 1px; border-top-style: solid; }
   .iv-attach { padding-left: var(--sp-5); }
 }
+
+/* Document-only side panel (thread attachments): the file takes the full width. */
+.cvrev-body.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }

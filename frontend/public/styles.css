@@ -330,6 +330,11 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .notif-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .notif-head strong { font-size: 13px; }
 .linklike { background: none; border: none; color: var(--action); font-size: 12px; cursor: pointer; padding: 0; }
+/* A CV filename opens the CV side panel (production fix 12 Oct 2026): it must
+   look and behave like the control it is — pointer, underline, focus ring. */
+.cv-file-link { background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: 600; color: var(--action); cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.cv-file-link:hover { color: var(--action-dark, var(--action)); }
+.cv-file-link:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: 4px; }
 .notif-list { max-height: 360px; overflow-y: auto; }
 .notif-empty { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 13px; }
 .notif-item { padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }

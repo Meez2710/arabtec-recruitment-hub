@@ -1607,6 +1607,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       {/* One CV review panel for the whole app; every entry point reaches it
           through the `ats:open-cv-review` event rather than owning its state. */}
       <CvReviewHost user={user} />
+      <DocumentPanelHost />
 
       <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
     </>
@@ -6045,7 +6046,11 @@ function TicketThread({ req, user }) {
     try { await api.uploadTo('/thread/request/' + req.id + '/file', file, { body: text, parentPostId: parentPostId || '' }); setText(''); load(); }
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  async function viewPostFile(postId) { try { await api.download('/thread/post/' + postId + '/file'); } catch (e) { toast(e.message, 'error'); } }
+  // Opens in the side panel (was a blob URL in a new tab, which is how thread CVs left the ATS).
+  function viewPostFile(postId) {
+    const p = (posts || []).find((x) => x.id === postId);
+    openDocumentPanel('/thread/post/' + postId + '/file', p?.fileName, p?.type === 'cv' && p?.payload?.candidateName ? p.payload.candidateName + ' — CV' : null);
+  }
 
   if (!posts) return <Skeleton rows={5} />;
 
@@ -7200,7 +7205,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
               <div style={{ background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <div>
                   <div className="fine-label" style={{ color: 'var(--green-700)', fontWeight: 700 }}>Resume</div>
-                  <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? (cand.resumeName || 'Attached résumé') : <span className="muted">No résumé attached</span>}</div>
+                  <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? <CvFileLink name={cand.resumeName} onOpen={viewResume} /> : <span className="muted">No résumé attached</span>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>Review CV</button>}
@@ -8249,7 +8254,8 @@ function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
 // not work — fetch the blob, then hand it to the browser.
 async function downloadResume(candidate, toast) {
   try {
-    const res = await fetch(`/api/candidates/${candidate.id}/resume`, {
+    // A specific CV version is fetched by its document id, never by filename.
+    const res = await fetch(candidate.docId ? `/api/candidates/${candidate.id}/documents/${candidate.docId}/file` : `/api/candidates/${candidate.id}/resume`, {
       headers: api.token ? { Authorization: 'Bearer ' + api.token } : {},
     });
     if (!res.ok) {
@@ -8260,7 +8266,7 @@ async function downloadResume(candidate, toast) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = candidate.resumeName || `${candidate.candidateNo || 'candidate'}-cv`;
+    a.download = (candidate.docId ? candidate.docName : candidate.resumeName) || candidate.resumeName || `${candidate.candidateNo || 'candidate'}-cv`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch { toast('Could not download the CV.', 'error'); }
@@ -9663,10 +9669,17 @@ function useCvDocument(path, fileName) {
   return { doc, error, busy };
 }
 
+/** The CV filename as what it is: the way to open the CV in the side panel.
+ *  A real <button> (keyboard, focus ring, pointer); Download stays separate. */
+function CvFileLink({ name, onOpen, fallback = 'Attached résumé' }) {
+  return <button type="button" className="cv-file-link" onClick={onOpen} title="Open the CV in the side panel">{name || fallback}</button>;
+}
+
 /** Open the CV review panel for a candidate from anywhere in the app. */
-function openCvReview(candidateId, seed) {
+function openCvReview(candidateId, seed, doc) {
   if (!candidateId) return;
-  window.dispatchEvent(new CustomEvent('ats:open-cv-review', { detail: { id: Number(candidateId), seed: seed || null } }));
+  // `doc` ({ id, name }) opens that CV version's own bytes instead of the current CV.
+  window.dispatchEvent(new CustomEvent('ats:open-cv-review', { detail: { id: Number(candidateId), seed: seed || null, doc: doc && doc.id ? { id: Number(doc.id), name: doc.name || null } : null } }));
 }
 
 /** The rows shown beside the CV — only fields the CV itself can be checked against. */
@@ -9711,7 +9724,7 @@ function cvReviewDetailSections(c) {
  * revokes a URL that arrives AFTER the panel closed, which is the case a plain
  * cleanup misses entirely.
  */
-function CvReviewPanel({ candidateId, seed, user, onClose }) {
+function CvReviewPanel({ candidateId, seed, doc, user, onClose }) {
   const toast = useToast();
   const titleId = useId();
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
@@ -9733,7 +9746,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
     return () => { alive = false; };
   }, [candidateId]);
 
-  const { doc: cv, error: cvError, busy: cvBusy } = useCvDocument(`/candidates/${candidateId}/resume`, (seed || {}).resumeName);
+  const { doc: cv, error: cvError, busy: cvBusy } = useCvDocument(doc ? `/candidates/${candidateId}/documents/${doc.id}/file` : `/candidates/${candidateId}/resume`, doc ? doc.name : (seed || {}).resumeName);
 
   async function saveNote() {
     const body = note.trim();
@@ -9760,7 +9773,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
         <div className="modal-head cvrev-head">
           <div className="cvrev-head-id">
             <h3 id={titleId}>{name} — CV review</h3>
-            <span className="cvrev-head-sub">{[c.candidateNo, c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
+            <span className="cvrev-head-sub">{[c.candidateNo, doc ? doc.name : c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
           </div>
           <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
@@ -9799,7 +9812,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
                     <Empty art="failed" tone="error" text={cvError} />
                   </div>
                 )
-                : <CvFilePreview fileUrl={cv?.url} fileName={c.resumeName} mimeType={cv?.mimeType} html={cv?.html} />}
+                : <CvFilePreview fileUrl={cv?.url} fileName={doc ? doc.name : c.resumeName} mimeType={cv?.mimeType} html={cv?.html} />}
           </div>
         </div>
 
@@ -9830,7 +9843,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
 
         <div className="modal-foot cvrev-foot">
           <button type="button" className="btn btn-secondary" disabled={!c.hasResume && !cv}
-            onClick={() => downloadResume({ id: candidateId, resumeName: c.resumeName, candidateNo: c.candidateNo }, toast)}>
+            onClick={() => downloadResume({ id: candidateId, resumeName: c.resumeName, candidateNo: c.candidateNo, docId: doc ? doc.id : null, docName: doc ? doc.name : null }, toast)}>
             Download CV
           </button>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
@@ -9841,18 +9854,74 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
 }
 
 /**
+ * A file that is not a candidate's own CV (a CV or attachment posted in a
+ * request thread) opened in the same side panel, never a new tab. `path` is
+ * the existing authenticated API path; Download stays a separate action.
+ */
+function openDocumentPanel(path, fileName, title) {
+  if (!path) return;
+  window.dispatchEvent(new CustomEvent('ats:open-document', { detail: { path, fileName: fileName || null, title: title || null } }));
+}
+function DocumentPanel({ path, fileName, title, onClose }) {
+  const toast = useToast();
+  const titleId = useId();
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const { doc, error, busy } = useCvDocument(path, fileName);
+  async function download() {
+    try { await api.download(path, fileName || 'file'); } catch (e) { toast(e.message || 'Download failed', 'error'); }
+  }
+  return (
+    <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head cvrev-head">
+          <div className="cvrev-head-id">
+            <h3 id={titleId}>{title || fileName || 'Document'}</h3>
+            {title && fileName && <span className="cvrev-head-sub">{fileName}</span>}
+          </div>
+          <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
+        <div className="cvrev-body cvrev-body--doc">
+          <div className="cvrev-cv">
+            {busy
+              ? <div className="cvrev-cv-state"><Skeleton rows={5} /></div>
+              : error
+                ? <div className="cvrev-cv-state"><Empty art="failed" tone="error" text={error} /></div>
+                : <CvFilePreview fileUrl={doc?.url} fileName={fileName} mimeType={doc?.mimeType} html={doc?.html} />}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-secondary" onClick={download}>Download</button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function DocumentPanelHost() {
+  const [open, setOpen] = useState(null);      // { path, fileName, title }
+  useEffect(() => {
+    const onOpen = (e) => { if (e.detail?.path) setOpen({ path: e.detail.path, fileName: e.detail.fileName, title: e.detail.title }); };
+    window.addEventListener('ats:open-document', onOpen);
+    return () => window.removeEventListener('ats:open-document', onOpen);
+  }, []);
+  if (!open) return null;
+  return <DocumentPanel key={open.path} {...open} onClose={() => setOpen(null)} />;
+}
+
+/**
  * Mounted ONCE in the Shell. Every entry point calls `openCvReview(id)`; this
  * is what actually renders the panel, so no page owns the viewer's state.
  */
 function CvReviewHost({ user }) {
   const [open, setOpen] = useState(null);      // { id, seed }
   useEffect(() => {
-    const onOpen = (e) => { const id = e.detail?.id; if (id) setOpen({ id, seed: e.detail?.seed || null }); };
+    const onOpen = (e) => { const id = e.detail?.id; if (id) setOpen({ id, seed: e.detail?.seed || null, doc: e.detail?.doc || null }); };
     window.addEventListener('ats:open-cv-review', onOpen);
     return () => window.removeEventListener('ats:open-cv-review', onOpen);
   }, []);
   if (!open) return null;
-  return <CvReviewPanel key={open.id} candidateId={open.id} seed={open.seed} user={user} onClose={() => setOpen(null)} />;
+  return <CvReviewPanel key={open.id + ':' + (open.doc ? open.doc.id : 'cv')} candidateId={open.id} seed={open.seed} doc={open.doc} user={user} onClose={() => setOpen(null)} />;
 }
 
 /**
@@ -10225,7 +10294,7 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
       <div className="section-title" style={{ marginTop: 0 }}>Résumé / CV</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px' }}>
         <div style={{ flex: 1, minWidth: 160 }}>
-          <div style={{ fontWeight: 600 }}>{c.hasResume ? (c.resumeName || 'Attached résumé') : <span className="muted">No résumé on file</span>}</div>
+          <div style={{ fontWeight: 600 }}>{c.hasResume ? <CvFileLink name={c.resumeName} onOpen={view} /> : <span className="muted">No résumé on file</span>}</div>
         </div>
         {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>Review CV</button>}
         {c.hasResume && <button className="btn btn-sm btn-ghost" onClick={() => downloadResume(c, toast)}>Download</button>}
@@ -10236,7 +10305,10 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
         <>
           <div className="section-title">Other Documents</div>
           <table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th></tr></thead>
-            <tbody>{c.documents.map((d) => <tr key={d.id}><td><span className="chip">{d.doc_type}</span></td><td>{d.file_name}</td><td className="muted">{fmtDate(d.uploaded_at)}</td></tr>)}</tbody></table>
+            <tbody>{c.documents.map((d) => <tr key={d.id}><td><span className="chip">{d.doc_type}</span></td><td>{d.doc_type === 'cv' && d.cvViewable
+                ? <span className="btn-row"><CvFileLink name={d.file_name} onOpen={() => openCvReview(c.id, c, { id: d.id, name: d.file_name })} />
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadResume({ id: c.id, candidateNo: c.candidateNo, docId: d.id, docName: d.file_name }, toast)}>Download</button></span>
+                : <>{d.file_name}{d.doc_type === 'cv' && d.cvProblem ? <span className="field-hint"> — {d.cvProblem === 'ambiguous' ? 'linked to more than one candidate; an administrator must resolve it' : 'original file not linked to this candidate; an administrator must resolve it'}</span> : null}</>}</td><td className="muted">{fmtDate(d.uploaded_at)}</td></tr>)}</tbody></table>
         </>
       )}
     </div>

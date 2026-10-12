@@ -6,6 +6,7 @@
 // access, no form submission. A crafted CV can at worst render oddly, never act
 // in the ATS. mammoth itself emits no <script>, but the sandbox is the guard.
 import mammoth from 'mammoth';
+import { readBlob } from './upload.js';
 
 export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -24,4 +25,20 @@ export async function docxPreviewHtml(buffer) {
   const { value } = await mammoth.convertToHtml({ buffer }, { ignoreEmptyParagraphs: true });
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">`
     + `<style>${PAGE_STYLE}</style></head><body>${value || '<p>This document has no readable text.</p>'}</body></html>`;
+}
+
+// `?as=html` for any stored file the caller is already allowed to open (a
+// candidate's CV, an intake document, a file posted in a request thread).
+// The caller checks permission first; this only reads and renders.
+export async function sendDocxPreview(storedName, fallbackName, res) {
+  const f = readBlob(storedName);
+  if (!f) return res.status(404).json({ error: 'File not found.' });
+  if (!isDocx(f.mime, f.originalName || fallbackName)) {
+    return res.status(415).json({ error: 'Only Word (.docx) CVs are rendered here; PDFs and images preview directly.' });
+  }
+  try {
+    return res.json({ html: await docxPreviewHtml(f.data) });
+  } catch {
+    return res.status(422).json({ error: 'This Word file could not be read. Download it instead.' });
+  }
 }
