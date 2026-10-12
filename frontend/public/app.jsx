@@ -12098,6 +12098,44 @@ function LinkInterviewModal({ iv, user, onClose, onLinked }) {
   );
 }
 
+// After an interview is Completed (audit A10): what happens next, in one place.
+// The interview never moves the application by itself (owner rule); moving it
+// is an explicit click here, through the same /applications/:id/move route and
+// checks as the pipeline board. Reject / hold need a reason and stay on the board.
+function NextStepBox({ iv, user, onAssess, onLink, onMoved }) {
+  const toast = useToast();
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const app = iv.application;
+  const given = (iv.feedback || []).length; const panelN = (iv.panel || []).length;
+  const targets = app ? Object.keys(APP_STATUS).filter((t) => t !== app.status && !REASON_STATUSES.includes(t) && canPipelineMove(app.status, t)) : [];
+  async function move() {
+    if (!to || busy) return;
+    setBusy(true);
+    try { await api.post(`/applications/${app.id}/move`, { status: toApiStatus(to) }); toast(`Application moved to ${(APP_STATUS[to] || {}).label || to}`); setTo(''); onMoved(); }
+    catch (e) { toast(moveErrorText(e), 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <section className="card card-pad iv-next-step" aria-label="Next step" style={{ marginBottom: 16 }}>
+      <div className="section-title" style={{ marginTop: 0 }}>Next step</div>
+      <p className="muted">Feedback: <strong>{given} of {panelN}</strong> panel member{panelN === 1 ? '' : 's'}{given < panelN ? ' — waiting for the rest' : ' — complete'}.{' '}
+        {app ? <>Application: <AppStatusBadge status={app.status} /></> : 'This interview is not linked to an application yet.'}</p>
+      <div className="btn-row">
+        {app ? <button className="btn btn-secondary" onClick={onAssess}>Open assessment</button>
+          : <button className="btn btn-secondary" onClick={onLink}>Link to application</button>}
+        {app && can(user, 'candidate.move_stage') && targets.length > 0 && <>
+          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Move the application to">
+            <option value="">Move the application to…</option>
+            {targets.map((t) => <option key={t} value={t}>{APP_STATUS[t].label}</option>)}
+          </select>
+          <button className="btn" disabled={!to || busy} onClick={move}>{busy ? 'Moving…' : 'Move'}</button>
+        </>}
+      </div>
+      {app && <p className="field-hint">Nothing moves on its own. To reject or put the candidate on hold, use the pipeline — it asks for the reason.</p>}
+    </section>
+  );
+}
+
 function InterviewDetail({ id, user, onBack }) {
   const toast = useToast();
   const [iv, setIv] = useState(null);
@@ -12161,6 +12199,7 @@ function InterviewDetail({ id, user, onBack }) {
 
 
 
+      {iv.status === 'completed' && <NextStepBox iv={iv} user={user} onAssess={() => setAssessOpen(true)} onLink={() => setLinkOpen(true)} onMoved={load} />}
       {showWhenOpens && <p className="muted" style={{ margin: '0 0 16px' }}>{Number.isFinite(firstOpen)
         ? <>Feedback opens at the start ({cairoTime(iv.actionsOpenAt.feedback)}), No-Show 15 minutes after it ({cairoTime(iv.actionsOpenAt.no_show)}) and Completed at the scheduled end ({cairoTime(iv.actionsOpenAt.completed)}), Cairo time.</>
         : <>This interview has no valid time, so it cannot be marked or given feedback. Reschedule it first.</>}</p>}

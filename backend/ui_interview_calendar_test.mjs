@@ -181,5 +181,14 @@ check('place (owner, 12 Oct): on-site interviews pick Head Office or a site; nam
   assert.match(app, /id="iv-hq-addr"/, 'the Head Office address is set once, in Invitation templates');
 });
 
+check('next step after Completed (audit A10): shown only then, moves only on an explicit click', () => {
+  assert.match(app, /\{iv\.status === 'completed' && <NextStepBox /, 'the box appears only for a Completed interview');
+  const box = app.slice(app.indexOf('function NextStepBox('), app.indexOf('function InterviewDetail('));
+  assert.match(box, /api\.post\(`\/applications\/\$\{app\.id\}\/move`/, 'moving uses the pipeline route and its checks');
+  assert.match(box, /!REASON_STATUSES\.includes\(t\) && canPipelineMove\(app\.status, t\)/, 'only moves the board allows; reject/hold stay on the board with a reason');
+  assert.match(box, /can\(user, 'candidate\.move_stage'\)/, 'only people allowed to move stages see the move control');
+  assert.doesNotMatch(box, /useEffect\(/, 'nothing moves on its own');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);
