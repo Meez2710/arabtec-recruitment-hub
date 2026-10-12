@@ -42,7 +42,11 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
 
   const meta = await api('/api/requests/meta/form', { token: hrMgr });
   const recId = meta.json.recruiters.find((r) => r.name === 'Karim Adel').id;
-  const cr = await api('/api/requests', { method: 'POST', token: hrMgr, body: { title: 'Thread Engineer', justification: 'new_hire', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount: 2, priority: 'high' } });
+  const db = await import('./src/lib/db.js');
+  const hmId = db.get("SELECT id FROM users WHERE email='hiring.manager@arabtec.com'").id;
+  // Thread access is request-specific (12 Oct): the hiring manager takes part
+  // because this request names them, as the request form does.
+  const cr = await api('/api/requests', { method: 'POST', token: hrMgr, body: { hiringManagerId: hmId, title: 'Thread Engineer', justification: 'new_hire', projectId: meta.json.projects[0].id, departmentId: meta.json.departments[0].id, headcount: 2, priority: 'high' } });
   const reqId = cr.json.request.id;
 
   console.log('\n— System auto-posts on lifecycle —');
@@ -87,6 +91,13 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
 
   console.log('\n— Structured feedback post —');
   await api(`/api/applications/${cv.json.applicationId}/move`, { method: 'POST', token: recruiter, body: { status: 'interview_1' } });
+  // The interviewer is on this application's interview panel (a panelist of
+  // THIS request) — the only way an interviewer reaches its thread.
+  {
+    const { Interviews, InterviewPanel } = await import('./src/lib/models.js');
+    const ivRow = Interviews.create({ interviewNo: 'INT-THREAD-1', applicationId: cv.json.applicationId, candidateId: cv.json.candidateId, requestId: reqId, organizerId: 1, createdBy: 1, scheduledAt: '2026-11-02T08:00:00.000Z' });
+    InterviewPanel.set(ivRow.id, [{ interviewerId: db.get("SELECT id FROM users WHERE email='interviewer@arabtec.com'").id, isLead: true }]);
+  }
   const fb = await api(`/api/thread/request/${reqId}/feedback`, { method: 'POST', token: interviewer, body: { applicationId: cv.json.applicationId, candidateId: cv.json.candidateId, recommendation: 'proceed', rating: 4, body: 'Strong technical depth.' } });
   c('interviewer posts feedback (201)', fb.status === 201 && fb.json.post.type === 'feedback');
   c('feedback carries recommendation', fb.json.post.payload?.recommendation === 'proceed');
