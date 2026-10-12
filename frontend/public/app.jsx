@@ -6765,7 +6765,12 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
               <div style={{ background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <div>
                   <div className="fine-label" style={{ color: 'var(--green-700)', fontWeight: 700 }}>Resume</div>
-                  <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? (cand.resumeName || 'Attached résumé') : <span className="muted">No résumé attached</span>}</div>
+                  <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume
+                    ? <button type="button" className="cv-file-link" onClick={viewResume}
+                        title="Open original CV in the side panel">
+                        {cand.resumeName || 'Attached résumé'}
+                      </button>
+                    : <span className="muted">No résumé attached</span>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>Review CV</button>}
@@ -8670,7 +8675,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
     return () => { alive = false; };
   }, [candidateId]);
 
-  const { doc: cv, error: cvError, busy: cvBusy } = useCvDocument(`/candidates/${candidateId}/resume`, (seed || {}).resumeName);
+  const { doc: cv, error: cvError, busy: cvBusy } = useCvDocument(`/candidates/${candidateId}/resume`, cand?.resumeName || seed?.resumeName);
 
   async function saveNote() {
     const body = note.trim();
@@ -9162,7 +9167,12 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
       <div className="section-title" style={{ marginTop: 0 }}>Résumé / CV</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px' }}>
         <div style={{ flex: 1, minWidth: 160 }}>
-          <div style={{ fontWeight: 600 }}>{c.hasResume ? (c.resumeName || 'Attached résumé') : <span className="muted">No résumé on file</span>}</div>
+          <div style={{ fontWeight: 600 }}>{c.hasResume
+                ? <button type="button" className="cv-file-link" onClick={view}
+                    title="Open original CV in the side panel">
+                    {c.resumeName || 'Attached résumé'}
+                  </button>
+                : <span className="muted">No résumé on file</span>}</div>
         </div>
         {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>Review CV</button>}
         {c.hasResume && <button className="btn btn-sm btn-ghost" onClick={() => downloadResume(c, toast)}>Download</button>}
