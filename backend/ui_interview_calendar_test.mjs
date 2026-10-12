@@ -161,5 +161,16 @@ check('needs a reminder (audit A7): ahead, within 24 h, and unconfirmed or not y
   assert.match(app, /setComm\('reminder'\)\}>Send reminder<\/button>/, 'the interview page offers Send reminder');
 });
 
+check('messages come from templates (owner, 12 Oct): editors are folded away; chips name the value', () => {
+  assert.equal((app.match(/<TemplateNote /g) || []).length, 2, 'the schedule form and the send dialog both use the template note');
+  assert.match(app, /editable=\{customMsgs\}/, 'the WhatsApp text is read-only unless the wording is being changed for this interview');
+  const phFor = get('phFor'); const phShort = get('phShort');
+  const all = [{ name: 'candidateName', in: 'cw', label: 'Candidate full name' }, { name: 'changes', in: 'cwp', label: 'What changed (updates)' }];
+  assert.deepEqual(phFor(all, 'c', 'invite').map((p) => p.name), ['candidateName'], 'update-only variables are not offered on an invitation');
+  assert.deepEqual(phFor(all, 'c', 'update').map((p) => p.name), ['candidateName', 'changes']);
+  assert.equal(phShort('Time zone, e.g. Cairo time (GMT+3)'), 'Time zone');
+  assert.equal(phShort('Where: location, meeting link or phone, labelled'), 'Where');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

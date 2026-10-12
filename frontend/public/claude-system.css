@@ -1989,6 +1989,12 @@ button.cal-slot:focus-visible { outline: 0; }
 .iv-avail .notice { display: grid; gap: var(--sp-2); }
 .iv-ack { display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 500; }
 .iv-recipients { display: grid; gap: var(--sp-2); }
+/* Template note: messages come from the organisation templates; per-interview
+   wording is folded away (owner, 12 Oct 2026). Hairline, no side bar (R20). */
+.iv-template-note { display: grid; gap: var(--sp-2); }
+.iv-customize { display: grid; gap: var(--sp-3); }
+.iv-customize > summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; color: var(--action); font-weight: 600; list-style-position: inside; }
+.iv-customize > summary:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: 8px; }
 .iv-rcpt { display: grid; gap: var(--sp-1); }
 .iv-rcpt > label, label.iv-rcpt { display: flex; align-items: flex-start; gap: var(--sp-2); }
 .iv-rcpt span { display: grid; gap: 4px; }

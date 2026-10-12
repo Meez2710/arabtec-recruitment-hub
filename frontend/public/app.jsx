@@ -10973,14 +10973,34 @@ function MessageEditor({ label, value, onChange, hasSubject = true, placeholders
       <textarea ref={bodyRef} rows="8" aria-label={label + ' message'} value={value.body || ''} onChange={(e) => onChange({ ...value, body: e.target.value })} />
       {placeholders.length > 0 && (
         <div className="iv-chips" aria-label="Insert a placeholder">
-          {placeholders.map((p) => <button key={p.name} type="button" className="chip-btn" title={p.label} onClick={() => insert(p.name)}>{p.name}</button>)}
+          {placeholders.map((p) => <button key={p.name} type="button" className="chip-btn" title={`${p.label} — inserts {{${p.name}}}`} onClick={() => insert(p.name)}>{phShort(p.label)}</button>)}
         </div>
       )}
       {error && <div className="iv-error" role="alert">{error}</div>}
     </div>
   );
 }
-const phFor = (all, code) => (all || []).filter((p) => p.in.includes(code));
+// "What changed" / "Previous date|time" only mean something in an update.
+const UPDATE_ONLY_PH = ['changes', 'previousDate', 'previousTime'];
+const phFor = (all, code, kind = null) => (all || []).filter((p) => p.in.includes(code) && (kind === 'update' || kind === null || !UPDATE_ONLY_PH.includes(p.name)));
+// "Time zone, e.g. Cairo time (GMT+3)" -> "Time zone": a chip names the value it fills in.
+const phShort = (label) => String(label || '').split(/,| \(|:/)[0].trim();
+
+// Messages are written ONCE as organisation templates (Interviews → Invitation
+// templates) with variables — candidate name, position, place, date and time —
+// filled in for each interview. Scheduling shows the finished text; changing
+// the wording for one interview is an exception, folded away (owner, 12 Oct).
+function TemplateNote({ custom, onCustom, children }) {
+  return (
+    <div className="iv-template-note">
+      <p className="field-hint">These messages come from your <strong>invitation templates</strong>. The candidate’s name, the position, the place and the interview time are filled in for you — check the preview{custom ? '' : ', then send'}. To change the standard wording for everyone, use <strong>Interviews → Invitation templates</strong>.</p>
+      <details className="iv-customize" open={custom} onToggle={(e) => onCustom(e.currentTarget.open)}>
+        <summary>Change the wording for this interview only</summary>
+        {custom && children}
+      </details>
+    </div>
+  );
+}
 
 /* ----------------------------- Schedule form ----------------------------- */
 const IV_FORM_BLANK = { interviewType: 'technical', mode: 'video', scheduledAt: '', durationMin: 60, round: 1, locationOrLink: '', panel: [] };
@@ -10990,6 +11010,7 @@ const IV_PROGRESS_BLANK = { candidateId: null, cvDone: false, applicationId: nul
 // `initialAt` is the slot clicked on the calendar; the form opens on that time.
 function ScheduleInterviewModal({ application, user, onClose, onScheduled, initialAt }) {
   const toast = useToast();
+  const [customMsgs, setCustomMsgs] = useState(false); // per-interview wording is the exception (TemplateNote)
   const [meta, setMeta] = useState(null);
   const [tpl, setTpl] = useState(null);
   const [f, setF] = useState(() => ({ ...IV_FORM_BLANK, scheduledAt: initialAt ? isoToCairoInput(new Date(initialAt).toISOString()) : '' }));
@@ -11302,9 +11323,11 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
               </div>
               {preview?.channel?.blocked && <div className="notice notice-warn">{preview.channel.blocked.message} Saving still works; invitations would be recorded as not sent.</div>}
               {preview?.channel?.dryRun && <div className="notice">Test mail transport on this server: invitations are prepared, <strong>not delivered</strong>.</div>}
-              <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tpl.placeholders, 'c')} error={preview?.errors?.candidate} />
-              <MessageEditor label="Panel email (each panelist gets their own)" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tpl.placeholders, 'p')} error={preview?.errors?.panel} />
-              <WhatsAppHandoff phone={candPhone} text={waText} onText={(v) => { waTouched.current = true; setWaText(v); }} onOpen={progress.interviewId ? () => openWhatsApp(progress.interviewId) : null} />
+              <TemplateNote custom={customMsgs || !!preview?.errors?.candidate || !!preview?.errors?.panel} onCustom={setCustomMsgs}>
+                <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tpl.placeholders, 'c', 'invite')} error={preview?.errors?.candidate} />
+                <MessageEditor label="Panel email (each panelist gets their own)" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tpl.placeholders, 'p', 'invite')} error={preview?.errors?.panel} />
+              </TemplateNote>
+              <WhatsAppHandoff phone={candPhone} text={waText} editable={customMsgs} onText={(v) => { waTouched.current = true; setWaText(v); }} onOpen={progress.interviewId ? () => openWhatsApp(progress.interviewId) : null} />
               {!progress.interviewId && <p className="field-hint">“Open WhatsApp” is available once the interview is saved.</p>}
             </section>
           </div>
@@ -11344,6 +11367,7 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
 /* ----------------- Communicate (invite / update / cancel) ---------------- */
 function CommunicateModal({ iv, kind, onClose, onDone }) {
   const toast = useToast();
+  const [customMsgs, setCustomMsgs] = useState(false); // per-interview wording is the exception (TemplateNote)
   const [data, setData] = useState(null);
   const [tplPh, setTplPh] = useState([]);
   const [msgs, setMsgs] = useState(null);
@@ -11436,10 +11460,12 @@ function CommunicateModal({ iv, kind, onClose, onDone }) {
                   );
                 })}
               </div>
-              <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tplPh, 'c')} error={errors.candidate} />
-              <MessageEditor label="Panel email" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tplPh, 'p')} error={errors.panel} />
+              <TemplateNote custom={customMsgs || !!errors.candidate || !!errors.panel || !!errors.panel_removed} onCustom={setCustomMsgs}>
+              <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tplPh, 'c', kind)} error={errors.candidate} />
+              <MessageEditor label="Panel email" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tplPh, 'p', kind)} error={errors.panel} />
               {msgs.panel_removed && data.recipients.some((r) => r.audience === 'panel_removed') && <MessageEditor label="Removed panelist" value={msgs.panel_removed} onChange={(v) => setMsgs((m) => ({ ...m, panel_removed: v }))} placeholders={phFor(tplPh, 'r')} error={errors.panel_removed} />}
-              <WhatsAppHandoff phone={data.whatsapp.phone} text={waText} onText={setWaText} onOpen={data.whatsapp.valid ? openWhatsApp : null} />
+              </TemplateNote>
+              <WhatsAppHandoff phone={data.whatsapp.phone} text={waText} editable={customMsgs} onText={setWaText} onOpen={data.whatsapp.valid ? openWhatsApp : null} />
               {data.call && <CallHandoff phone={data.call.phone} valid={data.call.valid} script={data.call.script} onCall={data.call.valid ? openCall : null} />}
             </div>
             <aside className="iv-preview" aria-label="Preview">
@@ -11558,7 +11584,7 @@ function InterviewTemplatesModal({ onClose }) {
         {t.audiences[kind].map((aud) => (
           <MessageEditor key={kind + aud} label={labels[aud]} hasSubject={t.hasSubject[aud]} value={draft[kind][aud]}
             onChange={(v) => setDraft((d) => ({ ...d, [kind]: { ...d[kind], [aud]: t.hasSubject[aud] ? v : { body: v.body } } }))}
-            placeholders={t.canEdit ? phFor(t.placeholders, codes[aud]) : []} />
+            placeholders={t.canEdit ? phFor(t.placeholders, codes[aud], kind) : []} />
         ))}
       </div>}
     </Modal>
