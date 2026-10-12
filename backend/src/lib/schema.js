@@ -1103,6 +1103,8 @@ export function ensureSchema() {
   addColumnIfMissing('mailbox_ingestion', 'subject', 'TEXT');
   addColumnIfMissing('mailbox_ingestion', 'sender', 'TEXT');
   addColumnIfMissing('mailbox_ingestion', 'category', 'TEXT');
+  // How many times a WAITING attachment was read (automatic parsing stops at a cap). Additive.
+  addColumnIfMissing('mailbox_ingestion', 'parse_attempts', 'INTEGER DEFAULT 0');
   addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
   addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
 
