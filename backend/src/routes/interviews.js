@@ -6,6 +6,7 @@ import {
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
+import { isEnabled } from '../lib/feature-flags.js';
 import { APP_TERMINAL, APP_LABELS, appNorm, REQ_TERMINAL, REQ_LABELS, reqNorm } from '../lib/stages.js';
 import { schedulingGuard, evaluateConflicts, conflictRefusal, attendanceRefusal, actionsOpenAt } from '../lib/interview-rules.js';
 import { tx, run as dbRun } from '../lib/db.js';
@@ -15,7 +16,7 @@ import {
   messageValues, fill, cairoParts, intlPhone, whatsappLink, telLink, detailsProblem, EMAIL_OK,
 } from '../lib/interview-messages.js';
 import {
-  effectiveMessages, saveMessages, renderAll, recipients, channelStatus, sendAction, dispatchesFor, recordWhatsappHandoff, recordCallHandoff, appUrl,
+  effectiveMessages, saveMessages, renderAll, recipients, channelStatus, sendAction, dispatchesFor, recordWhatsappHandoff, recordCallHandoff, lastReminderAt, appUrl,
 } from '../lib/interview-dispatch.js';
 import { SystemSettings } from '../lib/models.js';
 
@@ -98,6 +99,8 @@ function serialize(iv, user, { detail = false } = {}) {
     actionsOpenAt: actionsOpenAt(iv),
     // The candidate's answer to the invitation (audit A3): pending | confirmed | change_requested | declined.
     candidateResponse: iv.candidate_response || 'pending',
+    // Last reminder to the candidate for the current version (audit A7).
+    remindedAt: lastReminderAt(iv),
     // A change or cancellation that has not been communicated yet.
     notice: (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })(),
     createdAt: iv.created_at,
@@ -197,7 +200,7 @@ router.get('/application/:applicationId', (req, res) => {
 // permission). Templates carry placeholders only — never salary or HR data —
 // and never touch sender credentials.
 router.get('/message-templates', requireAnyPermission('interview.schedule', 'interview.edit'), (req, res) => {
-  res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: AUDIENCES, hasSubject: HAS_SUBJECT,
+  res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: Object.fromEntries(Object.entries(AUDIENCES).map(([k, v]) => [k, withoutCall(v)])), hasSubject: HAS_SUBJECT, phoneCalls: phoneCalls(),
     placeholders: Object.entries(PLACEHOLDERS).map(([name, p]) => ({ name, label: p.label, in: p.in })),
     canEdit: req.user.permissions.includes('notification.manage') });
 });
@@ -254,7 +257,7 @@ router.post('/message-preview', requirePermission('interview.schedule'), (req, r
   const out = {
     candidate: { subject: fill(msgs.candidate.subject, v(null)), body: fill(msgs.candidate.body, v(null)), to: cand.email || null, reachable: EMAIL_OK(cand.email) },
     whatsapp: { body: fill(msgs.whatsapp.body, v(null)), phone: intlPhone(cand.phone) || cand.phone || null, valid: !!intlPhone(cand.phone), link: whatsappLink(cand.phone, fill(msgs.whatsapp.body, v(null))) },
-    call: { body: fill(msgs.call.body, v(null)), phone: intlPhone(cand.phone) || cand.phone || null, valid: !!intlPhone(cand.phone), tel: telLink(cand.phone) },
+    call: phoneCalls() ? { body: fill(msgs.call.body, v(null)), phone: intlPhone(cand.phone) || cand.phone || null, valid: !!intlPhone(cand.phone), tel: telLink(cand.phone) } : null,
     panel: panel.map((u) => ({ userId: u.id, name: u.full_name, to: u.email || null, reachable: EMAIL_OK(u.email), subject: fill(msgs.panel.subject, v(u)), body: fill(msgs.panel.body, v(u)) })),
   };
   res.json({ messages: msgs, preview: out, errors, when: cairoParts(at), detailsProblem: detailsProblem(iv), channel: channelStatus(kind) });
@@ -267,6 +270,11 @@ router.get('/:id', (req, res) => {
   if (!canViewInterview(req.user, iv)) return res.status(403).json({ error: 'You can only view interviews assigned to you.' });
   res.json({ interview: serialize(iv, req.user, { detail: true }) });
 });
+
+// Phone calls are a later service (owner, 12 Oct): the "call" message and the
+// Call hand-off exist but are offered only when this switch is on.
+const phoneCalls = () => isEnabled('interview_phone_call');
+const withoutCall = (auds) => (phoneCalls() ? auds : auds.filter((a) => a !== 'call'));
 
 /* ---------------- MESSAGES for one interview ---------------- */
 // For the people who arrange interviews (schedule/edit), not for panelists.
@@ -285,7 +293,7 @@ router.get('/:id/messages', (req, res) => {
   const { rendered, messages } = renderAll(iv, kind);
   const reach = recipients(iv, kind);
   res.json({ kind, messages, rendered, recipients: reach.list, whatsapp: { ...reach.whatsapp, link: whatsappLink(reach.whatsapp.phone, rendered.whatsapp.body), text: rendered.whatsapp.body },
-    call: { ...reach.call, script: rendered.call.body },
+    call: phoneCalls() ? { ...reach.call, script: rendered.call.body } : null,
     channel: channelStatus(kind), detailsProblem: kind === 'cancel' ? null : detailsProblem(iv), when: cairoParts(iv.scheduled_at),
     notice: (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })(),
     dispatches: dispatchesFor(iv.id) });
@@ -327,8 +335,18 @@ router.post('/:id/messages/preview', (req, res) => {
 router.post('/:id/send', requirePermission('interview.edit'), async (req, res) => {
   const iv = loadForMessages(req, res); if (!iv) return;
   const d = req.body || {};
-  if (!KINDS.includes(d.kind)) return res.status(400).json({ error: 'kind must be invite, update or cancel.' });
-  const batchKey = typeof d.batchKey === 'string' ? d.batchKey.trim().slice(0, 100) : '';
+  if (!KINDS.includes(d.kind)) return res.status(400).json({ error: 'kind must be invite, update, cancel or reminder.' });
+  let batchKey = typeof d.batchKey === 'string' ? d.batchKey.trim().slice(0, 100) : '';
+  if (d.kind === 'reminder') {
+    // A reminder is for an interview still ahead (audit A7)…
+    if (!['scheduled', 'rescheduled'].includes(iv.status) || !(Date.parse(iv.scheduled_at) > Date.now())) {
+      return res.status(409).json({ code: 'interview_not_upcoming', error: 'A reminder can only be sent for an interview that is still ahead.' });
+    }
+    // …and goes at most once per recipient per Cairo day for this version:
+    // the batch key is the day, so a second click (or a colleague's) replays
+    // instead of sending again. A retry of failures keeps the caller's key.
+    if (!d.retryFailed) batchKey = `reminder-${iv.id}-r${Number(iv.calendar_seq || 0)}-${new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' })}`;
+  }
   if (!batchKey) return res.status(400).json({ error: 'A batchKey (one per send action) is required.' });
   if (d.kind === 'cancel' && iv.status !== 'cancelled') return res.status(409).json({ error: 'Cancel the interview before sending a cancellation.' });
   if (d.kind !== 'cancel' && !['scheduled', 'rescheduled'].includes(iv.status)) return res.status(409).json({ error: `This interview is ${iv.status}; only a scheduled interview’s invitation or update can be sent.` });
@@ -398,6 +416,7 @@ router.post('/:id/call-handoff', requirePermission('interview.edit'), (req, res)
   const d = req.body || {};
   const kind = kindOf(d.kind, iv);
   const batchKey = typeof d.batchKey === 'string' && d.batchKey.trim() ? d.batchKey.trim().slice(0, 100) : `call-${iv.id}-${Date.now()}`;
+  if (!phoneCalls()) return res.status(404).json({ code: 'feature_off', error: 'Phone calls from the Hub are not switched on yet.' });
   const r = recordCallHandoff(iv, { kind, batchKey, actor: req.user });
   if (r.error) return res.status(400).json({ error: r.error });
   InterviewActivity.add(iv.id, req.user, 'call_made', 'Phone call started by hand — not confirmed as reached');

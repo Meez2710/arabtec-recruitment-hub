@@ -16,7 +16,7 @@
 import { SystemSettings } from './models.js';
 
 export const ORG_TIMEZONE = process.env.INTERVIEW_TZ || 'Africa/Cairo';
-export const KINDS = ['invite', 'update', 'cancel'];
+export const KINDS = ['invite', 'update', 'cancel', 'reminder'];
 export const TEMPLATE_SETTING = 'interview_message_templates';
 
 // name → { label, audiences } ; audiences: c = candidate email, w = WhatsApp,
@@ -49,7 +49,10 @@ export const PLACEHOLDERS = {
 // k = phone-call script (audit A11, from PR #46): read out by a person, so it
 // may use exactly what a WhatsApp message may use.
 const AUDIENCE_CODE = { candidate: 'c', whatsapp: 'w', call: 'k', panel: 'p', panel_removed: 'r' };
-export const AUDIENCES = { invite: ['candidate', 'panel', 'whatsapp', 'call'], update: ['candidate', 'panel', 'whatsapp', 'call', 'panel_removed'], cancel: ['candidate', 'panel', 'whatsapp', 'call'] };
+export const AUDIENCES = { invite: ['candidate', 'panel', 'whatsapp', 'call'], update: ['candidate', 'panel', 'whatsapp', 'call', 'panel_removed'], cancel: ['candidate', 'panel', 'whatsapp', 'call'],
+  // Reminder (audit A7, from PR #46): same audiences so the engine stays uniform;
+  // the send dialog pre-selects only the candidate.
+  reminder: ['candidate', 'panel', 'whatsapp', 'call'] };
 export const HAS_SUBJECT = { candidate: true, panel: true, panel_removed: true, whatsapp: false, call: false };
 
 const SIGN = '{{recruiterName}}\nArabtec Recruitment Team\n{{recruiterEmail}}';
@@ -94,6 +97,18 @@ export const DEFAULT_TEMPLATES = {
     whatsapp: { body: 'Dear {{candidateFirstName}}, your Arabtec interview for the {{position}} role on {{date}} at {{time}} ({{timezone}}) has been cancelled. We will contact you about next steps. — {{recruiterName}}, Arabtec Recruitment' },
     call: { body: 'Hello {{candidateName}}, this is {{recruiterName}} from Arabtec Recruitment.\nI am sorry to tell you that your interview for the {{position}} role on {{date}} at {{time}} has been cancelled.\nWe will contact you about next steps. Thank you for your understanding.' },
   },
+  reminder: {
+    candidate: {
+      subject: 'Reminder: your Arabtec interview on {{date}} — {{position}}',
+      body: `Dear {{candidateName}},\n\nThis is a reminder of your interview for the {{position}} role.\n\nDate: {{date}}\nTime: {{time}} ({{timezone}})\nDuration: {{duration}}\n{{where}}\n\nIf anything has changed on your side, please reply to let us know.\n\nKind regards,\n${SIGN}`,
+    },
+    panel: {
+      subject: 'Reminder: interview {{interviewNo}} — {{candidateName}} — {{date}} {{time}}',
+      body: 'Hello {{recipientName}},\n\nA reminder of your interview with {{candidateName}} for {{position}} on {{date}} at {{time}} ({{timezone}}), {{duration}}.\n{{where}}\nPanel: {{panelNames}}\n\nCV and interview: {{cvLink}}\n\n{{recruiterName}}',
+    },
+    whatsapp: { body: 'Dear {{candidateFirstName}}, a reminder of your Arabtec interview for the {{position}} role on {{date}} at {{time}} ({{timezone}}). {{where}}. See you then. — {{recruiterName}}, Arabtec Recruitment' },
+    call: { body: 'Hello {{candidateName}}, this is {{recruiterName}} from Arabtec Recruitment.\nA quick reminder of your interview for the {{position}} role on {{date}} at {{time}} ({{timezone}}). {{where}}.\nCan you confirm you will attend?\nThank you, see you then.' },
+  },
 };
 export const LIMITS = { subject: 200, body: 5000 };
 
@@ -105,7 +120,7 @@ export const LIMITS = { subject: 200, body: 5000 };
 // never spread as-is (a string spread into an object becomes one field per
 // character). A converted part that fails our placeholder rules is dropped, so
 // the default is used rather than an unchecked text.
-const LEGACY_KIND = { invite: 'invite', reschedule: 'update', cancel: 'cancel' };
+const LEGACY_KIND = { invite: 'invite', reschedule: 'update', cancel: 'cancel', reminder: 'reminder' };
 const LEGACY_FIELD = { email: ['candidate', 'body'], subject: ['candidate', 'subject'], whatsapp: ['whatsapp', 'body'], call: ['call', 'body'] };
 const LEGACY_TOKEN = { candidate_name: 'candidateName', position: 'position', date: 'date', time: 'time', duration: 'duration',
   interview_type: 'interviewType', where: 'where', interviewers: 'panelNames', recruiter_name: 'recruiterName',

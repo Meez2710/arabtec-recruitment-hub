@@ -148,5 +148,18 @@ check('phone numbers (audit A11): the form converts like the server (same cases 
   assert.match(app, /channel === 'call' && r\.status === 'manual_handoff' \? CALL_HANDOFF/, 'a call reads "Call started — not confirmed", never sent');
 });
 
+check('needs a reminder (audit A7): ahead, within 24 h, and unconfirmed or not yet reminded', () => {
+  const f = get('ivNeedsReminder');
+  const now = Date.parse('2026-10-12T08:00:00Z');
+  const at = (h) => new Date(now + h * 3600000).toISOString();
+  assert.equal(f({ status: 'scheduled', scheduledAt: at(5), candidateResponse: 'pending' }, now), true);
+  assert.equal(f({ status: 'rescheduled', scheduledAt: at(20), candidateResponse: 'confirmed', remindedAt: null }, now), true, 'confirmed but never reminded');
+  assert.equal(f({ status: 'scheduled', scheduledAt: at(5), candidateResponse: 'confirmed', remindedAt: at(-1) }, now), false, 'confirmed and reminded');
+  assert.equal(f({ status: 'scheduled', scheduledAt: at(30), candidateResponse: 'pending' }, now), false, 'more than a day away');
+  assert.equal(f({ status: 'scheduled', scheduledAt: at(-1), candidateResponse: 'pending' }, now), false, 'already started');
+  assert.equal(f({ status: 'cancelled', scheduledAt: at(5), candidateResponse: 'pending' }, now), false, 'cancelled');
+  assert.match(app, /setComm\('reminder'\)\}>Send reminder<\/button>/, 'the interview page offers Send reminder');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

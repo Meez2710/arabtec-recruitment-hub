@@ -24,7 +24,11 @@ import {
   globalTemplates, messageValues, fill, textToHtml, interviewIcs, EMAIL_OK, intlPhone, whatsappLink, telLink, detailsProblem, AUDIENCES,
 } from './interview-messages.js';
 
-export const EVENT_FOR = { invite: 'interview.scheduled', update: 'interview.updated', cancel: 'interview.cancelled' };
+// A reminder follows the invitation's Notifications switch (no separate event:
+// switching invitations off switches their reminders off too).
+export const EVENT_FOR = { invite: 'interview.scheduled', update: 'interview.updated', cancel: 'interview.cancelled', reminder: 'interview.scheduled' };
+const KIND_WORDS = { invite: 'Interview invitation', update: 'Interview update', cancel: 'Interview cancellation', reminder: 'Interview reminder' };
+const KIND_ACTIVITY = { invite: 'invitations_sent', update: 'update_sent', cancel: 'cancellation_sent', reminder: 'reminder_sent' };
 const nowISO = () => new Date().toISOString();
 
 export function appUrl() {
@@ -245,13 +249,13 @@ export async function sendAction(iv, opts) {
   const cRow = rows.find((x) => x.audience === 'candidate');
   if (cRow && candidate) {
     const type = cRow.status === 'accepted' ? 'email_sent' : cRow.status === 'dry_run' ? 'email_not_sent' : cRow.status === 'failed' ? 'email_failed' : 'email_not_sent';
-    const what = kind === 'invite' ? 'Interview invitation' : kind === 'update' ? 'Interview update' : 'Interview cancellation';
+    const what = KIND_WORDS[kind];
     const note = cRow.status === 'accepted' ? `${what} accepted by the mail provider for ${cRow.recipientAddress}`
       : cRow.status === 'dry_run' ? `${what} — test transport, not delivered`
         : `${what} not sent: ${cRow.reason || cRow.status}`;
     try { CandidateActivity.add({ candidateId: candidate.id, applicationId: iv.application_id, actorId: actor.id, actorName: 'System', type, note }); } catch { /* never fail */ }
   }
-  InterviewActivity.add(iv.id, actor, kind === 'invite' ? 'invitations_sent' : kind === 'update' ? 'update_sent' : 'cancellation_sent',
+  InterviewActivity.add(iv.id, actor, KIND_ACTIVITY[kind],
     `${summary.done} sent${summary.dryRun ? ' (test transport, not delivered)' : ''}, ${summary.failed} failed, ${summary.notSent} not sent`);
 
   // A pending change or cancellation counts as communicated once anyone was reached.
@@ -288,6 +292,14 @@ export function recordCallHandoff(iv, { kind, batchKey, actor }) {
     [iv.id, batchKey, kind, Number(iv.calendar_seq || 0), 'candidate', 'candidate', candidate?.full_name || 'Candidate', intlPhone(candidate?.phone), 'call', 'manual_handoff',
       'Handed to a phone call made by a person. Not confirmed as reached.', actor.id, nowISO(), nowISO()]);
   return { tel, script: rendered.call.body };
+}
+
+/** When the candidate was last reminded for the CURRENT version (email or a hand-off), or null. */
+export function lastReminderAt(iv) {
+  const row = get(`SELECT MAX(created_at) AS at FROM interview_dispatch
+                   WHERE interview_id=? AND kind='reminder' AND audience='candidate' AND revision=?
+                     AND status IN ('accepted','dry_run','manual_handoff')`, [iv.id, Number(iv.calendar_seq || 0)]);
+  return row?.at || null;
 }
 
 export { detailsProblem };

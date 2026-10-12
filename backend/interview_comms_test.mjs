@@ -190,7 +190,14 @@ try {
   const L = await booked({ phone: '02 2345 6789' });
   c('a landline without a country code is refused for WhatsApp (400)', (await api(`/api/interviews/${L.iv.id}/whatsapp-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } })).status === 400);
 
-  console.log('\n— phone call: a manual hand-off with a script —');
+  console.log('\n— phone call: a later service, off by default (owner, 12 Oct) —');
+  const offMsg = await must(`/api/interviews/${W.iv.id}/messages?kind=invite`, { token: recruiter });
+  c('with the switch off, the send dialog offers no call', offMsg.call === null && offMsg.whatsapp.phone === '+201001234599');
+  c('…the Call hand-off is unavailable (404 feature_off)', (await api(`/api/interviews/${W.iv.id}/call-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } })).json?.code === 'feature_off');
+  c('…and the templates editor hides the call script', !(await must('/api/interviews/message-templates', { token: recruiter })).audiences.invite.includes('call'));
+  const { setFlag } = await import('./src/lib/feature-flags.js');
+  setFlag('interview_phone_call', true);
+  console.log('\n— phone call: switched on: a manual hand-off with a script —');
   const callMsg = await must(`/api/interviews/${W.iv.id}/messages?kind=invite`, { token: recruiter });
   c('the call script is rendered with the candidate name and Cairo time, and a tel: link in +20 form', callMsg.call?.tel === 'tel:+201001234599' && callMsg.call.script.includes('Cairo time') && !callMsg.call.script.includes('{{'), JSON.stringify(callMsg.call || {}).slice(0, 160));
   c('…the number is shown in the form it is dialled in', callMsg.call.phone === '+201001234599' && callMsg.whatsapp.phone === '+201001234599');
@@ -203,9 +210,29 @@ try {
   c('a number that cannot be dialled is refused (400)', (await api(`/api/interviews/${L.iv.id}/call-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } })).status === 400);
   const badScript = await api(`/api/interviews/${W.iv.id}/messages`, { method: 'PUT', token: recruiter, body: { kind: 'invite', messages: { call: { body: 'Your CV: {{cvLink}}' } } } });
   c('a call script cannot carry the private CV link (400)', badScript.status === 400);
+  setFlag('interview_phone_call', false);
   const wa = await must(`/api/interviews/${A.iv.id}/whatsapp-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } });
   c('WhatsApp opens a wa.me link with the editable text, no CV link', /^https:\/\/wa\.me\/201001234501\?text=/.test(wa.link) && !decodeURIComponent(wa.link).includes('#interviews/'));
   c('…recorded as a manual hand-off, not as sent', wa.dispatches[0]?.status === 'manual_handoff' && wa.dispatches[0]?.channel === 'whatsapp');
+
+  console.log('\n— reminders (audit A7) —');
+  const R = await booked({ panel: [mona.id] });
+  const rm = await must(`/api/interviews/${R.iv.id}/messages?kind=reminder`, { token: recruiter });
+  c('a reminder renders for the candidate (email + WhatsApp) with the Cairo time', rm.kind === 'reminder' && /reminder/i.test(rm.rendered.candidate.subject) && rm.rendered.candidate.body.includes('Cairo time') && /reminder/i.test(rm.whatsapp.text));
+  const r1 = await api(`/api/interviews/${R.iv.id}/send`, { method: 'POST', token: recruiter, body: { kind: 'reminder', batchKey: key(), candidate: true, panel: [] } });
+  c('sending it records one candidate row, test transport', r1.status === 200 && r1.json.dispatches.length === 1 && r1.json.dispatches[0].kind === 'reminder' && r1.json.dispatches[0].status === 'dry_run', r1.text.slice(0, 160));
+  c('…and the interview shows when it was reminded', !!(await must(`/api/interviews/${R.iv.id}`, { token: recruiter })).interview.remindedAt);
+  const r2 = await api(`/api/interviews/${R.iv.id}/send`, { method: 'POST', token: recruiter, body: { kind: 'reminder', batchKey: key(), candidate: true, panel: [] } });
+  const remRows = (await must(`/api/interviews/${R.iv.id}/dispatches`, { token: recruiter })).dispatches.filter((x) => x.kind === 'reminder');
+  c('a second reminder the same day (another click or colleague) is not sent again', r2.status === 200 && r2.json.replayed === true && remRows.length === 1, `${r2.status} replayed=${r2.json?.replayed} rows=${remRows.length}`);
+  const rw = await must(`/api/interviews/${R.iv.id}/whatsapp-handoff`, { method: 'POST', token: recruiter, body: { kind: 'reminder' } });
+  c('a WhatsApp reminder is a manual hand-off with the reminder text', /reminder/i.test(decodeURIComponent(rw.link)) && rw.dispatches[0]?.status === 'manual_handoff');
+  const badRem = await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { templates: { reminder: { candidate: { body: 'CV {{cvLink}}' } } } } });
+  c('the reminder template follows the same placeholder rules (400)', badRem.status === 400);
+  const { backdateInterview } = await import('./test-support/backdate.mjs');
+  const P = await booked({ panel: [mona.id] });
+  backdateInterview(db, P.iv.id, -5);
+  c('no reminder for an interview that has started (409)', (await api(`/api/interviews/${P.iv.id}/send`, { method: 'POST', token: recruiter, body: { kind: 'reminder', batchKey: key(), candidate: true } })).json?.code === 'interview_not_upcoming');
 
   console.log('\n— change, update, cancellation —');
   const U = await booked({ panel: [mona.id] });

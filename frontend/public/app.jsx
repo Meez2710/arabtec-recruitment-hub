@@ -10694,6 +10694,12 @@ const IV_RESPONSE = {
   declined: { label: 'Declined', variant: 'critical' },
 };
 const ivUpcoming = (iv) => ['scheduled', 'rescheduled'].includes(iv.status);
+// Needs a reminder (audit A7): still ahead, within the next 24 hours, and either
+// not yet confirmed by the candidate or not yet reminded for this version.
+const ivNeedsReminder = (iv, now = Date.now()) => {
+  const t = Date.parse(iv.scheduledAt);
+  return ivUpcoming(iv) && t > now && t - now <= 86400000 && (iv.candidateResponse !== 'confirmed' || !iv.remindedAt);
+};
 const ivResponseLabel = (iv) => (ivUpcoming(iv) ? (IV_RESPONSE[iv.candidateResponse] || IV_RESPONSE.pending).label : '');
 function IvResponseBadge({ iv }) {
   if (!ivUpcoming(iv)) return null;
@@ -11341,7 +11347,8 @@ function CommunicateModal({ iv, kind, onClose, onDone }) {
       setData(d); setRendered(d.rendered); setWaText(d.whatsapp.text || '');
       setMsgs({ candidate: { subject: d.messages.candidate.subject, body: d.messages.candidate.body }, panel: { subject: d.messages.panel.subject, body: d.messages.panel.body },
         ...(d.messages.panel_removed ? { panel_removed: { subject: d.messages.panel_removed.subject, body: d.messages.panel_removed.body } } : {}) });
-      setSel((s) => s || { candidate: d.recipients.some((r) => r.audience === 'candidate' && r.reachable), panel: d.recipients.filter((r) => r.audience !== 'candidate' && r.reachable).map((r) => r.userId) });
+      // A reminder is for the candidate; the panel can be ticked if wanted.
+      setSel((s) => s || { candidate: d.recipients.some((r) => r.audience === 'candidate' && r.reachable), panel: kind === 'reminder' ? [] : d.recipients.filter((r) => r.audience !== 'candidate' && r.reachable).map((r) => r.userId) });
     } catch (e) { toast(e.message, 'error'); onClose(); }
   }, [iv.id, kind]);
   useEffect(() => { load(); api.get('/interviews/message-templates').then((t) => setTplPh(t.placeholders || [])).catch(() => {}); }, [load]);
@@ -11353,7 +11360,7 @@ function CommunicateModal({ iv, kind, onClose, onDone }) {
     }, 350);
     return () => clearTimeout(t);
   }, [JSON.stringify(msgs)]);
-  const verb = kind === 'invite' ? 'invitation' : kind === 'update' ? 'update' : 'cancellation';
+  const verb = { invite: 'invitation', update: 'update', cancel: 'cancellation', reminder: 'reminder' }[kind];
   async function send(retryFailed = false) {
     if (busyRef.current) return; busyRef.current = true; setBusy(true);
     try {
@@ -11377,7 +11384,7 @@ function CommunicateModal({ iv, kind, onClose, onDone }) {
     try { await api.post(`/interviews/${iv.id}/notice/skip`, { reason }); toast('Recorded: not sent'); onDone(); } catch (e) { toast(e.message, 'error'); }
   }
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
-  const title = kind === 'invite' ? 'Send invitations' : kind === 'update' ? 'Send the update' : 'Send the cancellation';
+  const title = { invite: 'Send invitations', update: 'Send the update', cancel: 'Send the cancellation', reminder: 'Send a reminder' }[kind];
   const failedLatest = (data?.dispatches || []).filter((r) => r.kind === kind && r.revision === iv.calendarSeq && r.channel === 'email');
   const hasFailed = (() => { const seen = new Set(); return failedLatest.some((r) => { if (seen.has(r.recipientKey)) return false; seen.add(r.recipientKey); return r.status === 'failed'; }); })();
   return toPageLevel(
@@ -11525,7 +11532,7 @@ function InterviewTemplatesModal({ onClose }) {
       footer={t?.canEdit ? <><button className="btn btn-ghost" onClick={reset} disabled={busy}>Reset to defaults</button><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save templates'}</button></> : <button className="btn" onClick={onClose}>Close</button>}>
       {!t || !draft ? <Skeleton /> : <div className="iv-tpl-body">
         <p className="muted">The organisation’s default wording. Each interview starts from these and can be edited before sending. Placeholders are filled in for each recipient; only the ones listed under each message can be used there.{t.canEdit ? '' : ' You can view these; changing them needs the Notifications permission.'}</p>
-        <div className="seg-tabs" role="tablist">{[['invite', 'Invitation'], ['update', 'Update'], ['cancel', 'Cancellation']].map(([k, l]) => <button key={k} role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => setKind(k)}>{l}</button>)}</div>
+        <div className="seg-tabs" role="tablist">{[['invite', 'Invitation'], ['update', 'Update'], ['cancel', 'Cancellation'], ['reminder', 'Reminder']].map(([k, l]) => <button key={k} role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => setKind(k)}>{l}</button>)}</div>
         {err && <div className="notice notice-danger">{err}</div>}
         {t.audiences[kind].map((aud) => (
           <MessageEditor key={kind + aud} label={labels[aud]} hasSubject={t.hasSubject[aud]} value={draft[kind][aud]}
@@ -11559,7 +11566,7 @@ function InterviewComms({ iv, canManage, onOpen }) {
       {n && n.skipped && <p className="muted">Not sent on purpose by {n.skippedBy}: {n.skipReason}</p>}
       {rows === null ? <Skeleton rows={2} /> : batches.length === 0 ? <p className="muted">Nothing sent yet.</p> : batches.map((b) => (
         <div key={b.key} className="iv-batch">
-          <div className="iv-batch-head"><strong>{b.kind === 'invite' ? 'Invitation' : b.kind === 'update' ? 'Update' : 'Cancellation'}</strong> <span className="muted">{fmtDate(b.at)}</span></div>
+          <div className="iv-batch-head"><strong>{{ invite: 'Invitation', update: 'Update', cancel: 'Cancellation', reminder: 'Reminder' }[b.kind] || b.kind}</strong> <span className="muted">{fmtDate(b.at)}</span></div>
           <DispatchList rows={b.rows} />
         </div>
       ))}
@@ -11801,7 +11808,7 @@ function InterviewsPage({ user, initialFilters }) {
   // `thisWeek` is client-side only — there is no date-range param on
   // GET /interviews, so it filters the loaded rows below, the same way
   // RequestsPage's `openOnly`/`attention` do for the same reason.
-  const [filter, setFilter] = useState({ status: '', q: '', thisWeek: false });
+  const [filter, setFilter] = useState({ status: '', q: '', thisWeek: false, needsReminder: false });
   // `openId` jumps straight to one interview (a dashboard action item always
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
@@ -11836,7 +11843,7 @@ function InterviewsPage({ user, initialFilters }) {
     const seq = ++loadSeq.current;
     setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
-    Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
+    Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && k !== 'needsReminder' && v) params.set(k, v); });
     if (rangeKey) { const [from, to] = rangeKey.split('|'); params.set('from', from); params.set('to', to); }
     try {
       const r = await api.get('/interviews?' + params.toString());
@@ -11855,8 +11862,10 @@ function InterviewsPage({ user, initialFilters }) {
 
   const isCalendar = view !== 'list';
   const shown = (data ? data.interviews : []).filter((iv) => {
-    if (isCalendar || !filter.thisWeek) return true;
-    if (iv.status !== 'scheduled') return false;
+    if (isCalendar) return true;
+    if (filter.needsReminder && !ivNeedsReminder(iv)) return false;
+    if (!filter.thisWeek) return true;
+    if (!ivUpcoming(iv)) return false; // a rescheduled interview is still ahead
     const days = daysUntil(iv.scheduledAt);
     return days != null && days >= 0 && days <= 7;
   });
@@ -11878,7 +11887,7 @@ function InterviewsPage({ user, initialFilters }) {
           onScheduled={(openId) => { setCreating(false); setCreateAt(null); load(); if (openId) setSelected(openId); }} />
       )}
       {templatesOpen && <InterviewTemplatesModal onClose={() => setTemplatesOpen(false)} />}
-      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0)}
+      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0) + (!isCalendar && filter.needsReminder ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
         count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" suffix={isCalendar ? 'in view' : null} />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
@@ -11887,6 +11896,12 @@ function InterviewsPage({ user, initialFilters }) {
           <label className="switch" title="Scheduled interviews in the next 7 days">
             <input type="checkbox" checked={filter.thisWeek} onChange={(e) => setFilter((f) => ({ ...f, thisWeek: e.target.checked }))} />
             This week
+          </label>
+        )}
+        {!isCalendar && (
+          <label className="switch" title="Interviews in the next 24 hours that are not confirmed, or not yet reminded">
+            <input type="checkbox" checked={filter.needsReminder} onChange={(e) => setFilter((f) => ({ ...f, needsReminder: e.target.checked }))} />
+            Needs a reminder{data ? ` (${data.interviews.filter((x) => ivNeedsReminder(x)).length})` : ''}
           </label>
         )}
       </FilterToolbar>
@@ -12055,6 +12070,7 @@ function InterviewDetail({ id, user, onBack }) {
           {btns.complete_interview?.visible && upcoming && isOpen('completed') && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
           {btns.complete_interview?.visible && upcoming && isOpen('no_show') && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
           {btns.complete_interview?.visible && ['completed', 'no_show'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setReopenAsk(true)}>Reopen interview</button>}
+          {canManageComms && upcoming && Date.parse(iv.scheduledAt) > Date.now() && <button className="btn btn-secondary" onClick={() => setComm('reminder')}>Send reminder</button>}
           {can(user, 'interview.edit') && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setResched(true)}>Reschedule / edit</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
         </>} />
