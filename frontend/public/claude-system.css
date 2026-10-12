@@ -1694,6 +1694,26 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 /* (2) THE CV REVIEW SIDE PANEL. */
+/* The stored CV's filename is an action, never inert/selectable body copy.
+   Reuse the shared side-panel opener; preserve Download as a separate button. */
+.cv-file-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--action, #008064);
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.cv-file-link:hover { text-decoration-thickness: 2px; }
+.cv-file-link:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+
 /* The scrim keeps everything `.modal-overlay` already provides — the fixed
    inset, the z-index, and the rules that hide the mobile nav and the Anyhelp
    FAB behind an open dialog. Only its box changes: a panel that hugs an edge
