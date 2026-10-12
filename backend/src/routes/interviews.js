@@ -8,7 +8,7 @@ import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from 
 import { writeAudit } from '../lib/audit.js';
 import { isEnabled } from '../lib/feature-flags.js';
 import { APP_TERMINAL, APP_LABELS, appNorm, REQ_TERMINAL, REQ_LABELS, reqNorm } from '../lib/stages.js';
-import { schedulingGuard, evaluateConflicts, conflictRefusal, attendanceRefusal, actionsOpenAt } from '../lib/interview-rules.js';
+import { schedulingGuard, evaluateConflicts, conflictRefusal, attendanceRefusal, actionsOpenAt, workingHoursWarning, workingWeek, validateWorkWeek, WORK_WEEK_SETTING } from '../lib/interview-rules.js';
 import { tx, run as dbRun, all as dbAll } from '../lib/db.js';
 import { canSeeCandidate } from '../lib/candidate-scope.js';
 import {
@@ -180,6 +180,8 @@ router.get('/clashes', requireAnyPermission('interview.schedule', 'interview.edi
     clashes: found.panel.map(({ interviewerId, name, start, end }) => ({ interviewerId, name, start, end })),
     candidateConflicts: found.candidate.map(({ start, end }) => ({ start, end })),
     locationWarnings: found.location.map(({ start, end }) => ({ start, end })),
+    // Outside the working week: a warning, never a block (audit A9).
+    hoursWarning: workingHoursWarning(req.query.start, durationMin),
   });
 });
 
@@ -200,7 +202,7 @@ router.get('/application/:applicationId', (req, res) => {
 // permission). Templates carry placeholders only — never salary or HR data —
 // and never touch sender credentials.
 router.get('/message-templates', requireAnyPermission('interview.schedule', 'interview.edit'), (req, res) => {
-  res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: Object.fromEntries(Object.entries(AUDIENCES).map(([k, v]) => [k, withoutCall(v)])), hasSubject: HAS_SUBJECT, phoneCalls: phoneCalls(), headOfficeAddress: SystemSettings.get(HQ_SETTING) || '',
+  res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: Object.fromEntries(Object.entries(AUDIENCES).map(([k, v]) => [k, withoutCall(v)])), hasSubject: HAS_SUBJECT, phoneCalls: phoneCalls(), headOfficeAddress: SystemSettings.get(HQ_SETTING) || '', workingWeek: workingWeek(),
     placeholders: Object.entries(PLACEHOLDERS).map(([name, p]) => ({ name, label: p.label, in: p.in })),
     canEdit: req.user.permissions.includes('notification.manage') });
 });
@@ -217,6 +219,17 @@ router.put('/message-templates', requirePermission('notification.manage'), (req,
     writeAudit(req, { action: 'interview.templates_reset', entityType: 'setting', entityId: TEMPLATE_SETTING, oldValue: rawParsed });
     return res.json({ templates: globalTemplates() });
   }
+  if (d.workingWeek !== undefined) {
+    const wErr = validateWorkWeek(d.workingWeek);
+    if (wErr) return res.status(400).json({ error: wErr });
+    const before = workingWeek();
+    const next = { days: [...new Set(d.workingWeek.days)].sort(), start: d.workingWeek.start, end: d.workingWeek.end };
+    if (JSON.stringify(before) !== JSON.stringify(next)) {
+      SystemSettings.upsert(WORK_WEEK_SETTING, JSON.stringify(next));
+      writeAudit(req, { action: 'interview.working_week_changed', entityType: 'setting', entityId: WORK_WEEK_SETTING, oldValue: before, newValue: next });
+    }
+    if (d.templates === undefined && d.headOfficeAddress === undefined) return res.json({ templates: globalTemplates(), workingWeek: workingWeek() });
+  }
   if (d.headOfficeAddress !== undefined) {
     const addr = String(d.headOfficeAddress || '').replace(/\s+/g, ' ').trim();
     if (addr.length > 300) return res.status(400).json({ error: 'The Head Office address is too long (300 characters at most).' });
@@ -225,7 +238,7 @@ router.put('/message-templates', requirePermission('notification.manage'), (req,
       SystemSettings.upsert(HQ_SETTING, addr);
       writeAudit(req, { action: 'interview.head_office_address_changed', entityType: 'setting', entityId: HQ_SETTING, oldValue: { address: before }, newValue: { address: addr } });
     }
-    if (d.templates === undefined) return res.json({ templates: globalTemplates(), headOfficeAddress: addr });
+    if (d.templates === undefined) return res.json({ templates: globalTemplates(), headOfficeAddress: addr, workingWeek: workingWeek() });
   }
   const err = validateTemplateSet(d.templates);
   if (err) return res.status(400).json({ error: err });
@@ -237,7 +250,7 @@ router.put('/message-templates', requirePermission('notification.manage'), (req,
   SystemSettings.upsert(TEMPLATE_SETTING, JSON.stringify(merged));
   writeAudit(req, { action: 'interview.templates_updated', entityType: 'setting', entityId: TEMPLATE_SETTING,
     oldValue: rawParsed, newValue: merged });
-  res.json({ templates: globalTemplates(), headOfficeAddress: SystemSettings.get(HQ_SETTING) || '' });
+  res.json({ templates: globalTemplates(), headOfficeAddress: SystemSettings.get(HQ_SETTING) || '', workingWeek: workingWeek() });
 });
 
 /* ---------------- DRAFT PREVIEW (scheduling form, nothing saved) ---------------- */
@@ -519,7 +532,8 @@ router.post('/', requirePermission('interview.schedule'), async (req, res) => {
       newValue: { interviewNo, applicationId: app ? app.id : null, candidateId, requestId, standalone: !app, panel: panelIds,
         panelOverlap: conflicts.panel.length ? conflicts.panel.map((x) => x.interviewerId) : undefined },
       comments: d.overrideTerminal ? `Terminal-app override: ${d.overrideReason}` : (overlapReason ? `Panel overlap acknowledged: ${overlapReason}` : null) });
-    outcome = { created, warnings: conflicts.location.length ? { location: conflicts.location.map(({ start, end }) => ({ start, end })) } : null };
+    const hoursW = workingHoursWarning(created.scheduled_at, created.duration_min);
+    outcome = { created, warnings: conflicts.location.length || hoursW ? { ...(conflicts.location.length ? { location: conflicts.location.map(({ start, end }) => ({ start, end })) } : {}), ...(hoursW ? { hours: hoursW } : {}) } : null };
   });
   if (outcome.refusal) return res.status(outcome.refusal.status).json(outcome.refusal.body);
   if (outcome.replayed) {
@@ -655,6 +669,7 @@ router.put('/:id', requirePermission('interview.edit'), (req, res) => {
       comments: overlapReason ? `Panel overlap acknowledged: ${overlapReason}` : null });
   });
   if (refusal) return res.status(refusal.status).json(refusal.body);
+  { const after = Interviews.byId(iv.id); const hw = workingHoursWarning(after.scheduled_at, after.duration_min); if (hw) warnings = { ...(warnings || {}), hours: hw }; }
   res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }), changes, warnings });
 });
 

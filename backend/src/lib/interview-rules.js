@@ -10,7 +10,7 @@
 //     location/link = warning).
 // The routes only call these, so the check shown before saving and the check
 // made at save time cannot disagree.
-import { Interviews, InterviewPanel } from './models.js';
+import { Interviews, InterviewPanel, SystemSettings } from './models.js';
 import { APP_TERMINAL, APP_LABELS, appNorm, REQ, REQ_TERMINAL, REQ_LABELS, reqNorm } from './stages.js';
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, intervalOf, findPanelClashes, findCandidateConflicts, findLocationOverlaps } from './interview-clashes.js';
 
@@ -156,4 +156,46 @@ export function actionsOpenAt(iv) {
   const out = {};
   for (const a of ATTENDANCE_ACTIONS) { const ms = attendanceOpensAt(iv, a); if (Number.isFinite(ms)) out[a] = new Date(ms).toISOString(); }
   return out;
+}
+
+/* ------------------------------------------------------------------------
+ * Working week (audit A9). A booking outside the organisation's working
+ * days or hours is WARNED about, never refused. Default until the owner
+ * decides (D1): Sunday–Thursday, 09:00–17:00 Cairo time; adjustable in
+ * Invitation templates (setting interview_working_week).
+ * --------------------------------------------------------------------- */
+export const WORK_WEEK_SETTING = 'interview_working_week';
+export const DEFAULT_WORK_WEEK = { days: [0, 1, 2, 3, 4], start: '09:00', end: '17:00' };
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const toMin = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+
+/** A valid working week, or the reason it is not. */
+export function validateWorkWeek(ww) {
+  if (!ww || typeof ww !== 'object') return 'The working week must be an object.';
+  if (!Array.isArray(ww.days) || !ww.days.length || ww.days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) return 'Choose at least one working day.';
+  if (!HHMM.test(ww.start || '') || !HHMM.test(ww.end || '')) return 'Working hours must be times like 09:00.';
+  if (toMin(ww.start) >= toMin(ww.end)) return 'The working day must end after it starts.';
+  return null;
+}
+export function workingWeek(raw = SystemSettings.get(WORK_WEEK_SETTING)) {
+  try { const ww = JSON.parse(raw || 'null'); if (ww && !validateWorkWeek(ww)) return { days: [...new Set(ww.days)].sort(), start: ww.start, end: ww.end }; } catch { /* default */ }
+  return { ...DEFAULT_WORK_WEEK };
+}
+
+function cairoDayMin(ms) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Cairo', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms));
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  return { day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday')), min: Number(get('hour')) * 60 + Number(get('minute')) };
+}
+
+/** null, or { reason, message } when the slot falls outside the working week. */
+export function workingHoursWarning(start, durationMin, ww = workingWeek()) {
+  const s = Date.parse(start); const dur = Number(durationMin) || 60;
+  if (!Number.isFinite(s)) return null;
+  const a = cairoDayMin(s); const b = cairoDayMin(s + dur * 60000);
+  if (!ww.days.includes(a.day)) return { reason: 'non_working_day', message: `${DAY_NAMES[a.day]} is not a working day.` };
+  if (a.min < toMin(ww.start)) return { reason: 'before_hours', message: `Starts before ${ww.start} (Cairo time), the start of the working day.` };
+  if (b.day !== a.day || b.min > toMin(ww.end)) return { reason: 'after_hours', message: `Ends after ${ww.end} (Cairo time), the end of the working day.` };
+  return null;
 }

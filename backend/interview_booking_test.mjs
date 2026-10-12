@@ -197,6 +197,26 @@ try {
   c('an unreadable start time refuses Completed — bad data never bypasses the guard (409)', bad.status === 409 && bad.json?.code === 'interview_time_invalid', `${bad.status} ${bad.text.slice(0, 120)}`);
   c('…and refuses feedback too', (await api(`/api/interviews/${ivX.id}/feedback`, { method: 'POST', token: interviewer, body: { recommendation: 'yes' } })).json?.code === 'interview_time_invalid');
   db.run('UPDATE interview SET status = ? WHERE id = ?', ['cancelled', ivX.id]); // keep later suites' data sane
+
+  console.log('\n— working week: a warning, never a block (audit A9; default Sun–Thu 09:00–17:00 Cairo) —');
+  const R = await import('./src/lib/interview-rules.js');
+  c('Friday 10:00 Cairo → not a working day', R.workingHoursWarning('2026-12-04T08:00:00Z', 60)?.reason === 'non_working_day');
+  c('Sunday 10:00 Cairo (winter, UTC+2) → fine', R.workingHoursWarning('2026-12-06T08:00:00Z', 60) === null);
+  c('Sunday 10:00 Cairo (summer, UTC+3) → fine', R.workingHoursWarning('2026-07-05T07:00:00Z', 60) === null);
+  c('Sunday 08:30 → before hours', R.workingHoursWarning('2026-12-06T06:30:00Z', 60)?.reason === 'before_hours');
+  c('Thursday 16:30 for 60 min → ends after hours', R.workingHoursWarning('2026-12-03T14:30:00Z', 60)?.reason === 'after_hours');
+  c('Thursday 16:00 for 60 min → ends exactly at 17:00, fine', R.workingHoursWarning('2026-12-03T14:00:00Z', 60) === null);
+  const cl = await must(`/api/interviews/clashes?start=${encodeURIComponent('2026-12-04T08:00:00Z')}&durationMin=60&panel=${mona.id}`, { token: recruiter });
+  c('the availability check reports it', cl.hoursWarning?.reason === 'non_working_day', JSON.stringify(cl.hoursWarning));
+  const cF = await candidate('friday'); const aF = await app(rid, cF);
+  const fri = await book({ applicationId: aF, scheduledAt: '2026-12-04T08:00:00Z', panel: [{ interviewerId: mona.id, isLead: true }] });
+  c('a Friday booking is still saved (201), with the warning', fri.status === 201 && fri.json?.warnings?.hours?.reason === 'non_working_day', `${fri.status} ${JSON.stringify(fri.json?.warnings)}`);
+  c('only HR settings can change the working week (403)', (await api('/api/interviews/message-templates', { method: 'PUT', token: interviewer, body: { workingWeek: { days: [6, 0, 1, 2, 3, 4], start: '08:00', end: '16:00' } } })).status === 403);
+  c('an invalid working week is refused (400)', (await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { workingWeek: { days: [], start: '17:00', end: '09:00' } } })).status === 400);
+  const ww = await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { workingWeek: { days: [6, 0, 1, 2, 3, 4], start: '08:00', end: '16:00' } } });
+  c('a Saturday–Thursday, 08:00–16:00 week is saved', ww.status === 200 && ww.json.workingWeek.start === '08:00' && ww.json.workingWeek.days.includes(6), ww.text.slice(0, 160));
+  c('…and Saturday 09:00 is then fine, Thursday 15:30 for 60 min is not', R.workingHoursWarning('2026-12-05T07:00:00Z', 60) === null && R.workingHoursWarning('2026-12-03T13:30:00Z', 60)?.reason === 'after_hours');
+  await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { workingWeek: R.DEFAULT_WORK_WEEK } });
 } catch (e) { console.error(e); fail++; }
 finally {
   console.log(`\n=== INTERVIEW BOOKING: ${pass} passed, ${fail} failed ===\n`);

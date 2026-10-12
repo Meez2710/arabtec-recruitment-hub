@@ -190,5 +190,11 @@ check('next step after Completed (audit A10): shown only then, moves only on an 
   assert.doesNotMatch(box, /useEffect\(/, 'nothing moves on its own');
 });
 
+check('working week (audit A9): a plain warning in both forms, never a block; editable once', () => {
+  assert.equal((app.match(/\{avail\.hours && <div className="notice">Outside the working week/g) || []).length, 2, 'schedule and reschedule both warn');
+  assert.doesNotMatch(app, /formReady = [^;]*avail\.hours/, 'the warning never disables saving');
+  assert.match(app, /id="iv-ww-start"/, 'working days and hours are set in Invitation templates');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

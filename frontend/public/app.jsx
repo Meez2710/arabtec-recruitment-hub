@@ -11090,7 +11090,7 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
       if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
       api.get('/interviews/clashes?' + qs.toString())
         .then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length;
-          setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [] }); })
+          setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [], hours: r.hoursWarning || null }); })
         .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
     }, 300);
     return () => { live = false; clearTimeout(t); };
@@ -11327,6 +11327,7 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
                     <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
                     {ack && <input aria-label="Reason for the overlap" placeholder="Reason, e.g. joins for the first 15 minutes" value={overlapReason} onChange={(e) => setOverlapReason(e.target.value)} />}
                   </div>}
+                  {avail.hours && <div className="notice">Outside the working week: {avail.hours.message} You can still book it.</div>}
                   {(avail.location || []).length > 0 && <div className="notice">Another interview uses the same {f.mode === 'video' ? 'meeting link' : 'location'} at an overlapping time ({avail.location.map((c) => `${cairoTime(c.start)}–${cairoTime(c.end)}`).join(', ')}). Check it is free.</div>}
                 </>}
               </div>
@@ -11539,7 +11540,7 @@ function RescheduleModal({ iv, onClose, onSaved }) {
     const t = setTimeout(() => {
       const qs = new URLSearchParams({ start: startIso, durationMin: String(Number(f.durationMin) || 60), panel: panelKey, candidateId: String(iv.candidate?.id || ''), excludeId: String(iv.id) });
       if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
-      api.get('/interviews/clashes?' + qs.toString()).then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length; setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [] }); })
+      api.get('/interviews/clashes?' + qs.toString()).then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length; setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [], hours: r.hoursWarning || null }); })
         .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
     }, 300);
     return () => { live = false; clearTimeout(t); };
@@ -11573,6 +11574,7 @@ function RescheduleModal({ iv, onClose, onSaved }) {
           {avail.state === 'checking' && <span className="muted">Checking availability…</span>}
           {avail.state === 'ok' && <span className="iv-avail-ok">No conflicts at this time.</span>}
           {avail.state === 'unavailable' && <div className="notice notice-warn">Availability could not be checked; conflicts are unknown. Saving re-checks on the server.</div>}
+          {avail.hours && <div className="notice">Outside the working week: {avail.hours.message} You can still book it.</div>}
           {blocked && <div className="notice notice-danger"><strong>The candidate is already booked then.</strong> Choose another time.</div>}
           {needsAck && <div className="notice notice-warn"><strong>Panel already booked:</strong> {avail.panel.map((c) => c.name).join(', ')}
             <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
@@ -11593,10 +11595,11 @@ function InterviewTemplatesModal({ onClose }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [hqAddr, setHqAddr] = useState('');
-  useEffect(() => { api.get('/interviews/message-templates').then((r) => { setT(r); setDraft(JSON.parse(JSON.stringify(r.templates))); setHqAddr(r.headOfficeAddress || ''); }).catch((e) => toast(e.message, 'error')); }, []);
+  const [ww, setWw] = useState(null);
+  useEffect(() => { api.get('/interviews/message-templates').then((r) => { setT(r); setDraft(JSON.parse(JSON.stringify(r.templates))); setHqAddr(r.headOfficeAddress || ''); setWw(r.workingWeek || null); }).catch((e) => toast(e.message, 'error')); }, []);
   async function save() {
     setBusy(true); setErr(null);
-    try { const r = await api.put('/interviews/message-templates', { templates: draft, headOfficeAddress: hqAddr }); setT((x) => ({ ...x, templates: r.templates, headOfficeAddress: r.headOfficeAddress })); toast('Templates saved'); }
+    try { const r = await api.put('/interviews/message-templates', { templates: draft, headOfficeAddress: hqAddr, ...(ww ? { workingWeek: ww } : {}) }); setT((x) => ({ ...x, templates: r.templates, headOfficeAddress: r.headOfficeAddress })); toast('Templates saved'); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
   async function reset() {
@@ -11611,6 +11614,21 @@ function InterviewTemplatesModal({ onClose }) {
       footer={t?.canEdit ? <><button className="btn btn-ghost" onClick={reset} disabled={busy}>Reset to defaults</button><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save templates'}</button></> : <button className="btn" onClick={onClose}>Close</button>}>
       {!t || !draft ? <Skeleton /> : <div className="iv-tpl-body">
         <p className="muted">The organisation’s default wording. Each interview starts from these and can be edited before sending. Placeholders are filled in for each recipient; only the ones listed under each message can be used there.{t.canEdit ? '' : ' You can view these; changing them needs the Notifications permission.'}</p>
+        {ww && <div className="field">
+          <label>Working week (for the out-of-hours warning)</label>
+          <div className="btn-row" role="group" aria-label="Working days">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+              <label key={d} className="iv-rcpt"><input type="checkbox" disabled={!t.canEdit} checked={ww.days.includes(i)}
+                onChange={(e) => setWw((w) => ({ ...w, days: e.target.checked ? [...w.days, i].sort() : w.days.filter((x) => x !== i) }))} /> {d}</label>
+            ))}
+          </div>
+          <div className="btn-row">
+            <label htmlFor="iv-ww-start" className="muted">From</label><input id="iv-ww-start" type="time" disabled={!t.canEdit} value={ww.start} onChange={(e) => setWw((w) => ({ ...w, start: e.target.value }))} />
+            <label htmlFor="iv-ww-end" className="muted">to</label><input id="iv-ww-end" type="time" disabled={!t.canEdit} value={ww.end} onChange={(e) => setWw((w) => ({ ...w, end: e.target.value }))} />
+            <span className="muted">Cairo time</span>
+          </div>
+          <span className="field-hint">Booking outside these days or hours shows a warning; it is never blocked.</span>
+        </div>}
         <div className="field">
           <label htmlFor="iv-hq-addr">Head Office address</label>
           <input id="iv-hq-addr" value={hqAddr} disabled={!t.canEdit} maxLength={300} onChange={(e) => setHqAddr(e.target.value)} placeholder="Street, district, city — shown to candidates for Head Office interviews" />
