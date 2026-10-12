@@ -137,5 +137,16 @@ check('candidate answer (audit A3): four answers, shown only while the interview
   assert.match(app, /className="seg-tabs resp-picker" role="radiogroup"/, 'the detail page offers the four answers as one radio group');
 });
 
+check('phone numbers (audit A11): the form converts like the server (same cases as interview_comms_test)', () => {
+  const ui = get('toIntlPhone');
+  for (const [v, want] of [['01001234567', '+201001234567'], ['0100 123 4567', '+201001234567'], ['+20 100 123 4567', '+201001234567'],
+    ['0020 122 345 6789', '+201223456789'], ['201501234567', '+201501234567'], ['٠١٠٠١٢٣٤٥٦٧', '+201001234567'], ['01001234567 / 01223456789', '+201001234567'],
+    ['+971 50 123 4567', '+971501234567'], ['02 2345 6789', null], ['0181234567', null], ['call me', null], ['', null]]) {
+    assert.equal(ui(v), want, `"${v}"`);
+  }
+  assert.match(app, /function CallHandoff\(/, 'the send dialog has a phone-call panel');
+  assert.match(app, /channel === 'call' && r\.status === 'manual_handoff' \? CALL_HANDOFF/, 'a call reads "Call started — not confirmed", never sent');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);

@@ -10840,7 +10840,19 @@ function cairoLabel(iso) {
   return `${s} · Cairo (${off})`;
 }
 const ivKey = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now() + Math.random().toString(16).slice(2));
-const INTL_PHONE = (v) => /^\+[1-9]\d{7,14}$/.test(String(v || '').replace(/[\s\-().]/g, ''));
+// Mirrors intlPhone() in backend/src/lib/interview-messages.js (audit A11):
+// first of several numbers, Arabic-Indic digits, 00 prefix, and Egyptian
+// mobiles in local form (010… → +2010…). The server decides; this only lets
+// the form accept what the server will accept.
+const toIntlPhone = (v) => {
+  const first = String(v || '').split(/\s*(?:[,;|\/]|\bor\b|\s{2,})\s*/i).find((x) => /[0-9\u0660-\u0669\u06F0-\u06F9]/.test(x)) || '';
+  let d = first.trim().replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660)).replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06F0)).replace(/[\s\-().\u200e\u200f]/g, '');
+  if (/^00[1-9]/.test(d)) d = '+' + d.slice(2);
+  else if (/^01[0125]\d{8}$/.test(d)) d = '+20' + d.slice(1);
+  else if (/^201[0125]\d{8}$/.test(d)) d = '+' + d;
+  return /^\+[1-9]\d{7,14}$/.test(d) ? d : null;
+};
+const INTL_PHONE = (v) => !!toIntlPhone(v);
 const EMAIL_FMT = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
 const HTTPS_LINK = (v) => { try { return new URL(String(v || '').trim()).protocol === 'https:'; } catch { return false; } };
 function ivDetailsProblem(mode, where) {
@@ -10860,16 +10872,18 @@ const DISPATCH_STATUS = {
   failed: { label: 'Failed', variant: 'critical' },
   manual_handoff: { label: 'Opened in WhatsApp — not confirmed', variant: 'soft' },
 };
+// A phone call is also a person's action: started, not confirmed as reached.
+const CALL_HANDOFF = { label: 'Call started — not confirmed', variant: 'soft' };
 function DispatchList({ rows }) {
   if (!rows || !rows.length) return null;
   return (
     <ul className="iv-dispatch-list">
       {rows.map((r) => {
-        const st = DISPATCH_STATUS[r.status] || { label: r.status, variant: 'soft' };
+        const st = (r.channel === 'call' && r.status === 'manual_handoff' ? CALL_HANDOFF : DISPATCH_STATUS[r.status]) || { label: r.status, variant: 'soft' };
         return (
           <li key={r.id}>
             <span className="iv-dispatch-who"><strong>{r.recipientName || 'Recipient'}</strong>
-              <span className="muted">{r.audience === 'candidate' ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from panel' : 'Panel'}{r.channel === 'whatsapp' ? ' · WhatsApp' : r.recipientAddress ? ' · ' + r.recipientAddress : ''}{r.attachCv ? ' · CV attached' : ''}</span></span>
+              <span className="muted">{r.audience === 'candidate' ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from panel' : 'Panel'}{r.channel === 'whatsapp' ? ' · WhatsApp' : r.channel === 'call' ? ' · Phone call' : r.recipientAddress ? ' · ' + r.recipientAddress : ''}{r.attachCv ? ' · CV attached' : ''}</span></span>
             <Badge variant={st.variant}>{st.label}</Badge>
             {r.reason && r.status !== 'manual_handoff' && <span className="iv-dispatch-reason">{r.reason}</span>}
           </li>
@@ -10894,6 +10908,24 @@ function WhatsAppHandoff({ phone, text, onText, onOpen, editable = true }) {
         <button type="button" className="btn btn-secondary btn-sm" disabled={!ok || !onOpen} onClick={onOpen}>Open WhatsApp</button>
       </div>
       <p className="field-hint">WhatsApp opens on this device with the message ready; you press send. The Hub records that it was opened, not that it was sent. No CV or private link is ever included.</p>
+    </div>
+  );
+}
+
+// The phone call (audit A11, from PR #46): the number as it is dialled, a
+// Call button and the script to read. Calling is a person's action; the Hub
+// records that the call was started, never that the candidate was reached.
+function CallHandoff({ phone, valid, script, onCall }) {
+  const toast = useToast();
+  return (
+    <div className="iv-wa">
+      <div className="iv-wa-head"><strong>Phone call</strong><span className="muted">{valid ? phone : phone ? `${phone} — cannot be dialled; use a mobile (01001234567) or +20… form` : 'No phone number'}</span></div>
+      <div className="iv-preview-body" aria-label="Call script">{script}</div>
+      <div className="btn-row">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(script).then(() => toast('Script copied')).catch(() => toast('Copy failed — select the text instead', 'error')); }}>Copy script</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!valid || !onCall} onClick={onCall}>Call</button>
+      </div>
+      <p className="field-hint">Call opens your phone app (on a computer: Teams or your phone link). The Hub records that the call was started, not that the candidate answered — record their answer on the interview.</p>
     </div>
   );
 }
@@ -11014,7 +11046,7 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
   function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
   const candReady = application ? true : link.mode === 'pick' ? !!link.candidate : !!link.newName.trim() && (!!link.newEmail.trim() || !!link.newPhone.trim());
   const contactProblem = !application && link.mode === 'new'
-    ? (link.newEmail.trim() && !EMAIL_FMT(link.newEmail) ? 'The email address is not valid.' : link.newPhone.trim() && !INTL_PHONE(link.newPhone) ? 'Use international format for the phone, e.g. +201001234567.' : null) : null;
+    ? (link.newEmail.trim() && !EMAIL_FMT(link.newEmail) ? 'The email address is not valid.' : link.newPhone.trim() && !INTL_PHONE(link.newPhone) ? 'Enter a mobile number (e.g. 01001234567) or the international form (+201001234567).' : null) : null;
   const blockedByCandidate = avail.state === 'conflicts' && (avail.candidate || []).length > 0;
   const needsAck = avail.state === 'conflicts' && (avail.panel || []).length > 0;
   const formReady = candReady && !contactProblem && !!startIso && f.panel.length > 0 && !blockedByCandidate && (!needsAck || (ack && overlapReason.trim()));
@@ -11336,6 +11368,10 @@ function CommunicateModal({ iv, kind, onClose, onDone }) {
     try { await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { whatsapp: { body: waText } } }); const r = await api.post(`/interviews/${iv.id}/whatsapp-handoff`, { kind }); window.open(r.link, '_blank', 'noopener'); load(); }
     catch (e) { toast(e.message, 'error'); }
   }
+  async function openCall() {
+    try { const r = await api.post(`/interviews/${iv.id}/call-handoff`, { kind }); window.location.href = r.tel; load(); }
+    catch (e) { toast(e.message, 'error'); }
+  }
   async function skip(reason) {
     setSkipAsk(false);
     try { await api.post(`/interviews/${iv.id}/notice/skip`, { reason }); toast('Recorded: not sent'); onDone(); } catch (e) { toast(e.message, 'error'); }
@@ -11376,6 +11412,7 @@ function CommunicateModal({ iv, kind, onClose, onDone }) {
               <MessageEditor label="Panel email" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tplPh, 'p')} error={errors.panel} />
               {msgs.panel_removed && data.recipients.some((r) => r.audience === 'panel_removed') && <MessageEditor label="Removed panelist" value={msgs.panel_removed} onChange={(v) => setMsgs((m) => ({ ...m, panel_removed: v }))} placeholders={phFor(tplPh, 'r')} error={errors.panel_removed} />}
               <WhatsAppHandoff phone={data.whatsapp.phone} text={waText} onText={setWaText} onOpen={data.whatsapp.valid ? openWhatsApp : null} />
+              {data.call && <CallHandoff phone={data.call.phone} valid={data.call.valid} script={data.call.script} onCall={data.call.valid ? openCall : null} />}
             </div>
             <aside className="iv-preview" aria-label="Preview">
               <div className="iv-preview-title">Preview</div>
@@ -11481,8 +11518,8 @@ function InterviewTemplatesModal({ onClose }) {
     try { const r = await api.put('/interviews/message-templates', { reset: true }); setDraft(JSON.parse(JSON.stringify(r.templates))); toast('Templates reset to the defaults'); }
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  const labels = { candidate: 'Candidate email', panel: 'Panel email', whatsapp: 'WhatsApp (candidate)', panel_removed: 'Removed panelist' };
-  const codes = { candidate: 'c', panel: 'p', whatsapp: 'w', panel_removed: 'r' };
+  const labels = { candidate: 'Candidate email', panel: 'Panel email', whatsapp: 'WhatsApp (candidate)', call: 'Phone call script (candidate)', panel_removed: 'Removed panelist' };
+  const codes = { candidate: 'c', panel: 'p', whatsapp: 'w', call: 'k', panel_removed: 'r' };
   return (
     <Modal title="Interview invitation templates" onClose={onClose} wide
       footer={t?.canEdit ? <><button className="btn btn-ghost" onClick={reset} disabled={busy}>Reset to defaults</button><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save templates'}</button></> : <button className="btn" onClick={onClose}>Close</button>}>

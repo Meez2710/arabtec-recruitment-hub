@@ -22,33 +22,35 @@ export const TEMPLATE_SETTING = 'interview_message_templates';
 // name → { label, audiences } ; audiences: c = candidate email, w = WhatsApp,
 // p = panel, r = removed panelist.
 export const PLACEHOLDERS = {
-  candidateName: { label: 'Candidate full name', in: 'cwpr' },
-  candidateFirstName: { label: 'Candidate first name', in: 'cwp' },
-  position: { label: 'Position / role', in: 'cwp' },
-  interviewType: { label: 'Interview type', in: 'cwp' },
-  date: { label: 'Date (Cairo)', in: 'cwp' },
-  time: { label: 'Start time (Cairo)', in: 'cwp' },
-  timezone: { label: 'Time zone, e.g. Cairo time (GMT+3)', in: 'cwpr' },
-  duration: { label: 'Duration', in: 'cwp' },
-  mode: { label: 'Mode (on site / video / phone)', in: 'cwp' },
-  where: { label: 'Where: location, meeting link or phone, labelled', in: 'cwp' },
+  candidateName: { label: 'Candidate full name', in: 'cwprk' },
+  candidateFirstName: { label: 'Candidate first name', in: 'cwpk' },
+  position: { label: 'Position / role', in: 'cwpk' },
+  interviewType: { label: 'Interview type', in: 'cwpk' },
+  date: { label: 'Date (Cairo)', in: 'cwpk' },
+  time: { label: 'Start time (Cairo)', in: 'cwpk' },
+  timezone: { label: 'Time zone, e.g. Cairo time (GMT+3)', in: 'cwprk' },
+  duration: { label: 'Duration', in: 'cwpk' },
+  mode: { label: 'Mode (on site / video / phone)', in: 'cwpk' },
+  where: { label: 'Where: location, meeting link or phone, labelled', in: 'cwpk' },
   panelNames: { label: 'Panel members', in: 'cp' },
-  recruiterName: { label: 'Recruiter (organiser) name', in: 'cwpr' },
-  recruiterEmail: { label: 'Recruiter email', in: 'cwpr' },
-  recruiterPhone: { label: 'Recruiter phone', in: 'cwpr' },
-  companyName: { label: 'Company name', in: 'cwpr' },
-  changes: { label: 'What changed (updates)', in: 'cwp' },
-  previousDate: { label: 'Previous date (updates)', in: 'cwpr' },
-  previousTime: { label: 'Previous time (updates)', in: 'cwpr' },
+  recruiterName: { label: 'Recruiter (organiser) name', in: 'cwprk' },
+  recruiterEmail: { label: 'Recruiter email', in: 'cwprk' },
+  recruiterPhone: { label: 'Recruiter phone', in: 'cwprk' },
+  companyName: { label: 'Company name', in: 'cwprk' },
+  changes: { label: 'What changed (updates)', in: 'cwpk' },
+  previousDate: { label: 'Previous date (updates)', in: 'cwprk' },
+  previousTime: { label: 'Previous time (updates)', in: 'cwprk' },
   recipientName: { label: 'Panel recipient name', in: 'pr' },
   interviewNo: { label: 'Interview reference', in: 'pr' },
   requestRef: { label: 'Hiring request reference', in: 'p' },
   cvLink: { label: 'Authenticated link to the CV and interview', in: 'p' },
   cancelReason: { label: 'Cancellation reason (internal)', in: 'p' },
 };
-const AUDIENCE_CODE = { candidate: 'c', whatsapp: 'w', panel: 'p', panel_removed: 'r' };
-export const AUDIENCES = { invite: ['candidate', 'panel', 'whatsapp'], update: ['candidate', 'panel', 'whatsapp', 'panel_removed'], cancel: ['candidate', 'panel', 'whatsapp'] };
-export const HAS_SUBJECT = { candidate: true, panel: true, panel_removed: true, whatsapp: false };
+// k = phone-call script (audit A11, from PR #46): read out by a person, so it
+// may use exactly what a WhatsApp message may use.
+const AUDIENCE_CODE = { candidate: 'c', whatsapp: 'w', call: 'k', panel: 'p', panel_removed: 'r' };
+export const AUDIENCES = { invite: ['candidate', 'panel', 'whatsapp', 'call'], update: ['candidate', 'panel', 'whatsapp', 'call', 'panel_removed'], cancel: ['candidate', 'panel', 'whatsapp', 'call'] };
+export const HAS_SUBJECT = { candidate: true, panel: true, panel_removed: true, whatsapp: false, call: false };
 
 const SIGN = '{{recruiterName}}\nArabtec Recruitment Team\n{{recruiterEmail}}';
 export const DEFAULT_TEMPLATES = {
@@ -62,6 +64,7 @@ export const DEFAULT_TEMPLATES = {
       body: 'Hello {{recipientName}},\n\nYou are on the interview panel for {{candidateName}} ({{position}}).\n\nDate: {{date}}\nTime: {{time}} ({{timezone}})\nDuration: {{duration}}\n{{where}}\nPanel: {{panelNames}}\n\nThe CV and the interview details are in the Recruitment Hub (sign-in required):\n{{cvLink}}\n\nOrganised by {{recruiterName}} ({{recruiterEmail}}).',
     },
     whatsapp: { body: 'Dear {{candidateFirstName}}, Arabtec would like to invite you to an interview for the {{position}} role on {{date}} at {{time}} ({{timezone}}). {{where}}. Please reply to confirm. — {{recruiterName}}, Arabtec Recruitment' },
+    call: { body: 'Hello, may I speak to {{candidateName}}? This is {{recruiterName}} from Arabtec Recruitment.\nI am calling about your application for the {{position}} role. We would like to invite you to an interview on {{date}} at {{time}} ({{timezone}}).\nIt is a {{interviewType}} interview. {{where}}.\nCan you attend at that time?\n(If not, ask which days and times suit them.)\nThank you — we will also send the details by WhatsApp or email.' },
   },
   update: {
     candidate: {
@@ -73,6 +76,7 @@ export const DEFAULT_TEMPLATES = {
       body: 'Hello {{recipientName}},\n\nThe interview with {{candidateName}} ({{position}}) has changed.\n\n{{changes}}\n\nDate: {{date}}\nTime: {{time}} ({{timezone}})\nDuration: {{duration}}\n{{where}}\nPanel: {{panelNames}}\n\nDetails and CV: {{cvLink}}',
     },
     whatsapp: { body: 'Dear {{candidateFirstName}}, your Arabtec interview for the {{position}} role has changed. New details: {{date}} at {{time}} ({{timezone}}). {{where}}. Please reply to confirm. — {{recruiterName}}, Arabtec Recruitment' },
+    call: { body: 'Hello {{candidateName}}, this is {{recruiterName}} from Arabtec Recruitment.\nI am calling about your interview for the {{position}} role. The details have changed: it is now on {{date}} at {{time}} ({{timezone}}). {{where}}.\nDoes the new time suit you?\nThank you, and sorry for the change.' },
     panel_removed: {
       subject: 'You are no longer on the panel — interview {{interviewNo}}',
       body: 'Hello {{recipientName}},\n\nYou are no longer on the panel for interview {{interviewNo}} with {{candidateName}}, previously planned for {{previousDate}} at {{previousTime}} ({{timezone}}). No action is needed.\n\n{{recruiterName}} ({{recruiterEmail}})',
@@ -88,6 +92,7 @@ export const DEFAULT_TEMPLATES = {
       body: 'Hello {{recipientName}},\n\nThe interview with {{candidateName}} on {{date}} at {{time}} ({{timezone}}) has been cancelled.\nReason: {{cancelReason}}\n\n{{recruiterName}}',
     },
     whatsapp: { body: 'Dear {{candidateFirstName}}, your Arabtec interview for the {{position}} role on {{date}} at {{time}} ({{timezone}}) has been cancelled. We will contact you about next steps. — {{recruiterName}}, Arabtec Recruitment' },
+    call: { body: 'Hello {{candidateName}}, this is {{recruiterName}} from Arabtec Recruitment.\nI am sorry to tell you that your interview for the {{position}} role on {{date}} at {{time}} has been cancelled.\nWe will contact you about next steps. Thank you for your understanding.' },
   },
 };
 export const LIMITS = { subject: 200, body: 5000 };
@@ -101,7 +106,7 @@ export const LIMITS = { subject: 200, body: 5000 };
 // character). A converted part that fails our placeholder rules is dropped, so
 // the default is used rather than an unchecked text.
 const LEGACY_KIND = { invite: 'invite', reschedule: 'update', cancel: 'cancel' };
-const LEGACY_FIELD = { email: ['candidate', 'body'], subject: ['candidate', 'subject'], whatsapp: ['whatsapp', 'body'] };
+const LEGACY_FIELD = { email: ['candidate', 'body'], subject: ['candidate', 'subject'], whatsapp: ['whatsapp', 'body'], call: ['call', 'body'] };
 const LEGACY_TOKEN = { candidate_name: 'candidateName', position: 'position', date: 'date', time: 'time', duration: 'duration',
   interview_type: 'interviewType', where: 'where', interviewers: 'panelNames', recruiter_name: 'recruiterName',
   reference: 'interviewNo', reason: 'cancelReason' };
@@ -303,11 +308,30 @@ export function interviewIcs({ iv, summary, description, cancelled = false }) {
 /* ------------------------------------------------------- contact checks */
 export const EMAIL_OK = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
 /** International phone (E.164): + then 8–15 digits; spaces, dashes, brackets ignored. */
+/**
+ * A phone number in international (E.164) form, or null. Accepts what people
+ * actually type and what CVs contain (audit A11, from PR #46):
+ *   • the FIRST number when several are listed ("010… / 012…", "010…, 011…");
+ *   • Arabic-Indic and Persian digits;
+ *   • 00-prefixed international numbers (0020… → +20…);
+ *   • Egyptian mobiles in local form (010/011/012/015 + 8 digits → +20…), with
+ *     or without the leading 0 after 20 (201… → +201…).
+ * Anything else — e.g. a local landline without its country code — stays null,
+ * so the UI asks for the international form instead of guessing.
+ */
 export function intlPhone(v) {
-  const raw = String(v || '').trim();
-  const digits = raw.replace(/[\s\-().]/g, '');
-  return /^\+[1-9]\d{7,14}$/.test(digits) ? digits : null;
+  const first = String(v || '').split(/\s*(?:[,;|\/]|\bor\b|\s{2,})\s*/i).find((x) => /[0-9\u0660-\u0669\u06F0-\u06F9]/.test(x)) || '';
+  let d = first.trim()
+    .replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06F0))
+    .replace(/[\s\-().\u200e\u200f]/g, '');
+  if (/^00[1-9]/.test(d)) d = '+' + d.slice(2);
+  else if (/^01[0125]\d{8}$/.test(d)) d = '+20' + d.slice(1);
+  else if (/^201[0125]\d{8}$/.test(d)) d = '+' + d;
+  return /^\+[1-9]\d{7,14}$/.test(d) ? d : null;
 }
+/** tel: link for a phone call, or null. Opening it is a person calling. */
+export function telLink(phone) { const p = intlPhone(phone); return p ? `tel:${p}` : null; }
 export function validHttpsLink(v) { try { const u = new URL(String(v || '').trim()); return u.protocol === 'https:' ? u.href : null; } catch { return null; } }
 
 /** What must be true of the interview details before anything is sent. */

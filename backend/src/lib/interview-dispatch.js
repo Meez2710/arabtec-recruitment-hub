@@ -21,7 +21,7 @@ import { configFor } from './notify.js';
 import { readBlob } from './upload.js';
 import { canSeeCandidate } from './candidate-scope.js';
 import {
-  globalTemplates, messageValues, fill, textToHtml, interviewIcs, EMAIL_OK, intlPhone, whatsappLink, detailsProblem, AUDIENCES,
+  globalTemplates, messageValues, fill, textToHtml, interviewIcs, EMAIL_OK, intlPhone, whatsappLink, telLink, detailsProblem, AUDIENCES,
 } from './interview-messages.js';
 
 export const EVENT_FOR = { invite: 'interview.scheduled', update: 'interview.updated', cancel: 'interview.cancelled' };
@@ -72,7 +72,7 @@ export function renderAll(iv, kind, { messages = null } = {}) {
     const v = messageValues({ ...base, recipient });
     return { subject: msgs[aud]?.subject != null ? fill(msgs[aud].subject, v) : null, body: fill(msgs[aud]?.body, v) };
   };
-  const out = { candidate: one('candidate', null), whatsapp: one('whatsapp', null), panel: {} };
+  const out = { candidate: one('candidate', null), whatsapp: one('whatsapp', null), call: one('call', null), panel: {} };
   // On an update, panelists added since the last message get the invitation.
   const added = new Set(kind === 'update' ? (n?.addedPanel || []).map(Number) : []);
   const invite = added.size ? effectiveMessages(iv, 'invite') : null;
@@ -125,8 +125,12 @@ export function recipients(iv, kind) {
       if (u) list.push({ key: `user:${u.id}`, audience: 'panel_removed', userId: u.id, name: u.full_name, address: u.email || null, reachable: EMAIL_OK(u.email), problem: EMAIL_OK(u.email) ? null : 'No valid email address.' });
     }
   }
+  // One phone for WhatsApp and calls, shown in the international form it is
+  // used in (010… on file is shown and dialled as +2010…).
   const phone = intlPhone(candidate?.phone);
-  return { list, whatsapp: { phone: candidate?.phone || null, valid: !!phone, problem: phone ? null : (candidate?.phone ? 'The phone number is not in international format (e.g. +201001234567).' : 'The candidate has no phone number on file.') } };
+  const reach = { phone: phone || candidate?.phone || null, onFile: candidate?.phone || null, valid: !!phone,
+    problem: phone ? null : (candidate?.phone ? 'The phone number could not be read as a mobile or international number (e.g. 01001234567 or +201001234567).' : 'The candidate has no phone number on file.') };
+  return { list, whatsapp: reach, call: { ...reach, tel: telLink(candidate?.phone) } };
 }
 
 // Permissions of a stored user, for the CV-scope check of a panel recipient.
@@ -268,6 +272,22 @@ export function recordWhatsappHandoff(iv, { kind, batchKey, actor }) {
     [iv.id, batchKey, kind, Number(iv.calendar_seq || 0), 'candidate', 'candidate', candidate?.full_name || 'Candidate', intlPhone(candidate?.phone), 'whatsapp', 'manual_handoff',
       'Opened in WhatsApp for a person to send. Not confirmed as sent.', actor.id, nowISO(), nowISO()]);
   return { link, text: rendered.whatsapp.body };
+}
+
+/**
+ * A phone call is made by a person on their own phone (audit A11): the Hub
+ * records that the call was handed off — never that the candidate was reached.
+ * Same idempotency as WhatsApp: one row per (batch, recipient, channel).
+ */
+export function recordCallHandoff(iv, { kind, batchKey, actor }) {
+  const { rendered, candidate } = renderAll(iv, kind);
+  const tel = telLink(candidate?.phone);
+  if (!tel) return { error: 'The candidate has no phone number that can be dialled (e.g. 01001234567 or +201001234567).' };
+  run(`INSERT OR IGNORE INTO interview_dispatch (interview_id,batch_key,kind,revision,audience,recipient_key,recipient_name,recipient_address,channel,status,reason,created_by,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [iv.id, batchKey, kind, Number(iv.calendar_seq || 0), 'candidate', 'candidate', candidate?.full_name || 'Candidate', intlPhone(candidate?.phone), 'call', 'manual_handoff',
+      'Handed to a phone call made by a person. Not confirmed as reached.', actor.id, nowISO(), nowISO()]);
+  return { tel, script: rendered.call.body };
 }
 
 export { detailsProblem };

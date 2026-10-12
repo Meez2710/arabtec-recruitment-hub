@@ -12,10 +12,10 @@ import { tx, run as dbRun } from '../lib/db.js';
 import { canSeeCandidate } from '../lib/candidate-scope.js';
 import {
   PLACEHOLDERS, DEFAULT_TEMPLATES, AUDIENCES, HAS_SUBJECT, KINDS, TEMPLATE_SETTING, globalTemplates, storedTemplates, validateTemplateSet, validateText,
-  messageValues, fill, cairoParts, intlPhone, whatsappLink, detailsProblem, EMAIL_OK,
+  messageValues, fill, cairoParts, intlPhone, whatsappLink, telLink, detailsProblem, EMAIL_OK,
 } from '../lib/interview-messages.js';
 import {
-  effectiveMessages, saveMessages, renderAll, recipients, channelStatus, sendAction, dispatchesFor, recordWhatsappHandoff, appUrl,
+  effectiveMessages, saveMessages, renderAll, recipients, channelStatus, sendAction, dispatchesFor, recordWhatsappHandoff, recordCallHandoff, appUrl,
 } from '../lib/interview-dispatch.js';
 import { SystemSettings } from '../lib/models.js';
 
@@ -253,7 +253,8 @@ router.post('/message-preview', requirePermission('interview.schedule'), (req, r
   const v = (recipient) => messageValues({ iv, candidate: cand, request, organizer, panel, recipient, appUrl: appUrl() });
   const out = {
     candidate: { subject: fill(msgs.candidate.subject, v(null)), body: fill(msgs.candidate.body, v(null)), to: cand.email || null, reachable: EMAIL_OK(cand.email) },
-    whatsapp: { body: fill(msgs.whatsapp.body, v(null)), phone: cand.phone || null, valid: !!intlPhone(cand.phone), link: whatsappLink(cand.phone, fill(msgs.whatsapp.body, v(null))) },
+    whatsapp: { body: fill(msgs.whatsapp.body, v(null)), phone: intlPhone(cand.phone) || cand.phone || null, valid: !!intlPhone(cand.phone), link: whatsappLink(cand.phone, fill(msgs.whatsapp.body, v(null))) },
+    call: { body: fill(msgs.call.body, v(null)), phone: intlPhone(cand.phone) || cand.phone || null, valid: !!intlPhone(cand.phone), tel: telLink(cand.phone) },
     panel: panel.map((u) => ({ userId: u.id, name: u.full_name, to: u.email || null, reachable: EMAIL_OK(u.email), subject: fill(msgs.panel.subject, v(u)), body: fill(msgs.panel.body, v(u)) })),
   };
   res.json({ messages: msgs, preview: out, errors, when: cairoParts(at), detailsProblem: detailsProblem(iv), channel: channelStatus(kind) });
@@ -284,6 +285,7 @@ router.get('/:id/messages', (req, res) => {
   const { rendered, messages } = renderAll(iv, kind);
   const reach = recipients(iv, kind);
   res.json({ kind, messages, rendered, recipients: reach.list, whatsapp: { ...reach.whatsapp, link: whatsappLink(reach.whatsapp.phone, rendered.whatsapp.body), text: rendered.whatsapp.body },
+    call: { ...reach.call, script: rendered.call.body },
     channel: channelStatus(kind), detailsProblem: kind === 'cancel' ? null : detailsProblem(iv), when: cairoParts(iv.scheduled_at),
     notice: (() => { try { return iv.notice_state ? JSON.parse(iv.notice_state) : null; } catch { return null; } })(),
     dispatches: dispatchesFor(iv.id) });
@@ -387,6 +389,19 @@ router.post('/:id/response', (req, res) => {
     writeAudit(req, { action: 'interview.candidate_response', entityType: 'interview', entityId: iv.id, oldValue: { response: before }, newValue: { response } });
   }
   res.json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
+});
+
+// A phone call made by a person (audit A11): recorded as a hand-off, never as
+// "reached". The script is the call audience's text for this kind.
+router.post('/:id/call-handoff', requirePermission('interview.edit'), (req, res) => {
+  const iv = loadForMessages(req, res); if (!iv) return;
+  const d = req.body || {};
+  const kind = kindOf(d.kind, iv);
+  const batchKey = typeof d.batchKey === 'string' && d.batchKey.trim() ? d.batchKey.trim().slice(0, 100) : `call-${iv.id}-${Date.now()}`;
+  const r = recordCallHandoff(iv, { kind, batchKey, actor: req.user });
+  if (r.error) return res.status(400).json({ error: r.error });
+  InterviewActivity.add(iv.id, req.user, 'call_made', 'Phone call started by hand — not confirmed as reached');
+  res.json({ tel: r.tel, script: r.script, dispatches: dispatchesFor(iv.id).filter((x) => x.batchKey === batchKey) });
 });
 
 router.get('/:id/dispatches', (req, res) => {

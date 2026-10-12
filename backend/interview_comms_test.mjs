@@ -65,7 +65,13 @@ try {
   const ics = M.interviewIcs({ iv: ivx, summary: 's', description: 'd', cancelled: true });
   c('cancellation calendar entry: same UID, SEQUENCE = revision, STATUS:CANCELLED, UTC start',
     ics.includes('UID:INT-09@arabtec-recruitment-hub') && ics.includes('SEQUENCE:3') && ics.includes('STATUS:CANCELLED') && ics.includes('DTSTART:20261215T080000Z'));
-  c('international phone check', M.intlPhone('+20 100 123 4567') === '+201001234567' && M.intlPhone('01001234567') === null);
+  // Audit A11 (from PR #46): what people type and what CVs contain.
+  for (const [input, want] of [
+    ['+20 100 123 4567', '+201001234567'], ['01001234567', '+201001234567'], ['0100 123 4567', '+201001234567'],
+    ['011-2345-6789', '+201123456789'], ['0020 122 345 6789', '+201223456789'], ['201501234567', '+201501234567'],
+    ['٠١٠٠١٢٣٤٥٦٧', '+201001234567'], ['01001234567 / 01223456789', '+201001234567'], ['01001234567, +971501234567', '+201001234567'],
+    ['+971 50 123 4567', '+971501234567'], ['02 2345 6789', null], ['0181234567', null], ['call me', null], ['', null],
+  ]) c(`phone "${input}" → ${want}`, M.intlPhone(input) === want, String(M.intlPhone(input)));
 
   const hrMgr = await login('hr.manager@arabtec.com');
   const hrDir = await login('hr.director@arabtec.com');
@@ -178,8 +184,25 @@ try {
   for (const k of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_ENCRYPTION']) delete process.env[k];
 
   console.log('\n— WhatsApp: a manual hand-off —');
-  const W = await booked({ phone: '0100 123 4567' });
-  c('a local-format phone is refused for WhatsApp (400)', (await api(`/api/interviews/${W.iv.id}/whatsapp-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } })).status === 400);
+  const W = await booked({ phone: '0100 123 4599' });
+  const wl = await api(`/api/interviews/${W.iv.id}/whatsapp-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } });
+  c('a local Egyptian mobile is converted to +20 for WhatsApp', wl.status === 200 && /^https:\/\/wa\.me\/201001234599\?text=/.test(wl.json?.link || ''), `${wl.status} ${wl.text.slice(0, 120)}`);
+  const L = await booked({ phone: '02 2345 6789' });
+  c('a landline without a country code is refused for WhatsApp (400)', (await api(`/api/interviews/${L.iv.id}/whatsapp-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } })).status === 400);
+
+  console.log('\n— phone call: a manual hand-off with a script —');
+  const callMsg = await must(`/api/interviews/${W.iv.id}/messages?kind=invite`, { token: recruiter });
+  c('the call script is rendered with the candidate name and Cairo time, and a tel: link in +20 form', callMsg.call?.tel === 'tel:+201001234599' && callMsg.call.script.includes('Cairo time') && !callMsg.call.script.includes('{{'), JSON.stringify(callMsg.call || {}).slice(0, 160));
+  c('…the number is shown in the form it is dialled in', callMsg.call.phone === '+201001234599' && callMsg.whatsapp.phone === '+201001234599');
+  const callKey = key();
+  const call1 = await must(`/api/interviews/${W.iv.id}/call-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite', batchKey: callKey } });
+  await must(`/api/interviews/${W.iv.id}/call-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite', batchKey: callKey } });
+  const callRows = (await must(`/api/interviews/${W.iv.id}/dispatches`, { token: recruiter })).dispatches.filter((r) => r.channel === 'call');
+  c('a call is recorded once per action (double click safe) as a hand-off, never as reached or sent', call1.tel === 'tel:+201001234599' && callRows.length === 1 && callRows[0].status === 'manual_handoff');
+  c('a panelist cannot start the call hand-off (403)', (await api(`/api/interviews/${W.iv.id}/call-handoff`, { method: 'POST', token: interviewer, body: { kind: 'invite' } })).status === 403);
+  c('a number that cannot be dialled is refused (400)', (await api(`/api/interviews/${L.iv.id}/call-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } })).status === 400);
+  const badScript = await api(`/api/interviews/${W.iv.id}/messages`, { method: 'PUT', token: recruiter, body: { kind: 'invite', messages: { call: { body: 'Your CV: {{cvLink}}' } } } });
+  c('a call script cannot carry the private CV link (400)', badScript.status === 400);
   const wa = await must(`/api/interviews/${A.iv.id}/whatsapp-handoff`, { method: 'POST', token: recruiter, body: { kind: 'invite' } });
   c('WhatsApp opens a wa.me link with the editable text, no CV link', /^https:\/\/wa\.me\/201001234501\?text=/.test(wa.link) && !decodeURIComponent(wa.link).includes('#interviews/'));
   c('…recorded as a manual hand-off, not as sent', wa.dispatches[0]?.status === 'manual_handoff' && wa.dispatches[0]?.channel === 'whatsapp');
