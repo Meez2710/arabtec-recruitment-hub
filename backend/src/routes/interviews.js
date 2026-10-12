@@ -9,7 +9,7 @@ import { writeAudit } from '../lib/audit.js';
 import { isEnabled } from '../lib/feature-flags.js';
 import { APP_TERMINAL, APP_LABELS, appNorm, REQ_TERMINAL, REQ_LABELS, reqNorm } from '../lib/stages.js';
 import { schedulingGuard, evaluateConflicts, conflictRefusal, attendanceRefusal, actionsOpenAt } from '../lib/interview-rules.js';
-import { tx, run as dbRun } from '../lib/db.js';
+import { tx, run as dbRun, all as dbAll } from '../lib/db.js';
 import { canSeeCandidate } from '../lib/candidate-scope.js';
 import {
   PLACEHOLDERS, DEFAULT_TEMPLATES, AUDIENCES, HAS_SUBJECT, KINDS, TEMPLATE_SETTING, globalTemplates, storedTemplates, validateTemplateSet, validateText,
@@ -200,7 +200,7 @@ router.get('/application/:applicationId', (req, res) => {
 // permission). Templates carry placeholders only — never salary or HR data —
 // and never touch sender credentials.
 router.get('/message-templates', requireAnyPermission('interview.schedule', 'interview.edit'), (req, res) => {
-  res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: Object.fromEntries(Object.entries(AUDIENCES).map(([k, v]) => [k, withoutCall(v)])), hasSubject: HAS_SUBJECT, phoneCalls: phoneCalls(),
+  res.json({ templates: globalTemplates(), defaults: DEFAULT_TEMPLATES, audiences: Object.fromEntries(Object.entries(AUDIENCES).map(([k, v]) => [k, withoutCall(v)])), hasSubject: HAS_SUBJECT, phoneCalls: phoneCalls(), headOfficeAddress: SystemSettings.get(HQ_SETTING) || '',
     placeholders: Object.entries(PLACEHOLDERS).map(([name, p]) => ({ name, label: p.label, in: p.in })),
     canEdit: req.user.permissions.includes('notification.manage') });
 });
@@ -217,6 +217,16 @@ router.put('/message-templates', requirePermission('notification.manage'), (req,
     writeAudit(req, { action: 'interview.templates_reset', entityType: 'setting', entityId: TEMPLATE_SETTING, oldValue: rawParsed });
     return res.json({ templates: globalTemplates() });
   }
+  if (d.headOfficeAddress !== undefined) {
+    const addr = String(d.headOfficeAddress || '').replace(/\s+/g, ' ').trim();
+    if (addr.length > 300) return res.status(400).json({ error: 'The Head Office address is too long (300 characters at most).' });
+    const before = SystemSettings.get(HQ_SETTING) || '';
+    if (addr !== before) {
+      SystemSettings.upsert(HQ_SETTING, addr);
+      writeAudit(req, { action: 'interview.head_office_address_changed', entityType: 'setting', entityId: HQ_SETTING, oldValue: { address: before }, newValue: { address: addr } });
+    }
+    if (d.templates === undefined) return res.json({ templates: globalTemplates(), headOfficeAddress: addr });
+  }
   const err = validateTemplateSet(d.templates);
   if (err) return res.status(400).json({ error: err });
   const merged = JSON.parse(JSON.stringify(stored));
@@ -227,7 +237,7 @@ router.put('/message-templates', requirePermission('notification.manage'), (req,
   SystemSettings.upsert(TEMPLATE_SETTING, JSON.stringify(merged));
   writeAudit(req, { action: 'interview.templates_updated', entityType: 'setting', entityId: TEMPLATE_SETTING,
     oldValue: rawParsed, newValue: merged });
-  res.json({ templates: globalTemplates() });
+  res.json({ templates: globalTemplates(), headOfficeAddress: SystemSettings.get(HQ_SETTING) || '' });
 });
 
 /* ---------------- DRAFT PREVIEW (scheduling form, nothing saved) ---------------- */
@@ -270,6 +280,18 @@ router.get('/:id', (req, res) => {
   if (!canViewInterview(req.user, iv)) return res.status(403).json({ error: 'You can only view interviews assigned to you.' });
   res.json({ interview: serialize(iv, req.user, { detail: true }) });
 });
+
+// Where an on-site interview can be held (owner, 12 Oct): Head Office or one of
+// the company's active sites. The chosen place's name and address become the
+// interview's location text, which {{where}} puts in every message.
+export const HQ_SETTING = 'interview_head_office_address';
+function interviewPlaces() {
+  const hq = { key: 'hq', name: 'Head Office', address: SystemSettings.get(HQ_SETTING) || '' };
+  const sites = dbAll(`SELECT s.id, s.name, s.location, p.name AS project FROM site s LEFT JOIN project p ON p.id = s.project_id
+                       WHERE s.is_active = 1 AND s.status = 'active' ORDER BY s.name`)
+    .map((r) => ({ key: `site:${r.id}`, name: r.name, address: r.location || '', project: r.project || null }));
+  return [hq, ...sites];
+}
 
 // Phone calls are a later service (owner, 12 Oct): the "call" message and the
 // Call hand-off exist but are offered only when this switch is on.
@@ -747,6 +769,7 @@ router.get('/meta/form', (req, res) => {
   res.json({
     interviewers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name, jobTitle: u.job_title })),
     types: IV_TYPES, modes: IV_MODES, recommendations: RECS,
+    places: interviewPlaces(),
   });
 });
 

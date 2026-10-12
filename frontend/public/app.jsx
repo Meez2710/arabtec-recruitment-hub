@@ -11003,6 +11003,33 @@ function TemplateNote({ custom, onCustom, children }) {
 }
 
 /* ----------------------------- Schedule form ----------------------------- */
+// On-site interviews happen at Head Office or a company site (owner, 12 Oct):
+// the place is chosen, not typed, and its name + address become the location
+// that {{where}} puts in every message. "Other place" keeps free text.
+const placeText = (p) => (p.address ? `${p.name} — ${p.address}` : p.name);
+function InterviewPlacePicker({ places = [], value, onChange }) {
+  const match = places.find((p) => placeText(p) === (value || '').trim());
+  const [other, setOther] = useState(!!(value && !match));
+  const sel = other ? 'other' : match ? match.key : '';
+  return (
+    <>
+      <select value={sel} aria-label="Interview place" onChange={(e) => {
+        const k = e.target.value;
+        if (k === 'other') { setOther(true); if (match) onChange(''); return; }
+        setOther(false);
+        const p = places.find((x) => x.key === k);
+        onChange(p ? placeText(p) : '');
+      }}>
+        <option value="">Choose the place…</option>
+        {places.map((p) => <option key={p.key} value={p.key}>{p.key === 'hq' ? 'Head Office' : `Site — ${p.name}`}{p.project ? ` (${p.project})` : ''}</option>)}
+        <option value="other">Other place…</option>
+      </select>
+      {other && <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Office, meeting room or address" aria-label="Other place" />}
+      {sel && sel !== 'other' && <span className="field-hint">{value}{match && !match.address ? ' — add the address in Invitation templates so candidates can find it' : ''}</span>}
+    </>
+  );
+}
+
 const IV_FORM_BLANK = { interviewType: 'technical', mode: 'video', scheduledAt: '', durationMin: 60, round: 1, locationOrLink: '', panel: [] };
 const IV_LINK_BLANK = { mode: 'pick', candidate: null, newName: '', newEmail: '', newPhone: '', requestId: '' };
 const IV_PROGRESS_BLANK = { candidateId: null, cvDone: false, applicationId: null, interviewId: null };
@@ -11279,8 +11306,10 @@ function ScheduleInterviewModal({ application, user, onClose, onScheduled, initi
                 <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
                 <div className="field full">
                   <label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone number or call arrangement' : 'Location'}</label>
-                  <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
-                    placeholder={f.mode === 'video' ? 'https://… (paste the link from your calendar)' : f.mode === 'phone' ? '+20 100 000 0000' : 'Office, meeting room or site address'} />
+                  {f.mode === 'onsite'
+                    ? <InterviewPlacePicker places={meta?.places || []} value={f.locationOrLink} onChange={(v) => set('locationOrLink', v)} />
+                    : <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
+                      placeholder={f.mode === 'video' ? 'https://… (paste the link from your calendar)' : '+20 100 000 0000'} />}
                   {f.mode === 'video' && f.locationOrLink.trim() && !HTTPS_LINK(f.locationOrLink) && <span className="iv-error">Use a full https:// meeting link.</span>}
                 </div>
               </div>
@@ -11534,7 +11563,9 @@ function RescheduleModal({ iv, onClose, onSaved }) {
           <div className="field"><label>Date &amp; time (Cairo)</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} />{startIso && <span className="field-hint">{cairoLabel(startIso)}</span>}</div>
           <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
           <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{ivMode(m)}</option>)}</select></div>
-          <div className="field"><label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone / arrangement' : 'Location'}</label><input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} /></div>
+          <div className="field"><label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone / arrangement' : 'Place'}</label>{f.mode === 'onsite'
+            ? <InterviewPlacePicker places={meta?.places || []} value={f.locationOrLink} onChange={(v) => set('locationOrLink', v)} />
+            : <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} />}</div>
         </div>
         <div className="iv-sub">Panel</div>
         <div className="iv-panel-pick">{meta.interviewers.map((u) => <button key={u.id} type="button" title={u.name} aria-pressed={f.panel.includes(u.id)} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => setF((s) => ({ ...s, panel: s.panel.includes(u.id) ? s.panel.filter((x) => x !== u.id) : [...s.panel, u.id] }))}>{u.name}</button>)}</div>
@@ -11561,10 +11592,11 @@ function InterviewTemplatesModal({ onClose }) {
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  useEffect(() => { api.get('/interviews/message-templates').then((r) => { setT(r); setDraft(JSON.parse(JSON.stringify(r.templates))); }).catch((e) => toast(e.message, 'error')); }, []);
+  const [hqAddr, setHqAddr] = useState('');
+  useEffect(() => { api.get('/interviews/message-templates').then((r) => { setT(r); setDraft(JSON.parse(JSON.stringify(r.templates))); setHqAddr(r.headOfficeAddress || ''); }).catch((e) => toast(e.message, 'error')); }, []);
   async function save() {
     setBusy(true); setErr(null);
-    try { const r = await api.put('/interviews/message-templates', { templates: draft }); setT((x) => ({ ...x, templates: r.templates })); toast('Templates saved'); }
+    try { const r = await api.put('/interviews/message-templates', { templates: draft, headOfficeAddress: hqAddr }); setT((x) => ({ ...x, templates: r.templates, headOfficeAddress: r.headOfficeAddress })); toast('Templates saved'); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
   async function reset() {
@@ -11579,6 +11611,11 @@ function InterviewTemplatesModal({ onClose }) {
       footer={t?.canEdit ? <><button className="btn btn-ghost" onClick={reset} disabled={busy}>Reset to defaults</button><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save templates'}</button></> : <button className="btn" onClick={onClose}>Close</button>}>
       {!t || !draft ? <Skeleton /> : <div className="iv-tpl-body">
         <p className="muted">The organisation’s default wording. Each interview starts from these and can be edited before sending. Placeholders are filled in for each recipient; only the ones listed under each message can be used there.{t.canEdit ? '' : ' You can view these; changing them needs the Notifications permission.'}</p>
+        <div className="field">
+          <label htmlFor="iv-hq-addr">Head Office address</label>
+          <input id="iv-hq-addr" value={hqAddr} disabled={!t.canEdit} maxLength={300} onChange={(e) => setHqAddr(e.target.value)} placeholder="Street, district, city — shown to candidates for Head Office interviews" />
+          <span className="field-hint">On-site interviews pick Head Office or a company site; the place and its address fill {'{{where}}'} in every message. Site addresses come from Organization Structure.</span>
+        </div>
         <div className="seg-tabs" role="tablist">{[['invite', 'Invitation'], ['update', 'Update'], ['cancel', 'Cancellation'], ['reminder', 'Reminder']].map(([k, l]) => <button key={k} role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => setKind(k)}>{l}</button>)}</div>
         {err && <div className="notice notice-danger">{err}</div>}
         {t.audiences[kind].map((aud) => (

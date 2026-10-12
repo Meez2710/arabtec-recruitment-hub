@@ -215,6 +215,19 @@ try {
   c('WhatsApp opens a wa.me link with the editable text, no CV link', /^https:\/\/wa\.me\/201001234501\?text=/.test(wa.link) && !decodeURIComponent(wa.link).includes('#interviews/'));
   c('…recorded as a manual hand-off, not as sent', wa.dispatches[0]?.status === 'manual_handoff' && wa.dispatches[0]?.channel === 'whatsapp');
 
+  console.log('\n— places: Head Office or a company site (owner, 12 Oct) —');
+  const m0 = await must('/api/interviews/meta/form', { token: recruiter });
+  c('the form offers Head Office first, then the active company sites', m0.places?.[0]?.key === 'hq' && m0.places.slice(1).length >= 1 && m0.places.slice(1).every((p) => p.key.startsWith('site:') && p.name), JSON.stringify(m0.places || []).slice(0, 160));
+  c('an interviewer cannot set the Head Office address (403)', (await api('/api/interviews/message-templates', { method: 'PUT', token: interviewer, body: { headOfficeAddress: 'x' } })).status === 403);
+  const hqSave = await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { headOfficeAddress: '  12 Synthetic St,   New Cairo ' } });
+  c('the Head Office address is saved, tidied, on its own', hqSave.status === 200 && hqSave.json.headOfficeAddress === '12 Synthetic St, New Cairo', hqSave.text.slice(0, 160));
+  const hq = (await must('/api/interviews/meta/form', { token: recruiter })).places[0];
+  c('…and the place now carries it', hq.address === '12 Synthetic St, New Cairo');
+  c('a too-long address is refused (400)', (await api('/api/interviews/message-templates', { method: 'PUT', token: hrMgr, body: { headOfficeAddress: 'x'.repeat(301) } })).status === 400);
+  const onsite = await booked({ mode: 'onsite', link: 'Head Office — 12 Synthetic St, New Cairo' });
+  const om = await must(`/api/interviews/${onsite.iv.id}/messages?kind=invite`, { token: recruiter });
+  c('the chosen place and address go into the candidate email and WhatsApp automatically', om.rendered.candidate.body.includes('Head Office — 12 Synthetic St, New Cairo') && om.whatsapp.text.includes('12 Synthetic St'), om.rendered.candidate.body.slice(0, 200));
+
   console.log('\n— reminders (audit A7) —');
   const R = await booked({ panel: [mona.id] });
   const rm = await must(`/api/interviews/${R.iv.id}/messages?kind=reminder`, { token: recruiter });

@@ -172,5 +172,14 @@ check('messages come from templates (owner, 12 Oct): editors are folded away; ch
   assert.equal(phShort('Where: location, meeting link or phone, labelled'), 'Where');
 });
 
+check('place (owner, 12 Oct): on-site interviews pick Head Office or a site; name + address become the location', () => {
+  const placeText = get('placeText');
+  assert.equal(placeText({ name: 'Head Office', address: '12 Synthetic St, New Cairo' }), 'Head Office — 12 Synthetic St, New Cairo');
+  assert.equal(placeText({ name: 'Site A', address: '' }), 'Site A');
+  assert.equal((app.match(/f\.mode === 'onsite'\s*\?\s*<InterviewPlacePicker /g) || []).length, 2, 'the booking and reschedule forms both use the place picker for on-site');
+  assert.match(app, /<option value="other">Other place…<\/option>/, 'a place outside the list can still be typed');
+  assert.match(app, /id="iv-hq-addr"/, 'the Head Office address is set once, in Invitation templates');
+});
+
 console.log(`\n=== UI INTERVIEW CALENDAR: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail ? 1 : 0);
