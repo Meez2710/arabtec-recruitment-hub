@@ -9556,6 +9556,7 @@ function ParsePreviewTable({ rows }) {
 function PdfPagesView({ url, fileName, zoom }) {
   const host = useRef(null);
   const [state, setState] = useState('loading'); // loading | ready | failed
+  const [why, setWhy] = useState('');
   useEffect(() => {
     let alive = true, task = null;
     setState('loading');
@@ -9582,13 +9583,14 @@ function PdfPagesView({ url, fileName, zoom }) {
         await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
         if (n === 1 && alive) setState('ready');
       }
-    })().catch(() => { if (alive) setState('failed'); });
+    })().catch((e) => { if (alive) { setWhy(String((e && e.message) || e).slice(0, 120)); setState('failed'); } });
     return () => { alive = false; try { task && task.destroy(); } catch { /* already gone */ } };
   }, [url]);
   if (state === 'failed') {
     return (
       <div className="parse-review-cv-empty">
         This CV could not be drawn in the page.
+        {why ? <small style={{ display: 'block', opacity: 0.7 }}>{why}</small> : null}
         <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
           <a href={url} target="_blank" rel="noopener" className="btn">Open CV</a>
           <a href={url} download={fileName || 'cv.pdf'} className="btn btn-secondary">Download</a>
@@ -9619,8 +9621,14 @@ function CvFilePreview({ fileUrl, fileName, mimeType, html }) {
   // an iframe: Android Chrome paints a blank frame, iOS Safari only page one.
   // Desktop browsers expose navigator.pdfViewerEnabled; where it is false, or
   // the device is a touch phone/tablet, hand the PDF to the browser's own viewer.
-  const touchApple = /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
-  const noInlinePdf = navigator.pdfViewerEnabled === false || touchApple || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  // Only desktop Chrome / Edge / Firefox show a blob PDF reliably inside an
+  // iframe under this app's CSP (object-src 'none'). Safari, DuckDuckGo and every
+  // phone/tablet browser (all WebKit on iOS) get the pdf.js renderer instead.
+  const ua = navigator.userAgent;
+  const touchApple = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  const nativePdf = navigator.pdfViewerEnabled !== false && /Chrome|Chromium|Edg\/|Firefox/.test(ua)
+    && !/Android|iPhone|iPad|iPod|CriOS|FxiOS/i.test(ua) && !touchApple;
+  const noInlinePdf = !nativePdf;
   return (
     <div className="parse-review-cv">
       <div className="parse-review-cv-toolbar">
