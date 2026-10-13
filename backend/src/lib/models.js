@@ -960,6 +960,28 @@ export const Candidates = {
     // buckets; a candidate created before the column existed has NULL and is
     // simply not in any bucket, never excluded from an unfiltered search.
     if (f.disciplineClass) { sql += ' AND discipline_class=?'; p.push(f.disciplineClass); }
+    if (f.departmentId != null) {
+      // Actual request department only. EXISTS keeps filtering/counting paged
+      // without expanding a large department into thousands of placeholders.
+      sql += ` AND EXISTS (SELECT 1 FROM application a
+        JOIN recruitment_request r ON r.id=a.request_id
+        JOIN department d ON d.id=r.department_id
+        WHERE a.candidate_id=candidate.id AND d.id=? AND d.status='active'`;
+      p.push(f.departmentId);
+      if (f.departmentScope) {
+        const { userId, assigned } = f.departmentScope;
+        sql += ' AND (r.requester_id=? OR r.owner_id=? OR r.created_by=?';
+        p.push(userId, userId, userId);
+        if (assigned) {
+          sql += ` OR EXISTS (SELECT 1 FROM interview i WHERE i.application_id=a.id
+            AND (i.organizer_id=? OR EXISTS (SELECT 1 FROM interview_panel ip
+              WHERE ip.interview_id=i.id AND ip.interviewer_id=?)))`;
+          p.push(userId, userId);
+        }
+        sql += ')';
+      }
+      sql += ')';
+    }
     // Data-quality label. Same JSON-LIKE pattern the `tags` filter above uses,
     // so no new index and no new query machinery. Filtering is OPT-IN: the
     // default Talent Pool never hides a flagged candidate.

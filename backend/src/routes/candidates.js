@@ -7,7 +7,7 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile, uploadPath, readBlob } from '../lib/upload.js';
 import { sendDocxPreview } from '../lib/cv-preview.js';
-import { run as dbRun, get as dbGet } from '../lib/db.js';
+import { run as dbRun, get as dbGet, all as dbAll } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
 // Resolved per request through the parsing registry, never imported directly.
@@ -74,6 +74,24 @@ function serialize(c, user, { withDetail = false } = {}) {
   // Nested request/application metadata is limited to the caller's scope (AR-01).
   const inScope = applicationScopeFilter(user);
   const applications = Applications.forCandidate(c.id).filter(inScope);
+  // Only explicit intake -> candidate provenance; hashes/names are not identity.
+  const emailDates = dbAll(`SELECT mi.received_at FROM mailbox_ingestion mi
+    JOIN candidate_intake ci ON ci.id = mi.intake_id
+    WHERE ci.candidate_id = ? AND mi.received_at IS NOT NULL`, [c.id])
+    .map((r) => r.received_at).filter((d) => /^\d{4}-\d{2}-\d{2}T/.test(d) && Number.isFinite(Date.parse(d)))
+    .sort((a, b) => Date.parse(a) - Date.parse(b));
+  // Scope history BEFORE deriving labels. No blacklist authority/audit workflow
+  // exists here, so even a legacy blacklisted state must remain Unknown.
+  const stages = applications.flatMap((a) => StageHistory.forApplication(a.id));
+  let poolStatus = 'unknown';
+  if (c.candidate_state === 'active') {
+    if (applications.some((a) => a.status === 'shortlisted')
+      || stages.some((h) => h.to_status === 'shortlisted' && h.actor_id)) poolStatus = 'shortlisted';
+    else if (applications.some((a) => !['sourced', 'applied'].includes(a.status))
+      || stages.some((h) => h.actor_id && !['sourced', 'applied'].includes(h.to_status))) poolStatus = 'considered';
+    else if (hasBroadCandidateAccess(user) && !applications.length
+      && (!c.screening_status || c.screening_status === 'new')) poolStatus = 'new';
+  }
   // Phase 2 Talent Pool — returning/rehire signal, filled during the links pass below (no extra queries).
   const _hist = { returning: false, rehire: false, priorApplications: 0, lastOutcome: null, lastSeenAt: null };
   const out = {
@@ -84,6 +102,11 @@ function serialize(c, user, { withDetail = false } = {}) {
     // enhancement fields (HR-leadership requested)
     employer: c.employer, currentProject: c.current_project,
     graduationYear: c.graduation_year, university: c.university, major: c.major,
+    applyDate: emailDates[0] || c.created_at,
+    applyDateSource: emailDates.length ? 'application_email' : 'candidate_created',
+    poolStatus,
+    // Legacy match_score has no stored explanation: it is not a defensible ranking.
+    roleRanking: null,
     // An auto-ingested CV is the intake's stored file (see lib/candidate-cv.js).
     ...(() => { const cv = resolveCandidateCv(c); return { resumeName: cv ? cv.fileName : c.resume_name, hasResume: !!cv }; })(),
     tags: c.tags ? JSON.parse(c.tags) : [], candidateState: c.candidate_state,
@@ -141,6 +164,7 @@ function serialize(c, user, { withDetail = false } = {}) {
         ticketNo: r ? r.ticket_no : null,
         requestTitle: r ? r.title : null,
         requestStatus: r ? r.status : null,
+        departmentId: r ? r.department_id : null,
         status: a.status,
       };
     }),
@@ -225,6 +249,12 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
   };
   const idsIn = visibleCandidateIds(req.user);
   if (idsIn) filters.idsIn = idsIn;
+  if (q.departmentId) {
+    filters.departmentId = /^\d+$/.test(String(q.departmentId)) ? Number(q.departmentId) : -1;
+    if (!hasBroadCandidateAccess(req.user)) filters.departmentScope = {
+      userId: req.user.id, assigned: req.user.permissions.includes('interview.view_assigned'),
+    };
+  }
   const total = Candidates.count(filters);
   const rows = Candidates.list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
   res.json({

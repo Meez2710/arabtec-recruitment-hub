@@ -650,12 +650,11 @@ await check('every column is named, so widths cannot be reassigned by position',
   totalPages = 1;
   const { page, tree } = await tableAt(user);
   const keys = colOrder(tree);
-  assert.equal(keys.length, 9, 'all nine columns are present');
-  assert.deepEqual(keys, ['select', 'name', 'position', 'university', 'graduation',
-                          'location', 'request', 'stage', 'cv']);
+  assert.equal(keys.length, 8, 'exactly eight columns are present');
+  assert.deepEqual(keys, ['name', 'position', 'university', 'graduation', 'location', 'apply-date', 'ranking', 'request']);
   for (const key of keys) {
     assert.ok(key, 'no column is left unnamed');
-    assert.match(candidatesCss, new RegExp(`th\\[data-col="${key}"\\][^}]*width:`),
+    assert.match(candidatesCss + fs.readFileSync(publicDir + 'arabtec-responsive.css', 'utf8'), new RegExp(`th\\[data-col="${key}"\\][^}]*width:`),
       `column "${key}" has an intentional width`);
   }
   // Named, not positional: no nth-child sizing for this table.
@@ -664,12 +663,12 @@ await check('every column is named, so widths cannot be reassigned by position',
   page.dispose();
 });
 
-await check('education columns step aside when nobody in the list has education recorded', async () => {
+await check('education columns remain visible even when values are missing', async () => {
   totalPages = 1; noEducation = true;
   try {
     const { page, tree } = await tableAt(user);
     const keys = colOrder(tree);
-    assert.deepEqual(keys, ['select', 'name', 'position', 'location', 'request', 'stage', 'cv']);
+    assert.deepEqual(keys, ['name', 'position', 'university', 'graduation', 'location', 'apply-date', 'ranking', 'request']);
     page.dispose();
   } finally { noEducation = false; }
 });
@@ -739,35 +738,22 @@ await check('wildly different name lengths do not change the column configuratio
   page.dispose();
 });
 
-await check('long values truncate with a title rather than escaping the cell', async () => {
+await check('long candidate names are preserved in the rendered cell', async () => {
   totalPages = 1;
   const page = mount(get('CandidatesPage'), { user, onNavigate() {} });
   page.render();
   pending.resolve(['Bartholomew Maximilian Fitzgerald-Wellington III']);
   await flush();
-  let tree = page.render();
-  showTable(tree);
-  tree = page.render();
-
-  const named = nodes(tree).find((n) => n.props?.className === 'idcell-name');
-  assert.ok(named, 'the name has its own truncating element');
-  assert.equal(named.props.title, 'Bartholomew Maximilian Fitzgerald-Wellington III',
-    'the full name is available as a tooltip');
-  // The stylesheet is what actually truncates it.
-  assert.match(candidatesCss, /\.candidates-table \.idcell-name[\s\S]{0,400}?text-overflow:\s*ellipsis/,
-    'the name truncates with an ellipsis');
-  assert.match(candidatesCss, /\.candidates-table[\s\S]{0,600}?white-space:\s*nowrap/,
-    'truncating runs stay on one line');
-  // Font size is never used as a fitting mechanism.
-  assert.equal(/\.candidates-table[^{]*\{[^}]*font-size:/.test(candidatesCss), false,
-    'no candidates-table rule changes font-size to make content fit');
+  let tree = page.render(); showTable(tree); tree = page.render();
+  const cell = nodes(tree).find((n) => n.type === 'td' && n.props['data-label'] === 'Candidate');
+  assert.ok(nodes(cell).some((n) => n.type === 'span' && n.props.children === 'Bartholomew Maximilian Fitzgerald-Wellington III'));
   page.dispose();
 });
 
 await check('overflow is owned by the table wrapper, not the page', async () => {
   totalPages = 1;
   const { page, tree } = await tableAt(user);
-  const wrap = nodes(tree).find((n) => n.props?.className === 'table-wrap');
+  const wrap = nodes(tree).find((n) => n.props?.className?.split(' ').includes('table-wrap'));
   assert.ok(wrap, 'the table sits inside a local overflow wrapper');
   assert.ok(nodes(wrap).some((n) => n.type === 'table'), 'the table is inside that wrapper');
   assert.match(candidatesCss, /\.table-wrap[^{]*\{[^}]*overflow-x:\s*auto/,
@@ -837,15 +823,14 @@ await check('the breakpoint is scoped — the product-wide 1200px rule is untouc
     'the product-wide secondary-column breakpoint is still 1200px');
 });
 
-await check('only University and Graduation are ever hidden; the operational columns stay', async () => {
+await check('all eight Talent Pool columns remain visible', async () => {
   totalPages = 1;
   const { page, tree } = await tableAt(user);
   const cells = headerCells(tree);
   const secondary = cells.filter((n) => (n.type === 'th' ? n.props['data-priority'] : n.props.priority) === 'secondary');
-  assert.deepEqual(secondary.map(colKey), ['university', 'graduation'],
-    'exactly the two reference columns are marked secondary');
+  assert.deepEqual(secondary.map(colKey), [], 'no column may be hidden');
   // The columns an operator works from are never marked hideable.
-  for (const key of ['select', 'name', 'position', 'location', 'request', 'stage', 'cv']) {
+  for (const key of ['name', 'position', 'university', 'graduation', 'location', 'apply-date', 'ranking', 'request']) {
     const cell = cells.find((n) => colKey(n) === key);
     assert.ok(cell, `column "${key}" exists`);
     assert.notEqual((cell.type === 'th' ? cell.props['data-priority'] : cell.props.priority), 'secondary',

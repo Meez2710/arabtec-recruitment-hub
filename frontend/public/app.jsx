@@ -8755,6 +8755,22 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
   );
 }
 
+const POOL_STATUS = {
+  new: 'New', considered: 'Previously Considered', shortlisted: 'Previously Shortlisted',
+  blacklisted: 'Blacklisted', unknown: 'Unknown',
+};
+function PoolStatusBadge({ status }) {
+  const key = Object.hasOwn(POOL_STATUS, status) ? status : 'unknown';
+  return <span className={'pool-status pool-status-' + key}>{POOL_STATUS[key]}</span>;
+}
+function PoolStatusGuide() {
+  const badges = Object.keys(POOL_STATUS).map((key) => <PoolStatusBadge key={key} status={key} />);
+  return <div className="pool-status-guide">
+    <div className="pool-status-desktop" aria-label="Candidate status legend">{badges}</div>
+    <details className="pool-status-mobile"><summary>Status Guide</summary><div>{badges}</div></details>
+  </div>;
+}
+
 function CandidatesPage({ user, onNavigate, initialFilters }) {
   const isPhone = useIsPhone();
   const toast = useToast();
@@ -8836,7 +8852,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     // Data-quality labels. OPT-IN only — with none selected the Talent Pool
     // shows everyone, flagged or not, which is the whole point of labelling
     // uncertainty instead of queueing it.
-    'qualityFlag', 'disciplineClass'];
+    'qualityFlag', 'departmentId'];
 
   useRecordUrl('candidates', selectedId);
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
@@ -8909,6 +8925,13 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // rather than a dropdown that would fail on submit.
   const canLink = can(user, 'candidate.link');
   const [linkRequests, setLinkRequests] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [departmentError, setDepartmentError] = useState(false);
+  useEffect(() => {
+    api.get('/org/departments').then((r) => {
+      setDepartments((r.departments || []).filter((d) => d.status === 'active'));
+    }).catch(() => setDepartmentError(true));
+  }, []);
   // F2: selection for bulk actions. A Set because membership is the only query.
   const [selected, setSelected] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -9011,7 +9034,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     q: 'Search', location: 'Location', currentCompany: 'Company',
     minExp: 'Min exp', maxExp: 'Max exp', tag: 'Tag',
     currentPosition: 'Role', university: 'University',
-    graduationFrom: 'Graduated from', graduationTo: 'Graduated to',
+    graduationFrom: 'Graduated from', graduationTo: 'Graduated to', departmentId: 'Department',
     stage: 'Stage', recruiterId: 'Recruiter', requestId: 'Request', projectId: 'Project',
   };
   const mergedForChips = { ...filters, ...pipeFilters };
@@ -9019,6 +9042,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     .filter(([k, v]) => v && FILTER_LABELS[k] && v !== true)
     .map(([k, v]) => {
       let shown = v;
+      if (k === 'departmentId') shown = departments.find((d) => String(d.id) === String(v))?.name || v;
       if (k === 'stage') shown = (APP_STATUS[v] || {}).label || v;
       if (k === 'requestId') {
         const r = linkRequests.find((x) => String(x.id) === String(v));
@@ -9068,10 +9092,6 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
   // Filtering happens server-side; `shown` is simply the current page.
   const shown = candidates || [];
-  // Education columns only when someone in the list has education recorded:
-  // auto-ingested CVs rarely do, and two all-dash columns took a fifth of the
-  // table's width (review T5).
-  const showEdu = shown.some((c) => c.university || c.major || c.graduationYear != null);
 
   /** A links[] entry shaped like the one GET /candidates builds server-side. */
   function linkEntry(request, application) {
@@ -9225,10 +9245,12 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
           <option value="">All candidates</option>
           {QUALITY_FLAGS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         </select>
-        <select value={filters.disciplineClass || ''} title="Professional classification"
-          onChange={(e) => setFilters((f) => ({ ...f, disciplineClass: e.target.value }))}>
-          <option value="">All classifications</option>
-          {DISCIPLINE_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+        <select value={filters.departmentId || ''} aria-label="Department"
+          title="Department of a linked hiring request; unlinked candidates remain in All departments"
+          disabled={departmentError}
+          onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value, disciplineClass: '' }))}>
+          <option value="">{departmentError ? 'Departments unavailable' : 'All departments'}</option>
+          {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         </FilterToolbar>
       )}
@@ -9302,89 +9324,72 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
             ? 'Try the All tab, or clear the search and filter fields above.'
             : 'Add a candidate manually, or import CVs against a hiring request to populate the pool.'} /></div>
       ) : view === 'table' ? (
-        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
-          <table className="table responsive-table candidates-table">
+        <div>
+          <PoolStatusGuide />
+          <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}>
+          <div className="table-wrap talent-table-wrap" role="region" aria-label="Talent Pool table" tabIndex={0}>
+          <table className="table candidates-table talent-pool-table">
             <thead><tr>
-              <th className="th-sel" data-col="select">
+              <th data-col="name" className={'sort-th' + (sort.by === 'name' ? ' active' : '')}
+                aria-sort={sort.by === 'name' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}><div className="pool-candidate-heading">
                 <input type="checkbox" aria-label="Select all on this page"
                   checked={shown.length > 0 && shown.every((c) => selected.has(c.id))}
                   ref={(el) => { if (el) el.indeterminate = selected.size > 0 && !shown.every((c) => selected.has(c.id)); }}
                   onChange={(e) => toggleAllShown(e.target.checked)} />
-              </th>
-              <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
+                <button className="sort-th-inner" title="Sort by Candidate" onClick={() => toggleSort('name')}>
+                  Candidate<Icon name={sort.by === 'name' ? (sort.dir === 'asc' ? 'chevronUp' : 'chevronDown') : 'sortNeutral'} size={16} />
+                </button>
+              </div></th>
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              {showEdu && <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />}
-              {showEdu && <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />}
+              <SortTh label="University" col="university" sort={sort} onSort={toggleSort} />
+              <SortTh label="Year" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
-              <th className="th-request" data-col="request">Request</th>
-              <th data-col="stage">Stage</th>
-              <th data-col="cv">CV</th>
+              <th data-col="apply-date">Apply Date</th>
+              <th data-col="ranking">Ranking (10)</th>
+              <th data-col="request">Request</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
               <tr key={c.id} className={'row-link' + (selected.has(c.id) ? ' row-selected' : '')}
                 onClick={() => openProfile(c.id)}>
-                <td className="th-sel" onClick={(e) => e.stopPropagation()}>
-                  {/* The label is the hit area: a bare checkbox is 17px on a phone. */}
-                  <label className="sel-hit">
+                <td data-label="Candidate"><div className="pool-candidate">
+                  <label className="sel-hit" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" aria-label={`Select ${c.fullName}`}
                       checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
                   </label>
-                </td>
-                <td data-label="Candidate">
-                  <div className="idcell">
-                    <span className="idcell-av">{initials(c.fullName)}</span>
-                    <span className="idcell-txt">
-                      <span className="cell-strong"><span className="idcell-name" title={c.fullName}>{c.fullName}</span> <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} /></span>
-                      <span className="cell-sub">{c.candidateNo}</span>
-                    </span>
+                  <div><span className="cell-strong">{c.fullName}</span>
+                    <PoolStatusBadge status={c.poolStatus} />
+                    <span className="cell-sub">{c.candidateNo}</span>
+                    {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
+                    {c.hasResume && <div className="pool-cv-actions" onClick={(e) => e.stopPropagation()}>
+                      <button className="icon-btn" aria-label={`Review CV for ${c.fullName}`}
+                        onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
+                      <button className="icon-btn" aria-label={`Download ${c.resumeName || 'CV'}`}
+                        onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
+                    </div>}
                   </div>
-                  {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
+                </div></td>
+                <td data-label="Position">{c.currentPosition || '—'}</td>
+                <td data-label="University">{c.university || '—'}</td>
+                <td data-label="Year">{c.graduationYear ?? '—'}</td>
+                <td data-label="Location">{c.location || '—'}</td>
+                <td data-label="Apply Date" title={c.applyDateSource === 'application_email' ? 'Original application email received' : 'Candidate creation date'}>
+                  <DateCell value={c.applyDate} dateOnly />
                 </td>
-                <td data-label="Position">
-                  <span className="cell-strong" title={c.currentPosition || undefined}>{c.currentPosition || '—'}</span>
-                  {c.currentCompany ? <span className="cell-sub" title={c.currentCompany}>{c.currentCompany}</span> : null}
-                </td>
-                {showEdu && <td data-priority="secondary" data-label="University">
-                  <span className="cell-strong" title={c.university || undefined}>{c.university || '—'}</span>
-                  {c.major ? <span className="cell-sub" title={c.major}>{c.major}</span> : null}
-                </td>}
-                {showEdu && <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>}
-                <td data-label="Location" className="cell-sub-only" title={c.location || undefined}>{c.location || '—'}</td>
-                <td data-label="Request">
-                  <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
-                    onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
-                </td>
-                <td data-label="Stage">{(() => {
-                  // The pipeline stage of the open application — the same word the
-                  // board column uses. The fitness screen is a separate column.
-                  const act = activeLinkOf(c);
-                  if (!act) return <span className="muted">Not on a request</span>;
-                  const st = APP_STATUS[pipelineStage(act.status)] || APP_STATUS[act.status];
-                  return st ? <Badge variant={st.variant}>{st.label}</Badge> : <span className="muted">{act.status}</span>;
-                })()}
-                  {/* The fitness screen is a second, smaller fact under the stage,
-                      named for what it is so it never reads as a stage. */}
-                  <span className="cell-sub" title="Fitness screen">Screen: {(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1].toLowerCase()}</span></td>
-                <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
-                  {c.hasResume
-                    ? <>
-                        <button className="icon-btn" title={c.resumeName ? `Review ${c.resumeName}` : 'Review this CV beside the record'}
-                          aria-label={`Review CV for ${c.fullName}`}
-                          onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
-                        {/* One-click download stays. Replacing it with Review alone cost a
-                            recruiter the file behind a panel and two fetches, and this row
-                            has no overflow menu to fall back on — the action menu is only
-                            rendered in the pipeline view. */}
-                        <button className="icon-btn" title={`Download ${c.resumeName || 'CV'}`}
-                          aria-label={`Download ${c.resumeName || 'CV'}`}
-                          onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
-                      </>
+                <td data-label="Ranking (10)"><span className="muted">Not scored</span></td>
+                <td data-label="Request" onClick={(e) => e.stopPropagation()}>
+                  {(c.links || []).filter((l) => l.requestId && l.requestTitle).length
+                    ? c.links.filter((l) => l.requestId && l.requestTitle).map((l) =>
+                      <button key={l.applicationId} className="pool-request-link"
+                        onClick={() => openRequest(l.requestId, onNavigate)}>
+                        <span>{shortReqCode(l.ticketNo)}</span><span>{l.requestTitle}</span>
+                      </button>)
                     : <span className="muted">—</span>}
                 </td>
               </tr>
             ))}</tbody>
           </table>
-        </div></div>
+          </div></div>
+        </div>
       ) : view === 'pipeline' ? (
         <TalentPipeline
           user={user} btns={btns}
