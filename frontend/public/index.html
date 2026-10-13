@@ -7,30 +7,30 @@
   <title>Arabtec Recruitment Hub</title>
   <!-- Square 1:1 mark. The full logo (600x396) was being squashed into the tab's
        square icon box, which is what made the favicon look distorted. -->
-  <link rel="icon" type="image/svg+xml" href="/arabtec-favicon.svg?v=20261012r1" />
-  <link rel="apple-touch-icon" href="/arabtec-favicon.svg?v=20261012r1" />
+  <link rel="icon" type="image/svg+xml" href="/arabtec-favicon.svg?v=20261013s1" />
+  <link rel="apple-touch-icon" href="/arabtec-favicon.svg?v=20261013s1" />
   <!-- Premium visual layer (docs/design/PREMIUM_UI_SPEC.md): Inter Tight for
        display, Inter for UI. The link is non-blocking (print media until it
        loads), so a network without Google Fonts — the on-prem case — renders
        at once in the approved Arial / Helvetica fallback. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'" />
-  <link rel="stylesheet" href="/styles.css?v=20261012r1" />
-  <link rel="stylesheet" href="/arabtec-approved-ui.css?v=20261012r1" />
+  <link rel="stylesheet" href="/styles.css?v=20261013s1" />
+  <link rel="stylesheet" href="/arabtec-approved-ui.css?v=20261013s1" />
   <!-- The approved design system: the final word on chrome, colour and type. -->
-  <link rel="stylesheet" href="/arabtec-design-system.css?v=20261012r1" />
+  <link rel="stylesheet" href="/arabtec-design-system.css?v=20261013s1" />
   <!-- Loads LAST and only re-shapes: the Claude geometry system (radius,
        spacing, sizing, alignment, ratios, elevation). It declares no colour,
        background or font-family, so the Arabtec palette, typeface, logo and
        page background above are untouched. Remove this one line to revert. -->
-  <link rel="stylesheet" href="/claude-system.css?v=20261012r1" />
+  <link rel="stylesheet" href="/claude-system.css?v=20261013s1" />
   <!-- Reflow layer. Must load after every other product stylesheet so stacked
        tables, cards, bottom nav and the anyhelp launcher wrap instead of
        compressing desktop rows into phone width. -->
-  <link rel="stylesheet" href="/arabtec-responsive.css?v=20261012r1" />
+  <link rel="stylesheet" href="/arabtec-responsive.css?v=20261013s1" />
   <!-- Phone presentation. Loads last: `Shell` renders the phone chrome INSTEAD
        of the desktop chrome, so these classes never exist in a desktop DOM and
        nothing here can reach a desktop layout. -->
-  <link rel="stylesheet" href="/arabtec-mobile.css?v=20261012r1" />
+  <link rel="stylesheet" href="/arabtec-mobile.css?v=20261013s1" />
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -41,16 +41,22 @@
   <!-- React served LOCALLY (no CDN dependency, works offline / behind blockers). -->
   <script src="/vendor/react.production.min.js"></script>
   <script src="/vendor/react-dom.production.min.js"></script>
+  <!-- pdf.js, local: draws PDFs on phones/tablets where an iframe cannot. -->
+  <script type="module">
+    import * as pdfjs from '/vendor/pdfjs/pdf.min.mjs';
+    pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+    window.pdfjsLib = pdfjs; window.dispatchEvent(new Event('pdfjs-ready'));
+  </script>
 
   <!-- The screens, compiled once on the server from the .jsx sources
        (backend/src/lib/frontend-build.js). The browser no longer downloads or
        runs the Babel compiler. Bump ?v= on every UI change so a browser/proxy
        can never serve a stale build. Keep in sync with styles.css version. -->
-  <script src="/knowledge-lines.js?v=20261012r1"></script>
-  <script src="/build/intake-review.js?v=20261012r1"></script>
-  <script src="/build/cv-intake.js?v=20261012r1"></script>
-  <script src="/build/email-settings.js?v=20261012r1"></script>
-  <script src="/build/org-structure.js?v=20261012r1"></script>
-  <script src="/build/app.js?v=20261012r1"></script>
+  <script src="/knowledge-lines.js?v=20261013s1"></script>
+  <script src="/build/intake-review.js?v=20261013s1"></script>
+  <script src="/build/cv-intake.js?v=20261013s1"></script>
+  <script src="/build/email-settings.js?v=20261013s1"></script>
+  <script src="/build/org-structure.js?v=20261013s1"></script>
+  <script src="/build/app.js?v=20261013s1"></script>
 </body>
 </html>

@@ -46,7 +46,9 @@ function buildCSP() {
     // blob: — the iframe loads nothing, silently, no console error a user
     // would notice.
     'frame-src': ["'self'", 'blob:'],
-    'connect-src': ["'self'"],
+    // blob: lets the bundled pdf.js read the CV object URL the page itself
+    // created (phones draw PDFs on canvases; an iframe cannot show them).
+    'connect-src': ["'self'", 'blob:'],
     'object-src': ["'none'"],
     'frame-ancestors': ["'none'"],
     'base-uri': ["'self'"],

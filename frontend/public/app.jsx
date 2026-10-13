@@ -9547,13 +9547,80 @@ function ParsePreviewTable({ rows }) {
 // `html`: a Word CV rendered by the server. It is shown in a frame with an
 // empty sandbox (no scripts, no same-origin, no forms), so a crafted document
 // can only render, never act.
+/**
+ * A PDF drawn page by page onto canvases with the bundled pdf.js
+ * (/vendor/pdfjs, loaded by index.html). Used where the browser cannot show a
+ * PDF inside an iframe (phones, tablets). If pdf.js is missing or the file will
+ * not parse, falls back to Open / Download so the CV is never a blank frame.
+ */
+function PdfPagesView({ url, fileName, zoom }) {
+  const host = useRef(null);
+  const [state, setState] = useState('loading'); // loading | ready | failed
+  useEffect(() => {
+    let alive = true, task = null;
+    setState('loading');
+    (async () => {
+      if (!window.pdfjsLib) {
+        await new Promise((res) => { window.addEventListener('pdfjs-ready', res, { once: true }); setTimeout(res, 4000); });
+      }
+      if (!window.pdfjsLib) throw new Error('pdf.js unavailable');
+      task = window.pdfjsLib.getDocument({ url });
+      const pdf = await task.promise;
+      if (!alive || !host.current) return;
+      host.current.textContent = '';
+      const cssW = Math.max(240, host.current.clientWidth || 320);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        if (!alive) return;
+        const base = page.getViewport({ scale: 1 });
+        const vp = page.getViewport({ scale: (cssW / base.width) * dpr });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+        canvas.style.cssText = 'width:100%;height:auto;display:block;margin:0 0 8px;background:#fff';
+        host.current.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        if (n === 1 && alive) setState('ready');
+      }
+    })().catch(() => { if (alive) setState('failed'); });
+    return () => { alive = false; try { task && task.destroy(); } catch { /* already gone */ } };
+  }, [url]);
+  if (state === 'failed') {
+    return (
+      <div className="parse-review-cv-empty">
+        This CV could not be drawn in the page.
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <a href={url} target="_blank" rel="noopener" className="btn">Open CV</a>
+          <a href={url} download={fileName || 'cv.pdf'} className="btn btn-secondary">Download</a>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ width: '100%' }}>
+      {state === 'loading' && <div className="parse-review-cv-empty">Loading CV…</div>}
+      <div ref={host} style={{ width: `${zoom * 100}%`, maxWidth: 'none' }} />
+    </div>
+  );
+}
+
 function CvFilePreview({ fileUrl, fileName, mimeType, html }) {
   const [zoom, setZoom] = useState(1);
   const zoomOut = () => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)));
   const zoomIn = () => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)));
-  const isPdf = mimeType === 'application/pdf';
-  const isImage = !!mimeType && mimeType.startsWith('image/');
+  // Kind comes from the MIME type OR the file name: a stored file whose type
+  // was lost (application/octet-stream) must still preview, not dead-end.
+  const ext = (String(fileName || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
+  const isPdf = mimeType === 'application/pdf' || (ext === 'pdf' && (!mimeType || mimeType === 'application/octet-stream'));
+  const isImage = (!!mimeType && mimeType.startsWith('image/')) || (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) && (!mimeType || mimeType === 'application/octet-stream'));
+  const isText = mimeType === 'text/plain' || (ext === 'txt' && (!mimeType || mimeType === 'application/octet-stream'));
   const isDoc = !!html;
+  // Phones (and iPadOS, which reports a desktop UA) cannot render a PDF inside
+  // an iframe: Android Chrome paints a blank frame, iOS Safari only page one.
+  // Desktop browsers expose navigator.pdfViewerEnabled; where it is false, or
+  // the device is a touch phone/tablet, hand the PDF to the browser's own viewer.
+  const touchApple = /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
+  const noInlinePdf = navigator.pdfViewerEnabled === false || touchApple || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   return (
     <div className="parse-review-cv">
       <div className="parse-review-cv-toolbar">
@@ -9571,7 +9638,9 @@ function CvFilePreview({ fileUrl, fileName, mimeType, html }) {
           <div className="parse-review-cv-empty">No file to preview.</div>
         ) : isDoc ? (
           <iframe title="Original CV" sandbox="" srcDoc={html} className="parse-review-cv-frame" style={{ transform: `scale(${zoom})` }} />
-        ) : isPdf ? (
+        ) : isPdf && noInlinePdf ? (
+          <PdfPagesView url={fileUrl} fileName={fileName} zoom={zoom} />
+        ) : isPdf || isText ? (
           <iframe title="Original CV" src={fileUrl} className="parse-review-cv-frame" style={{ transform: `scale(${zoom})` }} />
         ) : isImage ? (
           <img src={fileUrl} alt={fileName || 'CV'} className="parse-review-cv-image" style={{ transform: `scale(${zoom})` }} />
@@ -9636,7 +9705,7 @@ async function fetchDocBlobUrl(path) {
 function fetchResumeBlobUrl(candidateId) { return fetchDocBlobUrl(`/candidates/${candidateId}/resume`); }
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const isDocxFile = (mimeType, fileName) => mimeType === DOCX_MIME || /\.docx$/i.test(String(fileName || ''));
+const isDocxFile = (mimeType, fileName) => mimeType === DOCX_MIME || mimeType === 'application/msword' || /\.docx?$/i.test(String(fileName || ''));
 
 /**
  * One CV document for a side panel: the file as an object URL, plus, for a
