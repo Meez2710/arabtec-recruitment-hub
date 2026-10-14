@@ -27,7 +27,7 @@ c('compiled app is gzip-compressed on direct HTTP', built.headers.get('content-e
 const etag=built.headers.get('etag');
 const again=await fetch(B+'/build/app.js',{headers:{'If-None-Match':etag||''}});
 c('an unchanged compiled file revalidates with 304', !!etag && again.status===304);
-for (const f of ['intake-review','cv-intake','email-settings','org-structure']) {
+for (const f of ['intake-review','cv-intake','email-settings','org-structure','org-structure-v2']) {
   const r=await fetch(B+'/build/'+f+'.js'); c('serves compiled '+f, r.status===200 && (await r.text()).length>1000);
 }
 c('an unknown compiled name is 404', (await fetch(B+'/build/nope.js')).status===404);
