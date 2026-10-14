@@ -47,7 +47,9 @@ function buttonOut(b) {
     id: b.id, buttonKey: b.button_key, label: b.label, screen: b.screen,
     visible: b.visible === 1, enabled: b.enabled === 1,
     requiredPermission: b.required_permission,
-    allowedRoles: b.allowed_roles ? JSON.parse(b.allowed_roles) : null,
+    // Configuration cannot grant deletion to another role.
+    allowedRoles: b.required_permission?.endsWith('.delete') || b.button_key.startsWith('delete_')
+      ? ['system_admin'] : (b.allowed_roles ? JSON.parse(b.allowed_roles) : null),
     confirmRequired: b.confirm_required === 1, reasonRequired: b.reason_required === 1,
     auditRequired: b.audit_required === 1, variant: b.variant,
   };
@@ -172,6 +174,8 @@ router.put('/system', requireAuth, requirePermission('system.manage'), (req, res
   // The assessment field policy is validated and audited by its own endpoint.
   if (Object.hasOwn(updates, ASSESSMENT_POLICY_SETTING)) return res.status(400).json({ error: 'Use Assessment Visibility & Permissions to change the assessment policy.' });
   if (Object.hasOwn(updates, KNOWLEDGE_LINES_KEY)) {
+    // Replacing this list also removes existing quotes.
+    if (!req.user.roles.includes('system_admin')) return res.status(403).json({ error: 'Only System Admin can replace or remove footer quotes.', code: 'SYSTEM_ADMIN_REQUIRED' });
     const { errors } = parseKnowledgeLines(updates[KNOWLEDGE_LINES_KEY]);
     if (errors.length) return res.status(400).json({ error: errors[0], errors });
   }

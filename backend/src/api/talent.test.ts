@@ -31,7 +31,8 @@ const principal = (over: Partial<Principal> = {}): Principal => ({
 });
 
 const PRINCIPALS = new Map<number, Principal>([
-  [7, principal()],
+  [7, principal({ roles: ['system_admin'] })],
+  [11, principal({ userId: 11, roles: ['recruiter'], permissions: [...PERMS, 'candidate.document.delete'] })],
   [8, principal({ userId: 8, userName: 'Read Only', permissions: ['candidate.view'] })],
 ]);
 
@@ -119,6 +120,24 @@ describe('candidates — manual, no AI', () => {
     expect(duplicate.body.error.code).toBe('DUPLICATE_DOCUMENT');
     // One blob for both uploads — identical bytes are stored once.
     expect(await harness.db.select().from(candidateDocument)).toHaveLength(1);
+  });
+
+  it('denies document deletion and erasure to a non-admin with candidate permissions', async () => {
+    const { id } = await create();
+    await post(`/candidates/${id}/documents`, {
+      docType: 'CV', fileName: 'protected.pdf', mimeType: 'application/pdf', content: base64('PROTECTED'),
+    }).expect(201);
+    const documentId = (await harness.db.select().from(candidateDocument))[0]!.documentId;
+    const token = jwt.sign({ sub: 11 }, SECRET);
+    const denied = await request(app).delete(`${API_PREFIX}/candidates/${id}/documents/${documentId}`)
+      .set('Authorization', `Bearer ${token}`).expect(403);
+    expect(denied.body.error.code).toBe('SYSTEM_ADMIN_REQUIRED');
+    await request(app).post(`${API_PREFIX}/candidates/${id}/state`)
+      .set('Authorization', `Bearer ${token}`).send({ state: 'ERASED', reason: 'must not erase' }).expect(403);
+    expect(await harness.db.select().from(candidateDocument)).toHaveLength(1);
+    expect((await harness.db.select().from(candidate))[0]?.state).not.toBe('ERASED');
+    await request(app).patch(`${API_PREFIX}/candidates/${id}`)
+      .set('Authorization', `Bearer ${token}`).send({ currentCompany: 'Still editable' }).expect(200);
   });
 
   it('keeps the blob when a document is detached', async () => {

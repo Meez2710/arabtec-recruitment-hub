@@ -271,7 +271,11 @@ function colorWithAlpha(hex, alpha) {
 const AppCtx = createContext(null);
 const useApp = () => useContext(AppCtx);
 
-function can(user, perm) { return user?.permissions?.includes(perm); }
+function isSystemAdmin(user) { return !!user?.roles?.includes('system_admin'); }
+function can(user, perm) {
+  if (perm?.endsWith('.delete') && !isSystemAdmin(user)) return false;
+  return user?.permissions?.includes(perm);
+}
 
 /* ----------------------------- Display formatters -----------------------------
    DISPLAY ONLY. These never touch stored values, API payloads, search params or
@@ -3980,7 +3984,7 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
   const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
-    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(isSystemAdmin(user) && can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
@@ -4448,7 +4452,7 @@ function BrandingLogoPanel({ user, branding, refreshBranding }) {
           <div>
             <label className="btn btn-sm" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (hasLogo ? 'Replace Logo' : '+ Upload Logo')}
               <input type="file" style={{ display: 'none' }} accept=".png,.jpg,.jpeg,.svg" onChange={uploadLogo} disabled={busy} /></label>
-            {hasLogo && <button className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={removeLogo} disabled={busy}>Remove</button>}
+            {hasLogo && isSystemAdmin(user) && <button className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={removeLogo} disabled={busy}>Remove</button>}
             <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>PNG, JPG or SVG. Shown app-wide and on the login screen.</div>
           </div>
         </div>
@@ -4582,7 +4586,7 @@ function CustomFieldsPanel({ user }) {
               <td><span className="chip">{cf.fieldType}</span></td>
               <td><input type="checkbox" checked={cf.required} onChange={(e) => toggle(cf.fieldKey, { required: e.target.checked })} /></td>
               <td><input type="checkbox" checked={cf.visible} onChange={(e) => toggle(cf.fieldKey, { visible: e.target.checked })} /></td>
-              <td><button className="btn btn-sm btn-ghost" onClick={() => remove(cf.fieldKey)}>Delete</button></td>
+              <td>{isSystemAdmin(user) && <button className="btn btn-sm btn-ghost" onClick={() => remove(cf.fieldKey)}>Delete</button>}</td>
             </tr>
           ))}</tbody></table>
       )}
@@ -10773,6 +10777,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
 }
 // GDPR/PDPL controls on the candidate profile — consent, data export, erasure.
 function CandidatePrivacyTab({ c, onChanged }) {
+  const { user } = useApp();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const erased = c.candidateState === 'erased';
@@ -10810,7 +10815,7 @@ function CandidatePrivacyTab({ c, onChanged }) {
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('given')}>Mark consent given</button>
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('withdrawn')}>Mark consent withdrawn</button>
           <button className="btn btn-secondary" onClick={exportData}>Export data (JSON)</button>
-          <button className="btn btn-danger" disabled={busy} onClick={erase}>Erase personal data…</button>
+          {isSystemAdmin(user) && <button className="btn btn-danger" disabled={busy} onClick={erase}>Erase personal data…</button>}
         </div>
       )}
       {erased && <div style={{ marginTop: 20 }}><button className="btn btn-secondary" onClick={exportData}>Export retained record</button></div>}

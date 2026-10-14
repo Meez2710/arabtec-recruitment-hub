@@ -13,6 +13,8 @@ import { AuthContext } from '../../modules/shared/kernel/auth-context.js';
 
 export interface Principal {
   readonly userId: number;
+  /** Verified role codes; absence grants no administrative deletion access. */
+  readonly roles?: readonly string[];
   readonly userName: string;
   readonly permissions: readonly string[];
   /** Project ids this user may see. Empty + not global means: nothing. */
