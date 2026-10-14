@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { all, get } from '../lib/db.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { applicationVisibilitySql } from '../lib/pipeline-visibility.js';
 
 const router = Router();
 router.use(requireAuth, requirePermission('dashboard.view'));
@@ -52,6 +53,7 @@ router.get('/', (req, res) => {
   const n = narrowing(req.query || {});
   const scope = narrowScope(requestScope(user, 'id'), n, 'id');                     // recruitment_request.id
   const appScope = narrowScope(requestScope(user, 'request_id'), n, 'request_id');   // application.request_id
+  appScope.where = `(${appScope.where}) AND ${applicationVisibilitySql(user, 'application')}`;
   const ivScope = narrowScope(requestScope(user, 'request_id'), n, 'request_id');
   const offScope = narrowScope(requestScope(user, 'request_id'), n, 'request_id');
 

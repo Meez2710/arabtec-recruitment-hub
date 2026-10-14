@@ -152,6 +152,7 @@ async function driveToOfferSent(token, appId) {
   const reqS = await approvedRequest(hrMgr, recMgr, 1);
   const cs = await api('/api/candidates', { method: 'POST', token: hrMgr, body: { fullName: 'Salary Cand', email: 'sal@x.com', expectedSalary: 45000 } });
   const sId = cs.json.candidate.id;
+  await api('/api/applications', { method: 'POST', token: recruiter, body: {candidateId:sId, requestId:reqS, initialStatus:'shortlisted'} });
   const asRec = await api(`/api/candidates/${sId}`, { token: recruiter });
   c('recruiter: expectedSalary masked to null', asRec.json.candidate.expectedSalary === null && asRec.json.candidate.salaryVisible === false);
   const asHr = await api(`/api/candidates/${sId}`, { token: hrMgr });

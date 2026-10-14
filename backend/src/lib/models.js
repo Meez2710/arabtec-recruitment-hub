@@ -1121,11 +1121,11 @@ export const Applications = {
   },
   // Pipeline summary per request: { [requestId]: { total, byStage: {status:count} } }.
   // One grouped query feeds the inline funnel mini-bar on the requests board.
-  stageCountsByRequest(requestIds) {
+  stageCountsByRequest(requestIds, visibility = '1=1') {
     const out = {};
     if (!requestIds || !requestIds.length) return out;
     const ph = requestIds.map(() => '?').join(',');
-    const rows = all(`SELECT request_id, status, COUNT(*) c FROM application WHERE request_id IN (${ph}) GROUP BY request_id, status`, requestIds);
+    const rows = all(`SELECT request_id, status, COUNT(*) c FROM application WHERE request_id IN (${ph}) AND ${visibility} GROUP BY request_id, status`, requestIds);
     for (const r of rows) {
       const id = r.request_id;
       (out[id] ??= { total: 0, byStage: {} });

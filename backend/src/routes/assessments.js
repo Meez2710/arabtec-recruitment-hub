@@ -1,3 +1,4 @@
+import { canSeeApplicationStage } from '../lib/pipeline-visibility.js';
 // Arabtec Interview Assessment Form — Big Five (HR) + Role Competency (Technical)
 // Implements the finalized Arabtec assessment PDF: two evaluations per
 // application (each saved as a draft or submitted), critical flags, server-derived
@@ -46,7 +47,7 @@ function scopedApplication(req, res) {
   const id = Number(req.params.applicationId);
   const app = Number.isInteger(id) && id > 0 ? Applications.byId(id) : null;
   if (!app) { res.status(404).json({ error: 'Application not found.' }); return null; }
-  if (!canAccessApplication(req.user, app)) {
+  if (!canSeeApplicationStage(req.user, app) || !canAccessApplication(req.user, app)) {
     res.status(403).json({ error: 'You can only access assessments for applications assigned to you.' });
     return null;
   }

@@ -1,3 +1,5 @@
+import { applicationScopeFilter, canSeeCandidate } from '../lib/candidate-scope.js';
+import { hasFullPipelineAccess } from '../lib/pipeline-visibility.js';
 // Ticket thread — email-style conversation on a recruitment request.
 // The request details are the "subject"; posts below form a chronological feed
 // (messages, file attachments, CV uploads, structured feedback, system entries),
@@ -67,8 +69,22 @@ function out(p) {
   };
 }
 // Build a nested tree: top-level posts (parent null) with their replies in order.
-function tree(requestId) {
-  const all = Posts.forRequest(requestId).map(out);
+function visiblePost(user, post) {
+  if (hasFullPipelineAccess(user)) return true;
+  let payload = {};
+  try { payload = JSON.parse(post.payload || '{}'); } catch { /* Legacy unstructured post. */ }
+  const appId = post.application_id || payload.applicationId;
+  const candidateId = post.candidate_id || payload.candidateId;
+  if (appId) {
+    const app = Applications.byId(Number(appId));
+    if (!app || !applicationScopeFilter(user)(app)) return false;
+  } else if (candidateId && !canSeeCandidate(user, Number(candidateId))) return false;
+  // Historical sourcing events remain private after a candidate is released.
+  if (['sourced', 'new', 'applied'].includes(payload.fromStatus) || ['sourced', 'new', 'applied'].includes(payload.toStatus)) return false;
+  return true;
+}
+function tree(requestId, user) {
+  const all = Posts.forRequest(requestId).filter((p) => visiblePost(user, p)).map(out);
   const byParent = new Map();
   for (const p of all) { if (p.parentPostId) { if (!byParent.has(p.parentPostId)) byParent.set(p.parentPostId, []); byParent.get(p.parentPostId).push(p); } }
   return all.filter((p) => !p.parentPostId).map((p) => ({ ...p, replies: byParent.get(p.id) || [] }));
@@ -77,7 +93,7 @@ function tree(requestId) {
 /* ---------------- GET thread ---------------- */
 router.get('/request/:requestId', (req, res) => {
   const r = loadRequest(req, res); if (!r) return;
-  res.json({ posts: tree(r.id) });
+  res.json({ posts: tree(r.id, req.user) });
 });
 
 /* ---------------- POST message / reply ---------------- */
@@ -111,7 +127,7 @@ router.post('/request/:requestId/file', multipart, (req, res) => {
 /* ---------------- Download a post's file ---------------- */
 router.get('/post/:postId/file', (req, res) => {
   const post = Posts.byId(Number(req.params.postId));
-  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  if (!post || !visiblePost(req.user, post)) return res.status(404).json({ error: 'Post not found.' });
   const r = Requests.byId(post.request_id);
   if (!r || !canView(req.user, r)) return res.status(403).json({ error: 'Not allowed.' });
   if (!post.file_path) return res.status(404).json({ error: 'No file on this post.' });
@@ -179,7 +195,7 @@ router.post('/request/:requestId/feedback', (req, res) => {
 /* ---------------- Edit / delete own post ---------------- */
 router.put('/post/:postId', (req, res) => {
   const post = Posts.byId(Number(req.params.postId));
-  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  if (!post || !visiblePost(req.user, post)) return res.status(404).json({ error: 'Post not found.' });
   if (post.author_id !== req.user.id) return res.status(403).json({ error: 'You can only edit your own posts.' });
   if (post.post_type === 'system') return res.status(400).json({ error: 'System posts cannot be edited.' });
   const { body } = req.body || {};
@@ -190,7 +206,7 @@ router.put('/post/:postId', (req, res) => {
 
 router.delete('/post/:postId', (req, res) => {
   const post = Posts.byId(Number(req.params.postId));
-  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  if (!post || !visiblePost(req.user, post)) return res.status(404).json({ error: 'Post not found.' });
   const isAdmin = req.user.permissions.includes('audit.view') || (req.user.roles || []).includes('system_admin');
   if (post.author_id !== req.user.id && !isAdmin) return res.status(403).json({ error: 'You can only delete your own posts.' });
   Posts.remove(post.id);

@@ -101,6 +101,7 @@ export const PERMISSIONS = [
 
 export const ROLES = [
   ['system_admin', 'System Admin', 'Full platform configuration and governance.'],
+  ['ceo', 'CEO', 'Read-only executive visibility across the complete recruitment pipeline.'],
   ['hr_director', 'HR Director', 'Executive oversight and high-level approvals.'],
   ['hr_manager', 'HR Manager', 'Recruitment policy, approvals, recruiter & offer management.'],
   ['recruitment_manager', 'Recruitment Manager', 'Owns the recruiting function; assigns recruiters.'],
@@ -114,6 +115,7 @@ export const ROLES = [
 // Default role → permission matrix (codes). Editable at runtime via admin.
 export const ROLE_PERMISSIONS = {
   system_admin: PERMISSIONS.map((p) => p[0]), // all permissions
+  ceo: ['dashboard.view', 'request.view_all', 'candidate.view', 'interview.view_all', 'offer.view', 'report.export'],
   hr_director: [
     'dashboard.view', 'request.view_all', 'request.approve', 'request.reject',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',

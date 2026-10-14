@@ -1,3 +1,4 @@
+import { canSeeApplicationStage, hasFullPipelineAccess } from '../lib/pipeline-visibility.js';
 import { Router } from 'express';
 import {
   Interviews, InterviewPanel, InterviewFeedback, InterviewActivity,
@@ -68,6 +69,7 @@ function ownsRequest(user, requestId) {
   return !!r && (r.requester_id === user.id || r.owner_id === user.id || r.created_by === user.id);
 }
 function canViewInterview(user, iv) {
+  if (!hasFullPipelineAccess(user) && !canSeeApplicationStage(user, { id: iv.application_id })) return false;
   if (canViewAll(user)) return true;
   if (!user.permissions.includes('interview.view_assigned')) return false;
   if (iv.organizer_id === user.id) return true;
@@ -157,7 +159,7 @@ router.get('/', (req, res) => {
     rows.sort((a, b) => String(b.scheduled_at || '').localeCompare(String(a.scheduled_at || '')));
   }
   // The calendar draws the organisation's working week (Scheduling Setup).
-  res.json({ interviews: rows.map((iv) => serialize(iv, req.user)), scoped: !canViewAll(req.user), workingWeek: workingWeek() });
+  res.json({ interviews: rows.filter((iv) => canViewInterview(req.user, iv)).map((iv) => serialize(iv, req.user)), scoped: !canViewAll(req.user), workingWeek: workingWeek() });
 });
 
 /* ---------------- PANEL CLASHES (warning, never a block) ---------------- */
@@ -194,7 +196,7 @@ router.get('/application/:applicationId', (req, res) => {
     return res.status(403).json({ error: 'Insufficient permissions.' });
   }
   const rows = Interviews.forApplication(app.id).filter((iv) => canViewInterview(req.user, iv));
-  res.json({ interviews: rows.map((iv) => serialize(iv, req.user)) });
+  res.json({ interviews: rows.filter((iv) => canViewInterview(req.user, iv)).map((iv) => serialize(iv, req.user)) });
 });
 
 /* ---------------- INVITATION TEMPLATES (global) ---------------- */

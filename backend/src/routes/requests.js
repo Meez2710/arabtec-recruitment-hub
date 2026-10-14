@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { visibleCandidateIds } from '../lib/candidate-scope.js';
+import { applicationVisibilitySql } from '../lib/pipeline-visibility.js';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
   Projects, Sites, Departments, Designations, BusinessUnits, Users, SystemSettings, Posts, Applications, Workflows,
@@ -212,7 +213,7 @@ router.get('/', (req, res) => {
     sort: req.query.sort, dir: req.query.dir, ownedOnly, userId: req.user.id,
   });
   // Pipeline summary per request → inline funnel mini-bar on the board cards.
-  const pipeline = Applications.stageCountsByRequest(rows.map((r) => r.id));
+  const pipeline = Applications.stageCountsByRequest(rows.map((r) => r.id), applicationVisibilitySql(req.user, 'application'));
   const out = rows.map((r) => { const s = serialize(r, req.user); s.pipeline = pipeline[r.id] || { total: 0, byStage: {} }; return s; });
   res.json({ requests: out, counts: Requests.counts() });
 });
@@ -236,7 +237,7 @@ router.get('/recruiter-status', (req, res) => {
     const reqs = all(`SELECT id, opened_at, created_at, target_join_date, status FROM recruitment_request WHERE owner_id = ? AND status IN (${ph(open)})`, [u.id, ...open]);
     const ids = reqs.map((r) => r.id);
     const inList = ids.length ? `IN (${ph(ids)})` : 'IN (NULL)';
-    const counts = ids.length ? Applications.stageCountsByRequest(ids) : {};
+    const counts = ids.length ? Applications.stageCountsByRequest(ids, applicationVisibilitySql(req.user, 'application')) : {};
     const active = (id) => Object.entries((counts[id] || {}).byStage || {}).filter(([st]) => ACTIVE_APP.includes(st)).reduce((n, [, c]) => n + c, 0);
     const health = reqs.map((r) => requestHealth(r));
     return {

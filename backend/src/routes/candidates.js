@@ -24,6 +24,7 @@ import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '..
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
 import { hasBroadCandidateAccess, visibleCandidateIds, canSeeCandidate, applicationScopeFilter } from '../lib/candidate-scope.js';
+import { hasFullPipelineAccess, visibleStageHistory } from '../lib/pipeline-visibility.js';
 import { resolveCandidateCv, loadCandidateCv, loadCvDocument, cvDocumentStatus } from '../lib/candidate-cv.js';
 import { importInboxFile, inboxDirectory, isInboxFile } from '../lib/cv-import.js';
 import { interpretSearch } from '../lib/ai/recruiter-ai.js';
@@ -82,7 +83,7 @@ function serialize(c, user, { withDetail = false } = {}) {
     .sort((a, b) => Date.parse(a) - Date.parse(b));
   // Scope history BEFORE deriving labels. No blacklist authority/audit workflow
   // exists here, so even a legacy blacklisted state must remain Unknown.
-  const stages = applications.flatMap((a) => StageHistory.forApplication(a.id));
+  const stages = applications.flatMap((a) => visibleStageHistory(user, StageHistory.forApplication(a.id)));
   let poolStatus = 'unknown';
   if (c.candidate_state === 'active') {
     if (applications.some((a) => a.status === 'shortlisted')
@@ -180,12 +181,14 @@ function serialize(c, user, { withDetail = false } = {}) {
     const appInScope = new Set(applications.map((a) => Number(a.id)));
     const ownLevel = (row) => !row.application_id || appInScope.has(Number(row.application_id));
     out.notes = CandidateNotes.forCandidate(c.id).filter(ownLevel);
-    out.activity = CandidateActivity.forCandidate(c.id).filter(ownLevel);
+    out.activity = CandidateActivity.forCandidate(c.id).filter(ownLevel)
+      .filter((row) => hasFullPipelineAccess(user) || !(['application_status_changed', 'stage_changed', 'linked_to_request'].includes(row.type) && /\b(sourced|sourcing|new|applied)\b/i.test(row.note || '')));
     // Interviews for this candidate (scoped: full-view roles see all; others see only theirs).
     const seeAllIv = user.permissions.includes('interview.view_all');
     const seeAssignedIv = user.permissions.includes('interview.view_assigned');
     if (seeAllIv || seeAssignedIv) {
       out.interviews = Interviews.forCandidate(c.id)
+        .filter((iv) => hasFullPipelineAccess(user) || (iv.application_id && appInScope.has(Number(iv.application_id))))
         .filter((iv) => {
           if (seeAllIv) return true;
           if (iv.organizer_id === user.id || Interviews.isPanelist(iv.id, user.id)) return true;
@@ -222,7 +225,7 @@ function serialize(c, user, { withDetail = false } = {}) {
         status: a.status, matchScore: a.match_score,
         recruiter: rec ? { id: rec.id, name: rec.full_name } : null,
         lastActivityAt: a.last_activity_at, createdAt: a.created_at,
-        stageHistory: StageHistory.forApplication(a.id), // detail only
+        stageHistory: visibleStageHistory(user, StageHistory.forApplication(a.id)), // detail only
       };
     });
   }

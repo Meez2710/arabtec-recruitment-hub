@@ -715,6 +715,10 @@ function Login({ branding, onLogin }) {
    offered a page the server refuses — the server is what enforces it. */
 const BROAD_CANDIDATE_PERMS = ['request.view_all', 'interview.view_all', 'candidate.add'];
 function hasBroadCandidateAccess(user) { return BROAD_CANDIDATE_PERMS.some((p) => can(user, p)); }
+function hasFullPipelineAccess(user) {
+  return (user?.roles || []).some((r) => ['system_admin', 'ceo', 'hr_director', 'recruitment_manager', 'recruiter'].includes(r));
+}
+const pipelineOrderFor = (user) => hasFullPipelineAccess(user) ? APP_ORDER : APP_ORDER.filter((s) => s !== 'sourced');
 
 /* ----------------------------- Navigation config ----------------------------- */
 const NAV = [
@@ -1798,7 +1802,7 @@ function ChartLegend({ data, labeler = (s) => s }) {
   </div>;
 }
 function Funnel({ data }) {
-  const order = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+  const order = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
   const map = Object.fromEntries(data.map((d) => [d.status, d.count]));
   const rows = order.filter((s) => map[s]).map((s) => ({ status: s, count: map[s] }));
   if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
@@ -1823,7 +1827,7 @@ const STAGE_COLORS = {
   waiting_feedback: '#E09600', issuing_offer: '#8A5A00', offer_sent: '#8A5A00', joined: '#00664F',
   unmatched: '#C7C4BF', on_hold: '#6F6A64', rejected: '#D01827', offer_declined: '#B01420',
 };
-const FUNNEL_ORDER = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+const FUNNEL_ORDER = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
 
 // Compact, Workable-style pipeline funnel rendered on each request card.
 // Shows total candidates + a proportional stacked bar across active stages.
@@ -1864,7 +1868,7 @@ function FunnelMini({ pipeline }) {
 // Presentation only. Every number rendered here comes from the existing
 // GET /dashboard response; nothing is fabricated or extrapolated.
 const APP_STAGE_COLORS = {
-  sourced: '#8A867F', screening: '#4E9C88', interview_hr: '#008064',
+  sourced: '#8A867F', shortlisted: '#6B8F3D', screening: '#4E9C88', interview_hr: '#008064',
   interview_technical: '#00664F', offer: '#8A5A00', hired: '#00664F',
   rejected: '#D01827', offer_declined: '#B01420',
 };
@@ -1901,7 +1905,7 @@ function DashBars({ rows, empty, icon = EMOJI.chart }) {
 }
 
 function DashFunnel({ data }) {
-  const order = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
+  const order = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
   // /dashboard returns the API's canonical statuses (matched, interviewing,
   // issuing_offer, joined…). Fold them onto board columns via pipelineStage,
   // otherwise everything except Sourced reads 0.
@@ -1975,7 +1979,7 @@ const PERSONA_BY_ROLE = {
   viewer: 'executive',             // read-only, org-wide, no candidate identity
 };
 // Highest-privilege role wins when a user holds more than one.
-const ROLE_RANK = ['system_admin', 'hr_director', 'hr_manager', 'recruitment_manager',
+const ROLE_RANK = ['system_admin', 'hr_director', 'recruitment_manager',
   'recruiter', 'project_manager', 'hiring_manager', 'interviewer', 'viewer'];
 /* Data-quality labels a CV can carry into the Talent Pool. Kept in step with
    backend/src/lib/cv-intake/auto-ingest.js — a label is never a reason a
@@ -6453,7 +6457,7 @@ const APP_STATUS = {
   screened:    { label: 'Screening', variant: 'info', column: 2 },
   cv_screening:{ label: 'Screening', variant: 'info', column: 2 },
   unmatched:   { label: 'Screening', variant: 'info', column: 2 },
-  shortlisted: { label: 'Screening', variant: 'info', column: 2 },
+  shortlisted: { label: 'Shortlisted', variant: 'info', column: 1.5 },
   interviewing:{ label: 'Interview', variant: 'info', column: 3 },
   interview_1: { label: 'Interview', variant: 'info', column: 3 },
   interview_2: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
@@ -6468,7 +6472,7 @@ const APP_STATUS = {
 // Board columns. `interview_technical` was removed: the API models a single
 // `interviewing` stage, so that column could never be reached and any move to it
 // was rejected with 400.
-const APP_ORDER = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
+const APP_ORDER = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
 
 // WRITE-DIRECTION map: board column -> the status the API actually accepts.
 // APP_STATUS above is the read direction (API status -> display column); this is
@@ -6478,6 +6482,7 @@ const APP_ORDER = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
 //   sourced -> matched -> interviewing -> issuing_offer -> offer_sent -> joined
 const APP_WRITE = {
   sourced: 'sourced',
+  shortlisted: 'shortlisted',
   screening: 'matched',
   interview_hr: 'interviewing',
   offer: 'issuing_offer',
@@ -6553,6 +6558,7 @@ function pipelineStage(status) {
   if (!s) return 'sourced';
   if (DISQUALIFIED_STAGES.includes(status)) return status;
   if (s.column === 1) return 'sourced';
+  if (s.column === 1.5) return 'shortlisted';
   if (s.column === 2) return 'screening';
   // Columns 3 and 4 both fold into the single interview column: the API has one
   // `interviewing` stage, so a card must never land in a column that no longer
@@ -6725,7 +6731,7 @@ function RequestPipeline({ request, user, btns }) {
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!apps) return <Skeleton rows={6} />;
 
-  const cols = APP_ORDER;
+  const cols = pipelineOrderFor(user);
   const bulk = canBulk && selected.size > 0 ? bulkSelectionSummary({ selected, apps, visibleApps, pending, target: bulkTarget }) : null;
   const startBulk = () => {
     if (!bulk || !bulk.eligible.length) return;
@@ -6751,7 +6757,7 @@ function RequestPipeline({ request, user, btns }) {
         <ViewToggle value={view} onChange={setView} options={[['kanban', 'Board'], ['list', 'List'], ['compact', 'Table']]} />
         <input placeholder="Search name / employer…" value={pf.q} onChange={(e) => setPf((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 180 }} />
         <select value={pf.stage} onChange={(e) => setPf((f) => ({ ...f, stage: e.target.value }))}>
-          <option value="">All stages</option>{APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
+          <option value="">All stages</option>{cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
         <select value={pf.recruiter} onChange={(e) => setPf((f) => ({ ...f, recruiter: e.target.value }))}>
           <option value="">All recruiters</option>{recruiterOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
         <select value={pf.sort} onChange={(e) => setPf((f) => ({ ...f, sort: e.target.value }))}>
@@ -7034,7 +7040,7 @@ function TalentPipeline({
       action={<button className="btn" onClick={load}>Retry</button>} /></div>;
   }
   if (!apps) return <ListSkeleton rows={6} />;
-  const cols = APP_ORDER;
+  const cols = pipelineOrderFor(user);
   const activeApps = apps.filter((a) => !isDisqualified(a.status));
   return (
     <div>
@@ -7042,7 +7048,7 @@ function TalentPipeline({
         <input placeholder="Search name / request…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 200 }} />
         <select value={pipeFilters.stage} onChange={(e) => setPipeFilters((f) => ({ ...f, stage: e.target.value }))}>
           <option value="">All stages</option>
-          {APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}
+          {cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}
         </select>
         <select value={pipeFilters.recruiterId} onChange={(e) => setPipeFilters((f) => ({ ...f, recruiterId: e.target.value }))}>
           <option value="">All recruiters</option>
@@ -7066,7 +7072,7 @@ function TalentPipeline({
           Showing the first {apps.length} of {total} applications. Narrow the filters to see the rest — nothing was dropped silently.
         </div>
       )}
-      {(unlinkedTotal > 0 || (unlinked && unlinked.length > 0)) && (
+      {hasFullPipelineAccess(user) && (unlinkedTotal > 0 || (unlinked && unlinked.length > 0)) && (
         <div className="notice notice-info" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span>{unlinkedTotal || unlinked.length} candidate{(unlinkedTotal || unlinked.length) === 1 ? '' : 's'} not on a request.
             {hasMoreUnlinked ? ' More are in the pool.' : ''}</span>
@@ -7074,7 +7080,7 @@ function TalentPipeline({
         </div>
       )}
       <div className="kanban">
-        <div className="kan-col">
+        {hasFullPipelineAccess(user) && <div className="kan-col">
           <div className="kan-head">
             <span className="kan-dot" style={{ background: 'var(--muted)' }} />
             <span className="kan-title">Unlinked</span>
@@ -7096,7 +7102,7 @@ function TalentPipeline({
                 </div>
               ))}
           </div>
-        </div>
+        </div>}
         {cols.map((st) => {
           const items = activeApps.filter((a) => pipelineStage(a.status) === st);
           return (

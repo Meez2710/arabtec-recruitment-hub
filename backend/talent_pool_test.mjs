@@ -20,7 +20,7 @@ let failed = 0;
 const check = (name, fn) => { try { fn(); console.log('PASS', name); } catch (e) { failed++; console.error('FAIL', name, e.message); } };
 const login = async (email) => (await (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'Arabtec@123' }) })).json()).token;
 try {
-  const hr = await login('hr.manager@arabtec.com');
+  const hr = await login('recruiter@arabtec.com');
   const hm = await login('hiring.manager@arabtec.com');
   const hmId = get("SELECT id FROM users WHERE email='hiring.manager@arabtec.com'").id;
   const dep = get('SELECT id FROM department ORDER BY id LIMIT 1').id;
@@ -34,6 +34,7 @@ try {
   const req = insert("INSERT INTO recruitment_request(ticket_no,title,department_id,requester_id,status) VALUES ('TABLE-R1','Civil Engineer',?,?,'closed')", [dep, hmId]);
   const hiddenReq = insert("INSERT INTO recruitment_request(ticket_no,title,department_id,status) VALUES ('TABLE-R2','Hidden Request',?,'closed')", [dep2]);
   const app = insert("INSERT INTO application(application_no,candidate_id,request_id,status,match_score) VALUES ('TABLE-A1',?,?,'rejected',85)", [cid, req]);
+  run("INSERT INTO application_stage_history(application_id,to_status,actor_id,actor_name) VALUES (?,'matched',?,'Fixture')", [app, hmId]);
   const hiddenApp = insert("INSERT INTO application(application_no,candidate_id,request_id,status) VALUES ('TABLE-A2',?,?,'rejected')", [cid, hiddenReq]);
   run("INSERT INTO application_stage_history(application_id,from_status,to_status,actor_id,actor_name) VALUES (?,'screening','shortlisted',?,'Fixture')", [hiddenApp, hmId]);
   const intake = insert("INSERT INTO candidate_intake(candidate_id,status) VALUES (?,'CONVERTED')", [cid]);

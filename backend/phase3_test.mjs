@@ -60,8 +60,8 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
   console.log('\n— Salary field-level visibility —');
   const candAsRecruiter = await api(`/api/candidates/${candId}`, { token: recruiter });
   c('recruiter: salaryVisible false', candAsRecruiter.json?.candidate?.salaryVisible === false);
-  const candAsHr = await api(`/api/candidates/${candId}`, { token: hrMgr });
-  c('HR manager: salaryVisible true', candAsHr.json?.candidate?.salaryVisible === true);
+  const candAsHr = await api(`/api/candidates/${candId}`, { token: hrDir });
+  c('HR director: salaryVisible true', candAsHr.json?.candidate?.salaryVisible === true);
 
   console.log('\n— Application: link candidate ↔ request (separation) —');
   const app1 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: candId, requestId: reqId, initialStatus: 'sourced', matchScore: 82, source: 'referral' } });
