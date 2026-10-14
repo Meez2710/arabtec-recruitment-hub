@@ -23,6 +23,18 @@ const api = {
   post(p, body) { return this.call(p, { method: 'POST', body }); },
   put(p, body) { return this.call(p, { method: 'PUT', body }); },
   del(p) { return this.call(p, { method: 'DELETE' }); },
+  // An authenticated HTML document (the offer letter), returned as text so it
+  // can be shown in a sandboxed frame. Errors carry the server's message.
+  async html(p, { method = 'GET', body, signal } = {}) {
+    const res = await fetch('/api' + p, {
+      method, signal,
+      headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: 'Bearer ' + this.token } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    if (!res.ok) { let msg = 'Request failed'; try { msg = JSON.parse(text).error || msg; } catch {} throw Object.assign(new Error(msg), { status: res.status }); }
+    return text;
+  },
   async upload(p, file, fields = {}) {
     const fd = new FormData(); fd.append('file', file);
     for (const [k, v] of Object.entries(fields)) fd.append(k, v);
@@ -313,14 +325,15 @@ const ToastCtx = createContext(() => {});
 function ToastProvider({ children }) {
   const [toast, setToast] = useState(null);
   const show = useCallback((msg, type = 'success') => {
-    setToast({ msg, type }); setTimeout(() => setToast(null), 3200);
+    // A warning or error carries more to read than a confirmation.
+    setToast({ msg, type }); setTimeout(() => setToast(null), type === 'success' ? 3200 : 6500);
   }, []);
   return (
     <ToastCtx.Provider value={show}>
       {children}
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 200,
-          background: toast.type === 'error' ? 'var(--critical)' : 'var(--success)',
+          background: toast.type === 'error' ? 'var(--critical)' : toast.type === 'warn' ? 'var(--warning-ink, #8a5a00)' : 'var(--success)',
           color: '#fff', padding: '12px 18px', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.2)', fontSize: 13.5, fontWeight: 600 }}>
           {toast.msg}
         </div>
@@ -501,7 +514,7 @@ function Empty({ art, text, title, action, tone = 'neutral' }) {
   const kicker = EMPTY_KICKER[mark] || EMPTY_KICKER['none-yet'];
   return <div className={'empty empty-' + tone} role={tone === 'error' ? 'alert' : undefined}>
     <div className="ico" aria-hidden="true"><EmptyArt name={mark} /></div>
-    {title && <div className="empty-kicker"><span aria-hidden="true">{EMOJI[kicker[0]]}</span> {kicker[1]}</div>}
+    {title && <div className="empty-kicker">{kicker[1]}</div>}
     {title && <h4 className="empty-title">{title}</h4>}<p>{text}</p>
     {action && <div className="empty-action">{action}</div>}
   </div>;
@@ -558,13 +571,12 @@ function pickKnowledgeLine(seed) {
    a badge, a table cell or a notification. One per element, leading it. */
 const EMOJI = {
   hint: '💡', focus: '🎯', lock: '🔏', clock: '⏱️', check: '✅', calendar: '📅', people: '👥', chart: '📊', inbox: '📭', search: '🔍', attention: '📌', build: '🏗️',
-  leadership: '🧭', teams: '🤝', psychology: '🧠', science: '🔬', engineering: '🏗️', wisdom: '🌿',
+  leadership: '🧭', teams: '🤝', psychology: '🧠', science: '🔬', engineering: '🏗️', wisdom: '🌿', history: '📜',
 };
 /* One fact the product can vouch for, beside or under the work: what a rule
    does, where a switch lives, what a number means. Never an opinion. */
 function Hint({ emoji = 'hint', children, action }) {
   return <aside className="hint" role="note">
-    <span className="hint-emoji" aria-hidden="true">{EMOJI[emoji] || EMOJI.hint}</span>
     <span className="hint-text">{children}</span>
     {action && <span className="hint-action">{action}</span>}
   </aside>;
@@ -597,7 +609,6 @@ function KnowledgeLine({ seed }) {
   const line = useMemo(() => pickKnowledgeLine(seed), [seed]);
   if (!line) return null;
   return <footer className="knowledge-line" aria-label="A line worth keeping">
-    {EMOJI[line.t] && <span className="kl-emoji" aria-hidden="true">{EMOJI[line.t]}</span>}
     <span className="kl-dash" aria-hidden="true" />
     <span className="kl-quote">{line.q}</span>
     <span className="kl-by">{line.by}</span>
@@ -605,67 +616,109 @@ function KnowledgeLine({ seed }) {
 }
 
 /* ----------------------------- Login ----------------------------- */
+// Sign-in — calm and corporate, in the system's own colours: the light grey
+// canvas used inside the app, one white bordered card for the form, and the
+// Arabtec signature (red dash, heavy display heading with a red full stop, a
+// faint logo watermark). Real markup throughout, so nothing is cropped at any
+// width; the phone gets the same design stacked. Sign-in behaviour is unchanged.
 function Login({ branding, onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(null);
 
   async function submit(e) {
-    e.preventDefault(); setErr(null); setBusy(true);
+    e.preventDefault(); setErr(null); setForgot(null); setBusy(true);
     try {
       const { token, user, mustChangePassword } = await api.post('/auth/login', { email, password, remember });
       // Keep the flag on the object the app renders from, so the forced-rotation
       // screen engages immediately rather than after the next /auth/me.
       api.setToken(token); onLogin({ ...user, mustChangePassword: !!mustChangePassword });
-    } catch (e) { setErr(e.message || 'Login failed'); } finally { setBusy(false); }
+    } catch (e) { setErr(e.message || 'Sign-in failed. Please try again.'); } finally { setBusy(false); }
   }
+  // Self-service reset is not available yet: the request is still recorded for
+  // the administrator, and the user is told plainly who can help.
   async function doForgot() {
-    try { const r = await api.post('/auth/forgot-password', { email }); setForgot(r.message); }
-    catch (e) { setForgot(e.message); }
+    setErr(null);
+    try { await api.post('/auth/forgot-password', { email }); } catch { /* the message below stands either way */ }
+    setForgot('Password resets are handled by your system administrator. Please contact them to reset your password.');
   }
-  const name = branding?.company_name || 'Arabtec Recruitment Hub';
+  const trackCaps = (e) => { if (e.getModifierState) setCapsLock(e.getModifierState('CapsLock')); };
+  // The admin-set company name (Branding) heads the panel; the product name is fixed.
+  const company = branding?.company_name || 'Arabtec';
+  const year = new Date().getFullYear();
   return (
-    <div className="login-wrap">
-      {/* Left visual panel — artwork comes from /bgats.png via .login-brand in styles.css.
-          The wordmark is intentionally NOT repeated here (it already appears in the image);
-          a small platform label is used instead. */}
-      <div className="login-brand">
-        <span className="login-brand-label">ATS Platform</span>
-        <h1>Hiring, smarter than ever.</h1>
-        <p>End-to-end recruitment tracking. Create requests, manage candidates, and move them through your hiring pipeline.</p>
-      </div>
-      <div className="login-form-side">
-        {/* Phone only: the artwork that carries the brand on desktop is dropped
-            there (it crops badly), so the mark sits above the card instead. */}
-        <div className="login-phone-mark" aria-hidden="true"><Logo size={56} withText textColor="rgba(255,255,255,.72)" /></div>
-        <form className="login-card" onSubmit={submit}>
-          <h2>Sign in</h2>
-          <p className="sub">Use your {name} account.</p>
-          {err && <div className="error-banner">{err}</div>}
-          {forgot && <div className="success-banner">{forgot}</div>}
-          <div className="field"><label>Work Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@arabtec.com" autoComplete="username" autoFocus required /></div>
-          <div className="field"><label>Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required /></div>
-          <div className="row-between" style={{ marginBottom: 20 }}>
-            <label className="checkbox"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember me</label>
-            <a href="#" onClick={(e) => { e.preventDefault(); doForgot(); }}>Forgot password?</a>
+    <div className="signin">
+      <header className="signin-header"><Logo size={36} withText textColor="var(--ink)" /></header>
+
+      <main className="signin-main" id="main-content">
+        <section className="signin-intro" aria-labelledby="signin-title">
+          <p className="signin-eyebrow"><span className="signin-dash" aria-hidden="true" />Human Resources</p>
+          <h1 id="signin-title" className="signin-title">Recruitment Hub<span className="signin-stop" aria-hidden="true">.</span></h1>
+          <p className="signin-lede">Hiring requests, candidates, interviews and offers for {company}, in one place.</p>
+        </section>
+
+        <form className="signin-card" onSubmit={submit} aria-labelledby="signin-heading">
+          <h2 id="signin-heading" className="signin-heading">Sign in</h2>
+          <p className="signin-sub">Use your {company} work account.</p>
+          {err && <div className="error-banner" role="alert">{err}</div>}
+          {forgot && <div className="signin-info" role="status">{forgot}</div>}
+
+          <div className="field">
+            <label htmlFor="signin-email">Work email</label>
+            <input id="signin-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@arabtec.com" autoComplete="username" autoFocus required />
           </div>
-          <button className="btn btn-block" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-          <p className="login-note">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7z" />
-            </svg>
-            <span>Secure sign-in. Repeated failed attempts are rate-limited and the account is temporarily locked.</span>
-          </p>
+          <div className="field">
+            <label htmlFor="signin-password">Password</label>
+            <div className="signin-password">
+              <input id="signin-password" type={showPassword ? 'text' : 'password'} value={password}
+                onChange={(e) => setPassword(e.target.value)} onKeyUp={trackCaps} onKeyDown={trackCaps}
+                placeholder="Enter your password" autoComplete="current-password" required
+                aria-describedby={capsLock ? 'signin-caps' : undefined} />
+              <button type="button" className="signin-reveal" onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} aria-controls="signin-password">
+                {showPassword
+                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3l18 18" /><path d="M10.6 6.1A10.9 10.9 0 0 1 12 6c6.5 0 10 6 10 6a17.6 17.6 0 0 1-3.2 3.9" /><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.5 6 10 6a10.6 10.6 0 0 0 5.4-1.4" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+                  : <Icon name="eye" size={16} />}
+              </button>
+            </div>
+            {capsLock && <p id="signin-caps" className="signin-hint" role="status">Caps Lock is on.</p>}
+          </div>
+
+          <div className="signin-row">
+            <label className="checkbox" htmlFor="signin-remember">
+              <input id="signin-remember" type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Keep me signed in
+            </label>
+            <button type="button" className="signin-link" onClick={doForgot}>Forgot password?</button>
+          </div>
+
+          <button type="submit" className="btn btn-block signin-submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
         </form>
-      </div>
+      </main>
+
+      <footer className="signin-footer">
+        <span>© {year} Arabtec Construction. All rights reserved.</span>
+        <span>Trouble signing in? Contact your system administrator.</span>
+      </footer>
+      {!HAS_CUSTOM_LOGO && <img className="signin-watermark" src="/arabtec-logo.svg" alt="" aria-hidden="true" />}
     </div>
   );
 }
+
+/* Who sees the whole Talent Pool and the CV review queue. Mirrors
+   backend/src/lib/candidate-scope.js (AR-01); a courtesy so scoped roles are not
+   offered a page the server refuses — the server is what enforces it. */
+const BROAD_CANDIDATE_PERMS = ['request.view_all', 'interview.view_all', 'candidate.add'];
+function hasBroadCandidateAccess(user) { return BROAD_CANDIDATE_PERMS.some((p) => can(user, p)); }
+function hasFullPipelineAccess(user) {
+  return (user?.roles || []).some((r) => ['system_admin', 'ceo', 'hr_director', 'recruitment_manager', 'recruiter'].includes(r));
+}
+const pipelineOrderFor = (user) => hasFullPipelineAccess(user) ? APP_ORDER : APP_ORDER.filter((s) => s !== 'sourced');
 
 /* ----------------------------- Navigation config ----------------------------- */
 const NAV = [
@@ -675,7 +728,7 @@ const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view' },
   { key: 'requests', label: 'Hiring Requests', icon: 'ticket', anyPerm: ['request.view_all', 'request.view_own'] },
   { key: 'candidates', label: 'Talent Pool', icon: 'user', perm: 'candidate.view' },
-  { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view' },
+  { key: 'candidateReview', label: 'Candidate Review', icon: 'shield', perm: 'candidate.view', broadCandidates: true },
   /* Hidden unless an administrator granted this user cv_intake.view. Hiding is
      a courtesy — routes/cv-intake.js enforces the same permission server-side,
      which is what a direct API call meets. */
@@ -689,6 +742,7 @@ const NAV = [
   { key: 'sites', label: 'Sites', icon: 'pin', perm: 'org.manage' },
   { key: 'departments', label: 'Departments', icon: 'building', perm: 'org.manage' },
   { key: 'notifications', label: 'Notification Settings', icon: 'bell', perm: 'notification.manage' },
+  { key: 'assessmentPolicy', label: 'Assessment Settings', icon: 'doc', perm: 'interview.assessment_policy' },
   { key: 'users', label: 'Users', icon: 'users', perm: 'user.manage' },
   { key: 'roles', label: 'Roles & Permissions', icon: 'shield', perm: 'role.manage' },
   { key: 'control', label: 'Control Center', icon: 'gear', perm: 'app.manage_ui' },
@@ -872,7 +926,7 @@ function useWorkCounts(user) {
   const reload = useCallback(() => {
     const jobs = [
       can(user, 'dashboard.view') ? api.get('/dashboard').catch(() => null) : Promise.resolve(null),
-      can(user, 'candidate.view') ? api.get('/candidates/intakes').catch(() => null) : Promise.resolve(null),
+      can(user, 'candidate.view') && hasBroadCandidateAccess(user) ? api.get('/candidates/intakes').catch(() => null) : Promise.resolve(null),
     ];
     Promise.all(jobs).then(([dash, intake]) => {
       setCounts({ dash: dash || null, intakes: intake ? (intake.intakes || []).length : null });
@@ -1455,6 +1509,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const hasControl = can(user, 'app.manage_ui');
   const visibleNav = NAV.filter((n) => n.section || (
     !(hasControl && IN_CONTROL_CENTER.includes(n.key))
+    && (!n.broadCandidates || hasBroadCandidateAccess(user))
     && (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm)))));
   const navItems = visibleNav.filter((n) => !n.section);
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
@@ -1465,7 +1520,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const EmailSettingsPage = window.ArabtecEmailSettingsPage;
   const CvIntakePage = window.ArabtecCvIntakePage;
   const Page = {
-    dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} />,
+    dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} initialFilters={route === 'requests' ? routeParams : null} />,
     candidates: <CandidatesPage user={user} onNavigate={go} initialFilters={route === 'candidates' ? routeParams : null} />,
@@ -1502,8 +1557,11 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? <div><PageHead crumb="Administration / Notifications" title="Notification Settings"
           sub="Which events send an in-app alert or an email, and to whom." /><NotificationsPanel user={user} /></div>
       : <Forbidden what="Notification Settings" need="HR, Recruitment or System Admin" />,
+    assessmentPolicy: can(user, 'interview.assessment_policy')
+      ? <AssessmentPolicyPage user={user} />
+      : <Forbidden what="Assessment Settings" need="System Admin" />,
     audit: <AuditPage user={user} />,
-  }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} />;
+  }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />;
 
   // What anyhelp is looking at. Kept deliberately small: the dock never claims
   // more context than the page actually has. RequestDetail publishes the open
@@ -1553,6 +1611,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       {/* One CV review panel for the whole app; every entry point reaches it
           through the `ats:open-cv-review` event rather than owning its state. */}
       <CvReviewHost user={user} />
+      <DocumentPanelHost />
 
       <AnyhelpDock user={user} route={route} context={anyhelpContext} onNavigate={go} />
     </>
@@ -1662,12 +1721,12 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
           <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
             <Icon name="sidebar" size={18} />
           </button>
-          <div className="tb-brand">
+          {collapsed && <div className="tb-brand">
             <span className="bn">
               <strong>Recruitment Hub</strong>
               <span>{branding?.company_name || 'Arabtec Construction'}</span>
             </span>
-          </div>
+          </div>}
           {/* Global search. Opens the Ctrl+K palette — no longer a dead placeholder. */}
           <button type="button" className="gsearch" onClick={() => setPaletteOpen(true)}
             title="Search candidates (Ctrl K)">
@@ -1743,7 +1802,7 @@ function ChartLegend({ data, labeler = (s) => s }) {
   </div>;
 }
 function Funnel({ data }) {
-  const order = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+  const order = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
   const map = Object.fromEntries(data.map((d) => [d.status, d.count]));
   const rows = order.filter((s) => map[s]).map((s) => ({ status: s, count: map[s] }));
   if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
@@ -1768,7 +1827,7 @@ const STAGE_COLORS = {
   waiting_feedback: '#E09600', issuing_offer: '#8A5A00', offer_sent: '#8A5A00', joined: '#00664F',
   unmatched: '#C7C4BF', on_hold: '#6F6A64', rejected: '#D01827', offer_declined: '#B01420',
 };
-const FUNNEL_ORDER = ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+const FUNNEL_ORDER = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
 
 // Compact, Workable-style pipeline funnel rendered on each request card.
 // Shows total candidates + a proportional stacked bar across active stages.
@@ -1809,7 +1868,7 @@ function FunnelMini({ pipeline }) {
 // Presentation only. Every number rendered here comes from the existing
 // GET /dashboard response; nothing is fabricated or extrapolated.
 const APP_STAGE_COLORS = {
-  sourced: '#8A867F', screening: '#4E9C88', interview_hr: '#008064',
+  sourced: '#8A867F', shortlisted: '#6B8F3D', screening: '#4E9C88', interview_hr: '#008064',
   interview_technical: '#00664F', offer: '#8A5A00', hired: '#00664F',
   rejected: '#D01827', offer_declined: '#B01420',
 };
@@ -1846,7 +1905,7 @@ function DashBars({ rows, empty, icon = EMOJI.chart }) {
 }
 
 function DashFunnel({ data }) {
-  const order = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
+  const order = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
   // /dashboard returns the API's canonical statuses (matched, interviewing,
   // issuing_offer, joined…). Fold them onto board columns via pipelineStage,
   // otherwise everything except Sourced reads 0.
@@ -1920,7 +1979,7 @@ const PERSONA_BY_ROLE = {
   viewer: 'executive',             // read-only, org-wide, no candidate identity
 };
 // Highest-privilege role wins when a user holds more than one.
-const ROLE_RANK = ['system_admin', 'hr_director', 'hr_manager', 'recruitment_manager',
+const ROLE_RANK = ['system_admin', 'hr_director', 'recruitment_manager',
   'recruiter', 'project_manager', 'hiring_manager', 'interviewer', 'viewer'];
 /* Data-quality labels a CV can carry into the Talent Pool. Kept in step with
    backend/src/lib/cv-intake/auto-ingest.js — a label is never a reason a
@@ -2057,7 +2116,7 @@ function RoleRow({ r, onOpen }) {
         <span className="cell-meta">{r.headcountFilled} of {r.headcount} seats · {(r.pipeline || {}).total || 0} in pipeline</span>
       </div>
       <div className="role-row-end">
-        <span className="idle">{days == null ? '—' : `Open ${days} ${days === 1 ? 'day' : 'days'}`}</span>
+        <span className="idle">{days == null ? '—' : awaiting ? `Waiting ${days} ${days === 1 ? 'day' : 'days'} for approval` : `Open ${days} ${days === 1 ? 'day' : 'days'}`}</span>
         {onOpen && <button className="btn btn-ghost btn-sm" tabIndex={-1} onClick={(e) => { e.stopPropagation(); onOpen(r); }}>Open</button>}
       </div>
     </div>
@@ -2615,93 +2674,184 @@ function PlanTable({ rows, unit }) {
 }
 
 /* --------------------------------- HR DIRECTOR ---------------------------- */
-function DirectorDashboard({ user, data, onNavigate, notice, figures }) {
-  const { d, requests } = data;
+// Director: the full picture first, ordered by what needs her. 1) decisions and
+// risks that need action now, 2) the whole hiring position in one row of
+// figures, the pipeline funnel and the plan, 3) detail on demand. Every figure
+// can be narrowed by project, department or recruiter (owner review, 4 Oct 2026).
+const DASH_FILTER_KEY = 'arabtec_dash_filter';
+const FUNNEL = [[1, 'Sourced'], [2, 'Screening'], [3, 'Interview'], [4, '2nd interview'], [5, 'Offer'], [6, 'Hired']];
+function readDashFilter() {
+  try { const v = JSON.parse(localStorage.getItem(DASH_FILTER_KEY) || '{}'); return { projectId: v.projectId || '', departmentId: v.departmentId || '', ownerId: v.ownerId || '' }; }
+  catch { return { projectId: '', departmentId: '', ownerId: '' }; }
+}
+function DirectorDashboard({ user, data, onNavigate, notice, figures, intakes }) {
+  const { d: shared, requests: allRequests } = data;
+  const [f, setF] = useState(readDashFilter);
+  const [meta, setMeta] = useState(null);
+  const [narrowed, setNarrowed] = useState(null);
+  const [details, setDetails] = useState(false);
+  const isNarrowed = !!(f.projectId || f.departmentId || f.ownerId);
+  useEffect(() => { api.get('/requests/meta/form').then(setMeta).catch(() => setMeta({ projects: [], departments: [], recruiters: [] })); }, []);
+  useEffect(() => {
+    try { localStorage.setItem(DASH_FILTER_KEY, JSON.stringify(f)); } catch { /* per-device convenience */ }
+    if (!isNarrowed) { setNarrowed(null); return undefined; }
+    let live = true;
+    const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+    api.get('/dashboard?' + qs).then((r) => { if (live) setNarrowed(r); }).catch(() => { if (live) setNarrowed(null); });
+    return () => { live = false; };
+  }, [f.projectId, f.departmentId, f.ownerId]);
+  const d = isNarrowed ? narrowed : shared;
+  const match = (r) => (!f.projectId || Number(r.projectId) === Number(f.projectId))
+    && (!f.departmentId || Number(r.departmentId) === Number(f.departmentId))
+    && (!f.ownerId || Number(r.ownerId) === Number(f.ownerId));
+  const requests = (allRequests || []).filter(match);
   const k = (d && d.kpis) || {};
-  const open = requests.filter(isOpenReq);
-  const awaitingApproval = requests.filter((r) => ['pending_approval', 'draft', 'budget_validation'].includes(r.status));
-  const pendingOffers = d ? (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((s, o) => s + o.count, 0) : 0;
-  const overdue = (d ? (d.aging['61-90'] || 0) + (d.aging['90+'] || 0) : 0);
+
+  // 1 — needs action now
+  const awaiting = requests.filter((r) => ['pending_approval', 'draft', 'budget_validation'].includes(r.status))
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  const pendingOffers = d ? (d.offersByStatus || []).filter((o) => o.status === 'pending_approval').reduce((n, o) => n + o.count, 0) : 0;
+  const running = requests.filter((r) => isOpenReq(r) && !awaiting.includes(r));
+  const sev = (r) => (r.health || {}).level === 'red' ? 3 : r.priority === 'critical' ? 2 : (r.health || {}).level === 'amber' ? 1 : 0;
+  const atRisk = running.filter((r) => sev(r) > 0).sort((a, b) => sev(b) - sev(a) || ((b.health || {}).daysOpen ?? 0) - ((a.health || {}).daysOpen ?? 0));
+  const cvWaiting = !isNarrowed && intakes ? intakes : 0;
+  const waitDays = (r) => { const t = new Date(r.createdAt).getTime(); return isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000); };
+  const riskWhy = (r) => {
+    const h = r.health || {};
+    if (h.daysToTarget != null && h.daysToTarget < 0) return `Past target join date by ${Math.ceil(-h.daysToTarget)} days`;
+    if (h.level === 'red') return `Open ${h.daysOpen} days — overdue`;
+    if (r.priority === 'critical') return 'Critical priority, still open';
+    return `Open ${h.daysOpen} days — needs attention`;
+  };
+  const decisionsCount = awaiting.length + pendingOffers;
+
+  // 2 — the whole position
+  const apps = (d && d.applicationsByStatus) || [];
+  const byColumn = (col) => apps.filter((a) => (APP_STATUS[a.status] || {}).column === col).reduce((n, a) => n + a.count, 0);
+  const inPipeline = [1, 2, 3, 4, 5].reduce((n, c) => n + byColumn(c), 0);
+  const offersOut = d ? (d.offersByStatus || []).filter((o) => ['pending_approval', 'approved', 'sent'].includes(o.status)).reduce((n, o) => n + o.count, 0) : 0;
+  const nameOf = (list, id) => ((list || []).find((x) => Number(x.id) === Number(id)) || {}).name || ((list || []).find((x) => Number(x.id) === Number(id)) || {}).title;
+  const scopeText = isNarrowed
+    ? [f.projectId && nameOf(meta?.projects, f.projectId), f.departmentId && nameOf(meta?.departments, f.departmentId), f.ownerId && nameOf(meta?.recruiters, f.ownerId)].filter(Boolean).join(' · ')
+    : 'All projects, departments and recruiters';
+  const planBy = f.projectId ? 'department' : 'project';
+  const setFilter = (key) => (e) => setF((x) => ({ ...x, [key]: e.target.value }));
 
   return (
     <div>
       <PageHead crumb="Hiring plan and governance" title="Hiring plan and recruitment health"
-        sub="Demand against delivery, and the decisions that are waiting on you."
+        sub="What needs your decision, what is at risk, and where hiring stands against the plan."
         actions={<>
           <button className="btn btn-secondary" onClick={() => onNavigate('reports')}>Reports</button>
-          {can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers', { status: 'pending_approval' })}>Offer approvals</button>}
+          {decisionsCount > 0 && (awaiting.length
+            ? <button className="btn" onClick={() => onNavigate('requests', { status: 'pending_approval' })}>Review approvals ({decisionsCount})</button>
+            : can(user, 'offer.approve') && <button className="btn" onClick={() => onNavigate('offers', { status: 'pending_approval' })}>Review offers ({pendingOffers})</button>)}
         </>} />
       {notice}
 
-      <div className="dash-kpi-row kpi-4">
-        <KpiCard label="Waiting on a decision" value={awaitingApproval.length + pendingOffers}
-          tone={(awaitingApproval.length + pendingOffers) ? 'kpi-attn' : ''}
-          meta={`${awaitingApproval.length} request${awaitingApproval.length === 1 ? '' : 's'} · ${pendingOffers} offer${pendingOffers === 1 ? '' : 's'}`} />
-        <KpiCard label="Overdue roles" value={d ? overdue : '—'} tone={overdue ? 'kpi-risk' : ''} meta="Open longer than 60 days" />
-        <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of ${k.headcountTotal ?? 0} planned`} />
-        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.timeToFillDays == null ? 'No role filled yet' : 'Average, request opened to filled'} />
+      <div className="dash-filter" role="group" aria-label="Narrow the dashboard">
+        <label><span>Project</span>
+          <select value={f.projectId} onChange={setFilter('projectId')}><option value="">All projects</option>{(meta?.projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <label><span>Department</span>
+          <select value={f.departmentId} onChange={setFilter('departmentId')}><option value="">All departments</option>{(meta?.departments || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label><span>Recruiter</span>
+          <select value={f.ownerId} onChange={setFilter('ownerId')}><option value="">All recruiters</option>{(meta?.recruiters || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <span className="dash-filter-scope">{isNarrowed ? <>Showing <strong>{scopeText}</strong></> : scopeText}</span>
+        {isNarrowed && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF({ projectId: '', departmentId: '', ownerId: '' })}>Clear</button>}
       </div>
 
-      <div className="dash-grid-2">
-        <section className="card">
-          <div className="card-head"><div><h3>Waiting on your decision</h3></div><span className="dash-headnote">Requests and offers held for approval</span></div>
-        {!awaitingApproval.length && !pendingOffers
-          ? <Empty art="all-clear" title="Nothing is waiting on you" text="No hiring request or offer is held for a decision." />
+      <section className="card dash-attention">
+        <div className="card-head"><div><h3>Needs your attention</h3></div><span className="dash-headnote">Decisions first, then risks</span></div>
+        {!decisionsCount && !atRisk.length && !cvWaiting
+          ? <div className="dash-allclear">Nothing is waiting on you and no role is at risk.</div>
           : <div className="action-list">
-            {awaitingApproval.slice(0, 6).map((r) => (
-              <ActionItem key={r.id} tone="warn" title={`Approve ${shortReqCode(r.ticketNo)} — ${r.title}`}
-                meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}`}
+            {awaiting.slice(0, 5).map((r) => (
+              <ActionItem key={'a' + r.id} tone="warn" title={`Approve ${shortReqCode(r.ticketNo)} — ${r.title}`}
+                meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}${waitDays(r) != null ? ` · waiting ${waitDays(r)} day${waitDays(r) === 1 ? '' : 's'}` : ''}`}
                 why="Sourcing cannot start until this is approved" cta="Open request" onCta={() => openRequest(r.id, onNavigate)} />
             ))}
+            {awaiting.length > 5 && <button type="button" className="btn btn-ghost btn-sm dash-more" onClick={() => onNavigate('requests', { status: 'pending_approval' })}>All {awaiting.length} requests awaiting approval</button>}
             {pendingOffers > 0 && (
               <ActionItem tone="warn" title={`${pendingOffers} offer${pendingOffers === 1 ? '' : 's'} awaiting approval`}
                 meta="Offers held pending a decision" why="Candidates are waiting" cta="Open offers" onCta={() => onNavigate('offers', { status: 'pending_approval' })} />
             )}
+            {atRisk.slice(0, 5).map((r) => (
+              <ActionItem key={'r' + r.id} tone="risk" title={`${shortReqCode(r.ticketNo)} — ${r.title}`}
+                meta={`${(r.project || {}).name || 'No project'} · ${r.headcountFilled} of ${r.headcount} filled · ${(r.pipeline || {}).total || 0} in pipeline`}
+                why={riskWhy(r)} cta="Open request" onCta={() => openRequest(r.id, onNavigate)} />
+            ))}
+            {atRisk.length > 5 && <button type="button" className="btn btn-ghost btn-sm dash-more" onClick={() => setDetails(true)}>All {atRisk.length} roles at risk</button>}
+            {cvWaiting > 0 && (
+              <ActionItem tone="warn" title={`${cvWaiting} CV${cvWaiting === 1 ? '' : 's'} waiting in Candidate Review`}
+                meta="Received CVs not yet accepted into the Talent Pool" why="Candidates are not in any pipeline until reviewed" cta="Open Candidate Review" onCta={() => onNavigate('candidateReview')} />
+            )}
           </div>}
-        </section>
+      </section>
 
-        <FiguresToggle figures={figures} />
-        <section className="card dash-figure">
-          <div className="card-head"><div><h3>Open roles by age</h3></div><span className="dash-headnote">Where time is being lost</span></div>
+      <div className="dash-kpi-row dash-kpi-6">
+        <KpiCard label="Open roles" value={running.length} meta={awaiting.length ? `+ ${awaiting.length} awaiting approval` : 'Approved and recruiting'} onClick={() => onNavigate('requests')} />
+        <KpiCard label="Seats filled" value={k.headcountFilled ?? '—'} meta={`${k.fillRate ?? 0}% of ${k.headcountTotal ?? 0} planned`} onClick={() => onNavigate('requests')} />
+        <KpiCard label="In pipeline" value={d ? inPipeline : '—'} meta="Candidates on open roles" onClick={() => onNavigate('candidates')} />
+        <KpiCard label="Interviews ahead" value={k.upcomingInterviews ?? '—'} meta="Scheduled from today" onClick={() => onNavigate('interviews')} />
+        <KpiCard label="Offers out" value={d ? offersOut : '—'} meta={pendingOffers ? `${pendingOffers} awaiting approval` : 'Awaiting approval, approved or sent'} tone={pendingOffers ? 'kpi-attn' : ''} onClick={() => onNavigate('offers')} />
+        <KpiCard label="Time to fill" value={k.timeToFillDays == null ? '—' : k.timeToFillDays + 'd'} meta={k.timeToFillDays == null ? 'No role filled yet' : 'Average, approval to filled'} />
+      </div>
+
+      <FiguresToggle figures={figures} />
+      <div className="dash-grid-2 dash-figure">
+        <section className="card">
+          <div className="card-head"><div><h3>Hiring funnel</h3></div><span className="dash-headnote">Candidates by stage</span></div>
           <div className="card-pad">
             {!d ? <Empty art="none-yet" text="No data." /> : (
-              <DashBars empty="No open roles." rows={[
-                { label: 'On track · 0–30 days', count: d.aging['0-30'] || 0, color: 'var(--green)' },
-                { label: 'At risk · 31–60 days', count: d.aging['31-60'] || 0, color: 'var(--warning)' },
-                { label: 'Overdue · 61–90 days', count: d.aging['61-90'] || 0, color: 'var(--brand)' },
-                { label: 'Overdue · 90+ days', count: d.aging['90+'] || 0, color: 'var(--brand-dark)' },
-              ]} />
+              <DashBars empty="No candidates in any pipeline yet." rows={FUNNEL.map(([col, label]) => ({ label, count: byColumn(col), color: col === 6 ? 'var(--green-700)' : col === 5 ? 'var(--warning)' : 'var(--green)' }))} />
             )}
           </div>
         </section>
-      </div>
-
-      <div className="dash-grid-2 dash-figure" style={{ marginTop: 12 }}>
-        <section className="card dash-figure">
-          <div className="card-head"><div><h3>Requests by status</h3></div><span className="dash-headnote">Every request in scope</span></div>
-          <div className="card-pad">
-            <DashBars empty="No hiring requests yet." rows={((d && d.requestsByStatus) || []).filter((r) => r.count > 0).map((r) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status.replace(/_/g, ' '), count: r.count, color: r.status === 'pending_approval' ? 'var(--warning)' : ['closed', 'cancelled', 'rejected'].includes(r.status) ? 'var(--muted)' : 'var(--green-700)' }))} />
-          </div>
-        </section>
-        <section className="card dash-figure">
-          <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
-          <div className="card-pad">
-            <DashBars empty="No recruiter owns an open request yet." rows={((d && d.recruiterLoad) || []).map((r) => ({ label: r.name, count: r.c ?? r.count ?? 0, color: 'var(--green-700)' }))} />
-          </div>
+        <section className="card">
+          <div className="card-head"><div><h3>Hiring plan by {planBy}</h3></div><span className="dash-headnote">Planned versus filled</span></div>
+          <div className="card-pad"><PlanTable rows={planBy === 'project' ? planRows(requests, 'project') : planRows(requests.map((r) => ({ ...r, department: { name: nameOf(meta?.departments, r.departmentId) || 'No department' } })), 'department')} unit={planBy === 'project' ? 'Project' : 'Department'} /></div>
         </section>
       </div>
 
-      <section className="card dash-figure" style={{ marginTop: 12 }}>
-        <div className="card-head"><div><h3>Hiring plan by project</h3></div><span className="dash-headnote">Planned versus filled</span></div>
-        <div className="card-pad"><PlanTable rows={planRows(requests, 'project')} unit="Project" /></div>
-      </section>
-
-      <section className="card" style={{ marginTop: 16 }}>
-        <div className="card-head"><div><h3>Open roles</h3></div><span className="dash-headnote">{open.length} in scope</span></div>
-        {!open.length ? <Empty art="none-yet" text="No open hiring requests." />
-          : <div className="role-health">{open.slice(0, 8).map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
-      </section>
-            <Hint emoji="focus">Requests and offers wait here for your decision alone. Both approval steps can be switched off in Control center › Workflows; records approved that way are marked in their activity.</Hint>
+      <button type="button" className="btn btn-secondary dash-details-toggle" aria-expanded={details} onClick={() => setDetails((v) => !v)}>
+        {details ? 'Hide details' : 'Show details'} — roles by age, requests by status, recruiter workload, every open role
+        <Icon name="chevronDown" size={16} />
+      </button>
+      {details && <>
+        <div className="dash-grid-2">
+          <section className="card">
+            <div className="card-head"><div><h3>Open roles by age</h3></div><span className="dash-headnote">Days since approval</span></div>
+            <div className="card-pad">
+              {!d ? <Empty art="none-yet" text="No data." /> : (
+                <DashBars empty="No approved role is open." rows={[
+                  { label: 'On track · 0–30 days', count: d.aging['0-30'] || 0, color: 'var(--green)' },
+                  { label: 'At risk · 31–60 days', count: d.aging['31-60'] || 0, color: 'var(--warning)' },
+                  { label: 'Overdue · 61–90 days', count: d.aging['61-90'] || 0, color: 'var(--brand)' },
+                  { label: 'Overdue · 90+ days', count: d.aging['90+'] || 0, color: 'var(--brand-dark)' },
+                ]} />
+              )}
+              {d && d.awaitingApproval && d.awaitingApproval.count > 0 && <p className="dash-note">Not counted: {d.awaitingApproval.count} request{d.awaitingApproval.count === 1 ? '' : 's'} awaiting approval (oldest waiting {d.awaitingApproval.oldestDays} day{d.awaitingApproval.oldestDays === 1 ? '' : 's'}).</p>}
+            </div>
+          </section>
+          <section className="card">
+            <div className="card-head"><div><h3>Requests by status</h3></div><span className="dash-headnote">Every request in view</span></div>
+            <div className="card-pad">
+              <DashBars empty="No hiring requests yet." rows={((d && d.requestsByStatus) || []).filter((r) => r.count > 0).map((r) => ({ label: (REQ_STATUS[r.status] || {}).label || r.status.replace(/_/g, ' '), count: r.count, color: r.status === 'pending_approval' ? 'var(--warning)' : ['closed', 'cancelled', 'rejected'].includes(r.status) ? 'var(--muted)' : 'var(--green-700)' }))} />
+            </div>
+          </section>
+        </div>
+        {((d && d.recruiterLoad) || []).length > 0 && (
+          <section className="card" style={{ marginTop: 12 }}>
+            <div className="card-head"><div><h3>Recruiter workload</h3></div><span className="dash-headnote">Open requests per recruiter</span></div>
+            <div className="card-pad"><DashBars rows={d.recruiterLoad.map((r) => ({ label: r.name, count: r.c ?? r.count ?? 0, color: 'var(--green-700)' }))} /></div>
+          </section>
+        )}
+        <section className="card" style={{ marginTop: 12 }}>
+          <div className="card-head"><div><h3>Every open role</h3></div><span className="dash-headnote">{running.length + awaiting.length} in view</span></div>
+          {!(running.length + awaiting.length) ? <Empty art="none-yet" text="No open hiring requests." />
+            : <div className="role-health">{[...atRisk, ...running.filter((r) => !atRisk.includes(r)), ...awaiting].map((r) => <RoleRow key={r.id} r={r} onOpen={(role) => openRequest(role.id, onNavigate)} />)}</div>}
+        </section>
+      </>}
     </div>
   );
 }
@@ -2844,15 +2994,18 @@ function FiguresToggle({ figures }) {
     <Icon name="chevronDown" size={16} />
   </button>;
 }
-function Dashboard({ user, onNavigate, dash }) {
+function Dashboard({ user, onNavigate, dash, intakes }) {
   const isAdmin = (user.roles || []).includes('system_admin');
   const [figuresOpen, setFiguresOpen] = useState(false);
   const [view, setView] = useState(() => { try { const v = localStorage.getItem(DASH_VIEW_KEY); return DASH_VIEWS.some(([k]) => k === v) ? v : 'director'; } catch { return 'director'; } });
   const persona = isAdmin ? view : personaFor(user);
   const data = useDashboardData(user, persona, dash);
   const choose = (k) => { setView(k); try { localStorage.setItem(DASH_VIEW_KEY, k); } catch { /* per-device convenience only */ } };
-  const viewTabs = isAdmin ? <div className="control-tabs dash-view-tabs" role="tablist" aria-label="Dashboard view">
-    {DASH_VIEWS.map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={persona === k} className={'control-tab' + (persona === k ? ' active' : '')} onClick={() => choose(k)}>{label}</button>)}
+  const viewTabs = isAdmin ? <div className="dash-view-switch">
+    <div className="control-tabs dash-view-tabs" role="tablist" aria-label="Preview the dashboard as">
+      {DASH_VIEWS.map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={persona === k} className={'control-tab' + (persona === k ? ' active' : '')} onClick={() => choose(k)}>{label}</button>)}
+    </div>
+    <p className="dash-view-note">Preview what each role sees on their dashboard. Figures use your own access as System Administrator.</p>
   </div> : null;
 
   if (!can(user, 'dashboard.view') && persona !== 'interviewer') {
@@ -2893,7 +3046,7 @@ function Dashboard({ user, onNavigate, dash }) {
   // On a phone the charts fold behind one "Show hiring figures" button, so the
   // screen leads with what needs a decision (FiguresToggle, .dash-figure).
   const figures = { open: figuresOpen, toggle: () => setFiguresOpen((v) => !v) };
-  const props = { user, data, onNavigate, notice, figures };
+  const props = { user, data, onNavigate, notice, figures, intakes };
   const personaView = persona === 'manager' ? <ManagerDashboard {...props} />
     : persona === 'director' ? <DirectorDashboard {...props} />
     : persona === 'executive' ? <ExecutiveDashboard {...props} />
@@ -3827,7 +3980,7 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
   const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
-    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Knowledge lines']] : [])];
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
@@ -3851,50 +4004,146 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
 // --- Knowledge lines panel ---
 // The owner's own list for the line at the foot of every page. Saved as the
 // `knowledge_lines` system setting; empty means the bundled list is used.
+const KL_TOPICS = ['leadership', 'teams', 'psychology', 'science', 'engineering', 'wisdom', 'history'];
+// The same rules the server applies on save (lib/knowledge-lines.js), per row.
+function klRowError(row, rows, skip) {
+  const q = (row.q || '').trim(); const by = (row.by || '').trim();
+  if (q.length < 3) return 'Write the quote.';
+  if (q.length > 160) return `The quote is ${q.length} characters; keep it to 160.`;
+  if (/\s[—–]\s/.test(q)) return 'Take out the spaced dash ( — ) from the quote; it separates the author.';
+  if (!by) return 'Add the author.';
+  if (/\s[—–]\s/.test(by)) return 'Take out the spaced dash ( — ) from the author.';
+  if (rows.some((r, i) => i !== skip && r.q.trim().toLowerCase() === q.toLowerCase())) return 'This quote is already on the list.';
+  return null;
+}
+function KlRowForm({ value, onChange, error, onSave, onCancel, saveLabel }) {
+  const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
+  return (
+    <div className="kl-form">
+      <div className="field kl-form-quote">
+        <label htmlFor="kl-q">Quote</label>
+        <textarea id="kl-q" rows="2" value={value.q} onChange={set('q')} autoFocus />
+        <span className={'kl-count' + (value.q.trim().length > 160 ? ' error' : '')}>{value.q.trim().length} / 160</span>
+      </div>
+      <div className="field"><label htmlFor="kl-by">Author</label><input id="kl-by" value={value.by} onChange={set('by')} /></div>
+      <div className="field"><label htmlFor="kl-t">Topic</label>
+        <select id="kl-t" value={value.t || ''} onChange={set('t')}>
+          <option value="">No topic</option>
+          {KL_TOPICS.map((t) => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
+        </select>
+      </div>
+      {error && value.q.trim() && <div className="kl-form-error" role="alert">{error}</div>}
+      <div className="kl-form-actions">
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn btn-secondary" disabled={!!error} onClick={onSave}>{saveLabel}</button>
+      </div>
+    </div>
+  );
+}
+// The owner's footer quotes: add, edit, remove or replace any line, then save.
+// Saved as the `knowledge_lines` system setting; empty means the built-in list.
 function KnowledgeLinesPanel() {
   const toast = useToast();
-  const [text, setText] = useState(null);
-  const [saved, setSaved] = useState('');
-  const [shown, setShown] = useState('');   // what the box held when loaded or last saved
+  const [rows, setRows] = useState(null);
+  const [savedText, setSavedText] = useState('');
+  const [baseline, setBaseline] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [filter, setFilter] = useState('');
+  const [edit, setEdit] = useState(null); // { index: number | 'new', row }
+  const [bulk, setBulk] = useState(null); // text while "Paste a list" is open
+  const builtIn = () => (window.ARABTEC_KNOWLEDGE_LINES || []).map((l) => ({ q: l.q, by: l.by, ...(l.t ? { t: l.t } : {}) }));
   const load = useCallback(() => {
     setLoadError(null);
     api.get('/settings/system').then((r) => {
       const own = r.settings?.knowledge_lines || '';
-      const initial = own || knowledgeLinesAsText(window.ARABTEC_KNOWLEDGE_LINES);
-      setSaved(own); setShown(initial); setText(initial);
+      const list = own ? parseKnowledgeText(own).lines : builtIn();
+      setSavedText(own); setRows(list); setBaseline(knowledgeLinesAsText(list));
     }).catch((e) => setLoadError(e.message));
   }, []);
   useEffect(() => { load(); }, [load]);
-  if (loadError) return <LoadError title="Could not load knowledge lines" text={loadError} onRetry={load} />;
-  if (text == null) return <Skeleton rows={5} />;
-  const { lines, errors } = parseKnowledgeText(text);
-  const usingOwn = !!saved.trim();
+  const dirty = !!rows && knowledgeLinesAsText(rows) !== baseline;
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  if (loadError) return <LoadError title="Could not load footer quotes" text={loadError} onRetry={load} />;
+  if (!rows) return <Skeleton rows={5} />;
+  const usingOwn = !!savedText.trim();
   async function persist(value, message) {
     setBusy(true);
     try {
       await api.put('/settings/system', { settings: { knowledge_lines: value } });
-      const next = value || knowledgeLinesAsText(window.ARABTEC_KNOWLEDGE_LINES);
-      setSaved(value); applyOwnKnowledgeLines(value); setShown(next); setText(next);
+      const list = value ? parseKnowledgeText(value).lines : builtIn();
+      setSavedText(value); applyOwnKnowledgeLines(value); setRows(list); setBaseline(knowledgeLinesAsText(list)); setEdit(null);
       toast(message);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+  const commitEdit = () => {
+    const r = edit.row; const clean = { q: r.q.trim(), by: r.by.trim(), ...(r.t ? { t: r.t } : {}) };
+    setRows(edit.index === 'new' ? [clean, ...rows] : rows.map((x, i) => (i === edit.index ? clean : x)));
+    setEdit(null);
+  };
+  const remove = (i) => { if (window.confirm(`Remove this quote?\n\n“${rows[i].q}” — ${rows[i].by}\n\nIt leaves the footer when you save.`)) { setRows(rows.filter((_, j) => j !== i)); if (edit && edit.index === i) setEdit(null); } };
+  const term = filter.trim().toLowerCase();
+  const visible = rows.map((r, i) => ({ r, i })).filter(({ r }) => !term || `${r.q} ${r.by} ${r.t || ''}`.toLowerCase().includes(term));
+  const bulkParsed = bulk != null ? parseKnowledgeText(bulk) : null;
+  const editError = edit ? klRowError(edit.row, rows, edit.index === 'new' ? -1 : edit.index) : null;
   return (
     <div className="card kl-editor">
       <div className="card-head">
-        <div><h3>Knowledge lines</h3><div className="muted">One line per entry: <code>Quote — Author</code>. An optional third field sets the topic (<code>— leadership</code>).</div></div>
-        <span className="dash-headnote">{usingOwn ? 'Your list is in use' : 'Built-in list in use'}</span>
+        <div><h3>Footer quotes</h3><div className="muted">One quote is shown at the foot of every page. Add, edit or remove quotes, then save. Each quote needs an author; up to 160 characters.</div></div>
+        <span className="dash-headnote">{usingOwn ? 'Your list is in use' : 'Built-in list in use'} · {rows.length} {rows.length === 1 ? 'quote' : 'quotes'}</span>
       </div>
       <div className="card-pad">
-        <textarea aria-label="Knowledge lines, one per line" rows="16" value={text} onChange={(e) => setText(e.target.value)} spellCheck="true" />
-        <div className="kl-editor-foot">
-          <span className={errors.length ? 'kl-editor-count error' : 'kl-editor-count'} role="status">
-            {lines.length} {lines.length === 1 ? 'line' : 'lines'}{errors.length ? ` · ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}` : ''}
-          </span>
+        <div className="kl-toolbar">
+          <input type="search" aria-label="Search quotes" placeholder="Search quote, author or topic…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <button type="button" className="btn btn-secondary" disabled={!!edit || bulk != null} onClick={() => setEdit({ index: 'new', row: { q: '', by: '', t: '' } })}>Add quote</button>
+          <button type="button" className="btn btn-ghost" disabled={!!edit} onClick={() => setBulk(bulk == null ? knowledgeLinesAsText(rows) : null)}>{bulk == null ? 'Paste a list' : 'Close paste'}</button>
+        </div>
+        {bulk != null && (
+          <div className="kl-bulk">
+            <label htmlFor="kl-bulk">Paste or edit the whole list — one per line: <code>Quote — Author — topic</code> (topic optional). Applying replaces the list below; nothing is saved until you press Save changes.</label>
+            <textarea id="kl-bulk" rows="12" value={bulk} onChange={(e) => setBulk(e.target.value)} spellCheck="true" />
+            <div className="kl-editor-foot">
+              <span className={bulkParsed.errors.length ? 'kl-editor-count error' : 'kl-editor-count'} role="status">
+                {bulkParsed.lines.length} {bulkParsed.lines.length === 1 ? 'line' : 'lines'}{bulkParsed.errors.length ? ` · ${bulkParsed.errors[0]}${bulkParsed.errors.length > 1 ? ` (+${bulkParsed.errors.length - 1} more)` : ''}` : ''}
+              </span>
+              <span className="kl-editor-actions">
+                <button type="button" className="btn btn-ghost" onClick={() => setBulk(null)}>Cancel</button>
+                <button type="button" className="btn btn-secondary" disabled={bulkParsed.errors.length > 0 || !bulkParsed.lines.length} onClick={() => { setRows(bulkParsed.lines); setBulk(null); }}>Apply to the list</button>
+              </span>
+            </div>
+          </div>
+        )}
+        {edit && edit.index === 'new' && <KlRowForm value={edit.row} onChange={(row) => setEdit({ ...edit, row })} error={editError} onSave={commitEdit} onCancel={() => setEdit(null)} saveLabel="Add to the list" />}
+        <table className="kl-table">
+          <thead><tr><th scope="col">Quote</th><th scope="col">Author</th><th scope="col">Topic</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+            {visible.map(({ r, i }) => (edit && edit.index === i ? (
+              <tr key={'e' + i}><td colSpan="4"><KlRowForm value={edit.row} onChange={(row) => setEdit({ ...edit, row })} error={editError} onSave={commitEdit} onCancel={() => setEdit(null)} saveLabel="Update quote" /></td></tr>
+            ) : (
+              <tr key={i}>
+                <td className="kl-q">{r.q}</td>
+                <td className="kl-by">{r.by}</td>
+                <td className="kl-t">{r.t || <span className="muted">—</span>}</td>
+                <td className="kl-actions">
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={!!edit || bulk != null} aria-label={`Edit: ${r.q}`} onClick={() => setEdit({ index: i, row: { q: r.q, by: r.by, t: r.t || '' } })}>Edit</button>
+                  <button type="button" className="btn btn-ghost btn-sm kl-remove" disabled={!!edit || bulk != null} aria-label={`Remove: ${r.q}`} onClick={() => remove(i)}>Remove</button>
+                </td>
+              </tr>
+            )))}
+            {visible.length === 0 && <tr><td colSpan="4" className="muted">{term ? 'No quote matches that search.' : 'The list is empty — add a quote, or reset to the built-in list.'}</td></tr>}
+          </tbody>
+        </table>
+        <div className="kl-editor-foot kl-savebar">
+          <span className="kl-editor-count" role="status">{dirty ? 'Unsaved changes' : (usingOwn ? 'Saved' : 'Showing the built-in list')}</span>
           <span className="kl-editor-actions">
-            <button className="btn btn-ghost" disabled={busy || !usingOwn} onClick={() => persist('', 'Built-in list restored')}>Reset to the built-in list</button>
-            <button className="btn" disabled={busy || errors.length > 0 || !lines.length || text.trim() === shown.trim()} onClick={() => persist(text.trim(), 'Knowledge lines saved')}>{busy ? 'Saving…' : 'Save'}</button>
+            <button type="button" className="btn btn-ghost" disabled={busy || !dirty} onClick={() => { setRows(parseKnowledgeText(baseline).lines); setEdit(null); }}>Discard changes</button>
+            <button type="button" className="btn btn-ghost" disabled={busy || !usingOwn} onClick={() => { if (window.confirm('Reset to the built-in list? Your saved list will be replaced.')) persist('', 'Built-in list restored'); }}>Reset to the built-in list</button>
+            <button type="button" className="btn" disabled={busy || !dirty || !rows.length || !!edit || bulk != null} onClick={() => persist(knowledgeLinesAsText(rows), 'Footer quotes saved')}>{busy ? 'Saving…' : 'Save changes'}</button>
           </span>
         </div>
       </div>
@@ -4027,6 +4276,7 @@ const NOTIF_WHO_SHORT = {
   approvers: 'Approvers', panel: 'Panel', candidate: 'Candidate', actor: 'Who acted',
 };
 function NotificationsPanel({ user }) {
+  const [ivTemplates, setIvTemplates] = useState(false);
   const toast = useToast();
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -4071,6 +4321,12 @@ function NotificationsPanel({ user }) {
 
   return (
     <div>
+      {/* The words of interview invitations live with the interviews; this is the second way in. */}
+      <div className="iv-tpl-link">
+        <span className="muted">Interview working days and hours, the Head Office address, and the wording of invitations, updates and cancellations live in Scheduling Setup.</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIvTemplates(true)}>Scheduling Setup</button>
+      </div>
+      {ivTemplates && <InterviewTemplatesModal onClose={() => setIvTemplates(false)} />}
       {!data.emailConfigured && (
         <div className="notice notice-warn card-pad" style={{ marginBottom: 14 }}>
           <strong>No mailbox is configured.</strong> In-app alerts still work; anything ticked
@@ -5004,6 +5260,131 @@ function RequestTicketCard({ r, onOpen }) {
 // reused by the dashboard card, this toggle, and the filter chip's label.
 function needsAction(r) { return (r.health || {}).level === 'red' || (r.health || {}).level === 'amber' || !!r.slaBreached; }
 
+// Focus filters for the hiring-process strip (client-side over the list).
+const REQ_FOCUS = [['awaiting', 'Awaiting approval'], ['unassigned', 'Needs a recruiter'], ['nocands', 'No candidates yet'], ['interview', 'Interviewing'], ['offer', 'Offer stage'], ['filled', 'Filled']];
+const RF_INTERVIEW = ['interviewing', 'interview_hr', 'interview_technical', 'interview_1', 'interview_2', 'waiting_feedback'];
+const RF_OFFER = ['issuing_offer', 'offer', 'offer_sent'];
+function reqStageCount(r, list) { const b = (r.pipeline || {}).byStage || {}; return list.reduce((n, k) => n + (b[k] || 0), 0); }
+function inFocus(r, focus) {
+  const running = isOpenReq(r) && r.status !== 'pending_approval';
+  switch (focus) {
+    case 'awaiting': return r.status === 'pending_approval';
+    case 'unassigned': return running && !r.owner;
+    case 'nocands': return running && !!r.owner && !((r.pipeline || {}).total);
+    case 'interview': return running && reqStageCount(r, RF_INTERVIEW) > 0;
+    case 'offer': return running && reqStageCount(r, RF_OFFER) > 0;
+    case 'filled': return r.status === 'filled';
+    default: return true;
+  }
+}
+function atRiskReq(r) { const h = r.health || {}; return isOpenReq(r) && r.status !== 'pending_approval' && (h.level === 'red' || h.level === 'amber' || (h.daysToTarget != null && h.daysToTarget < 0)); }
+// Director / Executive: the eagle-eye view, then every number per project.
+function RequestsOverview({ all, meta, onPick }) {
+  const [open, setOpen] = useState(false);
+  if (!all) return <div className="req-overview"><Skeleton rows={2} /></div>;
+  const running = all.filter((r) => isOpenReq(r) && r.status !== 'pending_approval');
+  const awaiting = all.filter((r) => r.status === 'pending_approval');
+  const planned = all.filter(isOpenReq).reduce((n, r) => n + (r.headcount || 0), 0);
+  const filled = all.filter(isOpenReq).reduce((n, r) => n + (r.headcountFilled || 0), 0);
+  const risk = all.filter(atRiskReq);
+  const critical = running.filter((r) => r.priority === 'critical');
+  const pipeline = running.reduce((n, r) => n + ((r.pipeline || {}).total || 0), 0);
+  const byProject = new Map();
+  for (const r of all) {
+    const key = r.projectId || 0;
+    const row = byProject.get(key) || { id: r.projectId, name: (r.project || {}).name || 'No project', requests: 0, open: 0, awaiting: 0, planned: 0, filled: 0, pipeline: 0, risk: 0 };
+    row.requests++; if (isOpenReq(r) && r.status !== 'pending_approval') row.open++; if (r.status === 'pending_approval') row.awaiting++;
+    if (isOpenReq(r)) { row.planned += r.headcount || 0; row.filled += r.headcountFilled || 0; row.pipeline += (r.pipeline || {}).total || 0; }
+    if (atRiskReq(r)) row.risk++;
+    byProject.set(key, row);
+  }
+  const projects = [...byProject.values()].sort((a, b) => b.planned - a.planned || a.name.localeCompare(b.name));
+  return (
+    <section className="req-overview" aria-label="Hiring requests at a glance">
+      <div className="dash-kpi-row dash-kpi-6">
+        <KpiCard label="Open roles" value={running.length} meta="Approved and recruiting" onClick={() => onPick({ openOnly: true })} />
+        <KpiCard label="Awaiting approval" value={awaiting.length} tone={awaiting.length ? 'kpi-attn' : ''} meta="Sourcing starts at approval" onClick={() => onPick({ focus: 'awaiting' })} />
+        <KpiCard label="Seats" value={`${filled} / ${planned}`} meta={planned ? `${Math.round(filled / planned * 100)}% filled` : 'No open seats'} />
+        <KpiCard label="At risk" value={risk.length} tone={risk.length ? 'kpi-risk' : ''} meta="Overdue or past target date" onClick={() => onPick({ attention: true })} />
+        <KpiCard label="Critical open" value={critical.length} meta="Flagged critical" onClick={() => onPick({ priority: 'critical' })} />
+        <KpiCard label="In pipeline" value={pipeline} meta="Candidates on open roles" />
+      </div>
+      <button type="button" className="btn btn-secondary dash-details-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? 'Hide' : 'Show'} the numbers for each project ({projects.length}) <Icon name="chevronDown" size={16} />
+      </button>
+      {open && (
+        <div className="card flush"><div className="table-wrap"><table className="table responsive-table req-projects">
+          <thead><tr><th>Project</th><th>Requests</th><th>Open</th><th>Awaiting approval</th><th>Seats filled</th><th>In pipeline</th><th>At risk</th><th><span className="sr-only">Show</span></th></tr></thead>
+          <tbody>{projects.map((p) => (
+            <tr key={p.id || 'none'}>
+              <td data-label="Project"><span className="cell-strong">{p.name}</span></td>
+              <td data-label="Requests">{p.requests}</td>
+              <td data-label="Open">{p.open}</td>
+              <td data-label="Awaiting approval">{p.awaiting || '—'}</td>
+              <td data-label="Seats filled">{p.filled} / {p.planned}</td>
+              <td data-label="In pipeline">{p.pipeline}</td>
+              <td data-label="At risk">{p.risk ? <span className="text-risk">{p.risk}</span> : '—'}</td>
+              <td>{p.id ? <button className="btn btn-ghost btn-sm" onClick={() => onPick({ projectId: String(p.id) })}>Show requests</button> : null}</td>
+            </tr>
+          ))}</tbody>
+        </table></div></div>
+      )}
+    </section>
+  );
+}
+// Recruitment Manager / System Administrator: the hiring process, what needs
+// doing, and how each recruiter stands.
+function RequestsControlPanel({ all, rstat, onPick, onAssign }) {
+  if (!all) return <div className="req-control"><Skeleton rows={3} /></div>;
+  const count = (f) => all.filter((r) => inFocus(r, f)).length;
+  const unassigned = all.filter((r) => inFocus(r, 'unassigned'));
+  const noCands = all.filter((r) => inFocus(r, 'nocands'));
+  const overdue = all.filter((r) => isOpenReq(r) && r.status !== 'pending_approval' && (r.health || {}).level === 'red');
+  return (
+    <section className="req-control" aria-label="Hiring process and recruiters">
+      <div className="req-process" role="list" aria-label="Hiring process">
+        {REQ_FOCUS.map(([k, label], i) => (
+          <button key={k} type="button" role="listitem" className="req-step" onClick={() => onPick({ focus: k })}>
+            <span className="req-step-n">{count(k)}</span><span className="req-step-l">{label}</span>{i < REQ_FOCUS.length - 1 && <span className="req-step-arrow" aria-hidden="true">›</span>}
+          </button>
+        ))}
+      </div>
+      <div className="req-control-stack">
+        <section className="card">
+          <div className="card-head"><div><h3>Actions needed</h3></div><span className="dash-headnote">Assign, start sourcing, recover overdue roles</span></div>
+          {!unassigned.length && !noCands.length && !overdue.length
+            ? <div className="dash-allclear">Every approved request has a recruiter and candidates, and none is overdue.</div>
+            : <div className="action-list">
+              {unassigned.slice(0, 5).map((r) => <ActionItem key={'u' + r.id} tone="warn" title={`Assign a recruiter — ${shortReqCode(r.ticketNo)} ${r.title}`} meta={`${(r.project || {}).name || 'No project'} · ${r.headcount} seat${r.headcount === 1 ? '' : 's'}`} why="Approved but nobody is sourcing" cta="Assign" onCta={() => onAssign(r)} />)}
+              {overdue.slice(0, 5).map((r) => <ActionItem key={'o' + r.id} tone="risk" title={`Overdue — ${shortReqCode(r.ticketNo)} ${r.title}`} meta={`${r.owner ? r.owner.name : 'No recruiter'} · open ${(r.health || {}).daysOpen} days · ${(r.pipeline || {}).total || 0} in pipeline`} why="Past the health threshold" cta="Re-assign" onCta={() => onAssign(r)} />)}
+              {noCands.slice(0, 5).map((r) => <ActionItem key={'n' + r.id} tone="warn" title={`No candidates yet — ${shortReqCode(r.ticketNo)} ${r.title}`} meta={`${r.owner.name} · open ${(r.health || {}).daysOpen ?? 0} days`} why="Sourcing has not produced a candidate" cta="Show" onCta={() => onPick({ focus: 'nocands' })} />)}
+            </div>}
+        </section>
+        <section className="card">
+          <div className="card-head"><div><h3>Recruiters</h3></div><span className="dash-headnote">{rstat ? `${rstat.unassigned} request${rstat.unassigned === 1 ? '' : 's'} without a recruiter` : 'Workload and progress'}</span></div>
+          {!rstat ? <div className="card-pad"><Skeleton rows={3} /></div> : !rstat.recruiters.length ? <div className="dash-allclear">No recruiter is set up yet.</div> : (
+            <div className="table-wrap"><table className="table responsive-table req-recruiters">
+              <thead><tr><th>Recruiter</th><th>Open</th><th>No candidates</th><th>In pipeline</th><th>Interviews</th><th>Offers</th><th>Overdue</th><th><span className="sr-only">Show</span></th></tr></thead>
+              <tbody>{rstat.recruiters.map((x) => (
+                <tr key={x.id}>
+                  <td data-label="Recruiter"><span className="cell-strong">{x.name}</span></td>
+                  <td data-label="Open">{x.openRequests}</td>
+                  <td data-label="No candidates">{x.withoutCandidates || '—'}</td>
+                  <td data-label="In pipeline">{x.inPipeline}</td>
+                  <td data-label="Interviews">{x.interviewsAhead || '—'}</td>
+                  <td data-label="Offers">{x.offersOut || '—'}</td>
+                  <td data-label="Overdue">{x.overdue ? <span className="text-risk">{x.overdue}</span> : '—'}</td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => onPick({ owner: String(x.id) })}>Requests</button></td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function RequestsPage({ user, initialFilters }) {
   const isPhone = useIsPhone();
   const toast = useToast();
@@ -5025,7 +5406,7 @@ function RequestsPage({ user, initialFilters }) {
   // surface from growing for something that isn't a real column.
   const [filters, setFilters] = useState(() => ({
     q: '', status: '', priority: '', sort: 'created', dir: 'desc',
-    owner: '', attention: false, openOnly: false,
+    owner: '', attention: false, openOnly: false, projectId: '', departmentId: '', focus: '',
     ...(initialFilters || {}),
   }));
   const [selectedId, setSelectedId] = useState(null);
@@ -5045,9 +5426,25 @@ function RequestsPage({ user, initialFilters }) {
     setFilters((f) => ({ ...f, ...initialFilters }));
   }, [initialFilters]);
 
+  const [meta, setMeta] = useState({ projects: [], departments: [] });
   useEffect(() => {
-    api.get('/requests/meta/form').then((m) => setRecruiters(m.assignableRecruiters || [])).catch(() => {});
+    api.get('/requests/meta/form').then((m) => { setRecruiters(m.assignableRecruiters || []); setMeta({ projects: m.projects || [], departments: m.departments || [] }); }).catch(() => {});
   }, []);
+  // Role panels above the list (owner review, 4 Oct 2026): the eagle-eye view
+  // for the Director and Executive, the hiring process and recruiter status for
+  // whoever controls requests (Recruitment Manager, System Administrator).
+  const persona = personaFor(user);
+  const isAdmin = (user.roles || []).includes('system_admin');
+  const showOverview = isAdmin || persona === 'director' || persona === 'executive';
+  const showControl = can(user, 'request.assign_recruiter');
+  const [allReqs, setAllReqs] = useState(null);
+  const [rstat, setRstat] = useState(null);
+  const loadPanels = useCallback(() => {
+    if (!showOverview && !showControl) return;
+    api.get('/requests?pageSize=200').then((r) => setAllReqs(r.requests || [])).catch(() => setAllReqs([]));
+    if (showControl) api.get('/requests/recruiter-status').then(setRstat).catch(() => setRstat(null));
+  }, [showOverview, showControl]);
+  useEffect(() => { loadPanels(); }, [loadPanels]);
 
   // Opened from elsewhere (a Talent Pool request link), the same way the Ctrl+K
   // palette opens a candidate: pending id when mounting fresh, event when the
@@ -5076,7 +5473,7 @@ function RequestsPage({ user, initialFilters }) {
     // ticket_no can be matched; the text the user typed is left as-is in the input.
     // `attention`/`openOnly` are deliberately excluded — they filter client-side, below.
     Object.entries(filters).forEach(([k, v]) => {
-      if (k === 'attention' || k === 'openOnly' || !v) return;
+      if (k === 'attention' || k === 'openOnly' || k === 'focus' || !v) return;
       params.set(k === 'owner' ? 'ownerId' : k, k === 'q' ? expandReqCode(v) : v);
     });
     try {
@@ -5102,6 +5499,7 @@ function RequestsPage({ user, initialFilters }) {
   const shown = (data ? data.requests : []).filter((r) => {
     if (filters.openOnly && !isOpenReq(r)) return false;
     if (filters.attention && !needsAction(r)) return false;
+    if (filters.focus && !inFocus(r, filters.focus)) return false;
     return true;
   });
 
@@ -5117,20 +5515,43 @@ function RequestsPage({ user, initialFilters }) {
     ownerName && ['owner', `Owner: ${ownerName}`, () => setFilters((f) => ({ ...f, owner: '' }))],
     filters.attention && ['attention', 'Needs action', () => setFilters((f) => ({ ...f, attention: false }))],
     filters.openOnly && ['openOnly', 'Open only', () => setFilters((f) => ({ ...f, openOnly: false }))],
+    filters.projectId && ['projectId', `Project: ${(meta.projects.find((x) => String(x.id) === String(filters.projectId)) || {}).name || filters.projectId}`, () => setFilters((f) => ({ ...f, projectId: '' }))],
+    filters.departmentId && ['departmentId', `Department: ${(meta.departments.find((x) => String(x.id) === String(filters.departmentId)) || {}).name || filters.departmentId}`, () => setFilters((f) => ({ ...f, departmentId: '' }))],
+    filters.focus && ['focus', `Stage: ${(REQ_FOCUS.find(([k]) => k === filters.focus) || [])[1] || filters.focus}`, () => setFilters((f) => ({ ...f, focus: '' }))],
   ].filter(Boolean);
+  const pick = (patch) => setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+  const unassign = async (r) => {
+    if (!window.confirm(`Remove ${r.owner?.name || 'the recruiter'} from ${shortReqCode(r.ticketNo)}? The request stays open with no recruiter until someone is assigned.`)) return;
+    try { await api.post(`/requests/${r.id}/unassign`, {}); toast(`Recruiter removed from ${shortReqCode(r.ticketNo)}`); load(); loadPanels(); }
+    catch (e) { toast(e.message, 'error'); }
+  };
+  const isMine = String(filters.owner) === String(user.id);
 
   return (
     <div>
       <PageHead crumb="Recruitment / Requests" title="Hiring Requests"
-        sub="Every hiring need is a controlled ticket with approvals, ownership, SLA and audit trail."
+        sub="Every hiring request — its approval, recruiter, candidates and progress."
         actions={<>
           <ViewToggle value={view} onChange={setView} options={[['cards', 'Cards'], ['table', 'Table']]} />
           {canCreate && <button className="btn" onClick={() => setCreating(true)}>{btns.create_request.label}</button>}
         </>} />
 
+      {showOverview && <RequestsOverview all={allReqs} meta={meta} onPick={pick} />}
+      {showControl && <RequestsControlPanel all={allReqs} rstat={rstat} onPick={pick} onAssign={(r) => setAssigning(r)} />}
+      {persona === 'recruiter' && !isAdmin && (
+        <div className="req-mine" role="group" aria-label="Whose requests">
+          <button type="button" className={'seg-tab' + (!isMine ? ' active' : '')} aria-pressed={!isMine} onClick={() => setFilters((f) => ({ ...f, owner: '' }))}>All requests</button>
+          <button type="button" className={'seg-tab' + (isMine ? ' active' : '')} aria-pressed={isMine} onClick={() => setFilters((f) => ({ ...f, owner: String(user.id) }))}>Assigned to me</button>
+        </div>
+      )}
+
       <FilterToolbar activeCount={activeChips.length} search={<input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />}>
         <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-          <option value="">All statuses</option>{Object.entries(REQ_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+          <option value="">All statuses</option>{Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        <select value={filters.projectId} onChange={(e) => setFilters((f) => ({ ...f, projectId: e.target.value }))} aria-label="Project">
+          <option value="">All projects</option>{meta.projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+        <select value={filters.departmentId} onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value }))} aria-label="Department">
+          <option value="">All departments</option>{meta.departments.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
         <select value={filters.priority} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
           <option value="">All priorities</option>{Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <select value={filters.owner} onChange={(e) => setFilters((f) => ({ ...f, owner: e.target.value }))} aria-label="Owner">
@@ -5148,7 +5569,7 @@ function RequestsPage({ user, initialFilters }) {
         </label>
         <select className="sort-select" value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
           <option value="created">Sort: Created</option><option value="priority">Priority</option><option value="title">Title</option><option value="status">Status</option><option value="ticket">Ticket No</option></select>
-        <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}><Icon name={filters.dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={16} />{filters.dir === 'desc' ? 'Desc' : 'Asc'}</button>
+        <button className="btn btn-ghost" onClick={() => setFilters((f) => ({ ...f, dir: f.dir === 'desc' ? 'asc' : 'desc' }))}><Icon name={filters.dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={16} />{filters.dir === 'desc' ? 'Desc' : 'Asc'}</button>
         </FilterToolbar>
 
       {activeChips.length > 0 && (
@@ -5159,7 +5580,7 @@ function RequestsPage({ user, initialFilters }) {
               <button aria-label={`Remove ${label} filter`} onClick={clear}><Icon name="close" size={16} /></button>
             </span>
           ))}
-          <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, status: '', priority: '', owner: '', attention: false, openOnly: false }))}>Clear all</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setFilters((f) => ({ ...f, status: '', priority: '', owner: '', attention: false, openOnly: false, projectId: '', departmentId: '', focus: '' }))}>Clear all</button>
         </div>
       )}
 
@@ -5183,7 +5604,10 @@ function RequestsPage({ user, initialFilters }) {
                 <span className="clamp-2" title={placeLabel(r)}>{placeLabel(r)}</span>
               </td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
-                {r.owner ? <span className="cell-sub-only">{r.owner.name}</span>
+                {r.owner ? (canAssign
+                  ? <span className="owner-cell"><span className="cell-sub-only">{r.owner.name}</span>
+                    <span className="owner-actions"><button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Change</button><button className="btn btn-ghost btn-sm" onClick={() => unassign(r)}>Remove</button></span></span>
+                  : <span className="cell-sub-only">{r.owner.name}</span>)
                   : !canAssign ? <span className="muted">Unassigned</span>
                   : canAssignStatus(r.status) ? <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(r)}>Assign</button>
                   : <span className="muted" title={ASSIGN_BLOCKED_TITLE}>After approval</span>}
@@ -5191,12 +5615,12 @@ function RequestsPage({ user, initialFilters }) {
               <td data-priority="secondary" data-label="Pipeline">{r.pipeline ? <span className="pipe-count">{r.pipeline.total}<em>cand.</em></span> : <span className="muted">—</span>}</td>
               <td data-label="Priority"><PriorityBadge p={r.priority} /></td>
               <td data-label="Status"><ReqStatusBadge status={r.status} displayStatus={r.displayStatus} /></td>
-              <td data-priority="secondary" data-label="Idle" className="cell-sub-only">{r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
-              <td data-label="SLA"><ReqHealth health={r.health} status={r.status} /></td>
+              <td data-priority="secondary" data-label="Idle" className="cell-sub-only" title="Days since the last change on this request">{r.status === 'pending_approval' || r.lifecycle?.stageIdleDays == null ? '—' : r.lifecycle.stageIdleDays + 'd'}</td>
+              <td data-label="SLA">{r.status === 'pending_approval' ? <span className="muted" title="The SLA clock starts at approval">—</span> : <ReqHealth health={r.health} status={r.status} />}</td>
             </tr>
           ))}</tbody>
         </table></div>
-        <div className="reassurance">Requests without a warning are progressing normally.</div></div>
+        <div className="reassurance">Rows without a warning are on track. The SLA clock starts when a request is approved.</div></div>
       ) : (
         <div className="ats-card-grid">
           {shown.map((r) => <RequestTicketCard key={r.id} r={r} onOpen={() => setSelectedId(r.id)} />)}
@@ -5209,7 +5633,7 @@ function RequestsPage({ user, initialFilters }) {
             try {
               await api.post(`/requests/${assigning.id}/assign`, { ownerId });
               toast(`Recruiter assigned to ${shortReqCode(assigning.ticketNo)}`);
-              setAssigning(null); load();
+              setAssigning(null); load(); loadPanels();
             } catch (e) { toast(e.message, 'error'); }
           }} />
       )}
@@ -5531,6 +5955,9 @@ function RequestDetail({ id, user, btns, onBack }) {
               ? <button className="btn btn-secondary" onClick={() => setAssigning(true)}>{assignLabel}</button>
               : <button className="btn btn-secondary" disabled title={ASSIGN_BLOCKED_TITLE}>{assignLabel}</button>
           )}
+          {btns.assign_recruiter?.visible && req.owner && !TERMINAL_STATUSES.includes(s) && (
+            <button className="btn btn-ghost" onClick={() => { if (window.confirm(`Remove ${req.owner.name} from this request? It stays open with no recruiter until someone is assigned.`)) doAction('unassign', {}, 'Recruiter removed'); }}>Remove recruiter</button>
+          )}
           {btns.hold_request?.visible && PAUSABLE_STATUSES.includes(s) && (
             <button className="btn btn-secondary" onClick={() => reasonAction('hold', 'Pause Request', 'Request paused', true)}>Pause</button>
           )}
@@ -5623,7 +6050,11 @@ function TicketThread({ req, user }) {
     try { await api.uploadTo('/thread/request/' + req.id + '/file', file, { body: text, parentPostId: parentPostId || '' }); setText(''); load(); }
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  async function viewPostFile(postId) { try { await api.download('/thread/post/' + postId + '/file'); } catch (e) { toast(e.message, 'error'); } }
+  // Opens in the side panel (was a blob URL in a new tab, which is how thread CVs left the ATS).
+  function viewPostFile(postId) {
+    const p = (posts || []).find((x) => x.id === postId);
+    openDocumentPanel('/thread/post/' + postId + '/file', p?.fileName, p?.type === 'cv' && p?.payload?.candidateName ? p.payload.candidateName + ' — CV' : null);
+  }
 
   if (!posts) return <Skeleton rows={5} />;
 
@@ -6026,7 +6457,7 @@ const APP_STATUS = {
   screened:    { label: 'Screening', variant: 'info', column: 2 },
   cv_screening:{ label: 'Screening', variant: 'info', column: 2 },
   unmatched:   { label: 'Screening', variant: 'info', column: 2 },
-  shortlisted: { label: 'Screening', variant: 'info', column: 2 },
+  shortlisted: { label: 'Shortlisted', variant: 'info', column: 1.5 },
   interviewing:{ label: 'Interview', variant: 'info', column: 3 },
   interview_1: { label: 'Interview', variant: 'info', column: 3 },
   interview_2: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
@@ -6041,7 +6472,7 @@ const APP_STATUS = {
 // Board columns. `interview_technical` was removed: the API models a single
 // `interviewing` stage, so that column could never be reached and any move to it
 // was rejected with 400.
-const APP_ORDER = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
+const APP_ORDER = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
 
 // WRITE-DIRECTION map: board column -> the status the API actually accepts.
 // APP_STATUS above is the read direction (API status -> display column); this is
@@ -6051,6 +6482,7 @@ const APP_ORDER = ['sourced', 'screening', 'interview_hr', 'offer', 'hired'];
 //   sourced -> matched -> interviewing -> issuing_offer -> offer_sent -> joined
 const APP_WRITE = {
   sourced: 'sourced',
+  shortlisted: 'shortlisted',
   screening: 'matched',
   interview_hr: 'interviewing',
   offer: 'issuing_offer',
@@ -6126,6 +6558,7 @@ function pipelineStage(status) {
   if (!s) return 'sourced';
   if (DISQUALIFIED_STAGES.includes(status)) return status;
   if (s.column === 1) return 'sourced';
+  if (s.column === 1.5) return 'shortlisted';
   if (s.column === 2) return 'screening';
   // Columns 3 and 4 both fold into the single interview column: the API has one
   // `interviewing` stage, so a card must never land in a column that no longer
@@ -6298,7 +6731,7 @@ function RequestPipeline({ request, user, btns }) {
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!apps) return <Skeleton rows={6} />;
 
-  const cols = APP_ORDER;
+  const cols = pipelineOrderFor(user);
   const bulk = canBulk && selected.size > 0 ? bulkSelectionSummary({ selected, apps, visibleApps, pending, target: bulkTarget }) : null;
   const startBulk = () => {
     if (!bulk || !bulk.eligible.length) return;
@@ -6324,7 +6757,7 @@ function RequestPipeline({ request, user, btns }) {
         <ViewToggle value={view} onChange={setView} options={[['kanban', 'Board'], ['list', 'List'], ['compact', 'Table']]} />
         <input placeholder="Search name / employer…" value={pf.q} onChange={(e) => setPf((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 180 }} />
         <select value={pf.stage} onChange={(e) => setPf((f) => ({ ...f, stage: e.target.value }))}>
-          <option value="">All stages</option>{APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
+          <option value="">All stages</option>{cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
         <select value={pf.recruiter} onChange={(e) => setPf((f) => ({ ...f, recruiter: e.target.value }))}>
           <option value="">All recruiters</option>{recruiterOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
         <select value={pf.sort} onChange={(e) => setPf((f) => ({ ...f, sort: e.target.value }))}>
@@ -6607,7 +7040,7 @@ function TalentPipeline({
       action={<button className="btn" onClick={load}>Retry</button>} /></div>;
   }
   if (!apps) return <ListSkeleton rows={6} />;
-  const cols = APP_ORDER;
+  const cols = pipelineOrderFor(user);
   const activeApps = apps.filter((a) => !isDisqualified(a.status));
   return (
     <div>
@@ -6615,7 +7048,7 @@ function TalentPipeline({
         <input placeholder="Search name / request…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 200 }} />
         <select value={pipeFilters.stage} onChange={(e) => setPipeFilters((f) => ({ ...f, stage: e.target.value }))}>
           <option value="">All stages</option>
-          {APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}
+          {cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}
         </select>
         <select value={pipeFilters.recruiterId} onChange={(e) => setPipeFilters((f) => ({ ...f, recruiterId: e.target.value }))}>
           <option value="">All recruiters</option>
@@ -6639,7 +7072,7 @@ function TalentPipeline({
           Showing the first {apps.length} of {total} applications. Narrow the filters to see the rest — nothing was dropped silently.
         </div>
       )}
-      {(unlinkedTotal > 0 || (unlinked && unlinked.length > 0)) && (
+      {hasFullPipelineAccess(user) && (unlinkedTotal > 0 || (unlinked && unlinked.length > 0)) && (
         <div className="notice notice-info" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span>{unlinkedTotal || unlinked.length} candidate{(unlinkedTotal || unlinked.length) === 1 ? '' : 's'} not on a request.
             {hasMoreUnlinked ? ' More are in the pool.' : ''}</span>
@@ -6647,7 +7080,7 @@ function TalentPipeline({
         </div>
       )}
       <div className="kanban">
-        <div className="kan-col">
+        {hasFullPipelineAccess(user) && <div className="kan-col">
           <div className="kan-head">
             <span className="kan-dot" style={{ background: 'var(--muted)' }} />
             <span className="kan-title">Unlinked</span>
@@ -6669,7 +7102,7 @@ function TalentPipeline({
                 </div>
               ))}
           </div>
-        </div>
+        </div>}
         {cols.map((st) => {
           const items = activeApps.filter((a) => pipelineStage(a.status) === st);
           return (
@@ -6707,8 +7140,20 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   const c = app.candidate || {};
   const toast = useToast();
   const titleId = useId();
-  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  // Unsaved assessment edits must not vanish with the drawer: closing asks first.
+  const assessDirty = useRef(false);
+  const requestClose = useCallback(() => {
+    if (assessDirty.current) {
+      if (!window.confirm('Discard unsaved assessment changes?')) return;
+      discardAssessUnsaved(app.id);
+    }
+    onClose();
+  }, [onClose, app.id]);
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(requestClose);
   const [tab, setTab] = useState('profile'); // profile | assessment
+  // Once opened, the assessment stays mounted (hidden) so switching to the
+  // Candidate tab and back keeps any unsaved edits.
+  const [assessOpened, setAssessOpened] = useState(false);
   const [cand, setCand] = useState(c);
   const [resumeBusy, setResumeBusy] = useState(false);
   const canEditCand = user?.permissions?.includes('candidate.edit');
@@ -6733,17 +7178,18 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
     catch (err) { toast(err.message, 'error'); } finally { setResumeBusy(false); e.target.value = ''; }
   }
 
-  return (
-    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+  return toPageLevel(
+    // The assessment tab gets a wider drawer: the form is a document laid out like the A4 sheet.
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
       <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}
         tabIndex="-1" onKeyDown={onDialogKeyDown}
-        style={{ maxWidth: 560, marginLeft: 'auto', height: '100vh', borderRadius: 0, display: 'flex', flexDirection: 'column' }}>
+        style={{ maxWidth: tab === 'assessment' ? 960 : 560, marginLeft: 'auto', height: '100vh', borderRadius: 0, display: 'flex', flexDirection: 'column' }}>
         <div className="modal-head" style={{ borderTop: '4px solid var(--green)' }}>
           <div>
             <h3 id={titleId} style={{ margin: 0 }}>{c.fullName}</h3>
             <div className="muted" style={{ fontSize: 12 }}>{c.candidateNo} · {app.applicationNo} · <AppStatusBadge status={app.status} /></div>
           </div>
-          <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={onClose}><Icon name="close" size={16} /></button>
+          <button type="button" className="icon-btn" aria-label="Close candidate details" onClick={requestClose}><Icon name="close" size={16} /></button>
         </div>
         <div style={{ display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid var(--border)' }}>
           {/* Selecting a tab may not change its metrics. fontWeight used to be
@@ -6756,7 +7202,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
               already reserved as `2px solid transparent` on the unselected tab,
               so it never moved anything either. */}
           {[['profile', 'Candidate'], ['assessment', 'Interview Assessment']].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: 700 }}>{label}</button>
+            <button key={k} onClick={() => { setTab(k); if (k === 'assessment') setAssessOpened(true); }} className="btn btn-ghost" style={{ border: 'none', borderBottom: tab === k ? '2px solid var(--green)' : '2px solid transparent', borderRadius: 0, color: tab === k ? 'var(--green-700)' : 'var(--text-gray)', fontWeight: 700 }}>{label}</button>
           ))}
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
@@ -6765,7 +7211,7 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
               <div style={{ background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <div>
                   <div className="fine-label" style={{ color: 'var(--green-700)', fontWeight: 700 }}>Resume</div>
-                  <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? (cand.resumeName || 'Attached résumé') : <span className="muted">No résumé attached</span>}</div>
+                  <div style={{ fontWeight: 600, marginTop: 2 }}>{cand.hasResume ? <CvFileLink name={cand.resumeName} onOpen={viewResume} /> : <span className="muted">No résumé attached</span>}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {cand.hasResume && <button className="btn btn-sm btn-secondary" onClick={viewResume}>Review CV</button>}
@@ -6790,8 +7236,11 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
               {app.rejectionReason && <Info label="Rejection Reason">{app.rejectionReason}</Info>}
               {app.onHoldReason && <Info label="On Hold Reason">{app.onHoldReason}</Info>}
             </>
-          ) : (
-            <AssessmentPanel app={app} canFeedback={canFeedback} />
+          ) : null}
+          {(tab === 'assessment' || assessOpened) && (
+            <div hidden={tab !== 'assessment'}>
+              <AssessmentPanel app={app} canFeedback={canFeedback} onDirtyChange={(d) => { assessDirty.current = d; }} />
+            </div>
           )}
         </div>
       </div>
@@ -6799,17 +7248,188 @@ function CandidateQuickView({ app, user, onClose, onChanged }) {
   );
 }
 
-// Interview assessment: HR + technical evaluations (Big-Five + technical competency,
-// critical flags, recommendation, fit) plus the shared final decision. Matches the PDF form.
-function AssessmentPanel({ app, canFeedback }) {
+// Interview assessment — ONE canonical document, laid out like the approved
+// Arabtec assessment sheet: Candidate Personal Information, HR Assessment
+// (Big Five), Technical Assessment, Critical Flags, Final Recommendation.
+// Which parts this user may see or change is decided on the server
+// (lib/assessment-policy.js) and arrives as bundle.permissions; withheld values
+// never arrive at all. This file makes no role decisions of its own.
+const ASSESS_NOT_RECORDED = 'Not recorded';
+const ASSESS_SECTIONS = {
+  hr: { policy: 'assessment.behavioral', field: 'behavioral', just: 'behavioralJustification', justPolicy: 'assessment.finalRecommendation.behavioralJustification', title: 'HR Assessment — Behavioral (Big Five Model)', short: 'Behavioral', fitLabel: 'Behavioral Fit', evaluator: 'HR evaluation' },
+  technical: { policy: 'assessment.technical', field: 'technical', just: 'technicalJustification', justPolicy: 'assessment.finalRecommendation.technicalJustification', title: 'Technical Assessment — Role Competency', short: 'Technical', fitLabel: 'Technical Fit', evaluator: 'Technical evaluation' },
+};
+// Used only when the server's metadata predates the candidate field list.
+const ASSESS_CANDIDATE_FIELDS = [
+  ['assessment.candidate.fullName', 'Full Name', 'fullName'], ['assessment.candidate.position', 'Position', 'position'],
+  ['assessment.candidate.department', 'Department', 'department'], ['assessment.candidate.interviewDate', 'Interview Date', 'interview'],
+  ['assessment.candidate.education', 'Education', 'education'], ['assessment.candidate.yearsExperience', 'Years of Experience', 'yearsExperience'],
+  ['assessment.candidate.currentEmployer', 'Current Employer', 'currentEmployer'], ['assessment.candidate.availability', 'Notice / Availability', 'noticePeriod'],
+  ['assessment.candidate.currentSalary', 'Current Salary', 'currentSalary'], ['assessment.candidate.expectedSalary', 'Expected Salary', 'expectedSalary'],
+].map(([policy, label, key]) => ({ policy, label, key }));
+const ASSESS_FIT_RANGE = { strong: '4.2+', acceptable: '3.5–4.1', borderline: '3.0–3.4', weak: '<3.0' };
+const assessCriterionKey = (type, key) => `${ASSESS_SECTIONS[type].policy}.${key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())}`;
+// Unsaved assessment edits, kept outside the React tree. The app swaps its
+// whole shell at the 900px breakpoint, which unmounts any open drawer; edits
+// parked here are restored when the same evaluation is reopened, as long as
+// the saved record has not changed meanwhile (AR-06). Cleared on save/discard.
+const ASSESS_UNSAVED = new Map();
+// A deliberate "discard" (confirmed close or navigation) must not come back later.
+function discardAssessUnsaved(appId) {
+  for (const key of [...ASSESS_UNSAVED.keys()]) if (key.startsWith(`${appId}:`)) ASSESS_UNSAVED.delete(key);
+}
+
+// Form state from a saved evaluation (or blank). Scores are kept as strings:
+// '' unanswered, '1'..'5', 'na'.
+function assessFormState(existing, criteria, flagsMeta) {
+  const rows = {};
+  (criteria || []).forEach((cr) => {
+    const r = existing?.rows?.[cr.key];
+    rows[cr.key] = { score: r?.score == null ? '' : String(r.score), notes: r?.notes || '' };
+  });
+  const flags = {};
+  (flagsMeta || []).forEach((f) => { flags[f.key] = !!existing?.criticalFlags?.[f.key]; });
+  return { rows, flags, recommendation: existing?.recommendation || '', justification: existing?.justification || '' };
+}
+// Live section summary: numeric rows only, one-decimal half-up rounding, band
+// from the server's fit thresholds. Mirrors the server, which stays authoritative.
+function assessSummary(rows, criteria, fitLevels) {
+  let sum = 0, scored = 0, na = 0, open = 0;
+  (criteria || []).forEach((cr) => {
+    const s = rows[cr.key]?.score;
+    if (s === 'na') na++; else if (s) { sum += Number(s); scored++; } else open++;
+  });
+  const average = scored ? Math.round((sum / scored) * 10) / 10 : null;
+  const fit = average == null ? null : (fitLevels || []).find((f) => average >= f.min) || null;
+  return { average, scored, na, open, fit };
+}
+// One part's state for the progress strip, from the saved record.
+function assessStepStatus(ev) {
+  if (!ev) return { status: 'Not started', variant: 'soft' };
+  return ev.submitted ? { status: 'Submitted', variant: 'success' } : { status: 'Draft', variant: 'warning' };
+}
+function assessStatusLine(ev) {
+  if (!ev) return 'Status: Not started';
+  return ev.submitted
+    ? `Status: Submitted · Completed by ${ev.evaluatorName || ASSESS_NOT_RECORDED}${ev.updatedAt ? ' · ' + fmtDate(ev.updatedAt) : ''}`
+    : `Status: Draft · Last saved by ${ev.evaluatorName || ASSESS_NOT_RECORDED}${ev.updatedAt ? ' · ' + fmtDate(ev.updatedAt) : ''}`;
+}
+
+// One evaluator's draft: everything needed to edit, save, submit and reopen an
+// HR or Technical evaluation, independent of where its parts are drawn.
+function useEvaluationDraft({ type, meta, existing, editable, perm, appId, onSaved, onDirtyChange }) {
+  const toast = useToast();
+  const s = ASSESS_SECTIONS[type];
+  const criteria = (meta && (type === 'hr' ? meta.behavioralCriteria : meta.technicalCriteria)) || [];
+  const flagsMeta = meta?.criticalFlags;
+  const fresh = () => assessFormState(existing, criteria, flagsMeta);
+  const [form, setForm] = useState(fresh);
+  const [base, setBase] = useState(form); // what the server holds, as form state
+  const [editing, setEditing] = useState(!existing?.submitted);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [error, setError] = useState(null); // { text, submit, retry }
+  const [stale, setStale] = useState(false);
+  const [restored, setRestored] = useState(false);
+  // Why a SUBMITTED evaluation is being changed — required by the form, sent
+  // with the save, and kept in the audit trail and the assessment history.
+  const [editReason, setEditReason] = useState('');
+  // Send a submission back to draft for its evaluator to revise — no edits of
+  // one's own, a reason on record (POST …/reopen, audited as assessment.reopened).
+  const [reopening, setReopening] = useState(false);
+  async function reopen(reason) {
+    setReopening(false);
+    try { const r = await api.post(`/assessments/application/${appId}/reopen`, { evaluatorType: type, reason }); toast(`${s.short} evaluation reopened as a draft`); onSaved(r && r.assessment); }
+    catch (e) { toast(e.message || 'Could not reopen', 'error'); }
+  }
+  const changingSubmitted = !!existing?.submitted && editing;
+  const dirty = JSON.stringify(form) !== JSON.stringify(base);
+  useEffect(() => { onDirtyChange && onDirtyChange(type, dirty); }, [dirty]);
+  const unsavedKey = `${appId}:${type}`;
+  const synced = useRef(false); // true once the form reflects the server record
+  useEffect(() => {
+    if (dirty) ASSESS_UNSAVED.set(unsavedKey, { form, base, editing });
+    else if (synced.current) ASSESS_UNSAVED.delete(unsavedKey); // never before the first sync
+  }, [form, base, editing, dirty]);
+
+  // A refreshed evaluation (or the form metadata arriving) replaces the form
+  // only when nothing is unsaved; otherwise the edits stay and the user is told
+  // the record moved underneath them.
+  const seen = useRef({ existing, n: criteria.length });
+  useEffect(() => {
+    if (seen.current.existing === existing && seen.current.n === criteria.length) return;
+    seen.current = { existing, n: criteria.length };
+    const next = assessFormState(existing, criteria, flagsMeta);
+    if (criteria.length) synced.current = true;
+    if (!dirty) {
+      const parked = ASSESS_UNSAVED.get(unsavedKey);
+      if (parked && criteria.length && JSON.stringify(parked.base) === JSON.stringify(next)) {
+        setForm(parked.form); setBase(next); setEditing(parked.editing); setRestored(true); setStale(false);
+      } else { setForm(next); setBase(next); setEditing(!existing?.submitted); setStale(false); }
+    }
+    else if (JSON.stringify(next) !== JSON.stringify(base)) setStale(true);
+  }, [existing, criteria.length]);
+
+  const visibleCriteria = criteria.filter((cr) => perm(assessCriterionKey(type, cr.key)).canView);
+  // An average over a partly hidden section would reveal the hidden scores.
+  const summary = visibleCriteria.length === criteria.length && criteria.length ? assessSummary(form.rows, criteria, meta?.fitLevels) : null;
+  const locked = !editable || !editing;
+  const setRow = (key, patch) => setForm((f) => ({ ...f, rows: { ...f.rows, [key]: { ...f.rows[key], ...patch } } }));
+  const setFlag = (key, on) => setForm((f) => ({ ...f, flags: { ...f.flags, [key]: on } }));
+  const setRecommendation = (v) => setForm((f) => ({ ...f, recommendation: v }));
+  const setJustification = (v) => setForm((f) => ({ ...f, justification: v }));
+
+  async function save(submit) {
+    if (busyRef.current) return; // one save at a time — no duplicate submissions
+    setError(null);
+    if (changingSubmitted && !editReason.trim()) { setError({ text: 'Give a reason for changing a submitted evaluation.' }); return; }
+    if (submit) {
+      const missing = visibleCriteria.filter((cr) => !form.rows[cr.key]?.score).map((cr) => cr.label);
+      if (missing.length) { setError({ text: `Answer every criterion (a score or N/A) before submitting. Missing: ${missing.join(', ')}.` }); return; }
+      if (!form.recommendation) { setError({ text: 'Choose a recommendation before submitting.' }); return; }
+    }
+    busyRef.current = true; setBusy(true);
+    const sent = form;
+    // Only the parts this user may change are sent; the server keeps the rest.
+    const section = {};
+    criteria.forEach((cr) => {
+      if (!perm(assessCriterionKey(type, cr.key)).canEdit) return;
+      const r = sent.rows[cr.key];
+      section[cr.key] = { score: !r.score ? null : r.score === 'na' ? 'na' : Number(r.score), notes: r.notes };
+    });
+    const body = { evaluatorType: type, submitted: !!submit, recommendation: sent.recommendation || null, [s.field]: section };
+    if (changingSubmitted) body.editReason = editReason.trim();
+    if (perm('assessment.criticalFlags').canEdit) body.criticalFlags = sent.flags;
+    if (perm(s.justPolicy).canEdit) body[s.just] = sent.justification;
+    try {
+      const r = await api.post('/assessments/application/' + appId, body);
+      setBase(sent); setStale(false); setEditing(!submit); setRestored(false); setEditReason('');
+      toast(submit ? 'Evaluation submitted' : 'Draft saved');
+      onSaved(r && r.assessment);
+    } catch (e) {
+      // The form is left exactly as it was so the save can be retried.
+      setError({ text: `${e.message || 'Save failed'}. Your changes have not been lost.`, submit: !!submit, retry: true });
+      toast(e.message || 'Save failed', 'error');
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  function cancelEdit() {
+    if (dirty && !window.confirm('Discard your unsaved changes to this evaluation?')) return;
+    const next = fresh(); setForm(next); setBase(next); setEditing(false); setError(null); setStale(false); setRestored(false); setEditReason('');
+  }
+  return { type, criteria, visibleCriteria, form, dirty, editing, setEditing, editable, locked, busy, error, stale, restored, summary, existing,
+    setRow, setFlag, setRecommendation, setJustification, save, cancelEdit, editReason, setEditReason, changingSubmitted,
+    appId, reopening, setReopening, reopen };
+}
+
+function AssessmentPanel({ app, canFeedback, onDirtyChange }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
   const [bundle, setBundle] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const [evalType, setEvalType] = useState('hr'); // hr | technical
+  const [dirtyParts, setDirtyParts] = useState({}); // { hr, technical, final }
 
-  // The form needs both reads: the approved criteria/weights (`meta`, the same
-  // for every application, so fetched once and kept) and this application's
+  // The form needs both reads: the approved criteria (`meta`, the same for
+  // every application, so fetched once and kept) and this application's
   // bundle. Each read settles on its own — a metadata failure is reported,
   // never swallowed into an endless skeleton, and a bundle that fails on a
   // refresh keeps the last one on screen with a visible caveat. A response
@@ -6832,6 +7452,34 @@ function AssessmentPanel({ app, canFeedback }) {
     setLoadError(failure ? (failure.message || 'Request failed') : null);
   }, [app.id]);
   useEffect(() => { setBundle(null); setLoadError(null); load(); return () => { gen.current++; }; }, [load]);
+  // A save answers with the fresh bundle; use it directly (and drop any older
+  // read still in flight). Without one, re-read.
+  const onSaved = useCallback((fresh) => {
+    if (fresh) { gen.current++; setBundle(fresh); setLoadError(null); } else load();
+  }, [load]);
+
+  // Unsaved edits in either evaluation or the final decision guard leaving.
+  const markDirty = useCallback((part, value) => setDirtyParts((d) => (!!d[part] === value ? d : { ...d, [part]: value })), []);
+  const dirty = Object.values(dirtyParts).some(Boolean);
+  useEffect(() => { onDirtyChange && onDirtyChange(dirty); }, [dirty]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    const navigate = (e) => { if (!window.confirm('Discard unsaved assessment changes?')) e.preventDefault(); else discardAssessUnsaved(app.id); };
+    window.addEventListener('beforeunload', warn);
+    window.addEventListener('ats:before-navigate', navigate);
+    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('ats:before-navigate', navigate); };
+  }, [dirty]);
+
+  // The resolved policy for this user and application. A bundle without one
+  // (an older server) means "visible, editable when the caller may edit".
+  const fallbackEdit = !!canFeedback && bundle?.canEdit !== false;
+  const perm = (key) => {
+    const p = bundle?.permissions?.[key] || { canView: true, canEdit: fallbackEdit };
+    return { canView: !!p.canView, canEdit: !!p.canEdit && !!canFeedback };
+  };
+  const hr = useEvaluationDraft({ type: 'hr', meta, existing: bundle?.hr, editable: perm('assessment.behavioral').canEdit, perm, appId: app.id, onSaved, onDirtyChange: markDirty });
+  const tech = useEvaluationDraft({ type: 'technical', meta, existing: bundle?.technical, editable: perm('assessment.technical').canEdit, perm, appId: app.id, onSaved, onDirtyChange: markDirty });
 
   if (!bundle) return loadError
     ? <LoadError title="Could not load the assessment" text={loadError} onRetry={load} />
@@ -6841,127 +7489,553 @@ function AssessmentPanel({ app, canFeedback }) {
     ? <LoadError title="Could not load the assessment form" text={loadError} onRetry={load} />
     : <Skeleton rows={6} />;
 
-  const existing = bundle[evalType];
+  const ctx = bundle.context || {};
+  const fmtInfo = (key, v) => {
+    if (v == null || v === '') return ASSESS_NOT_RECORDED;
+    if (key === 'interview') return `${fmtDate(v.scheduledAt)} · ${v.interviewNo}${v.type ? ' · ' + ivType(v.type) : ''}${v.status && v.status !== 'scheduled' ? ' · ' + v.status : ''}`;
+    if (key === 'yearsExperience') return `${v} years`;
+    if (key === 'currentSalary' || key === 'expectedSalary') return Number(v).toLocaleString();
+    return String(v);
+  };
+  // A field the user may not see is absent from the bundle and from the page;
+  // the grid simply reflows.
+  const infoFields = (meta.candidateFields || ASSESS_CANDIDATE_FIELDS)
+    .filter((f) => perm(f.policy).canView && Object.prototype.hasOwnProperty.call(ctx, f.key));
+  const show = { hr: perm('assessment.behavioral').canView, technical: perm('assessment.technical').canView };
+  const drafts = [['hr', hr], ['technical', tech]].filter(([t]) => show[t]).map(([, d]) => d);
+  const flagGroups = perm('assessment.criticalFlags').canView ? drafts : [];
+  const showFinal = perm('assessment.finalRecommendation').canView;
+  const editableDrafts = drafts.filter((d) => d.editable);
+
   return (
-    <div>
+    <div className="assess">
       {loadError && <RefetchError text={`Could not refresh this assessment: ${loadError}. Showing the last loaded evaluation.`} onRetry={load} />}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-        {[['hr', 'HR / Behavioral'], ['technical', 'Technical']].map(([k, label]) => (
-          <button key={k} className={'tag-toggle' + (evalType === k ? ' on' : '')} onClick={() => setEvalType(k)}>
-            {label}{bundle[k]?.submitted ? ' ✓' : ''}
-          </button>
-        ))}
+      <article className="assess-doc" aria-label="Interview assessment">
+        {/* No document title here: the drawer header already names the assessment. The printed form keeps its title. */}
+        <AssessmentProgress appId={app.id} steps={[
+          ...(show.hr ? [{ key: 'hr', anchor: `assess-${app.id}-hr-title`, label: 'Behavioral (HR)', ...assessStepStatus(bundle.hr) }] : []),
+          ...(show.technical ? [{ key: 'technical', anchor: `assess-${app.id}-technical-title`, label: 'Technical', ...assessStepStatus(bundle.technical) }] : []),
+          ...(showFinal ? [{ key: 'final', anchor: `assess-${app.id}-final`, label: 'Final decision', ...(bundle.finalDecision ? { status: 'Recorded', variant: 'success' } : { status: 'Not recorded', variant: 'soft' }) }] : []),
+        ]} />
+
+        {infoFields.length > 0 && (
+          <section className="assess-sec" aria-labelledby={`assess-${app.id}-info`}>
+            <h3 className="assess-sec-title" id={`assess-${app.id}-info`}>Candidate details</h3>
+            <dl className="assess-info">
+              {infoFields.map((f) => (
+                <div key={f.key} className="assess-info-cell"><dt>{f.label}</dt><dd>{fmtInfo(f.key, ctx[f.key])}</dd></div>
+              ))}
+            </dl>
+          </section>
+        )}
+
+        {show.hr && <EvaluationForm type="hr" meta={meta} draft={hr} perm={perm} appId={app.id} readOnly={!hr.editable} onSaved={onSaved} />}
+        {show.technical && <EvaluationForm type="technical" meta={meta} draft={tech} perm={perm} appId={app.id} readOnly={!tech.editable} onSaved={onSaved} />}
+
+        {flagGroups.length > 0 && <AssessmentFlags meta={meta} drafts={flagGroups} canEditFlags={perm('assessment.criticalFlags').canEdit} />}
+
+        {(showFinal || drafts.length > 0) && (
+          <section className="assess-sec" aria-labelledby={`assess-${app.id}-final`}>
+            <h3 className="assess-sec-title" id={`assess-${app.id}-final`}>Final Recommendation</h3>
+            {showFinal && <FinalDecisionBox bundle={bundle} meta={meta} canFeedback={perm('assessment.finalRecommendation').canEdit} appId={app.id} onSaved={onSaved} onDirtyChange={markDirty} />}
+            {drafts.map((d) => <AssessmentFit key={d.type} draft={d} meta={meta} appId={app.id} perm={perm} />)}
+          </section>
+        )}
+
+        {editableDrafts.length > 0 && (
+          <div className="assess-bar" role="group" aria-label="Save or submit evaluations">
+            {editableDrafts.map((d) => <AssessmentSaveRow key={d.type} draft={d} />)}
+          </div>
+        )}
+        <AssessmentHistory appId={app.id} refreshKey={`${bundle.hr?.updatedAt || ''}|${bundle.technical?.updatedAt || ''}|${bundle.finalDecision?.decidedAt || ''}`} />
+      </article>
+      <div className="assess-actions">
+        <button type="button" className="btn btn-secondary" onClick={() => api.download(`/assessments/application/${app.id}/preview`).catch((e) => toast(e.message || 'Could not open the preview', 'error'))}>Preview printable form</button>
       </div>
-      <p className="muted" style={{ fontSize: 11.5, marginTop: 0 }}>
-        {Object.entries(meta.scoreGuide).sort((a, b) => b[0] - a[0]).map(([score, label]) => `${score} ${label}`).join(' · ')}
+    </div>
+  );
+}
+
+// One assessment table (HR or Technical), drawn like the sheet.
+function EvaluationForm({ type, meta, draft, perm, appId, readOnly }) {
+  const s = ASSESS_SECTIONS[type];
+  const id = `assess-${appId}-${type}`;
+  const ev = draft.existing;
+  const fitLabel = (v) => (meta.fitLevels || []).find((f) => f.value === v)?.label || v;
+  return (
+    <section className="assess-sec" aria-labelledby={id + '-title'}>
+      <h3 className="assess-sec-title" id={id + '-title'}>{s.title}</h3>
+      <p className="assess-sec-meta">
+        {assessStatusLine(ev)}{readOnly ? ' · View only' : ''}{draft.dirty ? ' · Unsaved changes' : ''}
       </p>
-
-      <EvaluationForm
-        key={evalType}
-        type={evalType}
-        meta={meta}
-        existing={existing}
-        readOnly={!canFeedback}
-        onSaved={() => { toast('Evaluation saved'); load(); }}
-        appId={app.id}
-      />
-
-      <FinalDecisionBox bundle={bundle} meta={meta} canFeedback={canFeedback} appId={app.id} onSaved={() => { toast('Final decision recorded'); load(); }} />
-    </div>
+      {draft.stale && <div className="assess-note assess-warn" role="status">This evaluation was saved by someone else while you were editing. Your edits are kept; saving will replace their version.</div>}
+      {draft.restored && draft.dirty && <div className="assess-note" role="status" data-restored="true">Your unsaved changes were restored. Save or submit to keep them.</div>}
+      {type === 'hr' && meta.behavioralInstruction && <p className="assess-instruction">{meta.behavioralInstruction}</p>}
+      <table className="assess-table">
+        <colgroup><col className="assess-col-crit" /><col className="assess-col-desc" /><col className="assess-col-score" /><col className="assess-col-notes" /></colgroup>
+        <thead><tr><th scope="col">Criterion</th><th scope="col">What to Evaluate</th><th scope="col">Score 1–5</th><th scope="col">Notes</th></tr></thead>
+        <tbody>
+          {draft.visibleCriteria.map((cr) => (
+            <ScoreRow key={cr.key} idBase={`${id}-${cr.key}`} label={cr.label} description={cr.description}
+              value={draft.form.rows[cr.key]?.score} notes={draft.form.rows[cr.key]?.notes}
+              readOnly={draft.locked || !perm(assessCriterionKey(type, cr.key)).canEdit} scoreGuide={meta.scoreGuide} naLabel={meta.naLabel}
+              onChange={(v) => draft.setRow(cr.key, { score: v })} onNotes={(v) => draft.setRow(cr.key, { notes: v })} />
+          ))}
+        </tbody>
+      </table>
+      <p className="assess-guide">Score Guide: 5 Excellent • 4 Proficient • 3 Average • 2 Below Standard • 1 Unsuitable • N/A {meta.naLabel || 'Not Applicable'}</p>
+      {draft.summary && (
+        <p className="assess-summary">
+          Average: <strong>{draft.summary.average != null ? draft.summary.average.toFixed(1) + ' / 5' : 'Not rated'}</strong>
+          {draft.summary.fit && <> · Fit: <strong>{draft.summary.fit.label}</strong></>}
+          {' · '}{draft.summary.scored} scored · {draft.summary.na} N/A{draft.summary.open ? ` · ${draft.summary.open} unanswered` : ''}
+        </p>
+      )}
+      {draft.summary && draft.summary.scored === 0 && draft.summary.na > 0 && <div className="assess-note assess-warn">No scored evidence — every answered criterion is N/A, so this section is Not rated.</div>}
+      {ev?.fitHistorical && <div className="assess-note">Previously recorded fit (manual, historical): {fitLabel(ev.savedFit)}. Fit is now derived from the scores.</div>}
+    </section>
   );
 }
 
-function ScoreRow({ label, hint, value, onChange, readOnly }) {
-  const opts = ['', '1', '2', '3', '4', '5', 'na'];
+// One criterion row: 1 2 3 4 5 N/A as a compact segmented control that sits
+// inside the table cell; read-only shows the chosen value plainly.
+function ScoreRow({ idBase, label, description, value, notes, onChange, onNotes, readOnly, scoreGuide, naLabel }) {
+  const guide = scoreGuide || {};
+  const na = naLabel || 'Not Applicable';
+  const options = ['1', '2', '3', '4', '5', 'na'];
+  const optionLabel = (v) => (v === 'na' ? `N/A — ${na}` : `${v} — ${guide[v] || ''}`);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-      <div><div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>{hint && <div className="muted fine-key" style={{ lineHeight: 1.4 }}>{hint}</div>}</div>
-      <select value={value ?? ''} disabled={readOnly} onChange={(e) => onChange(e.target.value)} style={{ padding: '5px 8px', border: '1px solid var(--border)', borderRadius: 6, minWidth: 70 }}>
-        {opts.map((o) => <option key={o} value={o}>{o === '' ? '—' : o === 'na' ? 'N/A' : o}</option>)}
-      </select>
-    </div>
+    <tr>
+      <th scope="row" className="assess-crit">{label}</th>
+      <td className="assess-desc">{description}</td>
+      <td className="assess-score">
+        {readOnly
+          ? (value
+            ? <span className="assess-score-val" aria-label={`${label} score: ${optionLabel(value)}`}><strong>{value === 'na' ? 'N/A' : value}</strong><span>{value === 'na' ? na : guide[value]}</span></span>
+            : <span className="assess-score-val assess-score-empty" aria-label={`${label} score: not answered`}>—</span>)
+          : (
+            <div className="assess-seg" role="radiogroup" aria-label={`${label} score`}>
+              {options.map((v) => (
+                <button key={v} type="button" role="radio" aria-checked={value === v} aria-label={optionLabel(v)} title={optionLabel(v)}
+                  className={'assess-seg-btn' + (value === v ? ' on' : '')} onClick={() => onChange(value === v ? '' : v)}>{v === 'na' ? 'N/A' : v}</button>
+              ))}
+            </div>
+          )}
+      </td>
+      <td className="assess-notes">
+        {readOnly
+          ? <div className="assess-notes-text">{notes || ''}</div>
+          : <textarea id={idBase + '-notes'} rows="2" aria-label={`${label} notes`} placeholder="Notes" value={notes ?? ''} onChange={(e) => onNotes(e.target.value)} />}
+      </td>
+    </tr>
   );
 }
 
-function EvaluationForm({ type, meta, existing, readOnly, onSaved, appId }) {
-  const toast = useToast();
-  const criteria = type === 'hr' ? meta.behavioralCriteria : meta.technicalCriteria;
-  const stored = type === 'hr' ? existing?.behavioral : existing?.technical;
-  const [scores, setScores] = useState(() => {
-    const init = {}; criteria.forEach((cr) => { init[cr.key] = stored?.[cr.key]?.score != null ? String(stored[cr.key].score) : ''; });
-    return init;
-  });
-  const [flags, setFlags] = useState(() => {
-    const init = {}; (meta.criticalFlags || []).forEach((f) => { init[f.key] = !!existing?.criticalFlags?.[f.key]; }); return init;
-  });
-  const [rec, setRec] = useState(existing?.recommendation || '');
-  const [fit, setFit] = useState((type === 'hr' ? existing?.behavioralFit : existing?.technicalFit) || '');
-  const [justification, setJustification] = useState((type === 'hr' ? existing?.behavioralJustification : existing?.technicalJustification) || '');
-  const [busy, setBusy] = useState(false);
-
-  async function save() {
-    setBusy(true);
-    const scoreObj = {}; Object.entries(scores).forEach(([k, v]) => { if (v) scoreObj[k] = { score: v === 'na' ? null : Number(v) }; });
-    const body = { evaluatorType: type, criticalFlags: flags, recommendation: rec || null };
-    if (type === 'hr') { body.behavioral = scoreObj; body.behavioralFit = fit || null; body.behavioralJustification = justification; }
-    else { body.technical = scoreObj; body.technicalFit = fit || null; body.technicalJustification = justification; }
-    try { await api.post('/assessments/application/' + appId, body); onSaved(); }
-    catch (e) { toast(e.message, 'error'); }
-    finally { setBusy(false); }
-  }
-
+// Critical Flags — one line per evaluation the user may see, each flag labelled
+// with its own text so assistive technology announces what it means.
+function AssessmentFlags({ meta, drafts, canEditFlags }) {
+  const raised = drafts.some((d) => Object.values(d.form.flags || {}).some(Boolean));
   return (
-    <div className="card card-pad" style={{ marginBottom: 14 }}>
-      <div className="section-title" style={{ marginTop: 0 }}>{type === 'hr' ? 'Behavioral (Big-Five)' : 'Technical Competency'}</div>
-      {criteria.map((cr) => (
-        <ScoreRow key={cr.key} label={cr.label} hint={cr.hint} value={scores[cr.key]} readOnly={readOnly} onChange={(v) => setScores((s) => ({ ...s, [cr.key]: v }))} />
-      ))}
+    <section className="assess-sec" aria-label="Critical Flags — Review if Any Are True">
+      <h3 className="assess-sec-title">Critical Flags — Review if Any Are True</h3>
+      {drafts.map((d) => {
+        const editable = canEditFlags && !d.locked;
+        return (
+          <div key={d.type} className="assess-flags" role="group" aria-label={`Critical flags — ${ASSESS_SECTIONS[d.type].evaluator}`}>
+            <span className="assess-flags-who">{ASSESS_SECTIONS[d.type].evaluator}:</span>
+            {(meta.criticalFlags || []).map((f) => {
+              const fid = `assess-flag-${d.type}-${f.key}`;
+              const on = !!d.form.flags[f.key];
+              // View-only: marked as on the sheet, not shown as a greyed-out control.
+              if (!editable) return <span key={f.key} className={'assess-box' + (on ? ' on' : '')} aria-label={`${f.label}: ${on ? 'flagged' : 'not flagged'}`}>{on ? '☒' : '☐'} {f.label}</span>;
+              return (
+                <label key={f.key} htmlFor={fid} className="assess-flag">
+                  <input id={fid} type="checkbox" aria-label={f.label} checked={on}
+                    onChange={(e) => d.setFlag(f.key, e.target.checked)} />
+                  <span>{f.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        );
+      })}
+      {raised && <div className="assess-note"><span className="badge badge-warning">Review required</span> A critical flag is set. This does not reject the candidate.</div>}
+    </section>
+  );
+}
 
-      <div className="section-title">Critical Flags</div>
-      {(meta.criticalFlags || []).map((f) => (
-        <label key={f.key} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '4px 0', fontSize: 13 }}>
-          <input type="checkbox" checked={flags[f.key]} disabled={readOnly} onChange={(e) => setFlags((x) => ({ ...x, [f.key]: e.target.checked }))} style={{ marginTop: 2 }} />
-          <span>{f.label}</span>
-        </label>
-      ))}
-
-      <div className="form-grid" style={{ marginTop: 12 }}>
-        <div className="field"><label>Recommendation</label>
-          <select value={rec} disabled={readOnly} onChange={(e) => setRec(e.target.value)}>
-            <option value="">— Select —</option>{meta.decisions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
-        <div className="field"><label>{type === 'hr' ? 'Behavioral Fit' : 'Technical Fit'}</label>
-          <select value={fit} disabled={readOnly} onChange={(e) => setFit(e.target.value)}>
-            <option value="">— Select —</option>{meta.fitLevels.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
+// Behavioral Fit / Technical Fit lines of the Final Recommendation, with the
+// evaluator's recommendation and the PDF's "Justification / Key Strengths".
+function AssessmentFit({ draft, meta, appId, perm }) {
+  const s = ASSESS_SECTIONS[draft.type];
+  const fit = draft.summary?.fit?.value || null;
+  const recId = `assess-${appId}-${draft.type}-rec`;
+  const justId = `assess-${appId}-${draft.type}-just`;
+  const just = perm(s.justPolicy);
+  const justEditable = just.canEdit && !draft.locked;
+  const recLabel = (meta.decisions || []).find((d) => d.value === draft.form.recommendation)?.label;
+  return (
+    <div className="assess-fit">
+      <div className="assess-fit-line">
+        <strong>{s.fitLabel}:</strong>
+        {draft.summary
+          ? (meta.fitLevels || []).map((f) => <span key={f.value} className={'assess-box' + (fit === f.value ? ' on' : '')}>{fit === f.value ? '☒' : '☐'} {f.label} ({ASSESS_FIT_RANGE[f.value] || f.range})</span>)
+          : <span className="assess-muted">Not shown — part of this section is not visible to you.</span>}
       </div>
-      <div className="field"><label>Justification / Notes</label>
-        <textarea rows="3" value={justification} disabled={readOnly} onChange={(e) => setJustification(e.target.value)} placeholder="Evidence, examples, rationale…" /></div>
-
-      {!readOnly && <button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : (existing ? 'Update ' : 'Submit ') + (type === 'hr' ? 'HR Evaluation' : 'Technical Evaluation')}</button>}
-      {existing?.evaluatorName && <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Last saved by {existing.evaluatorName}{existing.updatedAt ? ' · ' + fmtDate(existing.updatedAt) : ''}</div>}
+      <div className="assess-fit-row">
+        <label htmlFor={recId}>{s.short} recommendation</label>
+        {draft.locked
+          ? <span id={recId} className="assess-fit-value">{recLabel || ASSESS_NOT_RECORDED}</span>
+          : <select id={recId} aria-label={`${s.short} recommendation`} value={draft.form.recommendation} onChange={(e) => draft.setRecommendation(e.target.value)}>
+            <option value="">— Select —</option>{(meta.decisions || []).map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select>}
+      </div>
+      {just.canView && (
+        <div className="assess-fit-row assess-just">
+          <label htmlFor={justId}>Justification / Key Strengths</label>
+          {justEditable
+            ? <textarea id={justId} rows="2" value={draft.form.justification} onChange={(e) => draft.setJustification(e.target.value)} placeholder="Evidence, examples, key strengths…" />
+            : <div id={justId} className="assess-fit-value assess-just-text">{draft.form.justification || '—'}</div>}
+        </div>
+      )}
     </div>
   );
 }
 
-function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved }) {
+// Save / submit controls for one evaluation the user may edit.
+// Stateless, like the other document sections: the draft hook owns the state.
+function AssessmentSaveRow({ draft }) {
+  const s = ASSESS_SECTIONS[draft.type];
+  const ev = draft.existing;
+  const reasonId = `assess-${draft.appId}-${draft.type}-reason`;
+  const needReason = draft.changingSubmitted && !draft.editReason.trim();
+  return (
+    <div className="assess-bar-row">
+      <div className="assess-bar-state"><strong>{s.short} assessment</strong> <span className="assess-muted">{assessStatusLine(ev).replace('Status: ', '')}{draft.dirty ? ' · Unsaved changes' : ''}</span></div>
+      {draft.error && (
+        <div className="assess-note assess-warn" role="alert">
+          {draft.error.text}
+          {draft.error.retry && <> <button type="button" className="btn btn-sm btn-secondary" disabled={draft.busy} onClick={() => draft.save(draft.error.submit)}>Retry</button></>}
+        </div>
+      )}
+      {draft.changingSubmitted && (
+        <div className="assess-reason">
+          <label htmlFor={reasonId}>Reason for changing a submitted evaluation *</label>
+          <textarea id={reasonId} rows="2" value={draft.editReason} onChange={(e) => draft.setEditReason(e.target.value)} placeholder="Recorded in the assessment history" />
+        </div>
+      )}
+      <div className="btn-row">
+        {!draft.editing
+          ? <>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.setEditing(true)}>Edit evaluation</button>
+            {ev?.submitted && <button type="button" className="btn btn-sm btn-ghost" onClick={() => draft.setReopening(true)}>Reopen for revision</button>}
+          </>
+          : <>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Save ${s.short.toLowerCase()} draft`} onClick={() => draft.save(false)} disabled={draft.busy || needReason}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Save as draft (withdraws submission)' : 'Save draft'}</button>
+            <button type="button" className="btn btn-sm" aria-label={`Submit ${s.short.toLowerCase()} evaluation`} onClick={() => draft.save(true)} disabled={draft.busy || needReason}>{draft.busy ? 'Saving…' : ev?.submitted ? 'Submit changes' : 'Submit evaluation'}</button>
+            {ev?.submitted && <button type="button" className="btn btn-sm btn-ghost" onClick={draft.cancelEdit} disabled={draft.busy}>Cancel edit</button>}
+          </>}
+      </div>
+      {draft.reopening && <Confirm title={`Reopen the ${s.short.toLowerCase()} evaluation`} message="It goes back to draft so it can be revised and submitted again. The scores are kept. Give a reason — it is recorded in the assessment history." requireReason confirmLabel="Reopen" onConfirm={draft.reopen} onClose={() => draft.setReopening(false)} />}
+    </div>
+  );
+}
+
+// Where each part of the assessment stands, at the top of the form, each
+// linked to its section. Statuses come from the saved record, not the form.
+function AssessmentProgress({ appId, steps }) {
+  return (
+    <nav className="assess-progress" aria-label="Assessment progress">
+      <ol>
+        {steps.map((st) => (
+          <li key={st.key}>
+            <a href={`#${st.anchor}`} onClick={(e) => { e.preventDefault(); document.getElementById(st.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+              <span className="assess-progress-label">{st.label}</span>
+              <Badge variant={st.variant}>{st.status}</Badge>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+// Who saved, submitted or reopened each part, when and why (GET …/history).
+function AssessmentHistory({ appId, refreshKey }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    api.get(`/assessments/application/${appId}/history`).then((r) => { setRows(r.history || []); setErr(null); }).catch((e) => setErr(e.message));
+  }, [open, appId, refreshKey]);
+  const what = (h) => ({
+    'assessment.draft_saved': h.previousState === 'submitted' ? 'Withdrew to draft' : 'Saved a draft',
+    // An update only follows a submission, so an update to draft is a withdrawal.
+    'assessment.submitted': 'Submitted', 'assessment.updated': h.state === 'draft' ? 'Withdrew to draft' : 'Changed after submission',
+    'assessment.reopened': 'Reopened for revision', 'assessment.final_decision': 'Recorded the final decision',
+  })[h.action] || h.action;
+  const part = (h) => (h.part === 'final' ? 'Final decision' : `${ASSESS_SECTIONS[h.part]?.short || h.part} evaluation`);
+  return (
+    <section className="assess-sec assess-history" aria-label="Assessment history">
+      <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? 'Hide history' : 'Show history'}
+      </button>
+      {open && (err ? <p className="assess-muted">{err}</p> : !rows ? <Skeleton rows={2} /> : rows.length === 0 ? <p className="assess-muted">Nothing recorded yet.</p> : (
+        <ol className="assess-history-list">
+          {rows.map((h, i) => (
+            <li key={i}>
+              <span className="assess-history-when">{fmtDate(h.at)}</span>
+              <span><strong>{h.actor || 'System'}</strong> · {what(h)} — {part(h)}{h.decision ? `: ${h.decision}` : ''}{h.previous ? ` (was ${h.previous})` : ''}</span>
+              {h.reason && <span className="assess-history-reason">Reason: {h.reason}</span>}
+            </li>
+          ))}
+        </ol>
+      ))}
+    </section>
+  );
+}
+
+function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved, onDirtyChange }) {
   const toast = useToast();
   const fd = bundle.finalDecision;
-  const [decision, setDecision] = useState(fd?.decision || '');
-  const [notes, setNotes] = useState(fd?.notes || '');
+  const choices = meta.finalDecisions || meta.decisions || [];
+  // A historical value (e.g. "hired") is shown as such, never pre-selected.
+  const savedOf = (f) => ({ decision: f && choices.some((d) => d.value === f.decision) ? f.decision : '', notes: f?.notes || '' });
+  const parkedFinal = ASSESS_UNSAVED.get(`${appId}:final`);
+  const [base, setBase] = useState(() => savedOf(fd));
+  const restoreFinal = parkedFinal && JSON.stringify(parkedFinal.base) === JSON.stringify(savedOf(fd));
+  const [decision, setDecision] = useState(restoreFinal ? parkedFinal.decision : base.decision);
+  const [notes, setNotes] = useState(restoreFinal ? parkedFinal.notes : base.notes);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [error, setError] = useState(null);
+  const dirty = decision !== base.decision || notes !== base.notes;
+  useEffect(() => { onDirtyChange && onDirtyChange('final', dirty); }, [dirty]);
+  useEffect(() => {
+    if (dirty) ASSESS_UNSAVED.set(`${appId}:final`, { decision, notes, base });
+    else ASSESS_UNSAVED.delete(`${appId}:final`);
+  }, [decision, notes, base, dirty]);
+  // Adopt a refreshed decision unless the user has an unsaved one.
+  const seen = useRef(fd);
+  useEffect(() => {
+    if (seen.current === fd) return;
+    seen.current = fd;
+    if (dirty) return;
+    const next = savedOf(fd); setBase(next); setDecision(next.decision); setNotes(next.notes);
+  }, [fd]);
   async function save() {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setError(null);
+    const sent = { decision, notes };
+    try { const r = await api.post(`/assessments/application/${appId}/final`, sent); setBase(sent); toast('Final decision recorded'); onSaved(r && r.assessment); }
+    catch (e) { setError(`${e.message || 'Save failed'}. Your choice has not been lost.`); toast(e.message || 'Save failed', 'error'); }
+    finally { busyRef.current = false; setBusy(false); }
+  }
+  const notesId = `assess-${appId}-final-notes`;
+  return (
+    <div className="assess-final">
+      {!canFeedback ? (
+        // View-only: the recorded choice as the sheet marks it, not greyed-out controls.
+        <div className="assess-decision" role="group" aria-label={`Final decision: ${choices.find((d) => d.value === decision)?.label || 'not recorded'}`}>
+          <strong>Decision:</strong>
+          {choices.map((d) => <span key={d.value} className={'assess-box' + (decision === d.value ? ' on' : '')}>{decision === d.value ? '☒' : '☐'} {d.label}</span>)}
+        </div>
+      ) : (
+      <div className="assess-decision" role="radiogroup" aria-label="Final decision">
+        <strong>Decision:</strong>
+        {choices.map((d) => {
+          const id = `assess-${appId}-final-${d.value}`;
+          return (
+            <label key={d.value} htmlFor={id} className={'assess-box assess-choice' + (decision === d.value ? ' on' : '')}>
+              <input id={id} type="radio" name={`assess-${appId}-final`} value={d.value} checked={decision === d.value} onChange={() => setDecision(d.value)} />
+              <span>{d.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      )}
+      {fd?.historical && <div className="assess-note">Recorded decision (historical vocabulary): {fd.decisionLabel || fd.decision}</div>}
+      <p className="assess-muted assess-instruction">Records the panel's decision only. It does not move the candidate in the pipeline or create an offer.</p>
+      {(canFeedback || notes) && (
+        <div className="assess-fit-row">
+          <label htmlFor={notesId}>Decision notes</label>
+          {canFeedback
+            ? <textarea id={notesId} rows="2" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            : <div id={notesId} className="assess-fit-value assess-just-text">{notes}</div>}
+        </div>
+      )}
+      {error && <div className="assess-note assess-warn" role="alert">{error}</div>}
+      <div className="assess-final-foot">
+        {fd?.decidedByName && <span className="assess-muted">Decided by {fd.decidedByName}{fd.decidedAt ? ' · ' + fmtDate(fd.decidedAt) : ''}</span>}
+        {canFeedback && <button type="button" className="btn btn-sm" onClick={save} disabled={busy || !decision}>{busy ? 'Saving…' : error ? 'Retry' : 'Record Final Decision'}</button>}
+      </div>
+    </div>
+  );
+}
+
+// Opens the assessment from an interview the user is assigned to — the
+// Technical Interviewer's way in, without access to the hiring request.
+// Assessment drawers render at page level so no page container's stacking
+// context can put them under the phone top bar (AR-05).
+const toPageLevel = (node) => (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal && typeof document !== 'undefined' && document.body
+  ? ReactDOM.createPortal(node, document.body) : node);
+function InterviewAssessmentDrawer({ applicationId, title, user, onClose }) {
+  const titleId = useId();
+  const assessDirty = useRef(false);
+  const requestClose = useCallback(() => {
+    if (assessDirty.current) {
+      if (!window.confirm('Discard unsaved assessment changes?')) return;
+      discardAssessUnsaved(applicationId);
+    }
+    onClose();
+  }, [onClose, applicationId]);
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(requestClose);
+  return toPageLevel(
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) requestClose(); }}>
+      <div ref={dialogRef} className="modal assess-drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head">
+          <div><h3 id={titleId}>Interview assessment</h3>{title && <div className="assess-muted">{title}</div>}</div>
+          <button type="button" className="icon-btn" aria-label="Close assessment" onClick={requestClose}><Icon name="close" size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <AssessmentPanel app={{ id: applicationId }} canFeedback={can(user, 'interview.feedback')} onDirtyChange={(d) => { assessDirty.current = d; }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Administration → Interview Settings → Assessment Form → Visibility & Permissions.
+// Edits the server's assessment field policy; the server validates, stores and
+// audits it, and the same policy then drives the form, the API and the preview.
+function AssessmentPolicyPage({ user }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [draft, setDraft] = useState(null); // overrides being edited
+  const [busy, setBusy] = useState(false);
+  const [showCriteria, setShowCriteria] = useState(false);
+  // What the server would enforce for the current draft. The screen never
+  // works the policy out itself (AR-03/AR-08): every unsaved change is
+  // resolved by the same server code that enforces saved settings.
+  const [preview, setPreview] = useState(null); // { valid, error?, effective? }
+  const previewGen = useRef(0);
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try { const r = await api.get('/assessments/policy'); setData(r.policy); setDraft(r.policy.overrides); setPreview({ valid: true, effective: r.policy.effective }); }
+    catch (e) { setLoadError(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const dirty = !!data && JSON.stringify(draft) !== JSON.stringify(data.overrides);
+  useEffect(() => {
+    if (!data || !draft) return;
+    const mine = ++previewGen.current;
+    if (!dirty) { setPreview({ valid: true, effective: data.effective }); return; }
+    api.post('/assessments/policy/preview', { overrides: draft })
+      .then((r) => { if (mine === previewGen.current) setPreview(r); })
+      .catch((e) => { if (mine === previewGen.current) setPreview({ valid: false, error: e.message }); });
+  }, [draft, data]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    const navigate = (e) => { if (!window.confirm('Discard unsaved assessment permission changes?')) e.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    window.addEventListener('ats:before-navigate', navigate);
+    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('ats:before-navigate', navigate); };
+  }, [dirty]);
+
+  if (loadError) return <LoadError title="Could not load assessment permissions" text={loadError} onRetry={load} />;
+  if (!data || !draft) return <Skeleton rows={8} />;
+
+  // Last server answer (valid previews only); while one is in flight the
+  // previous answer stays on screen.
+  const effective = (preview?.valid && preview.effective) || data.effective;
+  const cell = (aud, key) => effective[aud]?.[key] || { view: false, edit: false, configured: { view: false, edit: false } };
+  const parentOf = {};
+  data.sections.forEach((s) => s.fields.forEach((f) => { parentOf[f.key] = s; }));
+  const setRule = (aud, key, patch) => setDraft((d) => {
+    const next = { ...(cell(aud, key).configured || cell(aud, key)), ...patch };
+    if (patch.view === false) next.edit = false;
+    if (patch.edit === true) next.view = true;
+    const a = { ...(d[aud] || {}), [key]: { view: !!next.view, edit: !!next.edit } };
+    // A section switched off takes its fields' own grants with it, so the
+    // draft never holds a grant the server would refuse.
+    const section = data.sections.find((s) => s.key === key);
+    if (section && (section.gatesView && !next.view)) for (const f of section.fields) delete a[f.key];
+    if (section && section.gatesEdit && !next.edit) for (const f of section.fields) if (a[f.key]?.edit) a[f.key] = { ...a[f.key], edit: false };
+    return { ...d, [aud]: a };
+  });
+  const clearRule = (aud, key) => setDraft((d) => { const a = { ...(d[aud] || {}) }; delete a[key]; return { ...d, [aud]: a }; });
+
+  async function save(overrides, message) {
     setBusy(true);
-    try { await api.post(`/assessments/application/${appId}/final`, { decision, notes }); onSaved(); }
+    try { const r = await api.put('/assessments/policy', { overrides }); setData(r.policy); setDraft(r.policy.overrides); setPreview({ valid: true, effective: r.policy.effective }); toast(message); }
     catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+
+  const row = (key, label, { editable, depth = 0, hint = false }) => (
+    <tr key={key} className={depth ? 'assess-pol-field' : 'assess-pol-section'}>
+      <th scope="row">{label}{hint && <span className="assess-muted"> · follows its section unless changed</span>}</th>
+      {data.audiences.map((a) => {
+        const r = cell(a.key, key);
+        const set = draft[a.key]?.[key];
+        const parent = depth ? parentOf[key] : null;
+        const parentRule = parent ? cell(a.key, parent.key) : null;
+        // Shown exactly as enforced: a field its section blocks is unticked and locked.
+        const viewLocked = !!(parent?.gatesView && !parentRule.view);
+        const editLocked = viewLocked || !!(parent?.gatesEdit && !parentRule.edit);
+        const lockNote = viewLocked ? `Hidden because “${parent.label}” is hidden for ${a.label}` : editLocked ? `Read-only because “${parent.label}” is read-only for ${a.label}` : undefined;
+        return (
+          <React.Fragment key={a.key}>
+            <td className="assess-pol-cell">
+              <input type="checkbox" aria-label={`${a.label}: view ${label}`} title={viewLocked ? lockNote : undefined}
+                checked={!!r.view} disabled={viewLocked} onChange={(e) => setRule(a.key, key, { view: e.target.checked })} />
+            </td>
+            <td className="assess-pol-cell">
+              {editable
+                ? <input type="checkbox" aria-label={`${a.label}: edit ${label}`} title={editLocked ? lockNote : undefined}
+                  checked={!!r.edit} disabled={editLocked} onChange={(e) => setRule(a.key, key, { edit: e.target.checked })} />
+                : <span className="assess-muted" aria-label="Not editable from the assessment">—</span>}
+              {set && <button type="button" className="assess-pol-reset" title="Reset to default" aria-label={`${a.label}: reset ${label} to default`} onClick={() => clearRule(a.key, key)}>↺</button>}
+            </td>
+          </React.Fragment>
+        );
+      })}
+    </tr>
+  );
+
   return (
-    <div className="card card-pad" style={{ borderTop: '3px solid var(--green)' }}>
-      <div className="section-title" style={{ marginTop: 0 }}>Final Decision (shared — recruiter &amp; technical interviewer)</div>
-      <div className="field"><label>Decision</label>
-        <select value={decision} disabled={!canFeedback} onChange={(e) => setDecision(e.target.value)}>
-          <option value="">— Select —</option>{meta.finalDecisions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
-      <div className="field"><label>Notes</label><textarea rows="2" value={notes} disabled={!canFeedback} onChange={(e) => setNotes(e.target.value)} /></div>
-      {canFeedback && <button className="btn" onClick={save} disabled={busy || !decision}>{busy ? 'Saving…' : 'Record Final Decision'}</button>}
-      {fd?.decidedByName && <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Decided by {fd.decidedByName}{fd.decidedAt ? ' · ' + fmtDate(fd.decidedAt) : ''}</div>}
+    <div>
+      <PageHead crumb="Administration / Interview Settings / Assessment Form" title="Assessment Visibility & Permissions"
+        sub="Who may view or edit each part of the interview assessment. These rules apply to the form, the API and the printable form alike. They can only narrow existing access — salary always also requires the salary permission. A field cannot be shown while its section is hidden."
+        actions={<>
+          <button type="button" className="btn btn-ghost" disabled={busy || !dirty} onClick={() => setDraft(data.overrides)}>Discard</button>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => { if (window.confirm('Restore the default assessment permissions?')) save({}, 'Defaults restored'); }}>Restore defaults</button>
+          <button type="button" className="btn" disabled={busy || !dirty || preview?.valid === false} onClick={() => save(draft, 'Assessment permissions saved')}>{busy ? 'Saving…' : 'Save changes'}</button>
+        </>} />
+      {preview?.valid === false && <div className="error-banner" role="alert">{preview.error}</div>}
+      <div className="card card-pad assess-pol">
+        <table className="assess-pol-table">
+          <thead>
+            <tr><th scope="col" rowSpan="2">Field / Section</th>{data.audiences.map((a) => <th key={a.key} scope="colgroup" colSpan="2">{a.label}</th>)}</tr>
+            <tr>{data.audiences.map((a) => <React.Fragment key={a.key}><th scope="col">View</th><th scope="col">Edit</th></React.Fragment>)}</tr>
+          </thead>
+          <tbody>
+            {data.sections.map((s) => {
+              const criteria = s.key === 'assessment.behavioral' || s.key === 'assessment.technical';
+              return (
+                <React.Fragment key={s.key}>
+                  {s.key === 'assessment.candidate'
+                    ? <tr className="assess-pol-group"><th scope="rowgroup" colSpan={1 + data.audiences.length * 2}>{s.label}</th></tr>
+                    : row(s.key, s.label, { editable: s.editable })}
+                  {s.fields.filter(() => !criteria || showCriteria).map((f) => row(f.key, f.label, { editable: s.editable, depth: 1, hint: criteria }))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        <label className="assess-flag"><input type="checkbox" checked={showCriteria} onChange={(e) => setShowCriteria(e.target.checked)} /><span>Show per-criterion settings</span></label>
+      </div>
     </div>
   );
 }
@@ -7186,7 +8260,8 @@ function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
 // not work — fetch the blob, then hand it to the browser.
 async function downloadResume(candidate, toast) {
   try {
-    const res = await fetch(`/api/candidates/${candidate.id}/resume`, {
+    // A specific CV version is fetched by its document id, never by filename.
+    const res = await fetch(candidate.docId ? `/api/candidates/${candidate.id}/documents/${candidate.docId}/file` : `/api/candidates/${candidate.id}/resume`, {
       headers: api.token ? { Authorization: 'Bearer ' + api.token } : {},
     });
     if (!res.ok) {
@@ -7197,7 +8272,7 @@ async function downloadResume(candidate, toast) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = candidate.resumeName || `${candidate.candidateNo || 'candidate'}-cv`;
+    a.download = (candidate.docId ? candidate.docName : candidate.resumeName) || candidate.resumeName || `${candidate.candidateNo || 'candidate'}-cv`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch { toast('Could not download the CV.', 'error'); }
@@ -7686,6 +8761,22 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
   );
 }
 
+const POOL_STATUS = {
+  new: 'New', considered: 'Previously Considered', shortlisted: 'Previously Shortlisted',
+  blacklisted: 'Blacklisted', unknown: 'Unknown',
+};
+function PoolStatusBadge({ status }) {
+  const key = Object.hasOwn(POOL_STATUS, status) ? status : 'unknown';
+  return <span className={'pool-status pool-status-' + key}>{POOL_STATUS[key]}</span>;
+}
+function PoolStatusGuide() {
+  const badges = Object.keys(POOL_STATUS).map((key) => <PoolStatusBadge key={key} status={key} />);
+  return <div className="pool-status-guide">
+    <div className="pool-status-desktop" aria-label="Candidate status legend">{badges}</div>
+    <details className="pool-status-mobile"><summary>Status Guide</summary><div>{badges}</div></details>
+  </div>;
+}
+
 function CandidatesPage({ user, onNavigate, initialFilters }) {
   const isPhone = useIsPhone();
   const toast = useToast();
@@ -7767,7 +8858,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     // Data-quality labels. OPT-IN only — with none selected the Talent Pool
     // shows everyone, flagged or not, which is the whole point of labelling
     // uncertainty instead of queueing it.
-    'qualityFlag', 'disciplineClass'];
+    'qualityFlag', 'departmentId'];
 
   useRecordUrl('candidates', selectedId);
   // Opened from the Ctrl+K palette. Covers both cases: page already mounted
@@ -7840,6 +8931,13 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   // rather than a dropdown that would fail on submit.
   const canLink = can(user, 'candidate.link');
   const [linkRequests, setLinkRequests] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [departmentError, setDepartmentError] = useState(false);
+  useEffect(() => {
+    api.get('/org/departments').then((r) => {
+      setDepartments((r.departments || []).filter((d) => d.status === 'active'));
+    }).catch(() => setDepartmentError(true));
+  }, []);
   // F2: selection for bulk actions. A Set because membership is the only query.
   const [selected, setSelected] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -7942,7 +9040,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     q: 'Search', location: 'Location', currentCompany: 'Company',
     minExp: 'Min exp', maxExp: 'Max exp', tag: 'Tag',
     currentPosition: 'Role', university: 'University',
-    graduationFrom: 'Graduated from', graduationTo: 'Graduated to',
+    graduationFrom: 'Graduated from', graduationTo: 'Graduated to', departmentId: 'Department',
     stage: 'Stage', recruiterId: 'Recruiter', requestId: 'Request', projectId: 'Project',
   };
   const mergedForChips = { ...filters, ...pipeFilters };
@@ -7950,6 +9048,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
     .filter(([k, v]) => v && FILTER_LABELS[k] && v !== true)
     .map(([k, v]) => {
       let shown = v;
+      if (k === 'departmentId') shown = departments.find((d) => String(d.id) === String(v))?.name || v;
       if (k === 'stage') shown = (APP_STATUS[v] || {}).label || v;
       if (k === 'requestId') {
         const r = linkRequests.find((x) => String(x.id) === String(v));
@@ -7999,10 +9098,6 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   const screenCount = (key) => !candidates ? 0 : key === 'all' ? candidates.length : candidates.filter((c) => scOf(c) === key).length;
   // Filtering happens server-side; `shown` is simply the current page.
   const shown = candidates || [];
-  // Education columns only when someone in the list has education recorded:
-  // auto-ingested CVs rarely do, and two all-dash columns took a fifth of the
-  // table's width (review T5).
-  const showEdu = shown.some((c) => c.university || c.major || c.graduationYear != null);
 
   /** A links[] entry shaped like the one GET /candidates builds server-side. */
   function linkEntry(request, application) {
@@ -8156,10 +9251,12 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
           <option value="">All candidates</option>
           {QUALITY_FLAGS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         </select>
-        <select value={filters.disciplineClass || ''} title="Professional classification"
-          onChange={(e) => setFilters((f) => ({ ...f, disciplineClass: e.target.value }))}>
-          <option value="">All classifications</option>
-          {DISCIPLINE_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+        <select value={filters.departmentId || ''} aria-label="Department"
+          title="Department of a linked hiring request; unlinked candidates remain in All departments"
+          disabled={departmentError}
+          onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value, disciplineClass: '' }))}>
+          <option value="">{departmentError ? 'Departments unavailable' : 'All departments'}</option>
+          {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         </FilterToolbar>
       )}
@@ -8233,89 +9330,72 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
             ? 'Try the All tab, or clear the search and filter fields above.'
             : 'Add a candidate manually, or import CVs against a hiring request to populate the pool.'} /></div>
       ) : view === 'table' ? (
-        <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap">
-          <table className="table responsive-table candidates-table">
+        <div>
+          <PoolStatusGuide />
+          <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}>
+          <div className="table-wrap talent-table-wrap" role="region" aria-label="Talent Pool table" tabIndex={0}>
+          <table className="table candidates-table talent-pool-table">
             <thead><tr>
-              <th className="th-sel" data-col="select">
+              <th data-col="name" className={'sort-th' + (sort.by === 'name' ? ' active' : '')}
+                aria-sort={sort.by === 'name' ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}><div className="pool-candidate-heading">
                 <input type="checkbox" aria-label="Select all on this page"
                   checked={shown.length > 0 && shown.every((c) => selected.has(c.id))}
                   ref={(el) => { if (el) el.indeterminate = selected.size > 0 && !shown.every((c) => selected.has(c.id)); }}
                   onChange={(e) => toggleAllShown(e.target.checked)} />
-              </th>
-              <SortTh label="Candidate" col="name" sort={sort} onSort={toggleSort} />
+                <button className="sort-th-inner" title="Sort by Candidate" onClick={() => toggleSort('name')}>
+                  Candidate<Icon name={sort.by === 'name' ? (sort.dir === 'asc' ? 'chevronUp' : 'chevronDown') : 'sortNeutral'} size={16} />
+                </button>
+              </div></th>
               <SortTh label="Position" col="position" sort={sort} onSort={toggleSort} />
-              {showEdu && <SortTh priority="secondary" label="University" col="university" sort={sort} onSort={toggleSort} />}
-              {showEdu && <SortTh priority="secondary" label="Year" col="graduation" sort={sort} onSort={toggleSort} />}
+              <SortTh label="University" col="university" sort={sort} onSort={toggleSort} />
+              <SortTh label="Year" col="graduation" sort={sort} onSort={toggleSort} />
               <SortTh label="Location" col="location" sort={sort} onSort={toggleSort} />
-              <th className="th-request" data-col="request">Request</th>
-              <th data-col="stage">Stage</th>
-              <th data-col="cv">CV</th>
+              <th data-col="apply-date">Apply Date</th>
+              <th data-col="ranking">Ranking (10)</th>
+              <th data-col="request">Request</th>
             </tr></thead>
             <tbody>{shown.map((c) => (
               <tr key={c.id} className={'row-link' + (selected.has(c.id) ? ' row-selected' : '')}
                 onClick={() => openProfile(c.id)}>
-                <td className="th-sel" onClick={(e) => e.stopPropagation()}>
-                  {/* The label is the hit area: a bare checkbox is 17px on a phone. */}
-                  <label className="sel-hit">
+                <td data-label="Candidate"><div className="pool-candidate">
+                  <label className="sel-hit" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" aria-label={`Select ${c.fullName}`}
                       checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
                   </label>
-                </td>
-                <td data-label="Candidate">
-                  <div className="idcell">
-                    <span className="idcell-av">{initials(c.fullName)}</span>
-                    <span className="idcell-txt">
-                      <span className="cell-strong"><span className="idcell-name" title={c.fullName}>{c.fullName}</span> <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} /></span>
-                      <span className="cell-sub">{c.candidateNo}</span>
-                    </span>
+                  <div><span className="cell-strong">{c.fullName}</span>
+                    <PoolStatusBadge status={c.poolStatus} />
+                    <span className="cell-sub">{c.candidateNo}</span>
+                    {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
+                    {c.hasResume && <div className="pool-cv-actions" onClick={(e) => e.stopPropagation()}>
+                      <button className="icon-btn" aria-label={`Review CV for ${c.fullName}`}
+                        onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
+                      <button className="icon-btn" aria-label={`Download ${c.resumeName || 'CV'}`}
+                        onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
+                    </div>}
                   </div>
-                  {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
+                </div></td>
+                <td data-label="Position">{c.currentPosition || '—'}</td>
+                <td data-label="University">{c.university || '—'}</td>
+                <td data-label="Year">{c.graduationYear ?? '—'}</td>
+                <td data-label="Location">{c.location || '—'}</td>
+                <td data-label="Apply Date" title={c.applyDateSource === 'application_email' ? 'Original application email received' : 'Candidate creation date'}>
+                  <DateCell value={c.applyDate} dateOnly />
                 </td>
-                <td data-label="Position">
-                  <span className="cell-strong" title={c.currentPosition || undefined}>{c.currentPosition || '—'}</span>
-                  {c.currentCompany ? <span className="cell-sub" title={c.currentCompany}>{c.currentCompany}</span> : null}
-                </td>
-                {showEdu && <td data-priority="secondary" data-label="University">
-                  <span className="cell-strong" title={c.university || undefined}>{c.university || '—'}</span>
-                  {c.major ? <span className="cell-sub" title={c.major}>{c.major}</span> : null}
-                </td>}
-                {showEdu && <td data-priority="secondary" data-label="Graduation" className="cell-sub-only">{c.graduationYear ?? '—'}</td>}
-                <td data-label="Location" className="cell-sub-only" title={c.location || undefined}>{c.location || '—'}</td>
-                <td data-label="Request">
-                  <LinkRequestCell candidate={c} requests={linkRequests} canLink={canLink}
-                    onNavigate={onNavigate} onLinked={linkOne} onRelinked={() => load()} />
-                </td>
-                <td data-label="Stage">{(() => {
-                  // The pipeline stage of the open application — the same word the
-                  // board column uses. The fitness screen is a separate column.
-                  const act = activeLinkOf(c);
-                  if (!act) return <span className="muted">Not on a request</span>;
-                  const st = APP_STATUS[pipelineStage(act.status)] || APP_STATUS[act.status];
-                  return st ? <Badge variant={st.variant}>{st.label}</Badge> : <span className="muted">{act.status}</span>;
-                })()}
-                  {/* The fitness screen is a second, smaller fact under the stage,
-                      named for what it is so it never reads as a stage. */}
-                  <span className="cell-sub" title="Fitness screen">Screen: {(SCREEN_CHIP[scOf(c)] || SCREEN_CHIP.new)[1].toLowerCase()}</span></td>
-                <td data-label="CV" className="cell-actions" onClick={(e) => e.stopPropagation()}>
-                  {c.hasResume
-                    ? <>
-                        <button className="icon-btn" title={c.resumeName ? `Review ${c.resumeName}` : 'Review this CV beside the record'}
-                          aria-label={`Review CV for ${c.fullName}`}
-                          onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
-                        {/* One-click download stays. Replacing it with Review alone cost a
-                            recruiter the file behind a panel and two fetches, and this row
-                            has no overflow menu to fall back on — the action menu is only
-                            rendered in the pipeline view. */}
-                        <button className="icon-btn" title={`Download ${c.resumeName || 'CV'}`}
-                          aria-label={`Download ${c.resumeName || 'CV'}`}
-                          onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
-                      </>
+                <td data-label="Ranking (10)"><span className="muted">Not scored</span></td>
+                <td data-label="Request" onClick={(e) => e.stopPropagation()}>
+                  {(c.links || []).filter((l) => l.requestId && l.requestTitle).length
+                    ? c.links.filter((l) => l.requestId && l.requestTitle).map((l) =>
+                      <button key={l.applicationId} className="pool-request-link"
+                        onClick={() => openRequest(l.requestId, onNavigate)}>
+                        <span>{shortReqCode(l.ticketNo)}</span><span>{l.requestTitle}</span>
+                      </button>)
                     : <span className="muted">—</span>}
                 </td>
               </tr>
             ))}</tbody>
           </table>
-        </div></div>
+          </div></div>
+        </div>
       ) : view === 'pipeline' ? (
         <TalentPipeline
           user={user} btns={btns}
@@ -8478,13 +9558,88 @@ function ParsePreviewTable({ rows }) {
 // `html`: a Word CV rendered by the server. It is shown in a frame with an
 // empty sandbox (no scripts, no same-origin, no forms), so a crafted document
 // can only render, never act.
+/**
+ * A PDF drawn page by page onto canvases with the bundled pdf.js
+ * (/vendor/pdfjs, loaded by index.html). Used where the browser cannot show a
+ * PDF inside an iframe (phones, tablets). If pdf.js is missing or the file will
+ * not parse, falls back to Open / Download so the CV is never a blank frame.
+ */
+function PdfPagesView({ url, fileName, zoom }) {
+  const host = useRef(null);
+  const [state, setState] = useState('loading'); // loading | ready | failed
+  const [why, setWhy] = useState('');
+  useEffect(() => {
+    let alive = true, task = null;
+    setState('loading');
+    (async () => {
+      if (!window.pdfjsLib) {
+        await new Promise((res) => { window.addEventListener('pdfjs-ready', res, { once: true }); setTimeout(res, 4000); });
+      }
+      if (!window.pdfjsLib) throw new Error('pdf.js unavailable');
+      task = window.pdfjsLib.getDocument({ url });
+      const pdf = await task.promise;
+      if (!alive || !host.current) return;
+      host.current.textContent = '';
+      const cssW = Math.max(240, host.current.clientWidth || 320);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        if (!alive) return;
+        const base = page.getViewport({ scale: 1 });
+        const vp = page.getViewport({ scale: (cssW / base.width) * dpr });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+        canvas.style.cssText = 'width:100%;height:auto;display:block;margin:0 0 8px;background:#fff';
+        host.current.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        if (n === 1 && alive) setState('ready');
+      }
+    })().catch((e) => { if (alive) { setWhy(String((e && e.message) || e).slice(0, 120)); setState('failed'); } });
+    return () => { alive = false; try { task && task.destroy(); } catch { /* already gone */ } };
+  }, [url]);
+  if (state === 'failed') {
+    return (
+      <div className="parse-review-cv-empty">
+        This CV could not be drawn in the page.
+        {why ? <small style={{ display: 'block', opacity: 0.7 }}>{why}</small> : null}
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <a href={url} target="_blank" rel="noopener" className="btn">Open CV</a>
+          <a href={url} download={fileName || 'cv.pdf'} className="btn btn-secondary">Download</a>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ width: '100%' }}>
+      {state === 'loading' && <div className="parse-review-cv-empty">Loading CV…</div>}
+      <div ref={host} style={{ width: `${zoom * 100}%`, maxWidth: 'none' }} />
+    </div>
+  );
+}
+
 function CvFilePreview({ fileUrl, fileName, mimeType, html }) {
   const [zoom, setZoom] = useState(1);
   const zoomOut = () => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)));
   const zoomIn = () => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)));
-  const isPdf = mimeType === 'application/pdf';
-  const isImage = !!mimeType && mimeType.startsWith('image/');
+  // Kind comes from the MIME type OR the file name: a stored file whose type
+  // was lost (application/octet-stream) must still preview, not dead-end.
+  const ext = (String(fileName || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
+  const isPdf = mimeType === 'application/pdf' || (ext === 'pdf' && (!mimeType || mimeType === 'application/octet-stream'));
+  const isImage = (!!mimeType && mimeType.startsWith('image/')) || (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext) && (!mimeType || mimeType === 'application/octet-stream'));
+  const isText = mimeType === 'text/plain' || (ext === 'txt' && (!mimeType || mimeType === 'application/octet-stream'));
   const isDoc = !!html;
+  // Phones (and iPadOS, which reports a desktop UA) cannot render a PDF inside
+  // an iframe: Android Chrome paints a blank frame, iOS Safari only page one.
+  // Desktop browsers expose navigator.pdfViewerEnabled; where it is false, or
+  // the device is a touch phone/tablet, hand the PDF to the browser's own viewer.
+  // Only desktop Chrome / Edge / Firefox show a blob PDF reliably inside an
+  // iframe under this app's CSP (object-src 'none'). Safari, DuckDuckGo and every
+  // phone/tablet browser (all WebKit on iOS) get the pdf.js renderer instead.
+  const ua = navigator.userAgent;
+  const touchApple = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  const nativePdf = navigator.pdfViewerEnabled !== false && /Chrome|Chromium|Edg\/|Firefox/.test(ua)
+    && !/Android|iPhone|iPad|iPod|CriOS|FxiOS/i.test(ua) && !touchApple;
+  const noInlinePdf = !nativePdf;
   return (
     <div className="parse-review-cv">
       <div className="parse-review-cv-toolbar">
@@ -8502,7 +9657,9 @@ function CvFilePreview({ fileUrl, fileName, mimeType, html }) {
           <div className="parse-review-cv-empty">No file to preview.</div>
         ) : isDoc ? (
           <iframe title="Original CV" sandbox="" srcDoc={html} className="parse-review-cv-frame" style={{ transform: `scale(${zoom})` }} />
-        ) : isPdf ? (
+        ) : isPdf && noInlinePdf ? (
+          <PdfPagesView url={fileUrl} fileName={fileName} zoom={zoom} />
+        ) : isPdf || isText ? (
           <iframe title="Original CV" src={fileUrl} className="parse-review-cv-frame" style={{ transform: `scale(${zoom})` }} />
         ) : isImage ? (
           <img src={fileUrl} alt={fileName || 'CV'} className="parse-review-cv-image" style={{ transform: `scale(${zoom})` }} />
@@ -8567,7 +9724,7 @@ async function fetchDocBlobUrl(path) {
 function fetchResumeBlobUrl(candidateId) { return fetchDocBlobUrl(`/candidates/${candidateId}/resume`); }
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const isDocxFile = (mimeType, fileName) => mimeType === DOCX_MIME || /\.docx$/i.test(String(fileName || ''));
+const isDocxFile = (mimeType, fileName) => mimeType === DOCX_MIME || mimeType === 'application/msword' || /\.docx?$/i.test(String(fileName || ''));
 
 /**
  * One CV document for a side panel: the file as an object URL, plus, for a
@@ -8600,10 +9757,17 @@ function useCvDocument(path, fileName) {
   return { doc, error, busy };
 }
 
+/** The CV filename as what it is: the way to open the CV in the side panel.
+ *  A real <button> (keyboard, focus ring, pointer); Download stays separate. */
+function CvFileLink({ name, onOpen, fallback = 'Attached résumé' }) {
+  return <button type="button" className="cv-file-link" onClick={onOpen} title="Open the CV in the side panel">{name || fallback}</button>;
+}
+
 /** Open the CV review panel for a candidate from anywhere in the app. */
-function openCvReview(candidateId, seed) {
+function openCvReview(candidateId, seed, doc) {
   if (!candidateId) return;
-  window.dispatchEvent(new CustomEvent('ats:open-cv-review', { detail: { id: Number(candidateId), seed: seed || null } }));
+  // `doc` ({ id, name }) opens that CV version's own bytes instead of the current CV.
+  window.dispatchEvent(new CustomEvent('ats:open-cv-review', { detail: { id: Number(candidateId), seed: seed || null, doc: doc && doc.id ? { id: Number(doc.id), name: doc.name || null } : null } }));
 }
 
 /** The rows shown beside the CV — only fields the CV itself can be checked against. */
@@ -8648,7 +9812,7 @@ function cvReviewDetailSections(c) {
  * revokes a URL that arrives AFTER the panel closed, which is the case a plain
  * cleanup misses entirely.
  */
-function CvReviewPanel({ candidateId, seed, user, onClose }) {
+function CvReviewPanel({ candidateId, seed, doc, user, onClose }) {
   const toast = useToast();
   const titleId = useId();
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
@@ -8670,7 +9834,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
     return () => { alive = false; };
   }, [candidateId]);
 
-  const { doc: cv, error: cvError, busy: cvBusy } = useCvDocument(`/candidates/${candidateId}/resume`, (seed || {}).resumeName);
+  const { doc: cv, error: cvError, busy: cvBusy } = useCvDocument(doc ? `/candidates/${candidateId}/documents/${doc.id}/file` : `/candidates/${candidateId}/resume`, doc ? doc.name : (seed || {}).resumeName);
 
   async function saveNote() {
     const body = note.trim();
@@ -8697,7 +9861,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
         <div className="modal-head cvrev-head">
           <div className="cvrev-head-id">
             <h3 id={titleId}>{name} — CV review</h3>
-            <span className="cvrev-head-sub">{[c.candidateNo, c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
+            <span className="cvrev-head-sub">{[c.candidateNo, doc ? doc.name : c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
           </div>
           <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
@@ -8736,7 +9900,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
                     <Empty art="failed" tone="error" text={cvError} />
                   </div>
                 )
-                : <CvFilePreview fileUrl={cv?.url} fileName={c.resumeName} mimeType={cv?.mimeType} html={cv?.html} />}
+                : <CvFilePreview fileUrl={cv?.url} fileName={doc ? doc.name : c.resumeName} mimeType={cv?.mimeType} html={cv?.html} />}
           </div>
         </div>
 
@@ -8767,7 +9931,7 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
 
         <div className="modal-foot cvrev-foot">
           <button type="button" className="btn btn-secondary" disabled={!c.hasResume && !cv}
-            onClick={() => downloadResume({ id: candidateId, resumeName: c.resumeName, candidateNo: c.candidateNo }, toast)}>
+            onClick={() => downloadResume({ id: candidateId, resumeName: c.resumeName, candidateNo: c.candidateNo, docId: doc ? doc.id : null, docName: doc ? doc.name : null }, toast)}>
             Download CV
           </button>
           <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
@@ -8778,18 +9942,74 @@ function CvReviewPanel({ candidateId, seed, user, onClose }) {
 }
 
 /**
+ * A file that is not a candidate's own CV (a CV or attachment posted in a
+ * request thread) opened in the same side panel, never a new tab. `path` is
+ * the existing authenticated API path; Download stays a separate action.
+ */
+function openDocumentPanel(path, fileName, title) {
+  if (!path) return;
+  window.dispatchEvent(new CustomEvent('ats:open-document', { detail: { path, fileName: fileName || null, title: title || null } }));
+}
+function DocumentPanel({ path, fileName, title, onClose }) {
+  const toast = useToast();
+  const titleId = useId();
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const { doc, error, busy } = useCvDocument(path, fileName);
+  async function download() {
+    try { await api.download(path, fileName || 'file'); } catch (e) { toast(e.message || 'Download failed', 'error'); }
+  }
+  return (
+    <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
+        tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head cvrev-head">
+          <div className="cvrev-head-id">
+            <h3 id={titleId}>{title || fileName || 'Document'}</h3>
+            {title && fileName && <span className="cvrev-head-sub">{fileName}</span>}
+          </div>
+          <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
+        <div className="cvrev-body cvrev-body--doc">
+          <div className="cvrev-cv">
+            {busy
+              ? <div className="cvrev-cv-state"><Skeleton rows={5} /></div>
+              : error
+                ? <div className="cvrev-cv-state"><Empty art="failed" tone="error" text={error} /></div>
+                : <CvFilePreview fileUrl={doc?.url} fileName={fileName} mimeType={doc?.mimeType} html={doc?.html} />}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-secondary" onClick={download}>Download</button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function DocumentPanelHost() {
+  const [open, setOpen] = useState(null);      // { path, fileName, title }
+  useEffect(() => {
+    const onOpen = (e) => { if (e.detail?.path) setOpen({ path: e.detail.path, fileName: e.detail.fileName, title: e.detail.title }); };
+    window.addEventListener('ats:open-document', onOpen);
+    return () => window.removeEventListener('ats:open-document', onOpen);
+  }, []);
+  if (!open) return null;
+  return <DocumentPanel key={open.path} {...open} onClose={() => setOpen(null)} />;
+}
+
+/**
  * Mounted ONCE in the Shell. Every entry point calls `openCvReview(id)`; this
  * is what actually renders the panel, so no page owns the viewer's state.
  */
 function CvReviewHost({ user }) {
   const [open, setOpen] = useState(null);      // { id, seed }
   useEffect(() => {
-    const onOpen = (e) => { const id = e.detail?.id; if (id) setOpen({ id, seed: e.detail?.seed || null }); };
+    const onOpen = (e) => { const id = e.detail?.id; if (id) setOpen({ id, seed: e.detail?.seed || null, doc: e.detail?.doc || null }); };
     window.addEventListener('ats:open-cv-review', onOpen);
     return () => window.removeEventListener('ats:open-cv-review', onOpen);
   }, []);
   if (!open) return null;
-  return <CvReviewPanel key={open.id} candidateId={open.id} seed={open.seed} user={user} onClose={() => setOpen(null)} />;
+  return <CvReviewPanel key={open.id + ':' + (open.doc ? open.doc.id : 'cv')} candidateId={open.id} seed={open.seed} doc={open.doc} user={user} onClose={() => setOpen(null)} />;
 }
 
 /**
@@ -9162,7 +10382,7 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
       <div className="section-title" style={{ marginTop: 0 }}>Résumé / CV</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'var(--ticket-chip-bg, #fbeef0)', border: '1px solid var(--ticket-chip-border, #f3d6db)', borderRadius: 10, padding: '12px 14px' }}>
         <div style={{ flex: 1, minWidth: 160 }}>
-          <div style={{ fontWeight: 600 }}>{c.hasResume ? (c.resumeName || 'Attached résumé') : <span className="muted">No résumé on file</span>}</div>
+          <div style={{ fontWeight: 600 }}>{c.hasResume ? <CvFileLink name={c.resumeName} onOpen={view} /> : <span className="muted">No résumé on file</span>}</div>
         </div>
         {c.hasResume && <button className="btn btn-sm btn-secondary" onClick={view}>Review CV</button>}
         {c.hasResume && <button className="btn btn-sm btn-ghost" onClick={() => downloadResume(c, toast)}>Download</button>}
@@ -9173,7 +10393,10 @@ function CandidateCvTab({ c, user, btns, onChanged }) {
         <>
           <div className="section-title">Other Documents</div>
           <table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th></tr></thead>
-            <tbody>{c.documents.map((d) => <tr key={d.id}><td><span className="chip">{d.doc_type}</span></td><td>{d.file_name}</td><td className="muted">{fmtDate(d.uploaded_at)}</td></tr>)}</tbody></table>
+            <tbody>{c.documents.map((d) => <tr key={d.id}><td><span className="chip">{d.doc_type}</span></td><td>{d.doc_type === 'cv' && d.cvViewable
+                ? <span className="btn-row"><CvFileLink name={d.file_name} onOpen={() => openCvReview(c.id, c, { id: d.id, name: d.file_name })} />
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadResume({ id: c.id, candidateNo: c.candidateNo, docId: d.id, docName: d.file_name }, toast)}>Download</button></span>
+                : <>{d.file_name}{d.doc_type === 'cv' && d.cvProblem ? <span className="field-hint"> — {d.cvProblem === 'ambiguous' ? 'linked to more than one candidate; an administrator must resolve it' : 'original file not linked to this candidate; an administrator must resolve it'}</span> : null}</>}</td><td className="muted">{fmtDate(d.uploaded_at)}</td></tr>)}</tbody></table>
         </>
       )}
     </div>
@@ -9618,10 +10841,33 @@ const IV_STATUS = {
   cancelled: { label: 'Cancelled', variant: 'critical' },
   rescheduled: { label: 'Rescheduled', variant: 'warning' },
 };
-const IV_ACTIVITY_LABEL = { message_whatsapp: 'WhatsApp', message_call: 'Phone call', message_email: 'Email', candidate_response: 'Candidate answer', panel_changed: 'Panel changed', feedback_submitted: 'Feedback', feedback_updated: 'Feedback updated', no_show: 'No-show' };
 const IV_OUTCOME = { positive: { label: 'Positive', variant: 'success' }, negative: { label: 'Negative', variant: 'critical' }, mixed: { label: 'Mixed', variant: 'warning' } };
 const REC_LABEL = { strong_yes: 'Strong Yes', yes: 'Yes', no: 'No', strong_no: 'Strong No' };
 function IvStatusBadge({ status }) { const s = IV_STATUS[status] || { label: status, variant: 'soft' }; return <Badge variant={s.variant}>{s.label}</Badge>; }
+
+// The candidate's answer to the invitation (audit A3, from GitHub PR #46).
+// Only meaningful while the interview is still to happen.
+const IV_RESPONSE = {
+  pending: { label: 'No answer yet', variant: 'soft' },
+  confirmed: { label: 'Confirmed', variant: 'success' },
+  change_requested: { label: 'Wants another time', variant: 'warning' },
+  declined: { label: 'Declined', variant: 'critical' },
+};
+const ivUpcoming = (iv) => ['scheduled', 'rescheduled'].includes(iv.status);
+// Needs a reminder (audit A7): still ahead, within the next 24 hours, and either
+// not yet confirmed by the candidate or not yet reminded for this version.
+const ivNeedsReminder = (iv, now = Date.now()) => {
+  const t = Date.parse(iv.scheduledAt);
+  return ivUpcoming(iv) && t > now && t - now <= 86400000 && (iv.candidateResponse !== 'confirmed' || !iv.remindedAt);
+};
+const ivResponseLabel = (iv) => (ivUpcoming(iv) ? (IV_RESPONSE[iv.candidateResponse] || IV_RESPONSE.pending).label : '');
+function IvResponseBadge({ iv }) {
+  if (!ivUpcoming(iv)) return null;
+  const r = IV_RESPONSE[iv.candidateResponse] || IV_RESPONSE.pending;
+  // "No answer yet" with less than a day to go needs attention.
+  const soon = (iv.candidateResponse || 'pending') === 'pending' && Date.parse(iv.scheduledAt) - Date.now() < 86400000;
+  return <Badge variant={soon ? 'warning' : r.variant}>{r.label}</Badge>;
+}
 
 // Candidate + optional hiring request, for an interview or offer created
 // standalone (from the Interviews / Offers list, not from an application).
@@ -9683,7 +10929,6 @@ function StandaloneLinkFields({ user, link, setLink }) {
         <>
           <div className="field"><label>Full name *</label><input value={link.newName} onChange={(e) => set('newName', e.target.value)} /></div>
           <div className="field"><label>Email</label><input type="email" value={link.newEmail} onChange={(e) => set('newEmail', e.target.value)} /></div>
-          <div className="field"><label>Mobile (for WhatsApp and calls)</label><input type="tel" inputMode="tel" placeholder="010 0000 0000" value={link.newPhone} onChange={(e) => set('newPhone', e.target.value)} /></div>
         </>
       )}
       <div className="field full">
@@ -9696,7 +10941,7 @@ function StandaloneLinkFields({ user, link, setLink }) {
     </div>
   );
 }
-const EMPTY_LINK = { mode: 'pick', candidate: null, newName: '', newEmail: '', newPhone: '', requestId: '' };
+const EMPTY_LINK = { mode: 'pick', candidate: null, newName: '', newEmail: '', requestId: '' };
 function standaloneLinkReady(link) {
   return link.mode === 'pick' ? !!link.candidate : !!link.newName.trim();
 }
@@ -9704,304 +10949,890 @@ function standaloneLinkReady(link) {
 async function resolveStandaloneLink(link) {
   let candidateId = link.candidate?.id;
   if (link.mode === 'new') {
-    const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, phone: (link.newPhone || '').trim() || undefined, source: 'manual' });
+    const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, source: 'manual' });
     candidateId = r.candidate.id;
   }
   return { candidateId, requestId: link.requestId ? Number(link.requestId) : undefined };
 }
+// The interview assessment is kept on the candidate's application to a hiring
+// request. Reuse the live application on that request, or create one at the
+// entry stage through the normal application rules (one live application per
+// candidate, request still open, …) — the server refuses with a clear message.
+const APP_CLOSED = ['rejected', 'withdrawn', 'joined', 'offer_declined', 'offer_rejected'];
+async function ensureApplication(candidateId, requestId) {
+  const r = await api.get(`/candidates/${candidateId}`);
+  const live = (r.candidate?.applications || []).find((a) => Number(a.requestId) === Number(requestId) && !APP_CLOSED.includes(a.status));
+  if (live) return live.id;
+  const created = await api.post('/applications', { candidateId, requestId, initialStatus: 'matched' });
+  return created.application.id;
+}
 
-// `initialAt` is the slot clicked on the calendar; the form opens on that time.
-function ScheduleInterviewModal({ application, user, onClose, onScheduled, initialAt }) {
-  const toast = useToast();
-  const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ interviewType: 'technical', mode: 'video', scheduledAt: initialAt ? toLocalInput(initialAt) : '', durationMin: 60, round: 1, locationOrLink: '', panel: [] });
-  const [link, setLink] = useState(EMPTY_LINK);
-  const [busy, setBusy] = useState(false);
-  const [clashes, setClashes] = useState([]);
-  // How the candidate hears about it. Email goes out automatically on save;
-  // WhatsApp and a call happen on the scheduler's own device, right after.
-  const [notify, setNotify] = useState({ email: true, whatsapp: true, call: false });
-  const [contact, setContact] = useState(null); // { id, channel } once saved
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  useEffect(() => { api.get('/interviews/meta/form').then(setMeta); }, []);
-  // Who on the chosen panel is already booked then. A warning, never a block:
-  // panels overlap on purpose, and the scheduler decides.
-  const panelKey = f.panel.join(',');
-  useEffect(() => {
-    const start = f.scheduledAt ? new Date(f.scheduledAt) : null;
-    if (!start || isNaN(start) || !panelKey) { setClashes([]); return undefined; }
-    let live = true;
-    const t = setTimeout(() => {
-      const qs = new URLSearchParams({ start: start.toISOString(), durationMin: String(Number(f.durationMin) || 60), panel: panelKey });
-      api.get('/interviews/clashes?' + qs.toString())
-        .then((r) => { if (live) setClashes(r.clashes || []); })
-        .catch(() => { if (live) setClashes([]); });
-    }, 300);
-    return () => { live = false; clearTimeout(t); };
-  }, [f.scheduledAt, f.durationMin, panelKey]);
-  function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
+/* ===================== Interview scheduling & communications =====================
+   Audit 2026-10-06 (INTERVIEW_IMPLEMENTATION_BRIEF.md). One interview per
+   candidate; candidate & CV, interview & panel, and invitations in one form;
+   explicit "Save" or "Save & send"; Cairo time throughout; truthful outcomes.
+   ================================================================================ */
+const IV_TZ = 'Africa/Cairo';
+// Cairo wall time "YYYY-MM-DDTHH:mm" ↔ UTC instant, DST-correct.
+function cairoOffsetMin(ms) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: IV_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    .formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - ms) / 60000;
+}
+function cairoInputToIso(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v || '');
+  if (!m) return null;
+  const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  let t = wall - cairoOffsetMin(wall) * 60000;
+  t = wall - cairoOffsetMin(t) * 60000; // settle across a DST change
+  return new Date(t).toISOString();
+}
+function isoToCairoInput(iso) {
+  if (!iso) return '';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: IV_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+function cairoTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d) ? "—" : d.toLocaleTimeString("en-GB", { timeZone: IV_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+}
+function cairoLabel(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const s = d.toLocaleString('en-GB', { timeZone: IV_TZ, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const off = new Intl.DateTimeFormat('en-US', { timeZone: IV_TZ, timeZoneName: 'shortOffset' }).formatToParts(d).find((x) => x.type === 'timeZoneName')?.value || '';
+  return `${s} · Cairo (${off})`;
+}
+const ivKey = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now() + Math.random().toString(16).slice(2));
+// Mirrors intlPhone() in backend/src/lib/interview-messages.js (audit A11):
+// first of several numbers, Arabic-Indic digits, 00 prefix, and Egyptian
+// mobiles in local form (010… → +2010…). The server decides; this only lets
+// the form accept what the server will accept.
+const toIntlPhone = (v) => {
+  const first = String(v || '').split(/\s*(?:[,;|\/]|\bor\b|\s{2,})\s*/i).find((x) => /[0-9\u0660-\u0669\u06F0-\u06F9]/.test(x)) || '';
+  let d = first.trim().replace(/[\u0660-\u0669]/g, (c) => String(c.charCodeAt(0) - 0x0660)).replace(/[\u06F0-\u06F9]/g, (c) => String(c.charCodeAt(0) - 0x06F0)).replace(/[\s\-().\u200e\u200f]/g, '');
+  if (/^00[1-9]/.test(d)) d = '+' + d.slice(2);
+  else if (/^01[0125]\d{8}$/.test(d)) d = '+20' + d.slice(1);
+  else if (/^201[0125]\d{8}$/.test(d)) d = '+' + d;
+  return /^\+[1-9]\d{7,14}$/.test(d) ? d : null;
+};
+const INTL_PHONE = (v) => !!toIntlPhone(v);
+const EMAIL_FMT = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
+const HTTPS_LINK = (v) => { try { return new URL(String(v || '').trim()).protocol === 'https:'; } catch { return false; } };
+function ivDetailsProblem(mode, where) {
+  const v = String(where || '').trim();
+  if (mode === 'video' && !HTTPS_LINK(v)) return 'Add the meeting link (https://…) to send invitations.';
+  if (mode === 'onsite' && !v) return 'Add the location to send invitations.';
+  if (mode === 'phone' && !v) return 'Add the phone number or call arrangement to send invitations.';
+  return null;
+}
 
-  async function save(andContact) {
-    setBusy(true);
-    try {
-      const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
-      const r = await api.post('/interviews', {
-        ...target, interviewType: f.interviewType, mode: f.mode,
-        scheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : null,
-        durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink,
-        panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
-        notify: { email: andContact && notify.email },
-      });
-      const channel = andContact ? (notify.whatsapp ? 'whatsapp' : notify.call ? 'call' : null) : null;
-      toast(r.candidateEmailed ? 'Interview scheduled · invitation emailed'
-        : andContact && notify.email ? 'Interview scheduled · not emailed (no mailbox connected, or no email address)' : 'Interview scheduled',
-        andContact && notify.email && !r.candidateEmailed ? 'error' : undefined);
-      if (channel && r.interview) setContact({ id: r.interview.id, channel }); else onScheduled();
-    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
-  }
-  if (contact) return <ContactCandidateModal interviewId={contact.id} kind="invite" channel={contact.channel} onClose={onScheduled} />;
-  if (!meta) return <Modal title="Schedule Interview" onClose={onClose}><Skeleton /></Modal>;
-  const ready = !busy && f.scheduledAt && f.panel.length > 0 && (application || standaloneLinkReady(link));
-  const anyChannel = notify.email || notify.whatsapp || notify.call;
+// Outcome of one recipient, in words that never overstate.
+const DISPATCH_STATUS = {
+  queued: { label: 'Queued', variant: 'soft' },
+  accepted: { label: 'Accepted by the mail server', variant: 'success' },
+  dry_run: { label: 'Test transport — not delivered', variant: 'warning' },
+  not_sent: { label: 'Not sent', variant: 'warning' },
+  failed: { label: 'Failed', variant: 'critical' },
+  manual_handoff: { label: 'Opened in WhatsApp — not confirmed', variant: 'soft' },
+};
+// A phone call is also a person's action: started, not confirmed as reached.
+const CALL_HANDOFF = { label: 'Call started — not confirmed', variant: 'soft' };
+function DispatchList({ rows }) {
+  if (!rows || !rows.length) return null;
   return (
-    <Modal title={application ? `Schedule Interview — ${application.candidate?.fullName || ''}` : 'Schedule interview'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-secondary" onClick={() => save(false)} disabled={!ready} title="Book it without telling the candidate yet">Save only</button>
-        <button className="btn" onClick={() => save(true)} disabled={!ready || !anyChannel}>{busy ? 'Scheduling…' : 'Schedule & tell candidate'}</button></>}>
-      {application
-        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Scheduling does <strong>not</strong> change the application's pipeline status.</p>
-        : <StandaloneLinkFields user={user} link={link} setLink={setLink} />}
-      <div className="form-grid">
-        <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{IV_TYPE_LABEL[t] || t}</option>)}</select></div>
-        <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{IV_MODE_LABEL[m] || m}</option>)}</select></div>
-        <div className="field"><label>Date &amp; Time *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
-        <div className="field"><label>Duration (min)</label><input type="number" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
-        <div className="field"><label>Round</label><input type="number" min="1" value={f.round} onChange={(e) => set('round', e.target.value)} /></div>
-        <div className="field">
-          <label>{f.mode === 'video' ? 'Google Meet link' : f.mode === 'phone' ? 'Phone number' : 'Location'}</label>
-          <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
-            placeholder={f.mode === 'video' ? 'https://meet.google.com/abc-defg-hij' : f.mode === 'phone' ? '+20 100 000 0000' : 'Meeting room / site address'} />
-          {f.mode === 'video' && (
-            <div className="field-hint">Google Meet is the standard for video interviews. Paste the link from Google Calendar — it is sent verbatim in the candidate's invite email.</div>
-          )}
-        </div>
-      </div>
-      <div className="section-title">Panel (interviewers) *</div>
-      <div>{meta.interviewers.map((u) => <span key={u.id} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} title={u.name} onClick={() => togglePanel(u.id)}>{u.name}</span>)}</div>
-      <p className="muted" style={{ marginTop: 8 }}>First selected is the lead. Only selected interviewers will see this interview and may submit feedback.</p>
-      {clashes.length > 0 && (
-        <div className="notice notice-warn cal-clash" role="status">
-          <strong>Already booked at this time:</strong>{' '}
-          {clashes.map((c) => `${c.name} (${timeOf(c.start)}–${timeOf(c.end)})`).join(' · ')}.
-          {' '}You can still schedule; panels sometimes overlap on purpose.
-        </div>
-      )}
-      <div className="section-title">Tell the candidate</div>
-      <div className="notify-choices">
-        <label className="switch"><input type="checkbox" checked={notify.email} onChange={(e) => setNotify((n) => ({ ...n, email: e.target.checked }))} /> Email (sent automatically)</label>
-        <label className="switch"><input type="checkbox" checked={notify.whatsapp} onChange={(e) => setNotify((n) => ({ ...n, whatsapp: e.target.checked }))} /> WhatsApp</label>
-        <label className="switch"><input type="checkbox" checked={notify.call} onChange={(e) => setNotify((n) => ({ ...n, call: e.target.checked }))} /> Phone call</label>
-      </div>
-      <p className="muted notify-note">The wording comes from Interviews → Message templates. After saving, WhatsApp opens with the message filled in, or the call screen shows the number and what to say.</p>
-    </Modal>
+    <ul className="iv-dispatch-list">
+      {rows.map((r) => {
+        const st = (r.channel === 'call' && r.status === 'manual_handoff' ? CALL_HANDOFF : DISPATCH_STATUS[r.status]) || { label: r.status, variant: 'soft' };
+        return (
+          <li key={r.id}>
+            <span className="iv-dispatch-who"><strong>{r.recipientName || 'Recipient'}</strong>
+              <span className="muted">{r.audience === 'candidate' ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from panel' : 'Panel'}{r.channel === 'whatsapp' ? ' · WhatsApp' : r.channel === 'call' ? ' · Phone call' : r.recipientAddress ? ' · ' + r.recipientAddress : ''}{r.attachCv ? ' · CV attached' : ''}</span></span>
+            <Badge variant={st.variant}>{st.label}</Badge>
+            {r.reason && r.status !== 'manual_handoff' && <span className="iv-dispatch-reason">{r.reason}</span>}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
-/* ============================ Contacting the candidate ============================
-   One window, three ways: WhatsApp (opens the scheduler's own WhatsApp with
-   the message filled in), a phone call (dials, with the script on screen) and
-   email (sent from the company mailbox). The wording comes from Message
-   templates and can be edited for this one message. Every contact is written
-   to the interview's history, and the candidate's answer is recorded here. */
-const MSG_KIND_LABEL = { invite: 'Interview invitation', reschedule: 'New interview time', cancel: 'Interview cancelled', reminder: 'Reminder' };
-const CAND_RESPONSE = {
-  pending: { label: 'No answer yet', variant: 'soft' },
-  confirmed: { label: 'Confirmed', variant: 'success' },
-  change_requested: { label: 'Wants another time', variant: 'warning' },
-  declined: { label: 'Declined', variant: 'critical' },
-};
-function CandidateResponseBadge({ value }) {
-  const r = CAND_RESPONSE[value] || CAND_RESPONSE.pending;
-  return <Badge variant={r.variant}>{r.label}</Badge>;
-}
-function CandidateResponsePicker({ interviewId, value, onSaved }) {
-  const toast = useToast();
-  async function pick(response) {
-    if (response === value) return;
-    try { const r = await api.post(`/interviews/${interviewId}/response`, { response }); toast('Answer recorded: ' + CAND_RESPONSE[response].label); onSaved?.(r.interview); }
-    catch (e) { toast(e.message, 'error'); }
+// Open WhatsApp from a click. Browsers (Safari always, Chrome after a slow
+// response) block a window opened after a server round trip, so the window is
+// opened at once, inside the click, and pointed at wa.me when the hand-off is
+// recorded. If the browser still blocks it, the link is shown to copy.
+async function openWhatsAppWindow(record, toast) {
+  let w = null;
+  try { w = window.open('about:blank', '_blank'); } catch { w = null; }
+  try {
+    const r = await record();
+    if (w && !w.closed) { try { w.opener = null; } catch { /* cross-origin later */ } w.location.href = r.link; }
+    else { window.prompt ? window.prompt('Your browser blocked the WhatsApp window. Copy this link and open it:', r.link) : toast('Your browser blocked the WhatsApp window.', 'error'); }
+    return r;
+  } catch (e) {
+    if (w && !w.closed) w.close();
+    toast(e.message, 'error');
+    return null;
   }
+}
+
+// The WhatsApp hand-off: edit, copy, open. Opening is a person sending it.
+function WhatsAppHandoff({ phone, text, onText, onOpen, editable = true }) {
+  const toast = useToast();
+  const ok = INTL_PHONE(phone);
   return (
-    <div className="seg-tabs resp-picker" role="radiogroup" aria-label="Candidate's answer">
-      {Object.entries(CAND_RESPONSE).map(([k, v]) => (
-        <button key={k} type="button" role="radio" aria-checked={value === k} className={'seg-tab' + (value === k ? ' active' : '')} onClick={() => pick(k)}>{v.label}</button>
-      ))}
+    <div className="iv-wa">
+      <div className="iv-wa-head"><strong>WhatsApp message</strong><span className="muted">{ok ? toIntlPhone(phone) : phone ? `${phone} — not a mobile or international number (e.g. 01001234567 or +201001234567)` : 'No phone number'}</span></div>
+      {editable
+        ? <textarea rows="4" value={text} onChange={(e) => onText(e.target.value)} aria-label="WhatsApp message" />
+        : <div className="iv-preview-body">{text}</div>}
+      <div className="btn-row">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(text).then(() => toast('Message copied')).catch(() => toast('Copy failed — select the text instead', 'error')); }}>Copy message</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!ok || !onOpen} onClick={onOpen}>Open WhatsApp</button>
+      </div>
+      <p className="field-hint">WhatsApp opens on this device with the message ready; you press send. The Hub records that it was opened, not that it was sent. No CV or private link is ever included.</p>
     </div>
   );
 }
 
-function ContactCandidateModal({ interviewId, kind: initialKind = 'invite', channel: initialChannel = 'whatsapp', onClose }) {
+// The phone call (audit A11, from PR #46): the number as it is dialled, a
+// Call button and the script to read. Calling is a person's action; the Hub
+// records that the call was started, never that the candidate was reached.
+function CallHandoff({ phone, valid, script, onCall }) {
   const toast = useToast();
-  const [kind, setKind] = useState(initialKind);
-  const [channel, setChannel] = useState(initialChannel);
-  const [msg, setMsg] = useState(null);
-  const [err, setErr] = useState(null);
-  const [draft, setDraft] = useState({ whatsapp: '', subject: '', email: '' });
-  const [busy, setBusy] = useState(false);
-  const [response, setResponse] = useState(null);
-  useEffect(() => {
-    let live = true; setMsg(null); setErr(null);
-    api.get(`/interviews/${interviewId}/messages/${kind}`)
-      .then((r) => { if (!live) return; setMsg(r.message); setDraft({ whatsapp: r.message.whatsapp, subject: r.message.subject, email: r.message.email }); })
-      .catch((e) => { if (live) setErr(e.message); });
-    return () => { live = false; };
-  }, [interviewId, kind]);
-  useEffect(() => { api.get('/interviews/' + interviewId).then((r) => setResponse(r.interview.candidateResponse)).catch(() => {}); }, [interviewId]);
-  const log = (ch) => api.post(`/interviews/${interviewId}/messages/${kind}/${ch}`, {}).catch(() => {});
-  function openWhatsApp() {
-    window.open(`https://wa.me/${msg.to.whatsapp}?text=${encodeURIComponent(draft.whatsapp)}`, '_blank', 'noopener');
-    log('whatsapp'); toast('WhatsApp opened — press Send there');
-  }
-  async function copy(text) {
-    try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Copy did not work — select the text and copy it', 'error'); }
-  }
-  async function sendEmail() {
-    setBusy(true);
-    try { await api.post(`/interviews/${interviewId}/messages/${kind}/email`, { subject: draft.subject, text: draft.email }); toast('Email sent to ' + msg.to.email); }
-    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
-  }
-  const tabs = [['whatsapp', 'WhatsApp'], ['call', 'Phone call'], ['email', 'Email']];
   return (
-    <Modal title="Contact the candidate" onClose={onClose} wide footer={<button className="btn btn-secondary" onClick={onClose}>Done</button>}>
-      <div className="form-grid">
-        <div className="field"><label htmlFor="cc-kind">Message</label>
-          <select id="cc-kind" value={kind} onChange={(e) => setKind(e.target.value)}>{Object.entries(MSG_KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+    <div className="iv-wa">
+      <div className="iv-wa-head"><strong>Phone call</strong><span className="muted">{valid ? phone : phone ? `${phone} — cannot be dialled; use a mobile (01001234567) or +20… form` : 'No phone number'}</span></div>
+      <div className="iv-preview-body" aria-label="Call script">{script}</div>
+      <div className="btn-row">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard?.writeText(script).then(() => toast('Script copied')).catch(() => toast('Copy failed — select the text instead', 'error')); }}>Copy script</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={!valid || !onCall} onClick={onCall}>Call</button>
       </div>
-      <div className="seg-tabs" role="tablist" aria-label="How to contact">
-        {tabs.map(([k, v]) => <button key={k} type="button" role="tab" aria-selected={channel === k} className={'seg-tab' + (channel === k ? ' active' : '')} onClick={() => setChannel(k)}>{v}</button>)}
-      </div>
-      {err ? <div className="notice notice-warn">{err}</div> : !msg ? <Skeleton rows={4} /> : (
-        <div className="contact-panel">
-          {channel === 'whatsapp' && (msg.to.whatsapp ? <>
-            <div className="contact-to">To <strong>+{msg.to.whatsapp}</strong></div>
-            <textarea className="contact-text" rows={7} value={draft.whatsapp} onChange={(e) => setDraft((d) => ({ ...d, whatsapp: e.target.value }))} aria-label="WhatsApp message" />
-            <div className="contact-actions">
-              <button className="btn" onClick={openWhatsApp} disabled={!draft.whatsapp.trim()}>Open WhatsApp</button>
-              <button className="btn btn-secondary" onClick={() => copy(draft.whatsapp)}>Copy text</button>
-            </div>
-            <p className="muted contact-note">WhatsApp opens on this computer or phone with the message ready. Check it and press Send there.</p>
-          </> : <div className="notice notice-warn">No mobile number on this candidate's profile. Add one to their profile, or use email.</div>)}
-          {channel === 'call' && (msg.to.whatsapp ? <>
-            <div className="contact-to">Number <strong>+{msg.to.whatsapp}</strong></div>
-            <div className="contact-actions">
-              <a className="btn" href={msg.callLink} onClick={() => log('call')}>Call +{msg.to.whatsapp}</a>
-              <button className="btn btn-secondary" onClick={() => copy('+' + msg.to.whatsapp)}>Copy number</button>
-            </div>
-            <div className="section-title">What to say</div>
-            <div className="call-script">{msg.call}</div>
-            <p className="muted contact-note">On a phone this dials straight away; on a computer it opens your phone app or Teams. After the call, record the answer below.</p>
-          </> : <div className="notice notice-warn">No phone number on this candidate's profile. Add one to their profile, or use email.</div>)}
-          {channel === 'email' && (msg.to.email ? <>
-            <div className="contact-to">To <strong>{msg.to.email}</strong></div>
-            <div className="field"><label htmlFor="cc-subject">Subject</label><input id="cc-subject" value={draft.subject} onChange={(e) => setDraft((d) => ({ ...d, subject: e.target.value }))} /></div>
-            <textarea className="contact-text" rows={10} value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} aria-label="Email message" />
-            <div className="contact-actions">
-              <button className="btn" onClick={sendEmail} disabled={busy || !draft.subject.trim() || !draft.email.trim()}>{busy ? 'Sending…' : 'Send email'}</button>
-            </div>
-          </> : <div className="notice notice-warn">No email address on this candidate's profile. Use WhatsApp or a call.</div>)}
+      <p className="field-hint">Call opens your phone app (on a computer: Teams or your phone link). The Hub records that the call was started, not that the candidate answered — record their answer on the interview.</p>
+    </div>
+  );
+}
+
+// Subject + body editor with placeholder chips that insert at the cursor.
+function MessageEditor({ label, value, onChange, hasSubject = true, placeholders = [], error }) {
+  const bodyRef = useRef(null);
+  const insert = (name) => {
+    const el = bodyRef.current; const token = `{{${name}}}`;
+    if (!el) { onChange({ ...value, body: (value.body || '') + token }); return; }
+    const s = el.selectionStart ?? (value.body || '').length; const e = el.selectionEnd ?? s;
+    const body = (value.body || '').slice(0, s) + token + (value.body || '').slice(e);
+    onChange({ ...value, body });
+    setTimeout(() => { el.focus(); el.setSelectionRange(s + token.length, s + token.length); }, 0);
+  };
+  return (
+    <div className="iv-editor">
+      <div className="iv-editor-label">{label}</div>
+      {hasSubject && <input aria-label={label + ' subject'} value={value.subject || ''} onChange={(e) => onChange({ ...value, subject: e.target.value })} placeholder="Subject" />}
+      <textarea ref={bodyRef} rows="8" aria-label={label + ' message'} value={value.body || ''} onChange={(e) => onChange({ ...value, body: e.target.value })} />
+      {placeholders.length > 0 && (
+        <div className="iv-chips" aria-label="Insert a placeholder">
+          {placeholders.map((p) => <button key={p.name} type="button" className="chip-btn" title={`${p.label} — inserts {{${p.name}}}`} onClick={() => insert(p.name)}>{phShort(p.label)}</button>)}
         </div>
       )}
-      {response && <>
-        <div className="section-title">What did the candidate say?</div>
-        <CandidateResponsePicker interviewId={interviewId} value={response} onSaved={(iv) => setResponse(iv.candidateResponse)} />
+      {error && <div className="iv-error" role="alert">{error}</div>}
+    </div>
+  );
+}
+// "What changed" / "Previous date|time" only mean something in an update.
+const UPDATE_ONLY_PH = ['changes', 'previousDate', 'previousTime'];
+const phFor = (all, code, kind = null) => (all || []).filter((p) => p.in.includes(code) && (kind === 'update' || kind === null || !UPDATE_ONLY_PH.includes(p.name)));
+// "Time zone, e.g. Cairo time (GMT+3)" -> "Time zone": a chip names the value it fills in.
+const phShort = (label) => String(label || '').split(/,| \(|:/)[0].trim();
+
+// Messages are written ONCE as organisation templates (Interviews → Invitation
+// templates) with variables — candidate name, position, place, date and time —
+// filled in for each interview. Scheduling shows the finished text; changing
+// the wording for one interview is an exception, folded away (owner, 12 Oct).
+function TemplateNote({ custom, onCustom, children }) {
+  return (
+    <div className="iv-template-note">
+      <p className="field-hint">These messages come from your <strong>invitation templates</strong>. The candidate’s name, the position, the place and the interview time are filled in for you — check the preview{custom ? '' : ', then send'}. To change the standard wording for everyone, use <strong>Interviews → Scheduling Setup</strong>.</p>
+      <details className="iv-customize" open={custom} onToggle={(e) => onCustom(e.currentTarget.open)}>
+        <summary>Change the wording for this interview only</summary>
+        {custom && children}
+      </details>
+    </div>
+  );
+}
+
+/* ----------------------------- Schedule form ----------------------------- */
+// On-site interviews happen at Head Office or a company site (owner, 12 Oct):
+// the place is chosen, not typed, and its name + address become the location
+// that {{where}} puts in every message. "Other place" keeps free text.
+const placeText = (p) => (p.address ? `${p.name} — ${p.address}` : p.name);
+function InterviewPlacePicker({ places = [], value, onChange }) {
+  const match = places.find((p) => placeText(p) === (value || '').trim());
+  const [other, setOther] = useState(!!(value && !match));
+  const sel = other ? 'other' : match ? match.key : '';
+  return (
+    <>
+      <select value={sel} aria-label="Interview place" onChange={(e) => {
+        const k = e.target.value;
+        if (k === 'other') { setOther(true); if (match) onChange(''); return; }
+        setOther(false);
+        const p = places.find((x) => x.key === k);
+        onChange(p ? placeText(p) : '');
+      }}>
+        <option value="">Choose the place…</option>
+        {places.map((p) => <option key={p.key} value={p.key}>{p.key === 'hq' ? 'Head Office' : `Site — ${p.name}`}{p.project ? ` (${p.project})` : ''}</option>)}
+        <option value="other">Other place…</option>
+      </select>
+      {other && <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Office, meeting room or address" aria-label="Other place" />}
+      {sel && sel !== 'other' && <span className="field-hint">{value}{match && !match.address ? ' — add the address in Scheduling Setup so candidates can find it' : ''}</span>}
+    </>
+  );
+}
+
+const IV_FORM_BLANK = { interviewType: 'technical', mode: 'video', scheduledAt: '', durationMin: 60, round: 1, locationOrLink: '', panel: [] };
+const IV_LINK_BLANK = { mode: 'pick', candidate: null, newName: '', newEmail: '', newPhone: '', requestId: '' };
+const IV_PROGRESS_BLANK = { candidateId: null, cvDone: false, applicationId: null, interviewId: null };
+
+// `initialAt` is the slot clicked on the calendar; the form opens on that time.
+function ScheduleInterviewModal({ application, user, onClose, onScheduled, initialAt }) {
+  const toast = useToast();
+  const [customMsgs, setCustomMsgs] = useState(false); // per-interview wording is the exception (TemplateNote)
+  const [meta, setMeta] = useState(null);
+  const [tpl, setTpl] = useState(null);
+  const [f, setF] = useState(() => ({ ...IV_FORM_BLANK, scheduledAt: initialAt ? isoToCairoInput(new Date(initialAt).toISOString()) : '' }));
+  const [link, setLink] = useState(IV_LINK_BLANK);
+  const [cvFile, setCvFile] = useState(null);
+  const [requests, setRequests] = useState(null);
+  const [q, setQ] = useState(''); const [hits, setHits] = useState([]);
+  const [dups, setDups] = useState(null);
+  const [progress, setProgress] = useState(IV_PROGRESS_BLANK);
+  const [stepError, setStepError] = useState(null); // { step, message }
+  const [avail, setAvail] = useState({ state: 'idle' }); // idle|checking|ok|conflicts|unavailable
+  const [ack, setAck] = useState(false); const [overlapReason, setOverlapReason] = useState('');
+  const [msgs, setMsgs] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [rcpt, setRcpt] = useState({ candidate: true, panel: null, attachCv: [] });
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { interview, dispatches, summary, sent }
+  const [waText, setWaText] = useState('');
+  const keys = useRef({ create: ivKey(), send: ivKey() });
+  const busyRef = useRef(false);
+  const waTouched = useRef(false);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const canAdd = can(user, 'candidate.add');
+
+  useEffect(() => {
+    api.get('/interviews/meta/form').then(setMeta).catch((e) => toast(e.message, 'error'));
+    api.get('/interviews/message-templates').then((t) => { setTpl(t); setMsgs({ ...t.templates.invite }); setWaText(''); }).catch(() => setTpl({ templates: null, placeholders: [] }));
+    if (!application) api.get('/requests?pageSize=100').then((r) => setRequests(r.requests || [])).catch(() => setRequests([]));
+  }, []);
+  // Talent Pool search for an existing candidate.
+  useEffect(() => {
+    const term = q.trim();
+    if (application || link.mode !== 'pick' || !term) { setHits([]); return undefined; }
+    const t = setTimeout(() => api.get('/candidates?q=' + encodeURIComponent(term) + '&pageSize=8').then((r) => setHits(r.candidates || [])).catch(() => setHits([])), 180);
+    return () => clearTimeout(t);
+  }, [q, link.mode]);
+
+  const candidateId = application ? application.candidate?.id || application.candidateId : (link.mode === 'pick' ? link.candidate?.id : progress.candidateId);
+  const startIso = cairoInputToIso(f.scheduledAt);
+  const panelKey = f.panel.join(',');
+  // Availability: candidate (block), panel (acknowledge), same place (warn).
+  // A failed check is shown as "unavailable", never as "no conflict".
+  useEffect(() => {
+    if (!startIso || !panelKey) { setAvail({ state: 'idle' }); return undefined; }
+    let live = true;
+    setAvail((a) => ({ ...a, state: 'checking' }));
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ start: startIso, durationMin: String(Number(f.durationMin) || 60), panel: panelKey });
+      if (candidateId) qs.set('candidateId', String(candidateId));
+      if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
+      api.get('/interviews/clashes?' + qs.toString())
+        .then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length;
+          setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [], hours: r.hoursWarning || null }); })
+        .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [startIso, f.durationMin, panelKey, candidateId, f.locationOrLink]);
+
+  // Panel recipients default to everyone on the panel.
+  const panelSel = rcpt.panel === null ? f.panel : rcpt.panel.filter((id) => f.panel.includes(id));
+  const candEmail = application ? application.candidate?.email : link.mode === 'pick' ? link.candidate?.email : link.newEmail;
+  const candPhone = application ? application.candidate?.phone : link.mode === 'pick' ? link.candidate?.phone : link.newPhone;
+  const candName = application ? application.candidate?.fullName : link.mode === 'pick' ? link.candidate?.fullName : link.newName;
+  // Live preview of the invitations from the server's own renderer.
+  const previewKey = JSON.stringify({ msgs, startIso, f, candidateId, candName, candEmail, candPhone, req: link.requestId, app: application?.id });
+  useEffect(() => {
+    if (!msgs) return undefined;
+    const t = setTimeout(() => {
+      api.post('/interviews/message-preview', {
+        applicationId: application?.id, candidateId: !application && link.mode === 'pick' ? link.candidate?.id : (progress.candidateId || undefined),
+        candidateName: candName, candidateEmail: candEmail, candidatePhone: candPhone, requestId: link.requestId || undefined,
+        scheduledAt: startIso, durationMin: Number(f.durationMin), mode: f.mode, interviewType: f.interviewType, locationOrLink: f.locationOrLink,
+        panel: f.panel, messages: msgs,
+      }).then((p) => { setPreview(p); if (!waTouched.current) setWaText(p.preview.whatsapp.body); }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [previewKey]);
+
+  function togglePanel(id) { setF((s) => ({ ...s, panel: s.panel.includes(id) ? s.panel.filter((x) => x !== id) : [...s.panel, id] })); }
+  const candReady = application ? true : link.mode === 'pick' ? !!link.candidate : !!link.newName.trim() && (!!link.newEmail.trim() || !!link.newPhone.trim());
+  const contactProblem = !application && link.mode === 'new'
+    ? (link.newEmail.trim() && !EMAIL_FMT(link.newEmail) ? 'The email address is not valid.' : link.newPhone.trim() && !INTL_PHONE(link.newPhone) ? 'Enter a mobile number (e.g. 01001234567) or the international form (+201001234567).' : null) : null;
+  const blockedByCandidate = avail.state === 'conflicts' && (avail.candidate || []).length > 0;
+  const needsAck = avail.state === 'conflicts' && (avail.panel || []).length > 0;
+  const formReady = candReady && !contactProblem && !!startIso && f.panel.length > 0 && !blockedByCandidate && (!needsAck || (ack && overlapReason.trim()));
+  const sendProblem = ivDetailsProblem(f.mode, f.locationOrLink) || (preview && Object.values(preview.errors || {})[0]) || null;
+
+  // Each step keeps its result, so a failure part-way can be retried without
+  // creating the candidate, application or interview a second time.
+  async function save(send) {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setStepError(null);
+    let p = { ...progress };
+    try {
+      let cid = application ? (application.candidate?.id || application.candidateId) : link.mode === 'pick' ? link.candidate?.id : p.candidateId;
+      if (!application && link.mode === 'new' && !p.candidateId) {
+        try {
+          const r = await api.post('/candidates', { fullName: link.newName.trim(), email: link.newEmail.trim() || undefined, phone: link.newPhone.trim() ? link.newPhone.replace(/[\s\-().]/g, '') : undefined, source: 'manual' });
+          cid = r.candidate.id; p = { ...p, candidateId: cid }; setProgress(p);
+        } catch (e) {
+          if (e.status === 409 && e.data?.duplicates) { setDups(e.data.duplicates); throw Object.assign(new Error('This person may already be in the Talent Pool. Choose the existing record below, or change the details.'), { step: 'candidate' }); }
+          throw Object.assign(e, { step: 'candidate' });
+        }
+      }
+      if (cvFile && !p.cvDone && cid) {
+        try { await api.upload(`/candidates/${cid}/resume?parse=0`, cvFile); p = { ...p, cvDone: true }; setProgress(p); }
+        catch (e) { throw Object.assign(new Error(`The CV did not upload: ${e.message}. Try again, or remove the file to continue without a CV.`), { step: 'cv' }); }
+      }
+      let target = application ? { applicationId: application.id } : { candidateId: cid, requestId: link.requestId ? Number(link.requestId) : undefined };
+      if (!application && link.requestId) {
+        if (!p.applicationId) { p = { ...p, applicationId: await ensureApplication(cid, Number(link.requestId)) }; setProgress(p); }
+        target = { applicationId: p.applicationId };
+      }
+      let iv = null;
+      if (!p.interviewId) {
+        try {
+          const r = await api.post('/interviews', {
+            ...target, idempotencyKey: keys.current.create, interviewType: f.interviewType, mode: f.mode, scheduledAt: startIso,
+            durationMin: Number(f.durationMin), round: Number(f.round), locationOrLink: f.locationOrLink.trim(),
+            panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })),
+            ...(needsAck ? { ackPanelOverlap: true, overlapReason: overlapReason.trim() } : {}),
+          });
+          iv = r.interview; p = { ...p, interviewId: iv.id }; setProgress(p);
+        } catch (e) {
+          if (e.data?.code === 'candidate_conflict') setAvail((a) => ({ ...a, state: 'conflicts', candidate: e.data.conflicts || [] }));
+          if (e.data?.code === 'panel_conflict') setAvail((a) => ({ ...a, state: 'conflicts', panel: e.data.clashes || [] }));
+          throw Object.assign(e, { step: 'interview' });
+        }
+      } else iv = (await api.get('/interviews/' + p.interviewId)).interview;
+      let out = { interview: iv, dispatches: [], summary: null, sent: false };
+      if (send) {
+        try {
+          await api.put(`/interviews/${iv.id}/messages`, { kind: 'invite', messages: { candidate: msgs.candidate, panel: msgs.panel, whatsapp: { body: waText || msgs.whatsapp.body } } });
+          const r = await api.post(`/interviews/${iv.id}/send`, { kind: 'invite', batchKey: keys.current.send, candidate: !!rcpt.candidate, panel: panelSel, attachCv: rcpt.attachCv.filter((id) => panelSel.includes(id)) });
+          out = { interview: r.interview || iv, dispatches: r.dispatches || [], summary: r.summary, sent: true };
+        } catch (e) { throw Object.assign(new Error(`The interview is saved (${iv.interviewNo}), but the invitations were not sent: ${e.message}`), { step: 'send' }); }
+      } else if (waTouched.current) {
+        await api.put(`/interviews/${iv.id}/messages`, { kind: 'invite', messages: { whatsapp: { body: waText } } }).catch(() => {});
+      }
+      setResult(out);
+      toast(send ? `Interview ${iv.interviewNo} saved` : `Interview ${iv.interviewNo} saved — no invitations sent`);
+    } catch (e) {
+      setStepError({ step: e.step || 'interview', message: e.message || 'Something went wrong' });
+    } finally { busyRef.current = false; setBusy(false); }
+  }
+  function scheduleAnother() {
+    // Keep the slot shape (time, type, mode, length); clear everything personal.
+    setF((s) => ({ ...IV_FORM_BLANK, interviewType: s.interviewType, mode: s.mode, scheduledAt: s.scheduledAt, durationMin: s.durationMin, round: s.round }));
+    setLink(IV_LINK_BLANK); setCvFile(null); setDups(null); setQ(''); setProgress(IV_PROGRESS_BLANK); setStepError(null);
+    setAck(false); setOverlapReason(''); setRcpt({ candidate: true, panel: null, attachCv: [] });
+    setMsgs(tpl?.templates ? { ...tpl.templates.invite } : null); waTouched.current = false; setWaText('');
+    keys.current = { create: ivKey(), send: ivKey() }; setResult(null);
+  }
+  function openWhatsApp(ivId) {
+    return openWhatsAppWindow(() => api.post(`/interviews/${ivId}/whatsapp-handoff`, { kind: 'invite' }), toast);
+  }
+
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const title = application ? `Schedule interview — ${application.candidate?.fullName || ''}` : 'Schedule interview';
+  if (!meta || !msgs) return <Modal title={title} onClose={onClose}><Skeleton /></Modal>;
+  const nameOf = (id) => meta.interviewers.find((u) => u.id === id)?.name || 'Panel member';
+
+  if (result) {
+    const iv = result.interview;
+    return toPageLevel(
+      <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) { onScheduled(); } }}>
+        <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label="Interview saved" tabIndex="-1" onKeyDown={onDialogKeyDown}>
+          <div className="modal-head"><h3>Interview {iv.interviewNo} saved</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={() => onScheduled()}><Icon name="close" size={16} /></button></div>
+          <div className="modal-body iv-result">
+            <p><strong>{iv.candidate?.fullName}</strong> · {cairoLabel(iv.scheduledAt)} · {iv.durationMin} min · {ivMode(iv.mode)}</p>
+            {result.sent ? <>
+              <div className="section-title">Invitations</div>
+              {result.summary?.dryRun && <div className="notice notice-warn">This server uses a test mail transport: messages were prepared but <strong>not delivered</strong>.</div>}
+              <DispatchList rows={result.dispatches} />
+            </> : <p className="muted">No invitations were sent. You can send them from the interview at any time.</p>}
+            <WhatsAppHandoff phone={iv.candidate ? candPhone : null} text={waText} editable={false} onOpen={() => openWhatsApp(iv.id)} />
+          </div>
+          <div className="modal-foot">
+            <button className="btn btn-ghost" onClick={() => onScheduled(iv.id)}>Open interview</button>
+            <button className="btn btn-secondary" onClick={scheduleAnother}>Schedule another</button>
+            <button className="btn" onClick={() => onScheduled()}>Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const progressNote = (progress.candidateId || progress.cvDone || progress.applicationId || progress.interviewId)
+    ? [progress.candidateId && 'candidate created', progress.cvDone && 'CV uploaded', progress.applicationId && 'linked to the request', progress.interviewId && 'interview saved'].filter(Boolean).join(' · ') : null;
+  return toPageLevel(
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="iv-compose-body">
+          <div className="iv-compose-form">
+            {/* 1 — Candidate & CV */}
+            <section className="iv-step" aria-labelledby="iv-step-1">
+              <h4 id="iv-step-1"><span className="iv-step-n">1</span>Candidate &amp; CV</h4>
+              {application ? (
+                <p className="muted">Application <strong>{application.applicationNo}</strong> — {application.candidate?.fullName}. Scheduling does not change the pipeline status.</p>
+              ) : <>
+                {canAdd && (
+                  <div className="seg-tabs" role="tablist" aria-label="Candidate source">
+                    <button type="button" role="tab" aria-selected={link.mode === 'pick'} className={'seg-tab' + (link.mode === 'pick' ? ' active' : '')} disabled={!!progress.candidateId} onClick={() => setLink((s) => ({ ...s, mode: 'pick' }))}>From Talent Pool</button>
+                    <button type="button" role="tab" aria-selected={link.mode === 'new'} className={'seg-tab' + (link.mode === 'new' ? ' active' : '')} disabled={!!progress.candidateId} onClick={() => setLink((s) => ({ ...s, mode: 'new' }))}>New candidate</button>
+                  </div>
+                )}
+                {link.mode === 'pick' ? (
+                  link.candidate ? (
+                    <div className="standalone-picked"><strong>{link.candidate.fullName}</strong>
+                      <span className="muted">{link.candidate.candidateNo}{link.candidate.email ? ' · ' + link.candidate.email : ''}{link.candidate.hasResume ? ' · CV on file' : ''}</span>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLink((s) => ({ ...s, candidate: null }))}>Change</button></div>
+                  ) : <>
+                    <input aria-label="Search the Talent Pool" placeholder="Search name, email, phone…" value={q} onChange={(e) => setQ(e.target.value)} />
+                    {hits.length > 0 && <ul className="standalone-results" role="listbox">{hits.map((c) => (
+                      <li key={c.id} role="option" aria-selected="false" onClick={() => { setLink((s) => ({ ...s, candidate: c })); setQ(''); }}>
+                        <strong>{c.fullName}</strong> <span className="muted">{c.candidateNo}{c.currentPosition ? ' · ' + c.currentPosition : ''}</span></li>))}</ul>}
+                  </>
+                ) : (
+                  <div className="form-grid">
+                    <div className="field full"><label>Full name *</label><input value={link.newName} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newName: e.target.value }))} /></div>
+                    <div className="field"><label>Email</label><input type="email" value={link.newEmail} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newEmail: e.target.value }))} placeholder="name@example.com" /></div>
+                    <div className="field"><label>Phone (international)</label><input value={link.newPhone} disabled={!!progress.candidateId} onChange={(e) => setLink((s) => ({ ...s, newPhone: e.target.value }))} placeholder="+20 100 123 4567" inputMode="tel" /></div>
+                    <p className="field-hint full">An email or a phone number is required. The phone is used for WhatsApp.</p>
+                  </div>
+                )}
+                {dups && dups.length > 0 && link.mode === 'new' && !progress.candidateId && (
+                  <div className="notice notice-warn" role="status"><strong>Already in the Talent Pool?</strong>
+                    <ul className="iv-dups">{dups.map((d) => (
+                      <li key={d.id}><span>{d.fullName} · {d.candidateNo}{d.email ? ' · ' + d.email : ''}{d.phone ? ' · ' + d.phone : ''}</span>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setLink((s) => ({ ...s, mode: 'pick', candidate: { id: d.id, fullName: d.fullName, candidateNo: d.candidateNo, email: d.email, phone: d.phone } })); setDups(null); setStepError(null); }}>Use this candidate</button></li>))}</ul></div>
+                )}
+                <div className="field"><label>Hiring request (optional)</label>
+                  <select value={link.requestId} disabled={!!progress.applicationId} onChange={(e) => setLink((s) => ({ ...s, requestId: e.target.value }))}>
+                    <option value="">None — standalone interview</option>
+                    {(requests || []).map((r) => {
+                      const pending = r.status === 'pending_approval' || r.status === 'draft';
+                      const paused = r.status === 'on_hold';
+                      return <option key={r.id} value={r.id} disabled={pending || paused}>{r.ticketNo} — {r.title}{pending ? ' (awaiting approval)' : paused ? ' (on hold)' : ''}</option>;
+                    })}
+                  </select>
+                  <span className="field-hint">Requests awaiting approval or on hold can match candidates, but their interviews wait.</span></div>
+              </>}
+              <div className="iv-cv">
+                <span className="iv-cv-label">CV</span>
+                {cvFile ? <span className="iv-cv-file">{cvFile.name}{progress.cvDone ? ' · uploaded' : ''}
+                  {!progress.cvDone && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCvFile(null)}>Remove</button>}</span>
+                  : (application?.candidate?.hasResume || link.candidate?.hasResume) ? <span className="muted">A CV is already on file.</span>
+                    : <span className="muted">No CV attached</span>}
+                {!progress.cvDone && (
+                  <label className="btn btn-secondary btn-sm iv-file">{cvFile ? 'Replace file' : 'Attach CV'}
+                    <input type="file" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" onChange={(e) => { const file = e.target.files && e.target.files[0]; if (file) setCvFile(file); e.target.value = ''; }} hidden /></label>
+                )}
+                <span className="field-hint">PDF, Word, text or image, up to 20 MB. Stored on the candidate; not read by AI for this booking.</span>
+              </div>
+            </section>
+
+            {/* 2 — Interview & panel */}
+            <section className="iv-step" aria-labelledby="iv-step-2">
+              <h4 id="iv-step-2"><span className="iv-step-n">2</span>Interview &amp; panel</h4>
+              <div className="form-grid">
+                <div className="field"><label>Type</label><select value={f.interviewType} onChange={(e) => set('interviewType', e.target.value)}>{meta.types.map((t) => <option key={t} value={t}>{ivType(t)}</option>)}</select></div>
+                <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{ivMode(m)}</option>)}</select></div>
+                <div className="field"><label>Date &amp; time (Cairo) *</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} />
+                  {startIso && <span className="field-hint">{cairoLabel(startIso)}</span>}</div>
+                <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+                <div className="field full">
+                  <label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone number or call arrangement' : 'Location'}</label>
+                  {f.mode === 'onsite'
+                    ? <InterviewPlacePicker places={meta?.places || []} value={f.locationOrLink} onChange={(v) => set('locationOrLink', v)} />
+                    : <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)}
+                      placeholder={f.mode === 'video' ? 'https://… (paste the link from your calendar)' : '+20 100 000 0000'} />}
+                  {f.mode === 'video' && f.locationOrLink.trim() && !HTTPS_LINK(f.locationOrLink) && <span className="iv-error">Use a full https:// meeting link.</span>}
+                </div>
+              </div>
+              <div className="iv-sub">Panel *</div>
+              <div className="iv-panel-pick">{meta.interviewers.map((u) => (
+                <button key={u.id} type="button" title={u.name} aria-pressed={f.panel.includes(u.id)} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => togglePanel(u.id)}>{u.name}{f.panel[0] === u.id ? ' · lead' : ''}</button>))}</div>
+              <div className="iv-avail" role="status" aria-live="polite">
+                {avail.state === 'checking' && <span className="muted">Checking availability…</span>}
+                {avail.state === 'ok' && <span className="iv-avail-ok">No conflicts for the candidate or the panel at this time.</span>}
+                {avail.state === 'unavailable' && <div className="notice notice-warn">The availability check could not run, so conflicts are <strong>unknown</strong>. Saving still re-checks on the server.</div>}
+                {avail.state === 'conflicts' && <>
+                  {(avail.candidate || []).length > 0 && <div className="notice notice-danger"><strong>The candidate is already booked</strong> {avail.candidate.map((c) => `${cairoTime(c.start)}–${cairoTime(c.end)}`).join(', ')}. Choose another time.</div>}
+                  {(avail.panel || []).length > 0 && <div className="notice notice-warn">
+                    <strong>Panel already booked:</strong> {avail.panel.map((c) => `${c.name} (${cairoTime(c.start)}–${cairoTime(c.end)})`).join(' · ')}
+                    <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
+                    {ack && <input aria-label="Reason for the overlap" placeholder="Reason, e.g. joins for the first 15 minutes" value={overlapReason} onChange={(e) => setOverlapReason(e.target.value)} />}
+                  </div>}
+                  {avail.hours && <div className="notice">Outside the working week: {avail.hours.message} You can still book it.</div>}
+                  {(avail.location || []).length > 0 && <div className="notice">Another interview uses the same {f.mode === 'video' ? 'meeting link' : 'location'} at an overlapping time ({avail.location.map((c) => `${cairoTime(c.start)}–${cairoTime(c.end)}`).join(', ')}). Check it is free.</div>}
+                </>}
+              </div>
+            </section>
+
+            {/* 3 — Invitations */}
+            <section className="iv-step" aria-labelledby="iv-step-3">
+              <h4 id="iv-step-3"><span className="iv-step-n">3</span>Invitations</h4>
+              <div className="iv-recipients">
+                <label className="iv-rcpt"><input type="checkbox" checked={!!rcpt.candidate} onChange={(e) => setRcpt((r) => ({ ...r, candidate: e.target.checked }))} />
+                  <span><strong>{candName || 'Candidate'}</strong> <span className="muted">{candEmail ? candEmail : 'no email — use WhatsApp or add one'}</span></span></label>
+                {f.panel.map((id) => {
+                  const on = panelSel.includes(id);
+                  const cvOk = !!cvFile || application?.candidate?.hasResume || link.candidate?.hasResume;
+                  return (
+                    <div key={id} className="iv-rcpt">
+                      <label><input type="checkbox" checked={on} onChange={(e) => setRcpt((r) => ({ ...r, panel: e.target.checked ? [...panelSel, id] : panelSel.filter((x) => x !== id) }))} />
+                        <span><strong>{nameOf(id)}</strong> <span className="muted">panel</span></span></label>
+                      {on && cvOk && <label className="iv-attach"><input type="checkbox" checked={rcpt.attachCv.includes(id)} onChange={(e) => setRcpt((r) => ({ ...r, attachCv: e.target.checked ? [...r.attachCv, id] : r.attachCv.filter((x) => x !== id) }))} /> Attach the CV to this email</label>}
+                    </div>
+                  );
+                })}
+              </div>
+              {preview?.channel?.blocked && <div className="notice notice-warn">{preview.channel.blocked.message} Saving still works; invitations would be recorded as not sent.</div>}
+              {preview?.channel?.dryRun && <div className="notice">Test mail transport on this server: invitations are prepared, <strong>not delivered</strong>.</div>}
+              <TemplateNote custom={customMsgs || !!preview?.errors?.candidate || !!preview?.errors?.panel} onCustom={setCustomMsgs}>
+                <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tpl.placeholders, 'c', 'invite')} error={preview?.errors?.candidate} />
+                <MessageEditor label="Panel email (each panelist gets their own)" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tpl.placeholders, 'p', 'invite')} error={preview?.errors?.panel} />
+              </TemplateNote>
+              <WhatsAppHandoff phone={candPhone} text={waText} editable={customMsgs} onText={(v) => { waTouched.current = true; setWaText(v); }} onOpen={progress.interviewId ? () => openWhatsApp(progress.interviewId) : null} />
+              {!progress.interviewId && <p className="field-hint">“Open WhatsApp” is available once the interview is saved.</p>}
+            </section>
+          </div>
+
+          <aside className="iv-preview" aria-label="Invitation preview">
+            <div className="iv-preview-title">Preview</div>
+            {!preview ? <Skeleton rows={4} /> : <>
+              <div className="iv-preview-card">
+                <div className="iv-preview-meta">To {preview.preview.candidate.to || <em>no email</em>}</div>
+                <div className="iv-preview-subject">{preview.preview.candidate.subject}</div>
+                <div className="iv-preview-body">{preview.preview.candidate.body}</div>
+              </div>
+              {preview.preview.panel.slice(0, 1).map((pm) => (
+                <div key={pm.userId} className="iv-preview-card">
+                  <div className="iv-preview-meta">To {pm.name}{pm.to ? ` <${pm.to}>` : ''}{preview.preview.panel.length > 1 ? ` · and ${preview.preview.panel.length - 1} more, each addressed separately` : ''}</div>
+                  <div className="iv-preview-subject">{pm.subject}</div>
+                  <div className="iv-preview-body">{pm.body}</div>
+                </div>
+              ))}
+              <p className="field-hint">The calendar entry (.ics) is attached to each email in Cairo time. The interview reference is assigned on save.</p>
+            </>}
+          </aside>
+        </div>
+        <div className="modal-foot iv-foot">
+          {stepError && <div className="iv-error iv-foot-error" role="alert">{stepError.message}{progressNote ? ` (Kept: ${progressNote}.)` : ''}</div>}
+          {!stepError && progressNote && <span className="muted">Kept: {progressNote}</span>}
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-secondary" onClick={() => save(false)} disabled={busy || !formReady}>{busy ? 'Saving…' : 'Save interview'}</button>
+          <button className="btn" onClick={() => save(true)} disabled={busy || !formReady || !!sendProblem || (!rcpt.candidate && panelSel.length === 0)}
+            title={sendProblem || undefined}>{busy ? 'Saving…' : 'Save & send invitations'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------- Communicate (invite / update / cancel) ---------------- */
+function CommunicateModal({ iv, kind, onClose, onDone }) {
+  const toast = useToast();
+  const [customMsgs, setCustomMsgs] = useState(false); // per-interview wording is the exception (TemplateNote)
+  const [data, setData] = useState(null);
+  const [tplPh, setTplPh] = useState([]);
+  const [msgs, setMsgs] = useState(null);
+  const [rendered, setRendered] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [sel, setSel] = useState(null);
+  const [cv, setCv] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [waText, setWaText] = useState('');
+  const [skipAsk, setSkipAsk] = useState(false);
+  const batch = useRef(ivKey());
+  const busyRef = useRef(false);
+  const resultRef = useRef(null);
+  useEffect(() => { if (result && resultRef.current) resultRef.current.scrollIntoView({ block: 'start' }); }, [result]);
+  const load = useCallback(async () => {
+    try {
+      const d = await api.get(`/interviews/${iv.id}/messages?kind=${kind}`);
+      setData(d); setRendered(d.rendered); setWaText(d.whatsapp.text || '');
+      setMsgs({ candidate: { subject: d.messages.candidate.subject, body: d.messages.candidate.body }, panel: { subject: d.messages.panel.subject, body: d.messages.panel.body },
+        ...(d.messages.panel_removed ? { panel_removed: { subject: d.messages.panel_removed.subject, body: d.messages.panel_removed.body } } : {}) });
+      // A reminder is for the candidate; the panel can be ticked if wanted.
+      setSel((s) => s || { candidate: d.recipients.some((r) => r.audience === 'candidate' && r.reachable), panel: kind === 'reminder' ? [] : d.recipients.filter((r) => r.audience !== 'candidate' && r.reachable).map((r) => r.userId) });
+    } catch (e) { toast(e.message, 'error'); onClose(); }
+  }, [iv.id, kind]);
+  useEffect(() => { load(); api.get('/interviews/message-templates').then((t) => setTplPh(t.placeholders || [])).catch(() => {}); }, [load]);
+  useEffect(() => {
+    if (!msgs) return undefined;
+    const t = setTimeout(() => {
+      api.post(`/interviews/${iv.id}/messages/preview`, { kind, messages: { ...msgs, whatsapp: { body: data?.messages?.whatsapp?.body } } })
+        .then((r) => { setErrors(r.errors || {}); if (r.rendered) setRendered(r.rendered); }).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [JSON.stringify(msgs)]);
+  const verb = { invite: 'invitation', update: 'update', cancel: 'cancellation', reminder: 'reminder' }[kind];
+  async function send(retryFailed = false) {
+    if (busyRef.current) return; busyRef.current = true; setBusy(true);
+    try {
+      await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { ...msgs, whatsapp: { body: waText } } });
+      const r = await api.post(`/interviews/${iv.id}/send`, retryFailed ? { kind, batchKey: batch.current, retryFailed: true }
+        : { kind, batchKey: batch.current, candidate: !!sel.candidate, panel: sel.panel, attachCv: cv.filter((id) => sel.panel.includes(id)) });
+      setResult(r); toast(r.replayed ? 'Already sent — nothing sent twice' : `${verb[0].toUpperCase() + verb.slice(1)} processed`);
+      batch.current = ivKey();
+    } catch (e) { toast(e.message, 'error'); } finally { busyRef.current = false; setBusy(false); }
+  }
+  async function openWhatsApp() {
+    const r = await openWhatsAppWindow(async () => {
+      await api.put(`/interviews/${iv.id}/messages`, { kind, messages: { whatsapp: { body: waText } } });
+      return api.post(`/interviews/${iv.id}/whatsapp-handoff`, { kind });
+    }, toast);
+    if (r) load();
+  }
+  async function openCall() {
+    try { const r = await api.post(`/interviews/${iv.id}/call-handoff`, { kind }); window.location.href = r.tel; load(); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+  async function skip(reason) {
+    setSkipAsk(false);
+    try { await api.post(`/interviews/${iv.id}/notice/skip`, { reason }); toast('Recorded: not sent'); onDone(); } catch (e) { toast(e.message, 'error'); }
+  }
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const title = { invite: 'Send invitations', update: 'Send the update', cancel: 'Send the cancellation', reminder: 'Send a reminder' }[kind];
+  const failedLatest = (data?.dispatches || []).filter((r) => r.kind === kind && r.revision === iv.calendarSeq && r.channel === 'email');
+  const hasFailed = (() => { const seen = new Set(); return failedLatest.some((r) => { if (seen.has(r.recipientKey)) return false; seen.add(r.recipientKey); return r.status === 'failed'; }); })();
+  return toPageLevel(
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal iv-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title} — {iv.interviewNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        {!data || !msgs || !sel ? <div className="modal-body"><Skeleton rows={6} /></div> : (
+          <div className="iv-compose-body">
+            <div className="iv-compose-form">
+              <p className="muted">{cairoLabel(iv.scheduledAt)} · {iv.durationMin} min · {ivMode(iv.mode)}{data.notice?.changes?.length && kind === 'update' ? ` · changed: ${data.notice.changes.map((c) => ({ date_time: 'date & time', duration: 'duration', location_or_link: 'location/link', mode: 'mode', panel: 'panel' })[c] || c).join(', ')}` : ''}</p>
+              {result && <div className="iv-result-block" ref={resultRef}><div className="iv-sub">Result</div>{result.summary?.dryRun && <div className="notice notice-warn">Test transport — <strong>not delivered</strong>.</div>}<DispatchList rows={result.dispatches} /></div>}
+              {data.detailsProblem && <div className="notice notice-warn">{data.detailsProblem}</div>}
+              {data.channel.blocked && <div className="notice notice-warn">{data.channel.blocked.message}</div>}
+              {data.channel.dryRun && <div className="notice">Test mail transport on this server: messages are prepared, <strong>not delivered</strong>.</div>}
+              <div className="iv-sub">Recipients</div>
+              <div className="iv-recipients">
+                {data.recipients.map((r) => {
+                  const isCand = r.audience === 'candidate';
+                  const on = isCand ? sel.candidate : sel.panel.includes(r.userId);
+                  return (
+                    <div key={r.key + r.audience} className="iv-rcpt">
+                      <label><input type="checkbox" disabled={!r.reachable} checked={on && r.reachable}
+                        onChange={(e) => setSel((s) => (isCand ? { ...s, candidate: e.target.checked } : { ...s, panel: e.target.checked ? [...s.panel, r.userId] : s.panel.filter((x) => x !== r.userId) }))} />
+                        <span><strong>{r.name}</strong> <span className="muted">{isCand ? 'Candidate' : r.audience === 'panel_removed' ? 'Removed from the panel' : r.added ? 'Added to the panel' : 'Panel'}{r.address ? ' · ' + r.address : ''}</span>
+                          {r.problem && <span className="iv-error">{r.problem}</span>}</span></label>
+                      {r.audience === 'panel' && on && r.canAttachCv && kind !== 'cancel' && <label className="iv-attach"><input type="checkbox" checked={cv.includes(r.userId)} onChange={(e) => setCv((x) => (e.target.checked ? [...x, r.userId] : x.filter((y) => y !== r.userId)))} /> Attach the CV</label>}
+                    </div>
+                  );
+                })}
+              </div>
+              <TemplateNote custom={customMsgs || !!errors.candidate || !!errors.panel || !!errors.panel_removed} onCustom={setCustomMsgs}>
+              <MessageEditor label="Candidate email" value={msgs.candidate} onChange={(v) => setMsgs((m) => ({ ...m, candidate: v }))} placeholders={phFor(tplPh, 'c', kind)} error={errors.candidate} />
+              <MessageEditor label="Panel email" value={msgs.panel} onChange={(v) => setMsgs((m) => ({ ...m, panel: v }))} placeholders={phFor(tplPh, 'p', kind)} error={errors.panel} />
+              {msgs.panel_removed && data.recipients.some((r) => r.audience === 'panel_removed') && <MessageEditor label="Removed panelist" value={msgs.panel_removed} onChange={(v) => setMsgs((m) => ({ ...m, panel_removed: v }))} placeholders={phFor(tplPh, 'r')} error={errors.panel_removed} />}
+              </TemplateNote>
+              <WhatsAppHandoff phone={data.whatsapp.phone} text={waText} editable={customMsgs} onText={setWaText} onOpen={data.whatsapp.valid ? openWhatsApp : null} />
+              {data.call && <CallHandoff phone={data.call.phone} valid={data.call.valid} script={data.call.script} onCall={data.call.valid ? openCall : null} />}
+            </div>
+            <aside className="iv-preview" aria-label="Preview">
+              <div className="iv-preview-title">Preview</div>
+              {rendered && <>
+                <div className="iv-preview-card"><div className="iv-preview-meta">Candidate</div><div className="iv-preview-subject">{rendered.candidate.subject}</div><div className="iv-preview-body">{rendered.candidate.body}</div></div>
+                {Object.entries(rendered.panel || {}).slice(0, 1).map(([uid, pm]) => (
+                  <div key={uid} className="iv-preview-card"><div className="iv-preview-meta">Panel{pm.asInvite ? ' (new member — invitation)' : ''}</div><div className="iv-preview-subject">{pm.subject}</div><div className="iv-preview-body">{pm.body}</div></div>))}
+                {Object.entries(rendered.panelRemoved || {}).slice(0, 1).map(([uid, pm]) => (
+                  <div key={uid} className="iv-preview-card"><div className="iv-preview-meta">Removed panelist</div><div className="iv-preview-subject">{pm.subject}</div><div className="iv-preview-body">{pm.body}</div></div>))}
+              </>}
+            </aside>
+          </div>
+        )}
+        <div className="modal-foot iv-foot">
+          {!result && data?.notice && !data.notice.communicated && !data.notice.skipped && kind !== 'invite' && <button className="btn btn-ghost" onClick={() => setSkipAsk(true)}>Don’t send</button>}
+          {hasFailed && <button className="btn btn-secondary" disabled={busy} onClick={() => send(true)}>Retry failed</button>}
+          <button className={result ? 'btn' : 'btn btn-ghost'} onClick={result ? onDone : onClose}>{result ? 'Done' : 'Cancel'}</button>
+          {!result && <button className="btn" disabled={busy || !sel || !!(data && data.detailsProblem) || Object.keys(errors).length > 0 || !(sel?.candidate || sel?.panel?.length)} onClick={() => send(false)}>{busy ? 'Sending…' : `Send ${verb}`}</button>}
+        </div>
+        {skipAsk && <Confirm title="Don’t send this change" message="Record why the candidate and panel are not being told (e.g. agreed by phone)." requireReason confirmLabel="Record" onConfirm={skip} onClose={() => setSkipAsk(false)} />}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- Reschedule / edit --------------------------- */
+function RescheduleModal({ iv, onClose, onSaved }) {
+  const toast = useToast();
+  const [meta, setMeta] = useState(null);
+  const [f, setF] = useState({ scheduledAt: isoToCairoInput(iv.scheduledAt), durationMin: iv.durationMin || 60, mode: iv.mode, locationOrLink: iv.locationOrLink || '', panel: iv.panel.map((m) => m.id) });
+  const [avail, setAvail] = useState({ state: 'idle' });
+  const [ack, setAck] = useState(false); const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  useEffect(() => { api.get('/interviews/meta/form').then(setMeta).catch(() => {}); }, []);
+  const startIso = cairoInputToIso(f.scheduledAt);
+  const panelKey = f.panel.join(',');
+  useEffect(() => {
+    if (!startIso || !panelKey) { setAvail({ state: 'idle' }); return undefined; }
+    let live = true; setAvail((a) => ({ ...a, state: 'checking' }));
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ start: startIso, durationMin: String(Number(f.durationMin) || 60), panel: panelKey, candidateId: String(iv.candidate?.id || ''), excludeId: String(iv.id) });
+      if (f.locationOrLink.trim()) qs.set('location', f.locationOrLink.trim());
+      api.get('/interviews/clashes?' + qs.toString()).then((r) => { if (!live) return; const any = (r.clashes || []).length || (r.candidateConflicts || []).length || (r.locationWarnings || []).length; setAvail({ state: any ? 'conflicts' : 'ok', panel: r.clashes || [], candidate: r.candidateConflicts || [], location: r.locationWarnings || [], hours: r.hoursWarning || null }); })
+        .catch(() => { if (live) setAvail({ state: 'unavailable' }); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [startIso, f.durationMin, panelKey, f.locationOrLink]);
+  const needsAck = avail.state === 'conflicts' && (avail.panel || []).length > 0;
+  const blocked = avail.state === 'conflicts' && (avail.candidate || []).length > 0;
+  async function save() {
+    setBusy(true);
+    try {
+      const r = await api.put(`/interviews/${iv.id}`, { scheduledAt: startIso, durationMin: Number(f.durationMin), mode: f.mode, locationOrLink: f.locationOrLink.trim(),
+        panel: f.panel.map((id, i) => ({ interviewerId: id, isLead: i === 0 })), ...(needsAck ? { ackPanelOverlap: true, overlapReason: reason.trim() } : {}) });
+      toast(r.changes?.length ? 'Interview updated — review the update to send' : 'Saved — nothing changed that needs telling');
+      onSaved(r.changes || []);
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={`Reschedule / edit — ${iv.interviewNo}`} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" disabled={busy || !startIso || !f.panel.length || blocked || (needsAck && !(ack && reason.trim()))} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button></>}>
+      {!meta ? <Skeleton /> : <>
+        <div className="form-grid">
+          <div className="field"><label>Date &amp; time (Cairo)</label><input type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} />{startIso && <span className="field-hint">{cairoLabel(startIso)}</span>}</div>
+          <div className="field"><label>Duration (minutes)</label><input type="number" min="5" max="480" step="5" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
+          <div className="field"><label>Mode</label><select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{meta.modes.map((m) => <option key={m} value={m}>{ivMode(m)}</option>)}</select></div>
+          <div className="field"><label>{f.mode === 'video' ? 'Meeting link' : f.mode === 'phone' ? 'Phone / arrangement' : 'Place'}</label>{f.mode === 'onsite'
+            ? <InterviewPlacePicker places={meta?.places || []} value={f.locationOrLink} onChange={(v) => set('locationOrLink', v)} />
+            : <input value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} />}</div>
+        </div>
+        <div className="iv-sub">Panel</div>
+        <div className="iv-panel-pick">{meta.interviewers.map((u) => <button key={u.id} type="button" title={u.name} aria-pressed={f.panel.includes(u.id)} className={'tag-toggle' + (f.panel.includes(u.id) ? ' on' : '')} onClick={() => setF((s) => ({ ...s, panel: s.panel.includes(u.id) ? s.panel.filter((x) => x !== u.id) : [...s.panel, u.id] }))}>{u.name}</button>)}</div>
+        <div className="iv-avail" role="status">
+          {avail.state === 'checking' && <span className="muted">Checking availability…</span>}
+          {avail.state === 'ok' && <span className="iv-avail-ok">No conflicts at this time.</span>}
+          {avail.state === 'unavailable' && <div className="notice notice-warn">Availability could not be checked; conflicts are unknown. Saving re-checks on the server.</div>}
+          {avail.hours && <div className="notice">Outside the working week: {avail.hours.message} You can still book it.</div>}
+          {blocked && <div className="notice notice-danger"><strong>The candidate is already booked then.</strong> Choose another time.</div>}
+          {needsAck && <div className="notice notice-warn"><strong>Panel already booked:</strong> {avail.panel.map((c) => c.name).join(', ')}
+            <label className="iv-ack"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Book anyway — the overlap is intended</label>
+            {ack && <input aria-label="Reason for the overlap" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />}</div>}
+        </div>
+        <p className="muted">After saving, you choose whether and how to tell the candidate and panel.</p>
       </>}
     </Modal>
   );
 }
 
-/* Message templates: the wording HR controls for every interview message.
-   Placeholders like {candidate_name} are filled in for each candidate. */
+/* ------------- Scheduling Setup (working week, places, templates) ---------- */
 function InterviewTemplatesModal({ onClose }) {
   const toast = useToast();
-  const [data, setData] = useState(null);
+  const [t, setT] = useState(null);
   const [kind, setKind] = useState('invite');
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
-  const focused = useRef({ field: 'whatsapp', el: null });
-  useEffect(() => { api.get('/interviews/messages/templates').then((r) => { setData(r); setDraft(r.templates.invite); }).catch((e) => toast(e.message, 'error')); }, []);
-  const dirty = data && draft && ['subject', 'email', 'whatsapp', 'call'].some((f) => draft[f] !== data.templates[kind][f]);
-  function pickKind(k) {
-    if (k === kind) return;
-    if (dirty && !window.confirm('Discard your changes to this message?')) return;
-    setKind(k); setDraft(data.templates[k]);
+  const [err, setErr] = useState(null);
+  const [hqAddr, setHqAddr] = useState('');
+  const [ww, setWw] = useState(null);
+  useEffect(() => { api.get('/interviews/message-templates').then((r) => { setT(r); setDraft(JSON.parse(JSON.stringify(r.templates))); setHqAddr(r.headOfficeAddress || ''); setWw(r.workingWeek || null); }).catch((e) => toast(e.message, 'error')); }, []);
+  async function save() {
+    setBusy(true); setErr(null);
+    try { const r = await api.put('/interviews/message-templates', { templates: draft, headOfficeAddress: hqAddr, ...(ww ? { workingWeek: ww } : {}) }); setT((x) => ({ ...x, templates: r.templates, headOfficeAddress: r.headOfficeAddress })); toast('Scheduling Setup saved'); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
-  function insert(name) {
-    const { field, el } = focused.current;
-    const token = '{' + name + '}';
-    const cur = draft[field] || '';
-    const start = el && typeof el.selectionStart === 'number' ? el.selectionStart : cur.length;
-    const end = el && typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
-    setDraft((d) => ({ ...d, [field]: cur.slice(0, start) + token + cur.slice(end) }));
-  }
-  async function save(reset) {
+  async function reset() {
     setBusy(true);
-    try {
-      const r = await api.put('/interviews/messages/templates/' + kind, reset ? { reset: true } : draft);
-      setData((d) => ({ ...d, templates: r.templates })); setDraft(r.templates[kind]);
-      toast(reset ? 'Back to the standard wording' : 'Message saved');
-    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+    try { const r = await api.put('/interviews/message-templates', { reset: true }); setDraft(JSON.parse(JSON.stringify(r.templates))); toast('Templates reset to the defaults'); }
+    catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
-  const track = (field) => ({ onFocus: (e) => { focused.current = { field, el: e.target }; }, onSelect: (e) => { focused.current = { field, el: e.target }; } });
-  if (!data || !draft) return <Modal title="Message templates" onClose={onClose}><Skeleton rows={6} /></Modal>;
+  const labels = { candidate: 'Candidate email', panel: 'Panel email', whatsapp: 'WhatsApp (candidate)', call: 'Phone call script (candidate)', panel_removed: 'Removed panelist' };
+  const codes = { candidate: 'c', panel: 'p', whatsapp: 'w', call: 'k', panel_removed: 'r' };
   return (
-    <Modal title="Message templates" onClose={onClose} wide
-      footer={<>
-        {data.templates[kind].customised && <button className="btn btn-ghost" onClick={() => save(true)} disabled={busy}>Use standard wording</button>}
-        <button className="btn btn-secondary" onClick={onClose}>Close</button>
-        <button className="btn" onClick={() => save(false)} disabled={busy || !dirty}>Save</button>
-      </>}>
-      <p className="muted tpl-intro">What candidates receive for each interview message. Words in braces are filled in for each candidate; click one below to add it where your cursor is. Arabic is fine.</p>
-      <div className="seg-tabs" role="tablist" aria-label="Message">
-        {data.kinds.map((k) => <button key={k} type="button" role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => pickKind(k)}>{MSG_KIND_LABEL[k]}{data.templates[k].customised ? ' •' : ''}</button>)}
-      </div>
-      <div className="ph-chips" aria-label="Placeholders">
-        {Object.entries(data.placeholders).map(([name, label]) => <button key={name} type="button" className="chip ph-chip" title={label} onMouseDown={(e) => e.preventDefault()} onClick={() => insert(name)}>{'{' + name + '}'}</button>)}
-      </div>
-      <div className="form-grid">
-        <div className="field full"><label htmlFor="tpl-wa">WhatsApp text</label><textarea id="tpl-wa" rows={4} value={draft.whatsapp} onChange={(e) => setDraft((d) => ({ ...d, whatsapp: e.target.value }))} {...track('whatsapp')} /></div>
-        <div className="field full"><label htmlFor="tpl-call">Call script (what to say on the phone)</label><textarea id="tpl-call" rows={5} value={draft.call} onChange={(e) => setDraft((d) => ({ ...d, call: e.target.value }))} {...track('call')} /></div>
-        <div className="field full"><label htmlFor="tpl-subj">Email subject</label><input id="tpl-subj" value={draft.subject} onChange={(e) => setDraft((d) => ({ ...d, subject: e.target.value }))} {...track('subject')} /></div>
-        <div className="field full"><label htmlFor="tpl-email">Email text</label><textarea id="tpl-email" rows={9} value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} {...track('email')} /></div>
-      </div>
+    <Modal title="Scheduling Setup" onClose={onClose} wide
+      footer={t?.canEdit ? <><button className="btn btn-ghost" onClick={reset} disabled={busy}>Reset templates to defaults</button><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save Scheduling Setup'}</button></> : <button className="btn" onClick={onClose}>Close</button>}>
+      {!t || !draft ? <Skeleton /> : <div className="iv-tpl-body">
+        <p className="muted">The organisation’s interview scheduling rules and default wording. Each interview starts from these templates and can be edited before sending. Placeholders are filled in for each recipient; only the ones listed under each message can be used there.{t.canEdit ? '' : ' You can view these; changing them needs the Notifications permission.'}</p>
+        {ww && <div className="field">
+          <label>Working week</label>
+          <div className="btn-row" role="group" aria-label="Working days">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+              <label key={d} className="iv-rcpt"><input type="checkbox" disabled={!t.canEdit} checked={ww.days.includes(i)}
+                onChange={(e) => setWw((w) => ({ ...w, days: e.target.checked ? [...w.days, i].sort() : w.days.filter((x) => x !== i) }))} /> {d}</label>
+            ))}
+          </div>
+          <div className="btn-row">
+            <label htmlFor="iv-ww-start" className="muted">From</label><input id="iv-ww-start" type="time" disabled={!t.canEdit} value={ww.start} onChange={(e) => setWw((w) => ({ ...w, start: e.target.value }))} />
+            <label htmlFor="iv-ww-end" className="muted">to</label><input id="iv-ww-end" type="time" disabled={!t.canEdit} value={ww.end} onChange={(e) => setWw((w) => ({ ...w, end: e.target.value }))} />
+            <span className="muted">Cairo time</span>
+          </div>
+          <span className="field-hint">The interview calendar shows these days and hours. Booking outside them shows a warning; it is never blocked.</span>
+        </div>}
+        <div className="field">
+          <label htmlFor="iv-hq-addr">Head Office address</label>
+          <input id="iv-hq-addr" value={hqAddr} disabled={!t.canEdit} maxLength={300} onChange={(e) => setHqAddr(e.target.value)} placeholder="Street, district, city — shown to candidates for Head Office interviews" />
+          <span className="field-hint">On-site interviews pick Head Office or a company site; the place and its address fill {'{{where}}'} in every message. Site addresses come from Organization Structure.</span>
+        </div>
+        <div className="seg-tabs" role="tablist">{[['invite', 'Invitation'], ['update', 'Update'], ['cancel', 'Cancellation'], ['reminder', 'Reminder']].map(([k, l]) => <button key={k} role="tab" aria-selected={kind === k} className={'seg-tab' + (kind === k ? ' active' : '')} onClick={() => setKind(k)}>{l}</button>)}</div>
+        {err && <div className="notice notice-danger">{err}</div>}
+        {t.audiences[kind].map((aud) => (
+          <MessageEditor key={kind + aud} label={labels[aud]} hasSubject={t.hasSubject[aud]} value={draft[kind][aud]}
+            onChange={(v) => setDraft((d) => ({ ...d, [kind]: { ...d[kind], [aud]: t.hasSubject[aud] ? v : { body: v.body } } }))}
+            placeholders={t.canEdit ? phFor(t.placeholders, codes[aud], kind) : []} />
+        ))}
+      </div>}
     </Modal>
   );
 }
 
-/* Move an interview: new time, length, mode or place. Saving then offers to
-   tell the candidate with the "New interview time" message. */
-function RescheduleInterviewModal({ iv, onClose, onSaved }) {
-  const toast = useToast();
-  const [f, setF] = useState({ scheduledAt: iv.scheduledAt ? toLocalInput(new Date(iv.scheduledAt)) : '', durationMin: iv.durationMin || 60, mode: iv.mode, locationOrLink: iv.locationOrLink || '' });
-  const [busy, setBusy] = useState(false);
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  async function save() {
-    setBusy(true);
-    try {
-      const r = await api.put('/interviews/' + iv.id, { scheduledAt: new Date(f.scheduledAt).toISOString(), durationMin: Number(f.durationMin), mode: f.mode, locationOrLink: f.locationOrLink });
-      toast('Interview moved'); onSaved(r.interview);
-    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
-  }
+/* ---------------------- Communications on an interview -------------------- */
+function InterviewComms({ iv, canManage, onOpen }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { if (canManage) api.get(`/interviews/${iv.id}/dispatches`).then((r) => setRows(r.dispatches || [])).catch(() => setRows([])); }, [iv.id, iv.calendarSeq, canManage]);
+  if (!canManage) return null;
+  const n = iv.notice;
+  const pending = n && !n.communicated && !n.skipped;
+  const batches = [];
+  for (const r of rows || []) { let b = batches.find((x) => x.key === r.batchKey); if (!b) { b = { key: r.batchKey, kind: r.kind, at: r.createdAt, rows: [] }; batches.push(b); } b.rows.push(r); }
   return (
-    <Modal title={'Reschedule — ' + (iv.candidate?.fullName || '')} onClose={onClose}
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !f.scheduledAt}>{busy ? 'Saving…' : 'Save new time'}</button></>}>
-      <div className="form-grid">
-        <div className="field"><label htmlFor="rs-at">New date &amp; time *</label><input id="rs-at" type="datetime-local" value={f.scheduledAt} onChange={(e) => set('scheduledAt', e.target.value)} /></div>
-        <div className="field"><label htmlFor="rs-dur">Duration (min)</label><input id="rs-dur" type="number" min="15" step="15" value={f.durationMin} onChange={(e) => set('durationMin', e.target.value)} /></div>
-        <div className="field"><label htmlFor="rs-mode">Mode</label><select id="rs-mode" value={f.mode} onChange={(e) => set('mode', e.target.value)}>{Object.entries(IV_MODE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-        <div className="field"><label htmlFor="rs-where">{f.mode === 'video' ? 'Google Meet link' : f.mode === 'phone' ? 'Phone number' : 'Location'}</label><input id="rs-where" value={f.locationOrLink} onChange={(e) => set('locationOrLink', e.target.value)} /></div>
-      </div>
-      <p className="muted">After saving you can tell the candidate by WhatsApp, a call or email.</p>
-    </Modal>
+    <div className="card card-pad iv-comms">
+      <div className="row-between"><div className="section-title" style={{ marginTop: 0 }}>Communications</div>
+        {['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary btn-sm" onClick={() => onOpen('invite')}>Send invitations</button>}</div>
+      {pending && (
+        <div className="notice notice-warn" role="status">
+          {n.kind === 'cancel' ? 'The cancellation has not been sent to anyone yet.' : 'The changes to this interview have not been sent yet.'}
+          <div className="btn-row"><button className="btn btn-sm" onClick={() => onOpen(n.kind)}>{n.kind === 'cancel' ? 'Review & send cancellation' : 'Review & send update'}</button></div>
+        </div>
+      )}
+      {n && n.skipped && <p className="muted">Not sent on purpose by {n.skippedBy}: {n.skipReason}</p>}
+      {rows === null ? <Skeleton rows={2} /> : batches.length === 0 ? <p className="muted">Nothing sent yet.</p> : batches.map((b) => (
+        <div key={b.key} className="iv-batch">
+          <div className="iv-batch-head"><strong>{{ invite: 'Invitation', update: 'Update', cancel: 'Cancellation', reminder: 'Reminder' }[b.kind] || b.kind}</strong> <span className="muted">{fmtDate(b.at)}</span></div>
+          <DispatchList rows={b.rows} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -10013,8 +11844,14 @@ function RescheduleInterviewModal({ iv, onClose, onSaved }) {
    time; the server keeps storing ISO UTC.
    ========================================================================== */
 const CAL_WORK_DAYS = [6, 0, 1, 2, 3, 4];   // Sat..Thu, in display order (Date#getDay)
-const CAL_FRIDAY = 5;
-const CAL_HOURS = [9, 17];                  // visible working hours [start, end)
+const CAL_HOURS = [9, 17];                  // visible working hours [start, end) when no setting is loaded
+// The organisation's working week (Scheduling Setup → interview_working_week),
+// sent with the interview list. Defaults match the server: Sat–Thu, 09:00–17:00.
+const CAL_DEFAULT_WEEK = { days: [0, 1, 2, 3, 4, 6], start: '09:00', end: '17:00' };
+const CAL_WEEK_ORDER = [6, 0, 1, 2, 3, 4, 5]; // Saturday first, as the calendar is laid out
+const calWeekOf = (ww) => (ww && Array.isArray(ww.days) && ww.days.length ? ww : CAL_DEFAULT_WEEK);
+const calIsWorkDay = (d, ww) => calWeekOf(ww).days.includes(d.getDay());
+const calHHMM = (t) => { const [h, m] = String(t || '').split(':').map(Number); return { h: h || 0, m: m || 0 }; };
 const CAL_SLOT_MIN = 30;                    // a click books on the half hour
 const CAL_HOUR_PX = 56;                     // desktop; phones use 88 so a slot is a 44px target
 
@@ -10040,14 +11877,20 @@ function calRange(view, anchor) {
   const from = calWeekStart(anchor);
   return { from, to: calAddDays(from, 7) };
 }
-// Weekday columns, Saturday first. Friday joins only when something is booked on it.
-function calWeekdays(interviews) {
-  return interviews.some((iv) => calStart(iv)?.getDay() === CAL_FRIDAY) ? [...CAL_WORK_DAYS, CAL_FRIDAY] : CAL_WORK_DAYS;
+// Weekday columns, Saturday first: the working days from Scheduling Setup; a
+// non-working day (Friday by default) joins only when something is booked on it.
+function calWeekdays(interviews, ww) {
+  const work = calWeekOf(ww).days;
+  const booked = new Set(interviews.map((iv) => calStart(iv)?.getDay()).filter((d) => d != null));
+  return CAL_WEEK_ORDER.filter((d) => work.includes(d) || booked.has(d));
 }
 function calWeekDates(weekStart, weekdays) { return weekdays.map((w) => calAddDays(weekStart, (w - CAL_WORK_DAYS[0] + 7) % 7)); }
-// Hours the grid shows: 09–17, widened to fit anything booked outside them.
-function calHourSpan(interviews) {
-  let [start, end] = CAL_HOURS;
+// Hours the grid shows: the working hours from Scheduling Setup (09–17 by
+// default), widened to fit anything booked outside them.
+function calHourSpan(interviews, ww) {
+  const w = calWeekOf(ww), ws = calHHMM(w.start), we = calHHMM(w.end);
+  let start = ww ? ws.h : CAL_HOURS[0];
+  let end = ww ? we.h + (we.m ? 1 : 0) : CAL_HOURS[1];
   for (const iv of interviews) {
     const s = calStart(iv); if (!s) continue;
     const e = calEnd(iv);
@@ -10078,20 +11921,22 @@ function calLayoutDay(interviews, hourStart, hourPx = CAL_HOUR_PX) {
 }
 // The server refuses a start in the past, so the calendar never offers one.
 function calSlotOpen(start, now) { return start.getTime() > now.getTime(); }
-// Clicking a day (month view) books its first open half hour: 09:00, or the
-// next half hour if the day has already started. Null when the day is over.
-function calFirstOpenSlot(day, now) {
-  const at = new Date(day); at.setHours(CAL_HOURS[0], 0, 0, 0);
+// Clicking a day (month view) books its first open half hour: the start of the
+// working day, or the next half hour if the day has already started. Null when the day is over.
+function calFirstOpenSlot(day, now, ww) {
+  const ws = calHHMM(calWeekOf(ww).start);
+  const at = new Date(day); at.setHours(ws.h, ws.m, 0, 0);
   if (at > now) return at;
   const next = new Date(now); next.setSeconds(0, 0);
   next.setMinutes(Math.ceil((next.getMinutes() + 1) / CAL_SLOT_MIN) * CAL_SLOT_MIN);
   return calSameDay(next, day) ? next : null;
 }
-function calStep(view, anchor, dir) {
+function calStep(view, anchor, dir, ww) {
   if (view === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1);
   if (view !== 'day') return calAddDays(anchor, dir * 7);
-  const next = calAddDays(anchor, dir);
-  return next.getDay() === CAL_FRIDAY ? calAddDays(next, dir) : next; // day-by-day skips the weekend
+  let next = calAddDays(anchor, dir);
+  for (let i = 0; i < 6 && !calIsWorkDay(next, ww); i++) next = calAddDays(next, dir); // day-by-day skips non-working days
+  return next;
 }
 function calTitle(view, anchor) {
   if (view === 'month') return anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -10106,7 +11951,7 @@ function CalEvent({ iv, style, onOpen }) {
   const status = IV_STATUS[iv.status];
   return (
     <button type="button" className={'cal-ev cal-s-' + iv.status} style={style} onClick={() => onOpen(iv.id)}
-      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}`}>
+      title={`${iv.candidate?.fullName || 'Candidate'} · ${ivType(iv.interviewType)} · ${fmtWhen(iv.scheduledAt)}${ivResponseLabel(iv) ? ' · ' + ivResponseLabel(iv) : ''}`}>
       <span className="cal-ev-time">{timeOf(iv.scheduledAt)} · {ivType(iv.interviewType)}</span>
       <span className="cal-ev-who">{iv.candidate?.fullName || '—'}</span>
       {iv.status !== 'scheduled' && <span className="cal-ev-status">{status ? status.label : iv.status}</span>}
@@ -10114,9 +11959,9 @@ function CalEvent({ iv, style, onOpen }) {
   );
 }
 
-function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpen, onCreateAt }) {
-  const days = view === 'day' ? [calDay(anchor)] : calWeekDates(calRange('week', anchor).from, calWeekdays(interviews));
-  const [h0, h1] = calHourSpan(interviews);
+function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, ww, onOpen, onCreateAt }) {
+  const days = view === 'day' ? [calDay(anchor)] : calWeekDates(calRange('week', anchor).from, calWeekdays(interviews, ww));
+  const [h0, h1] = calHourSpan(interviews, ww);
   const slots = [];
   for (let m = h0 * 60; m < h1 * 60; m += CAL_SLOT_MIN) slots.push(m);
   const hours = [];
@@ -10127,7 +11972,7 @@ function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpe
       <div className="cal-head">
         <div className="cal-corner" />
         {days.map((d) => (
-          <div key={+d} className={'cal-dayhead' + (calSameDay(d, now) ? ' today' : '') + (d.getDay() === CAL_FRIDAY ? ' offday' : '')}>
+          <div key={+d} className={'cal-dayhead' + (calSameDay(d, now) ? ' today' : '') + (calIsWorkDay(d, ww) ? '' : ' offday')}>
             <span className="cal-dow">{d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
             <span className="cal-dom">{d.getDate()}</span>
           </div>
@@ -10140,7 +11985,7 @@ function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpe
         {days.map((d) => {
           const mine = interviews.filter((iv) => { const s = calStart(iv); return s && calSameDay(s, d); });
           return (
-            <div key={+d} className={'cal-col' + (d.getDay() === CAL_FRIDAY ? ' offday' : '')}>
+            <div key={+d} className={'cal-col' + (calIsWorkDay(d, ww) ? '' : ' offday')}>
               {slots.map((m) => {
                 const at = new Date(d); at.setHours(0, m, 0, 0);
                 return canSchedule && calSlotOpen(at, now)
@@ -10162,9 +12007,9 @@ function CalTimeGrid({ view, anchor, interviews, now, canSchedule, hourPx, onOpe
   );
 }
 
-function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, onPickDay }) {
+function CalMonth({ anchor, interviews, now, canSchedule, ww, onOpen, onCreateAt, onPickDay }) {
   const { from, to } = calRange('month', anchor);
-  const weekdays = calWeekdays(interviews);
+  const weekdays = calWeekdays(interviews, ww);
   const weeks = [];
   for (let w = from; w < to; w = calAddDays(w, 7)) weeks.push(calWeekDates(w, weekdays));
   return (
@@ -10177,14 +12022,14 @@ function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, on
           {week.map((d) => {
             const items = interviews.filter((iv) => { const s = calStart(iv); return s && calSameDay(s, d); })
               .sort((a, b) => calStart(a) - calStart(b));
-            const slot = canSchedule ? calFirstOpenSlot(d, now) : null;
+            const slot = canSchedule ? calFirstOpenSlot(d, now, ww) : null;
             return (
               <div key={+d} className={'cal-mcell' + (d.getMonth() === anchor.getMonth() ? '' : ' out') + (calSameDay(d, now) ? ' today' : '')}>
                 {slot && <button type="button" className="cal-mfill" aria-label={'Schedule an interview on ' + calSlotLabel(slot)} onClick={() => onCreateAt(slot)} />}
                 <button type="button" className="cal-mdate" aria-label={'Open ' + d.toDateString() + ' in day view'} onClick={() => onPickDay(d)}>{d.getDate()}</button>
                 {items.slice(0, 3).map((iv) => (
                   <button key={iv.id} type="button" className={'cal-mev cal-s-' + iv.status} onClick={() => onOpen(iv.id)}
-                    title={`${iv.candidate?.fullName || 'Candidate'} · ${fmtWhen(iv.scheduledAt)}`}>
+                    title={`${iv.candidate?.fullName || 'Candidate'} · ${fmtWhen(iv.scheduledAt)}${ivResponseLabel(iv) ? ' · ' + ivResponseLabel(iv) : ''}`}>
                     <span className="cal-ev-time">{timeOf(iv.scheduledAt)}</span> {iv.candidate?.fullName || '—'}
                   </button>
                 ))}
@@ -10199,10 +12044,10 @@ function CalMonth({ anchor, interviews, now, canSchedule, onOpen, onCreateAt, on
 }
 
 // Phones get one day at a time; this strip jumps across the working week.
-function CalDayStrip({ anchor, now, onPick }) {
+function CalDayStrip({ anchor, now, ww, onPick }) {
   return (
     <div className="cal-strip" role="tablist" aria-label="Day of the week">
-      {calWeekDates(calWeekStart(anchor), CAL_WORK_DAYS).map((d) => (
+      {calWeekDates(calWeekStart(anchor), calWeekdays([], ww)).map((d) => (
         <button key={+d} type="button" role="tab" aria-selected={calSameDay(d, anchor)} onClick={() => onPick(d)}
           className={'cal-strip-day' + (calSameDay(d, anchor) ? ' active' : '') + (calSameDay(d, now) ? ' today' : '')}>
           <span>{d.toLocaleDateString(undefined, { weekday: 'short' })}</span><strong>{d.getDate()}</strong>
@@ -10212,23 +12057,23 @@ function CalDayStrip({ anchor, now, onPick }) {
   );
 }
 
-function InterviewCalendar({ view, anchor, setAnchor, setView, interviews, now, canSchedule, isPhone, onOpen, onCreateAt }) {
+function InterviewCalendar({ view, anchor, setAnchor, setView, interviews, now, canSchedule, isPhone, ww, onOpen, onCreateAt }) {
   const pickDay = (d) => { setAnchor(d); setView('day'); };
   return (
     <>
       <div className="cal-toolbar">
         <div className="cal-nav">
-          <button type="button" className="btn btn-ghost btn-sm" aria-label="Previous" onClick={() => setAnchor(calStep(view, anchor, -1))}><Icon name="chevronLeft" size={16} /></button>
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Previous" onClick={() => setAnchor(calStep(view, anchor, -1, ww))}><Icon name="chevronLeft" size={16} /></button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAnchor(new Date())}>Today</button>
-          <button type="button" className="btn btn-ghost btn-sm" aria-label="Next" onClick={() => setAnchor(calStep(view, anchor, 1))}><Icon name="chevronRight" size={16} /></button>
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Next" onClick={() => setAnchor(calStep(view, anchor, 1, ww))}><Icon name="chevronRight" size={16} /></button>
         </div>
         <h2 className="cal-title">{calTitle(view, anchor)}</h2>
       </div>
-      {isPhone && view === 'day' && <CalDayStrip anchor={anchor} now={now} onPick={setAnchor} />}
+      {isPhone && view === 'day' && <CalDayStrip anchor={anchor} now={now} ww={ww} onPick={setAnchor} />}
       {view === 'month'
-        ? <CalMonth anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule} onOpen={onOpen} onCreateAt={onCreateAt} onPickDay={pickDay} />
+        ? <CalMonth anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule} ww={ww} onOpen={onOpen} onCreateAt={onCreateAt} onPickDay={pickDay} />
         : <CalTimeGrid view={view} anchor={anchor} interviews={interviews} now={now} canSchedule={canSchedule}
-            hourPx={isPhone ? 88 : CAL_HOUR_PX} onOpen={onOpen} onCreateAt={onCreateAt} />}
+            hourPx={isPhone ? 88 : CAL_HOUR_PX} ww={ww} onOpen={onOpen} onCreateAt={onCreateAt} />}
     </>
   );
 }
@@ -10239,15 +12084,15 @@ function InterviewsPage({ user, initialFilters }) {
   // `thisWeek` is client-side only — there is no date-range param on
   // GET /interviews, so it filters the loaded rows below, the same way
   // RequestsPage's `openOnly`/`attention` do for the same reason.
-  const [filter, setFilter] = useState({ status: '', q: '', thisWeek: false });
+  const [filter, setFilter] = useState({ status: '', q: '', thisWeek: false, needsReminder: false });
   // `openId` jumps straight to one interview (a dashboard action item always
   // names a specific one); a plain filter narrows the list instead.
   const [selected, setSelected] = useState(initialFilters?.openId ?? null);
   useRecordUrl('interviews', selected);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [templates, setTemplates] = useState(false);
   const [createAt, setCreateAt] = useState(null); // the calendar slot that opened the form
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const loadSeq = useRef(0);
   // The calendar is the first screen; a dashboard link that carries list
   // filters still lands on the list it was built for. Phones get one day.
@@ -10274,7 +12119,7 @@ function InterviewsPage({ user, initialFilters }) {
     const seq = ++loadSeq.current;
     setBusy(true); setLoadError(null);
     const params = new URLSearchParams();
-    Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && v) params.set(k, v); });
+    Object.entries(filter).forEach(([k, v]) => { if (k !== 'thisWeek' && k !== 'needsReminder' && v) params.set(k, v); });
     if (rangeKey) { const [from, to] = rangeKey.split('|'); params.set('from', from); params.set('to', to); }
     try {
       const r = await api.get('/interviews?' + params.toString());
@@ -10293,8 +12138,10 @@ function InterviewsPage({ user, initialFilters }) {
 
   const isCalendar = view !== 'list';
   const shown = (data ? data.interviews : []).filter((iv) => {
-    if (isCalendar || !filter.thisWeek) return true;
-    if (iv.status !== 'scheduled') return false;
+    if (isCalendar) return true;
+    if (filter.needsReminder && !ivNeedsReminder(iv)) return false;
+    if (!filter.thisWeek) return true;
+    if (!ivUpcoming(iv)) return false; // a rescheduled interview is still ahead
     const days = daysUntil(iv.scheduledAt);
     return days != null && days >= 0 && days <= 7;
   });
@@ -10307,16 +12154,16 @@ function InterviewsPage({ user, initialFilters }) {
           {data?.scoped ? <Badge variant="info">My panel</Badge> : <Badge variant="info">All interviews</Badge>}
           <ViewToggle value={view} onChange={setView}
             options={isPhone ? [['day', 'Day'], ['list', 'List']] : [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['list', 'List']]} />
-          {can(user, 'notification.manage') && <button className="btn btn-secondary" onClick={() => setTemplates(true)}>Message templates</button>}
+          {(can(user, 'interview.schedule') || can(user, 'interview.edit') || can(user, 'notification.manage')) && <button className="btn btn-secondary" onClick={() => setTemplatesOpen(true)}>Scheduling Setup</button>}
           {can(user, 'interview.schedule') && <button className="btn" onClick={() => setCreating(true)}>Schedule interview</button>}
         </>} />
-      {templates && <InterviewTemplatesModal onClose={() => setTemplates(false)} />}
       {(creating || createAt) && (
         <ScheduleInterviewModal user={user} initialAt={createAt}
           onClose={() => { setCreating(false); setCreateAt(null); }}
-          onScheduled={() => { setCreating(false); setCreateAt(null); load(); }} />
+          onScheduled={(openId) => { setCreating(false); setCreateAt(null); load(); if (openId) setSelected(openId); }} />
       )}
-      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0)}
+      {templatesOpen && <InterviewTemplatesModal onClose={() => { setTemplatesOpen(false); load(); }} />}
+      <FilterToolbar activeCount={(filter.status ? 1 : 0) + (!isCalendar && filter.thisWeek ? 1 : 0) + (!isCalendar && filter.needsReminder ? 1 : 0)}
         search={<input placeholder="Search interview no / type…" value={filter.q} onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />}
         count={<CountPill n={data ? shown.length : null} total={data ? data.interviews.length : null} noun="interview" suffix={isCalendar ? 'in view' : null} />}>
         <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}>
@@ -10325,6 +12172,12 @@ function InterviewsPage({ user, initialFilters }) {
           <label className="switch" title="Scheduled interviews in the next 7 days">
             <input type="checkbox" checked={filter.thisWeek} onChange={(e) => setFilter((f) => ({ ...f, thisWeek: e.target.checked }))} />
             This week
+          </label>
+        )}
+        {!isCalendar && (
+          <label className="switch" title="Interviews in the next 24 hours that are not confirmed, or not yet reminded">
+            <input type="checkbox" checked={filter.needsReminder} onChange={(e) => setFilter((f) => ({ ...f, needsReminder: e.target.checked }))} />
+            Needs a reminder{data ? ` (${data.interviews.filter((x) => ivNeedsReminder(x)).length})` : ''}
           </label>
         )}
       </FilterToolbar>
@@ -10336,7 +12189,7 @@ function InterviewsPage({ user, initialFilters }) {
         // An empty week still draws the grid: the empty slots are how you book.
         <div className={'card flush cal-card' + (busy ? ' table-busy' : '')} aria-busy={busy}>
           <InterviewCalendar view={view} anchor={anchor} setAnchor={setAnchor} setView={setView} interviews={shown} now={now}
-            canSchedule={canSchedule} isPhone={isPhone} onOpen={setSelected} onCreateAt={setCreateAt} />
+            canSchedule={canSchedule} isPhone={isPhone} ww={data.workingWeek} onOpen={setSelected} onCreateAt={setCreateAt} />
         </div>
       ) : shown.length === 0 ? (
         <div className="card"><Empty art="none-yet"
@@ -10360,10 +12213,10 @@ function InterviewsPage({ user, initialFilters }) {
                     </span>
                   </div>
                 </td>
-                <td data-label="Request">{iv.request ? <><span className="code-pill" title={iv.request.ticketNo}>{shortReqCode(iv.request.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request.title || undefined}>{iv.request.title || '—'}</div></> : <span className="muted">— <span className="cell-sub">Standalone</span></span>}</td>
+                <td data-label="Request"><span className="code-pill" title={iv.request?.ticketNo}>{shortReqCode(iv.request?.ticketNo)}</span><div className="cell-sub clamp-2" title={iv.request?.title || undefined}>{iv.request?.title || '—'}</div></td>
                 <td data-label="Type / Mode"><span className="cell-strong">{ivType(iv.interviewType)}</span><div className="cell-sub">{ivMode(iv.mode)}</div></td>
                 <td data-priority="secondary" data-label="Interview"><span className="cell-sub-only">{iv.interviewNo}</span><div className="cell-sub">Round {iv.round}</div></td>
-                <td data-label="Status"><IvStatusBadge status={iv.status} />{['scheduled', 'rescheduled'].includes(iv.status) && <div className="cell-sub">{(CAND_RESPONSE[iv.candidateResponse] || CAND_RESPONSE.pending).label}</div>}</td>
+                <td data-label="Status"><IvStatusBadge status={iv.status} />{ivUpcoming(iv) && <> <IvResponseBadge iv={iv} /></>}</td>
                 <td data-label="Outcome">{iv.overallOutcome ? <Badge variant={(IV_OUTCOME[iv.overallOutcome] || {}).variant || 'soft'}>{(IV_OUTCOME[iv.overallOutcome] || {}).label || iv.overallOutcome}</Badge> : <span className="muted">—</span>}</td>
                 <td data-priority="secondary" data-label="Application" title="Application pipeline status (tracked separately)">{iv.application?.status ? <AppStatusBadge status={iv.application.status} /> : <span className="muted">—</span>}</td>
               </tr>
@@ -10375,46 +12228,173 @@ function InterviewsPage({ user, initialFilters }) {
   );
 }
 
+// An interview scheduled without a hiring request has no assessment sheet yet:
+// the sheet belongs to the candidate's application on a request. This asks
+// which request the interview is for, links it, then the sheet opens.
+function LinkInterviewModal({ iv, user, onClose, onLinked }) {
+  const toast = useToast();
+  const [apps, setApps] = useState(null);
+  const [requests, setRequests] = useState(null);
+  const [choice, setChoice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const canLink = can(user, 'interview.edit');
+  useEffect(() => {
+    if (!canLink) return;
+    api.get(`/candidates/${iv.candidate?.id}`).then((r) => {
+      const live = (r.candidate?.applications || []).filter((a) => !APP_CLOSED.includes(a.status));
+      setApps(live);
+      const pre = iv.request ? live.find((a) => Number(a.requestId) === Number(iv.request.id)) : live[0];
+      setChoice(pre ? 'app:' + pre.id : iv.request ? 'req:' + iv.request.id : '');
+    }).catch(() => setApps([]));
+    api.get('/requests?pageSize=100').then((r) => setRequests(r.requests || [])).catch(() => setRequests([]));
+  }, []);
+  async function save() {
+    setBusy(true);
+    try {
+      const [kind, val] = choice.split(':');
+      const applicationId = kind === 'app' ? Number(val) : await ensureApplication(iv.candidate.id, Number(val));
+      await api.post(`/interviews/${iv.id}/link-application`, { applicationId });
+      toast('Interview linked — the assessment is ready');
+      onLinked();
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+  }
+  if (!canLink) {
+    return (
+      <Modal title="Interview assessment" onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
+        <p style={{ marginTop: 0 }}>This interview is not linked to a hiring request yet, so it has no assessment sheet.</p>
+        <p className="muted">Ask HR or the recruiter to open this interview and choose its hiring request; the sheet then appears here.</p>
+      </Modal>
+    );
+  }
+  const linkedReqIds = new Set((apps || []).map((a) => Number(a.requestId)));
+  const openReqs = (requests || []).filter((r) => !linkedReqIds.has(Number(r.id)) && !['closed', 'cancelled', 'rejected', 'filled', 'expired'].includes(r.status));
+  return (
+    <Modal title="Which hiring request is this interview for?" onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || !choice || apps === null}>{busy ? 'Linking…' : 'Link and open assessment'}</button></>}>
+      <p className="muted" style={{ marginTop: 0 }}>The interview assessment is kept with {iv.candidate?.fullName || 'the candidate'}'s application to a hiring request. Choose it once; the sheet then opens from this interview.</p>
+      {apps === null || requests === null ? <Skeleton rows={2} /> : (
+        <div className="field">
+          <label htmlFor="link-iv-choice">Hiring request</label>
+          <select id="link-iv-choice" value={choice} onChange={(e) => setChoice(e.target.value)}>
+            <option value="">— Select —</option>
+            {apps.length > 0 && <optgroup label="Already applied">
+              {apps.map((a) => <option key={'a' + a.id} value={'app:' + a.id}>{a.ticketNo || 'Request'} — {a.position || ''} ({a.applicationNo})</option>)}
+            </optgroup>}
+            {openReqs.length > 0 && <optgroup label="Add the candidate to">
+              {openReqs.map((r) => <option key={'r' + r.id} value={'req:' + r.id}>{r.ticketNo} — {r.title}</option>)}
+            </optgroup>}
+          </select>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// After an interview is Completed (audit A10): what happens next, in one place.
+// The interview never moves the application by itself (owner rule); moving it
+// is an explicit click here, through the same /applications/:id/move route and
+// checks as the pipeline board. Reject / hold need a reason and stay on the board.
+function NextStepBox({ iv, user, onAssess, onLink, onMoved }) {
+  const toast = useToast();
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const app = iv.application;
+  const given = (iv.feedback || []).length; const panelN = (iv.panel || []).length;
+  const targets = app ? Object.keys(APP_STATUS).filter((t) => t !== app.status && !REASON_STATUSES.includes(t) && canPipelineMove(app.status, t)) : [];
+  async function move() {
+    if (!to || busy) return;
+    setBusy(true);
+    try { await api.post(`/applications/${app.id}/move`, { status: toApiStatus(to) }); toast(`Application moved to ${(APP_STATUS[to] || {}).label || to}`); setTo(''); onMoved(); }
+    catch (e) { toast(moveErrorText(e), 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <section className="card card-pad iv-next-step" aria-label="Next step" style={{ marginBottom: 16 }}>
+      <div className="section-title" style={{ marginTop: 0 }}>Next step</div>
+      <p className="muted">Feedback: <strong>{given} of {panelN}</strong> panel member{panelN === 1 ? '' : 's'}{given < panelN ? ' — waiting for the rest' : ' — complete'}.{' '}
+        {app ? <>Application: <AppStatusBadge status={app.status} /></> : 'This interview is not linked to an application yet.'}</p>
+      <div className="btn-row">
+        {app ? <button className="btn btn-secondary" onClick={onAssess}>Open assessment</button>
+          : <button className="btn btn-secondary" onClick={onLink}>Link to application</button>}
+        {app && can(user, 'candidate.move_stage') && targets.length > 0 && <>
+          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Move the application to">
+            <option value="">Move the application to…</option>
+            {targets.map((t) => <option key={t} value={t}>{APP_STATUS[t].label}</option>)}
+          </select>
+          <button className="btn" disabled={!to || busy} onClick={move}>{busy ? 'Moving…' : 'Move'}</button>
+        </>}
+      </div>
+      {app && <p className="field-hint">Nothing moves on its own. To reject or put the candidate on hold, use the pipeline — it asks for the reason.</p>}
+    </section>
+  );
+}
+
 function InterviewDetail({ id, user, onBack }) {
   const toast = useToast();
   const [iv, setIv] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [fbOpen, setFbOpen] = useState(false);
   const [action, setAction] = useState(null);
-  const [contact, setContact] = useState(null);   // { kind, channel }
-  const [moving, setMoving] = useState(false);
+  const [assessOpen, setAssessOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [reopenAsk, setReopenAsk] = useState(false);
+  const [resched, setResched] = useState(false);
+  const [answerBusy, setAnswerBusy] = useState(false);
+  const [comm, setComm] = useState(null); // 'invite' | 'update' | 'cancel'
   const btns = useResolvedButtons();
-  const canContact = can(user, 'interview.schedule') || can(user, 'interview.edit');
   const load = useCallback(async () => { setLoadError(null); try { setIv((await api.get('/interviews/' + id)).interview); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
   if (!iv) return <Skeleton rows={8} />;
 
+  async function setAnswer(response) {
+    if (response === (iv.candidateResponse || 'pending')) return;
+    setAnswerBusy(true);
+    try { await api.post(`/interviews/${id}/response`, { response }); toast('Answer saved: ' + IV_RESPONSE[response].label); await load(); }
+    catch (e) { toast(e.message, 'error'); }
+    finally { setAnswerBusy(false); }
+  }
   async function setStatus(status, reason) {
     try {
-      await api.post(`/interviews/${id}/status`, { status, reason }); toast('Interview ' + (IV_STATUS[status]?.label || status).toLowerCase()); load();
-      if (status === 'cancelled' && canContact) setContact({ kind: 'cancel', channel: 'whatsapp' });
-    } catch (e) { toast(e.message, 'error'); }
+      await api.post(`/interviews/${id}/status`, { status, reason }); toast(status === 'scheduled' ? 'Interview reopened' : 'Interview ' + status.replace('_', '-')); await load();
+      // A cancellation is communicated explicitly: offer it straight away.
+      if (status === 'cancelled' && canManageComms) setComm('cancel');
+    }
+    catch (e) { toast(e.message, 'error'); }
   }
+  const canManageComms = can(user, 'interview.edit');
   const canEdit = btns.cancel_interview?.visible || btns.complete_interview?.visible;
   const canFeedback = btns.add_feedback?.visible;
-  const active = !['cancelled', 'completed'].includes(iv.status);
+  // A No-Show is the attendance record (audit A8): reopen it, don't cancel it.
+  const active = !['cancelled', 'completed', 'no_show'].includes(iv.status);
+  // Completed / No-Show / feedback open only once the interview has happened
+  // (audit A4/A5). The server decides when; this only hides early buttons.
+  const opensAt = (k) => (iv.actionsOpenAt && iv.actionsOpenAt[k] ? Date.parse(iv.actionsOpenAt[k]) : Infinity); // missing = not open (server refuses too)
+  const isOpen = (k) => Date.now() >= opensAt(k);
+  const upcoming = ['scheduled', 'rescheduled'].includes(iv.status);
+  const firstOpen = Math.min(opensAt('completed'), opensAt('no_show'), opensAt('feedback'));
+  const showWhenOpens = upcoming && !isOpen('completed') && (canFeedback || btns.complete_interview?.visible);
 
   return (
     <div>
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Interviews</button>}
         title={<> {ivType(iv.interviewType)} interview — {iv.candidate?.fullName}</>} sub={<> <strong>{iv.interviewNo}</strong> · <IvStatusBadge status={iv.status} /> · {fmtDate(iv.scheduledAt)}</>}
         actions={<>
-          {canContact && active && <button className="btn" onClick={() => setContact({ kind: iv.candidateResponse === 'confirmed' ? 'reminder' : 'invite', channel: 'whatsapp' })}>Contact candidate</button>}
-          {canContact && active && <button className="btn btn-secondary" onClick={() => setMoving(true)}>Reschedule</button>}
-          {canFeedback && iv.status !== 'cancelled' && <button className={canContact && active ? 'btn btn-secondary' : 'btn'} onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
-          {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
-          {btns.complete_interview?.visible && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
+          {can(user, 'candidate.view') && (iv.application || iv.status !== 'cancelled') && <button className="btn" onClick={() => (iv.application ? setAssessOpen(true) : setLinkOpen(true))}>Open assessment</button>}
+          {canFeedback && (iv.status === 'completed' || (upcoming && isOpen('feedback'))) && <button className="btn btn-secondary" onClick={() => setFbOpen(true)}>{iv.myFeedback ? 'Update My Feedback' : 'Add Feedback'}</button>}
+          {btns.complete_interview?.visible && upcoming && isOpen('completed') && <button className="btn btn-secondary" onClick={() => setStatus('completed')}>Mark Completed</button>}
+          {btns.complete_interview?.visible && upcoming && isOpen('no_show') && <button className="btn btn-secondary" onClick={() => setStatus('no_show', 'Candidate did not attend')}>Mark No-Show</button>}
+          {btns.complete_interview?.visible && ['completed', 'no_show'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setReopenAsk(true)}>Reopen interview</button>}
+          {canManageComms && upcoming && Date.parse(iv.scheduledAt) > Date.now() && <button className="btn btn-secondary" onClick={() => setComm('reminder')}>Send reminder</button>}
+          {can(user, 'interview.edit') && ['scheduled', 'rescheduled'].includes(iv.status) && <button className="btn btn-secondary" onClick={() => setResched(true)}>Reschedule / edit</button>}
           {btns.cancel_interview?.visible && active && <button className="btn btn-danger" onClick={() => setAction({ title: 'Cancel Interview', run: (reason) => { setAction(null); setStatus('cancelled', reason); } })}>Cancel</button>}
         </>} />
 
 
 
+      {iv.status === 'completed' && <NextStepBox iv={iv} user={user} onAssess={() => setAssessOpen(true)} onLink={() => setLinkOpen(true)} onMoved={load} />}
+      {showWhenOpens && <p className="muted" style={{ margin: '0 0 16px' }}>{Number.isFinite(firstOpen)
+        ? <>Feedback opens at the start ({cairoTime(iv.actionsOpenAt.feedback)}), No-Show 15 minutes after it ({cairoTime(iv.actionsOpenAt.no_show)}) and Completed at the scheduled end ({cairoTime(iv.actionsOpenAt.completed)}), Cairo time.</>
+        : <>This interview has no valid time, so it cannot be marked or given feedback. Reschedule it first.</>}</p>}
       <div className="detail-grid">
         <div className="card card-pad">
           <div className="section-title" style={{ marginTop: 0 }}>Links</div>
@@ -10422,18 +12402,29 @@ function InterviewDetail({ id, user, onBack }) {
           <Info label="Request">{iv.request ? <><span title={iv.request.ticketNo}>{shortReqCode(iv.request.ticketNo)}</span> — {iv.request.title}</> : <span className="muted">None — standalone</span>}</Info>
           <Info label="Application">{iv.application ? <>{iv.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={iv.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <p className="muted">The application's pipeline status is shown for context and is <strong>not</strong> changed by this interview.</p>
-          <div className="section-title">Candidate's answer</div>
-          {canContact && active
-            ? <CandidateResponsePicker interviewId={iv.id} value={iv.candidateResponse} onSaved={setIv} />
-            : <CandidateResponseBadge value={iv.candidateResponse} />}
           <div className="section-title">Details</div>
           <Info label="Type / Mode">{ivType(iv.interviewType)} · {ivMode(iv.mode)}</Info>
           <Info label="Round">{iv.round}</Info>
+          <Info label="When">{cairoLabel(iv.scheduledAt)}</Info>
+          {upcoming && <Info label="Candidate's answer">{canManageComms
+            ? <div className="seg-tabs resp-picker" role="radiogroup" aria-label="Candidate's answer">
+                {Object.entries(IV_RESPONSE).map(([k, r]) => (
+                  <button key={k} type="button" role="radio" aria-checked={(iv.candidateResponse || 'pending') === k}
+                    className={'seg-tab' + ((iv.candidateResponse || 'pending') === k ? ' active' : '')}
+                    disabled={answerBusy} onClick={() => setAnswer(k)}>{r.label}</button>
+                ))}
+              </div>
+            : <IvResponseBadge iv={iv} />}
+            {iv.candidateResponse === 'declined' && btns.cancel_interview?.visible && <p className="field-hint">The candidate declined. The interview stays booked until you cancel it.</p>}</Info>}
           <Info label="Duration">{iv.durationMin} min</Info>
           <Info label="Location / Link">{/^https?:\/\//i.test(iv.locationOrLink || '')
             ? <a className="btn btn-secondary btn-sm" href={iv.locationOrLink} target="_blank" rel="noopener noreferrer" title={iv.locationOrLink}>Join {iv.mode === 'video' ? 'video call' : 'link'}</a>
             : (iv.locationOrLink || '—')}</Info>
           <Info label="Organizer">{iv.organizer?.name}</Info>
+          {iv.cv && <Info label="CV">{iv.cv.available
+            ? <button type="button" className="btn btn-secondary btn-sm" title={iv.cv.fileName || undefined} onClick={() => openCvReview(iv.cv.candidateId)}>Open CV{iv.cv.fileName ? ` — ${iv.cv.fileName}` : ''}</button>
+            : <span className="muted">No CV attached</span>}</Info>}
+          {iv.overlapReason && <Info label="Panel overlap">{iv.overlapReason}</Info>}
           {iv.cancelReason && <Info label="Cancel Reason">{iv.cancelReason}</Info>}
           <div className="section-title">Panel</div>
           <div>{iv.panel.map((m) => <span key={m.id} className="chip" title={m.name + (m.isLead ? ' (lead)' : '')}>{m.name}{m.isLead ? ' (lead)' : ''}</span>)}</div>
@@ -10450,14 +12441,20 @@ function InterviewDetail({ id, user, onBack }) {
               <div className="muted fine-key">{fmtDate(f.submittedAt)}</div>
             </div>
           ))}
+          <InterviewComms iv={iv} canManage={canManageComms} onOpen={setComm} />
           <div className="section-title">Activity</div>
-          {(iv.activity || []).map((a) => <div key={a.id} style={{ fontSize: 12.5, padding: '4px 0' }}><strong>{IV_ACTIVITY_LABEL[a.type] || (a.type.charAt(0).toUpperCase() + a.type.slice(1).replace(/_/g, ' '))}</strong>{a.note ? ' — ' + a.note : ''} <span className="muted">· {a.actor_name} · {fmtDate(a.occurred_at)}</span></div>)}
+          {(iv.activity || []).map((a) => <div key={a.id} style={{ fontSize: 12.5, padding: '4px 0' }}><strong style={{ textTransform: 'capitalize' }}>{a.type.replace(/_/g, ' ')}</strong>{a.note ? ' — ' + a.note : ''} <span className="muted">· {a.actor_name} · {fmtDate(a.occurred_at)}</span></div>)}
         </div>
       </div>
 
       {fbOpen && <FeedbackModal interviewId={id} onClose={() => setFbOpen(false)} onSaved={() => { setFbOpen(false); load(); }} />}
-      {contact && <ContactCandidateModal interviewId={id} kind={contact.kind} channel={contact.channel} onClose={() => { setContact(null); load(); }} />}
-      {moving && <RescheduleInterviewModal iv={iv} onClose={() => setMoving(false)} onSaved={() => { setMoving(false); load(); setContact({ kind: 'reschedule', channel: 'whatsapp' }); }} />}
+      {resched && <RescheduleModal iv={iv} onClose={() => setResched(false)} onSaved={async (changes) => { setResched(false); await load(); if (changes.length) setComm('update'); }} />}
+      {comm && <CommunicateModal iv={iv} kind={comm} onClose={() => { setComm(null); load(); }} onDone={() => { setComm(null); load(); }} />}
+      {assessOpen && <InterviewAssessmentDrawer applicationId={iv.application.id} user={user} title={`${iv.candidate?.fullName || ''} · ${iv.interviewNo}`} onClose={() => setAssessOpen(false)} />}
+      {reopenAsk && <Confirm title="Reopen interview" confirmLabel="Reopen"
+        message={`Move this interview back to Scheduled? It was marked ${iv.status === 'no_show' ? 'No-Show' : 'Completed'}. Feedback and the assessment are kept; the change is recorded in the audit trail.`}
+        onConfirm={() => { setReopenAsk(false); setStatus('scheduled', iv.status === 'no_show' ? 'Reopened after No-Show' : 'Reopened after Completed'); }} onClose={() => setReopenAsk(false)} />}
+      {linkOpen && <LinkInterviewModal iv={iv} user={user} onClose={() => setLinkOpen(false)} onLinked={async () => { setLinkOpen(false); await load(); setAssessOpen(true); }} />}
       {action && <Confirm title={action.title} message="Provide a reason. Recorded in the audit trail." requireReason danger onConfirm={action.run} onClose={() => setAction(null)} />}
     </div>
   );
@@ -10500,44 +12497,164 @@ function SalaryCell({ visible, value, currency }) {
   return <span>{value != null ? `${value} ${currency || ''}` : '—'}</span>;
 }
 
-function CreateOfferModal({ application, user, onClose, onCreated }) {
+// The offer letter beside the form. It is the server's own letter
+// (lib/offer-letter.js) — the same renderer as the issued letter — re-rendered
+// as the recruiter types, with every empty variable drawn as a blank to fill.
+// The frame is sandboxed with no scripts: the letter is a document, not an app.
+function OfferLetterPane({ draft, offerId }) {
+  const [html, setHtml] = useState('');
+  const [err, setErr] = useState(null);
+  const [scale, setScale] = useState(0.6);
+  const wrapRef = useRef(null);
+  const key = JSON.stringify(draft || {});
+  useEffect(() => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      const req = offerId ? api.html(`/offers/${offerId}/preview`, { signal: ctl.signal })
+        : api.html('/offers/letter-draft', { method: 'POST', body: draft, signal: ctl.signal });
+      req.then((h) => { setHtml(h); setErr(null); }).catch((e) => { if (e.name !== 'AbortError') setErr(e.message); });
+    }, offerId ? 0 : 350);
+    return () => { clearTimeout(t); ctl.abort(); };
+  }, [key, offerId]);
+  // The letter is an A4 page (≈ 820px wide with its margin); scale it to the pane.
+  useEffect(() => {
+    const el = wrapRef.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => setScale(Math.min(1, e.contentRect.width / 820)));
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+  if (err) return <div className="offer-letter-pane"><p className="muted">{err}</p></div>;
+  return (
+    <div className="offer-letter-pane" ref={wrapRef} aria-label="Offer letter preview">
+      <div className="offer-letter-scale" style={{ height: Math.round(2290 * scale) }}>
+        <iframe title="Offer letter" sandbox="allow-same-origin allow-modals" srcDoc={html}
+          style={{ width: 820, height: 2290, transform: `scale(${scale})`, transformOrigin: '0 0' }} />
+      </div>
+    </div>
+  );
+}
+
+// One form for creating and editing an offer, with the letter beside it.
+// `offer` (edit) pre-fills it; an edit sends only what changed.
+const OFFER_BLANK = { titlePrefix: '', salutationName: '', positionTitle: '', currency: 'EGP', salaryComponents: {}, joiningDate: '', expiryDate: '', benefits: '', notes: '' };
+function OfferFormModal({ application, offer, user, onClose, onSaved }) {
   const toast = useToast();
   const [meta, setMeta] = useState(null);
-  const [f, setF] = useState({ positionTitle: application?.position || '', salaryOffered: '', currency: 'EGP', benefits: '', joiningDate: '', expiryDate: '', notes: '' });
+  const init = offer
+    ? { ...OFFER_BLANK, titlePrefix: offer.titlePrefix || '', salutationName: offer.salutationName || '', positionTitle: offer.positionTitle || '', currency: offer.currency || 'EGP',
+        salaryComponents: offer.salaryComponents || (offer.salaryOffered != null ? { basic: offer.salaryOffered } : {}),
+        joiningDate: offer.joiningDate || '', expiryDate: offer.expiryDate || '', benefits: offer.benefits || '', notes: offer.notes || '' }
+    : { ...OFFER_BLANK, positionTitle: application?.position || '' };
+  const [f, setF] = useState(init);
   const [link, setLink] = useState(EMPTY_LINK);
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const setComp = (k, v) => setF((s) => ({ ...s, salaryComponents: { ...s.salaryComponents, [k]: v } }));
   useEffect(() => { api.get('/offers/meta/form').then(setMeta).catch(() => {}); }, []);
+  const comps = Object.fromEntries(Object.entries(f.salaryComponents).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, Number(v)]));
+  const total = Object.values(comps).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  const termsLocked = offer && ['pending_approval', 'approved'].includes(offer.status);
+  // What the letter pane renders: the form as it stands, nothing saved.
+  const draft = {
+    applicationId: application?.id, candidateId: link.candidate?.id,
+    candidateName: link.mode === 'new' ? link.newName : (offer?.candidate?.fullName || undefined),
+    requestId: link.requestId || offer?.requestId || undefined,
+    titlePrefix: f.titlePrefix, salutationName: f.salutationName, positionTitle: f.positionTitle, currency: f.currency,
+    salaryComponents: meta?.canEditSalary ? comps : undefined, expiryDate: f.expiryDate,
+  };
   async function save() {
     setBusy(true);
     try {
-      const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
-      const body = { ...target, ...f };
-      if (body.salaryOffered === '') body.salaryOffered = null;
-      const r = await api.post('/offers', body);
-      toast('Offer created: ' + r.offer.offerNo); onCreated();
+      const body = { titlePrefix: f.titlePrefix || null, salutationName: f.salutationName, positionTitle: f.positionTitle, currency: f.currency,
+        joiningDate: f.joiningDate || undefined, expiryDate: f.expiryDate || undefined, notes: f.notes,
+        ...(meta?.canSeeSalary ? { benefits: f.benefits } : {}),
+        ...(meta?.canEditSalary ? { salaryComponents: Object.keys(comps).length ? comps : null } : {}) };
+      if (offer) {
+        const r = await api.put('/offers/' + offer.id, body);
+        toast(r.offer.status === 'pending_approval' && offer.status === 'approved' ? 'Saved — the changed terms go back to the HR Director for approval' : 'Offer saved');
+        onSaved(r.offer);
+      } else {
+        const target = application ? { applicationId: application.id } : await resolveStandaloneLink(link);
+        const r = await api.post('/offers', { ...target, ...body });
+        toast('Offer created: ' + r.offer.offerNo); onSaved(r.offer);
+      }
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  const createBlocked = !offer && !application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim()));
+  const title = offer ? `Edit offer — ${offer.offerNo}` : application ? `Create offer — ${application.candidate?.fullName || ''}` : 'Create offer';
   return (
-    <Modal title={application ? `Generate Offer — ${application.candidate?.fullName || ''}` : 'Create offer'} onClose={onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save} disabled={busy || (!application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim())))}>{busy ? 'Creating…' : 'Create Offer'}</button></>}>
-      {application
-        ? <p className="muted" style={{ marginTop: 0 }}>Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Offer Preparation</strong>.</p>
-        : <><StandaloneLinkFields user={user} link={link} setLink={setLink} />
-          <p className="muted">A standalone offer is not tied to a pipeline: no application moves and no seat is filled. It still needs HR Director approval before it can be sent.</p></>}
-      <div className="form-grid">
-        <div className="field full"><label>Position Title{application ? '' : ' *'}</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
-        {meta?.canEditSalary && <>
-          <div className="field"><label>Salary Offered</label><input type="number" value={f.salaryOffered} onChange={(e) => set('salaryOffered', e.target.value)} /></div>
-          <div className="field"><label>Currency</label><input value={f.currency} onChange={(e) => set('currency', e.target.value)} /></div>
-        </>}
-        <div className="field"><label>Joining Date</label><input type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></div>
-        <div className="field"><label>Offer expiry</label><input type="date" value={f.expiryDate} onChange={(e) => set('expiryDate', e.target.value)} /></div>
-        <div className="field full"><label>Benefits</label><input value={f.benefits} onChange={(e) => set('benefits', e.target.value)} placeholder="Housing, transport, medical…" /></div>
-        <div className="field full"><label>Notes</label><textarea rows="3" value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div>
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal offer-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="offer-compose-body">
+          <div className="offer-compose-form">
+            {offer ? null : application
+              ? <p className="muted">Links to application <strong>{application.applicationNo}</strong>. Creating an offer moves the application to <strong>Issuing Offer</strong>.</p>
+              : <><StandaloneLinkFields user={user} link={link} setLink={setLink} />
+                <p className="muted">A standalone offer is not tied to a pipeline: no application moves and no seat is filled. It still needs HR Director approval before it can be sent.</p></>}
+            {termsLocked && <div className="notice notice-warn">This offer is {offer.status === 'approved' ? 'approved' : 'waiting for approval'}. Changing the salary, breakdown, currency, position or joining date sends it back to the HR Director. The title, salutation, expiry and notes do not.</div>}
+            <div className="section-title">Addressee</div>
+            <div className="form-grid">
+              <div className="field"><label>Title</label>
+                <select value={f.titlePrefix} onChange={(e) => set('titlePrefix', e.target.value)}>
+                  <option value="">Choose…</option>{(meta?.titlePrefixes || ['Mr.', 'Ms.', 'Mrs.', 'Eng.', 'Dr.']).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select></div>
+              <div className="field"><label>Salutation name</label><input value={f.salutationName} onChange={(e) => set('salutationName', e.target.value)} placeholder="First name (optional)" /></div>
+              <div className="field full"><label>Position{application || offer ? '' : ' *'}</label><input value={f.positionTitle} onChange={(e) => set('positionTitle', e.target.value)} /></div>
+            </div>
+            {meta?.canEditSalary ? <>
+              <div className="section-title">Total monthly salary (net)</div>
+              <div className="form-grid">
+                {(meta.salaryComponents || []).map((c) => (
+                  <div key={c.key} className="field"><label>{c.label}{c.key === 'basic' ? ' *' : ''}</label>
+                    <input type="number" min="0" step="0.01" inputMode="decimal" value={f.salaryComponents[c.key] ?? ''} onChange={(e) => setComp(c.key, e.target.value)} /></div>
+                ))}
+                <div className="field"><label>Currency</label><input value={f.currency} onChange={(e) => set('currency', e.target.value)} /></div>
+                <div className="field"><label>Total</label><div className="offer-total">{f.currency} {total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
+              </div>
+            </> : meta && <p className="muted">Salary is hidden — your role cannot set offer salary.</p>}
+            <div className="section-title">Dates</div>
+            <div className="form-grid">
+              <div className="field"><label>Joining date</label><input type="date" value={f.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} /></div>
+              <div className="field"><label>Offer expiry</label><input type="date" value={f.expiryDate} onChange={(e) => set('expiryDate', e.target.value)} />
+                <span className="field-hint">The letter says it is valid until this date. Left empty, it is valid for {meta?.defaultValidityDays || 5} days from the date it is sent.</span></div>
+            </div>
+            <div className="section-title">Internal</div>
+            <div className="form-grid">
+              {meta?.canSeeSalary && <div className="field full"><label>Benefits note</label><input value={f.benefits} onChange={(e) => set('benefits', e.target.value)} placeholder="Not printed on the letter" /></div>}
+              <div className="field full"><label>Notes</label><textarea rows="3" value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Not printed on the letter" /></div>
+            </div>
+          </div>
+          {meta?.canSeeSalary
+            ? <OfferLetterPane draft={draft} />
+            : <div className="offer-letter-pane"><p className="muted">The letter preview shows the salary, which your role cannot view.</p></div>}
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={save} disabled={busy || createBlocked}>{busy ? 'Saving…' : offer ? 'Save changes' : 'Create offer'}</button>
+        </div>
       </div>
-      {meta && !meta.canEditSalary && <p className="muted">Salary fields are hidden — your role cannot set offer salary.</p>}
-    </Modal>
+    </div>
+  );
+}
+// Kept as the name other screens import.
+function CreateOfferModal({ application, user, onClose, onCreated }) {
+  return <OfferFormModal application={application} user={user} onClose={onClose} onSaved={() => onCreated()} />;
+}
+
+// The saved offer's letter, exactly as it will be (or was) issued.
+function OfferLetterModal({ offer, onClose }) {
+  const frameHost = useRef(null);
+  const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
+  function print() { const fr = frameHost.current?.querySelector('iframe'); try { fr?.contentWindow?.print(); } catch { /* the browser's own print still works */ } }
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="modal offer-letter-modal" role="dialog" aria-modal="true" aria-label={'Offer letter ' + offer.offerNo} tabIndex="-1" onKeyDown={onDialogKeyDown}>
+        <div className="modal-head"><h3>Offer letter — {offer.offerNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
+        <div className="modal-body" ref={frameHost}><OfferLetterPane offerId={offer.id} /></div>
+        <div className="modal-foot"><button className="btn btn-ghost" onClick={onClose}>Close</button><button className="btn btn-secondary" onClick={print}>Print / save as PDF</button></div>
+      </div>
+    </div>
   );
 }
 
@@ -10658,6 +12775,8 @@ function OfferDetail({ id, user, onBack }) {
   const [o, setO] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [action, setAction] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [letter, setLetter] = useState(false);
   const btns = useResolvedButtons();
   const load = useCallback(async () => { setLoadError(null); try { setO((await api.get('/offers/' + id)).offer); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -10665,9 +12784,15 @@ function OfferDetail({ id, user, onBack }) {
   if (!o) return <Skeleton rows={8} />;
 
   async function act(path, body, okMsg) {
-    try { const r = await api.post(`/offers/${id}/${path}`, body || {}); setO(r.offer); toast(okMsg); }
+    try {
+      const r = await api.post(`/offers/${id}/${path}`, body || {}); setO(r.offer);
+      // Issuing and delivery are separate facts: say what is known, no more.
+      if (r.delivery) toast(r.delivery.state === 'queued' ? `${okMsg}. Email queued to ${r.delivery.to}.` : `${okMsg}. No email was sent: ${r.delivery.message}`, r.delivery.state === 'queued' ? undefined : 'warn');
+      else toast(okMsg);
+    }
     catch (e) { toast(e.message, 'error'); }
   }
+  const editable = can(user, 'offer.edit') && ['draft', 'pending_approval', 'approved'].includes(o.status);
   const s = o.status;
   // One approval layer: the HR Director. The approve/reject controls are shown
   // only to a user who actually holds the director permission the server
@@ -10684,10 +12809,12 @@ function OfferDetail({ id, user, onBack }) {
       <PageHead back={<button className="back-link" onClick={onBack}><Icon name="back" size={16} />Offers</button>}
         title={<> Offer — {o.candidate?.fullName}</>} sub={<> <strong>{o.offerNo}</strong> · <OfferStatusBadge status={o.status} /> · <span title={o.request?.ticketNo}>{shortReqCode(o.request?.ticketNo)}</span></>}
         actions={<>
+          {o.salaryVisible && <button className="btn btn-secondary" onClick={() => setLetter(true)}>Preview letter</button>}
+          {editable && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>}
           {btns.submit_offer?.visible && s === 'draft' && <button className="btn" onClick={() => act('submit', {}, 'Sent to the HR Director for approval')}>Submit for approval</button>}
           {btns.approve_offer?.visible && isDirector && s === 'pending_approval' && <button className="btn" onClick={() => act('approve', {}, 'Offer approved')}>Approve</button>}
           {btns.reject_offer_approval?.visible && isDirector && s === 'pending_approval' && <button className="btn btn-danger" onClick={() => setAction({ title: 'Reject Offer', path: 'reject-approval', body: (r) => ({ reason: r }), msg: 'Offer rejected' })}>Reject</button>}
-          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer sent')}>Send Offer</button>}
+          {btns.send_offer?.visible && s === 'approved' && <button className="btn" onClick={() => act('send', {}, 'Offer issued')}>Send Offer</button>}
           {btns.accept_offer?.visible && s === 'sent' && <button className="btn" onClick={() => act('result', { result: 'accepted' }, 'Marked accepted')}>Mark Accepted</button>}
           {btns.reject_offer_candidate?.visible && ['sent', 'accepted'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Mark Rejected by Candidate', path: 'result', body: (r) => ({ result: 'rejected_by_candidate', reason: r }), msg: 'Marked rejected by candidate' })}>Rejected by Candidate</button>}
           {btns.withdraw_offer?.visible && !['joined', 'withdrawn', 'rejected_by_candidate'].includes(s) && <button className="btn btn-danger" onClick={() => setAction({ title: 'Withdraw Offer', path: 'result', body: (r) => ({ result: 'withdrawn', reason: r }), msg: 'Offer withdrawn' })}>Withdraw</button>}
@@ -10704,10 +12831,12 @@ function OfferDetail({ id, user, onBack }) {
           <Info label="Application">{o.application ? <>{o.application.applicationNo} · <strong>pipeline:</strong> <AppStatusBadge status={o.application.status} /></> : <span className="muted">None — standalone</span>}</Info>
           <Info label="Position">{o.positionTitle}</Info>
           <Info label="Project">{o.project?.name}</Info>
+          {o.titlePrefix && <Info label="Addressed as">{o.titlePrefix} {o.candidate?.fullName}</Info>}
           {o.salaryVisible
-            ? <Info label="Salary Offered">{o.salaryOffered != null ? `${o.salaryOffered} ${o.currency}` : '—'}</Info>
+            ? <Info label="Total monthly salary (net)">{o.salaryOffered != null ? `${o.currency} ${Number(o.salaryOffered).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</Info>
             : <Info label="Salary Offered"><span className="muted">Restricted</span></Info>}
-          {o.salaryVisible && <Info label="Benefits">{o.benefits || '—'}</Info>}
+          {o.salaryVisible && o.salaryComponents && <Info label="Breakdown">{Object.entries(o.salaryComponents).map(([k, v]) => `${({ basic: 'Basic', accommodation: 'Accommodation', transportation: 'Transportation', others: 'Others', area_allowance: 'Area allowance' })[k] || k} ${Number(v).toLocaleString('en-US')}`).join(' · ')}</Info>}
+          {o.salaryVisible && o.benefits && <Info label="Benefits note">{o.benefits}</Info>}
           <Info label="Joining Date">{fmtDateShort(o.joiningDate)}</Info>
           {o.expiryDate && <Info label="Offer expiry">{fmtDateShort(o.expiryDate)}</Info>}
           <Info label="Prepared By">{o.preparedBy?.name}</Info>
@@ -10724,6 +12853,8 @@ function OfferDetail({ id, user, onBack }) {
 
       {action && <Confirm title={action.title} message="Provide a reason. Recorded in the audit trail." requireReason danger
         onConfirm={(r) => { const a = action; setAction(null); act(a.path, a.body(r), a.msg); }} onClose={() => setAction(null)} />}
+      {editing && <OfferFormModal offer={o} user={user} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
+      {letter && <OfferLetterModal offer={o} onClose={() => setLetter(false)} />}
     </div>
   );
 }

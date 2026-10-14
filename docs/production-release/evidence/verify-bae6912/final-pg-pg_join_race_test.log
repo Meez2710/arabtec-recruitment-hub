@@ -1,0 +1,85 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+
+— 0. the invariant exists in PostgreSQL —
+  ✅ the partial unique index was created
+  ✅ it is UNIQUE and partial on joined CREATE UNIQUE INDEX ux_application_one_joined_per_candidate ON public.application USING btree (candidate_id) WHERE (status = 'joined'::text)
+
+— 1. one candidate joining two requisitions at once —
+  ✅ every request settled 200,409
+  ✅ exactly one join succeeded 1 succeeded
+  ✅ the other is a deterministic 409 1 conflicts
+  ✅ the loser carries the stable code CANDIDATE_ALREADY_JOINED
+  ✅ no SQL detail leaked to the client This candidate already has a joined application and cannot join another.
+  ✅ the race spanned processes
+  ✅ the candidate holds exactly ONE joined application n=1
+  ✅ exactly one seat is filled by that candidate n=1
+  ✅ the winner is fully written history=1 seat=1 act=1 audit=1
+  ✅ the winner requisition counted exactly one fill {"status":"partially_filled","headcount":2,"headcount_filled":1}
+  ✅ the loser application did not move offer_sent
+  ✅ the loser took no seat
+  ✅ the loser requisition is byte-identical {"status":"sourcing","headcount":2,"headcount_filled":0}
+  ✅ no partial history/activity/audit on the loser history=0 act=0 audit=0 cand=0
+  ✅ exactly ONE join history/activity/audit set exists for the candidate history=1 cand=1 audit=1
+  · a retry after the race is still refused
+  ✅ the loser stays refused on retry got 409
+  ✅ with the same stable code
+  ✅ and still holds exactly one joined application
+
+— 2. one candidate, three overlapping joins —
+  ✅ exactly one of three succeeded 1 succeeded (200,409,409)
+  ✅ the other two are 409 with the stable code
+  ✅ one joined application n=1
+  ✅ one filled seat n=1
+  ✅ exactly one requisition moved its counter 1,0,0
+  ✅ exactly one stage-history row across all three applications
+  ✅ exactly one seat_filled activity across all three requisitions
+
+— 3. different candidates joining concurrently —
+  ✅ all four independent joins succeeded 4/4 (200,200,200,200)
+  ✅ each candidate holds exactly one joined application
+  ✅ each filled exactly one seat
+  ✅ each requisition counted exactly one fill 1,1,1,1
+  ✅ each has exactly one history row, activity and audit
+  ✅ no seat carries two commitments
+
+— 4. two candidates racing for the last seat —
+  ✅ exactly one candidate took the last seat 1 succeeded (200,409)
+  ✅ the other was refused, not overfilled 200,409
+  ✅ exactly one seat is filled
+  ✅ the seat carries exactly one commitment
+  ✅ headcount_filled is 1, not 2 {"status":"filled","headcount":1,"headcount_filled":1}
+  ✅ only one application is joined
+  ✅ one seat_filled activity, not two n=1
+
+— 5. whole-database consistency —
+  ✅ no candidate anywhere holds two joined applications []
+  ✅ every filled seat points at a joined application
+  ✅ headcount_filled matches filled seats everywhere
+
+— hygiene —
+  ✅ no idle-in-transaction connection remains n=0
+  ✅ no orphan child process remains
+
+✓ join race: 45 passed, 0 failed
+

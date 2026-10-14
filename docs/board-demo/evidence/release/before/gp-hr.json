@@ -1,0 +1,96 @@
+{
+ "stage": "hr",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "open #interviews/1"
+  },
+  {
+   "s": "click \"Open assessment\""
+  },
+  {
+   "s": "behavioral criteria",
+   "groups": [
+    "Openness score",
+    "Conscientiousness score",
+    "Extraversion score",
+    "Agreeableness score",
+    "Emotional Stability score"
+   ]
+  },
+  {
+   "s": "click Openness score"
+  },
+  {
+   "s": "click Conscientiousness score"
+  },
+  {
+   "s": "click Extraversion score"
+  },
+  {
+   "s": "click Agreeableness score"
+  },
+  {
+   "s": "click Emotional Stability score"
+  },
+  {
+   "s": "Behavioral recommendation = Proceed"
+  },
+  {
+   "s": "click behavioral justification"
+  },
+  {
+   "s": "screenshot gp-18-hr-draft.png"
+  },
+  {
+   "s": "click Submit behavioral evaluation"
+  },
+  {
+   "s": "after HR submit",
+   "hr": "submitted",
+   "technical": "submitted",
+   "hrFit": "strong"
+  },
+  {
+   "s": "final decision choices",
+   "choice": [
+    "Proceed",
+    "Proceed with Conditions",
+    "Hold",
+    "CV Pool",
+    "Reject"
+   ]
+  },
+  {
+   "s": "click \"Proceed\""
+  },
+  {
+   "s": "click decision notes"
+  },
+  {
+   "s": "click \"Record Final Decision\""
+  },
+  {
+   "s": "after decision",
+   "decision": "proceed",
+   "by": "Omar Khalil"
+  },
+  {
+   "s": "screenshot gp-19-final-decision.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

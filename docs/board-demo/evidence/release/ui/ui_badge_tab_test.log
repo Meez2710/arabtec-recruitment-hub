@@ -1,0 +1,18 @@
+  ✓ section 19 exists and introduces no colour, background or typeface
+  ✓ no font SIZE is used as a fitting mechanism
+  ✓ every compact label family now has a width ceiling and a flex floor
+  ✓ a compact label stays on one line and is cut at its own edge
+  ✓ an ellipsis is only claimed where a block box can render one
+  ✓ .tag-toggle is a block box, which is the only way its ellipsis renders
+  ✓ the filter chip truncates its label and keeps its remove button
+  ✓ the intake badges ellipsise for the same reason
+  ✓ selecting a tab cannot change its own width — no weight shift, any family
+  ✓ selecting a tab cannot change its own box — no border-width shift, any family
+  ✓ no hover, focus or SELECTED rule resolves to a different box than its base
+  ✓ both filter-chip rows render the label box and the full text as a tooltip
+  ✓ .tag-toggle carries a tooltip wherever it renders company data
+  ✓ unbounded .chip content is recoverable when it is cut
+  ✓ the Users role chip is still the shared .chip, not a bespoke label
+  ✓ the tab families still compose the shared tab components
+
+=== UI BADGE / CHIP / TAB: 16 passed, 0 failed ===

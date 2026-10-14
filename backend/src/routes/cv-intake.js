@@ -107,6 +107,8 @@ router.post('/parse-waiting', requirePermission('cv_intake.approve_batch'), asyn
     });
     res.json(summary);
   } catch (e) {
+    // The scheduled scan (and automatic parsing) holds the same lease: busy, not broken.
+    if (e.code === 'already-running') return res.status(409).json({ error: e.message, code: e.code });
     res.status(502).json({ error: e.message || 'Could not parse the selection.' });
     console.error(JSON.stringify({ level: 'error', msg: 'cv_intake.parse_waiting_failed', error: e.message }));
   }

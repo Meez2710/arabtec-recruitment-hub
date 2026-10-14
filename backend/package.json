@@ -26,7 +26,8 @@
     "test:pg:required": "node pg_tx_test.mjs --required && node pg_appnumber_race_test.mjs && node pg_sequence_test.mjs && node pg_reopen_race_test.mjs && node reconciliation_test.mjs && node pg_headcount_race_test.mjs && node pg_join_race_test.mjs",
     "test:cluster": "node pg_cluster_test.mjs --own",
     "api": "tsx src/api/main.ts",
-    "api:dev": "tsx watch src/api/main.ts"
+    "api:dev": "tsx watch src/api/main.ts",
+    "test:pg:behavior": "node --experimental-sqlite run_pg_behavior.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -45,6 +46,7 @@
     "nodemailer": "^9.0.3",
     "pdf-parse": "^2.4.5",
     "pg": "^8.22.0",
+    "word-extractor": "^1.0.4",
     "zod": "^4.4.3"
   },
   "optionalDependencies": {

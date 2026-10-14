@@ -1,0 +1,89 @@
+{
+ "stage": "candidate",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #candidates"
+  },
+  {
+   "s": "click \"Add manually\""
+  },
+  {
+   "s": "type \"Full Name\""
+  },
+  {
+   "s": "type \"Email\""
+  },
+  {
+   "s": "type \"Phone\""
+  },
+  {
+   "s": "type \"Location\""
+  },
+  {
+   "s": "type \"Current Company\""
+  },
+  {
+   "s": "type \"Current Position\""
+  },
+  {
+   "s": "type \"Years of Experience\""
+  },
+  {
+   "s": "screenshot gp-08-candidate-form.png"
+  },
+  {
+   "s": "click \"Save\""
+  },
+  {
+   "s": "candidate created",
+   "id": 3,
+   "no": "CAN-00003"
+  },
+  {
+   "s": "open #candidates/3"
+  },
+  {
+   "s": "screenshot gp-09-candidate-profile.png"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click \"Add Candidate\""
+  },
+  {
+   "s": "link dialog",
+   "fields": [
+    "Candidate <SELECT> — Select —|Omar Hassan (BOARD DEMO) (CAN-00003) — Planning Engineer|Laila Mansour (BOARD DEMO) (CAN-00002) — Senior Quantity Surveyor|Youssef Kamal (BOARD DEMO) (CAN-00001) — Quantity Surveyor",
+    "Initial Status <SELECT> Sourced|Screening|Interview|Offer|Hired",
+    "Match Score (0–100) <INPUT> ",
+    "Source <INPUT> "
+   ],
+   "buttons": [
+    "",
+    "Existing candidate",
+    "Create new & link",
+    "Cancel",
+    "Link"
+   ]
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

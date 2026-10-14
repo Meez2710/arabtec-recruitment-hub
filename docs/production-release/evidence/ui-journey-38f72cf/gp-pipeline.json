@@ -1,0 +1,72 @@
+{
+ "stage": "pipeline",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "s": "click \"Move to Screening\""
+  },
+  {
+   "s": "after Move to Screening",
+   "status": "matched"
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "s": "click \"Move to Interview\""
+  },
+  {
+   "s": "after Move to Interview",
+   "status": "interviewing"
+  },
+  {
+   "s": "screenshot gp-11-pipeline-interview.png"
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "s": "click \"Schedule Interview\""
+  },
+  {
+   "s": "schedule dialog",
+   "fields": [
+    "Type <select-one> phone|technical|client|final|hr|reference",
+    "Mode <select-one> onsite|video|phone",
+    "Date & Time * <datetime-local> ",
+    "Duration (min) <number> ",
+    "Round <number> ",
+    "Google Meet link <text> "
+   ],
+   "buttons": [
+    "",
+    "Cancel",
+    "Schedule"
+   ],
+   "checks": []
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

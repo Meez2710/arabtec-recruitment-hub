@@ -1,0 +1,80 @@
+{
+ "stage": "assess",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as interviewer@arabtec.com"
+  },
+  {
+   "s": "open #interviews/1"
+  },
+  {
+   "s": "screenshot gp-15-interviewer-view.png"
+  },
+  {
+   "s": "click \"Open assessment\""
+  },
+  {
+   "s": "technical criteria",
+   "groups": [
+    "Technical Knowledge score",
+    "Relevant Experience score",
+    "Problem-Solving score",
+    "Tools & Software score",
+    "Planning & Organizing score"
+   ]
+  },
+  {
+   "s": "click Technical Knowledge score = 5 — Excellent"
+  },
+  {
+   "s": "click Relevant Experience score = 4 — Proficient"
+  },
+  {
+   "s": "click Problem-Solving score = 4 — Proficient"
+  },
+  {
+   "s": "click Tools & Software score = 3 — Average"
+  },
+  {
+   "s": "click Planning & Organizing score = 4 — Proficient"
+  },
+  {
+   "s": "click Technical Knowledge notes"
+  },
+  {
+   "s": "Technical recommendation = Proceed"
+  },
+  {
+   "s": "no technical justification box visible"
+  },
+  {
+   "s": "screenshot gp-16-technical-draft.png"
+  },
+  {
+   "s": "click Submit technical evaluation"
+  },
+  {
+   "s": "after submit",
+   "technical": "submitted",
+   "fit": "acceptable",
+   "salaryVisible": true
+  },
+  {
+   "s": "screenshot gp-17-technical-submitted.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [
+  "403 /api/candidates/intakes"
+ ],
+ "ok": true
+}

@@ -186,6 +186,7 @@ check('nothing but the panel itself can style a .cvrev-* element', () => {
   const seen = selectorsMentioning(RULES, 'cvrev');
   assert.deepEqual(seen, [
     '.cvrev-body',
+    '.cvrev-body.cvrev-body--doc', // 12 Oct: document-only panel (thread files) — one full-width column
     '.cvrev-cv',
     '.cvrev-cv > .parse-review-cv',
     '.cvrev-cv-state',
@@ -509,7 +510,7 @@ check('no view path downloads the résumé any more, and download still exists e
 
 check('every named entry point opens the panel', () => {
   const entries = {
-    'Talent Pool CV column': slice('data-label="CV" className="cell-actions"', '</td>'),
+    'Talent Pool Candidate cell': slice('className="pool-cv-actions"', '</td>'),
     'candidate action menu': slice('function CandidateActionMenu', 'function CandidatesPage'),
     'CandidateQuickView': slice('function CandidateQuickView', 'function AssessmentPanel'),
     'CandidateCvTab (profile CV tab)': slice('function CandidateCvTab', 'const ACT_CATS'),

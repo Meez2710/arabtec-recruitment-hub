@@ -1,0 +1,43 @@
+{
+ "stage": "assess2",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as interviewer@arabtec.com"
+  },
+  {
+   "s": "open #interviews/1"
+  },
+  {
+   "s": "click \"Open assessment\""
+  },
+  {
+   "s": "click Edit technical evaluation"
+  },
+  {
+   "s": "click technical justification"
+  },
+  {
+   "s": "click Submit technical evaluation"
+  },
+  {
+   "s": "after edit",
+   "status": "submitted",
+   "justification": "Strong planning fundamentals; ready for a site role with light supervision."
+  },
+  {
+   "s": "screenshot gp-17-technical-submitted.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

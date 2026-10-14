@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { all, get } from '../lib/db.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { applicationVisibilitySql } from '../lib/pipeline-visibility.js';
 
 const router = Router();
 router.use(requireAuth, requirePermission('dashboard.view'));
@@ -23,13 +24,38 @@ function requestScope(user, col = 'id') {
 const NON_TERMINAL_REQ = ['pending_approval', 'sourcing', 'in_progress', 'partially_filled', 'on_hold', 'reopened',
   'draft', 'budget_validation', 'approved', 'in_sourcing'];
 
+// Optional narrowing for the director's "full picture → drill down":
+// ?projectId=&departmentId=&ownerId= restrict every figure to the requests that
+// match (and to the applications, interviews and offers on those requests).
+// Ids only; anything that is not a positive integer is ignored.
+function narrowing(q) {
+  const parts = []; const params = [];
+  for (const [key, col] of [['projectId', 'project_id'], ['departmentId', 'department_id'], ['ownerId', 'owner_id']]) {
+    const v = Number(q[key]);
+    if (Number.isInteger(v) && v > 0) { parts.push(`${col}=?`); params.push(v); }
+  }
+  return parts.length ? { sql: parts.join(' AND '), params, applied: true } : { sql: '1=1', params: [], applied: false };
+}
+function narrowScope(scope, n, col) {
+  if (!n.applied) return scope;
+  const where = col === 'id'
+    ? `(${scope.where}) AND ${n.sql}`
+    : `(${scope.where}) AND ${col} IN (SELECT id FROM recruitment_request WHERE ${n.sql})`;
+  return { where, params: [...scope.params, ...n.params] };
+}
+// Approved and running: the clock for "how long has this role been open"
+// starts at approval (opened_at), never while a request is still waiting.
+const ACTIVE_REQ = NON_TERMINAL_REQ.filter((s) => !['pending_approval', 'draft', 'budget_validation'].includes(s));
+
 router.get('/', (req, res) => {
   const user = req.user;
   const viewAll = user.permissions.includes('request.view_all');
-  const scope = requestScope(user, 'id');           // for recruitment_request.id
-  const appScope = requestScope(user, 'request_id'); // for application.request_id
-  const ivScope = requestScope(user, 'request_id');
-  const offScope = requestScope(user, 'request_id');
+  const n = narrowing(req.query || {});
+  const scope = narrowScope(requestScope(user, 'id'), n, 'id');                     // recruitment_request.id
+  const appScope = narrowScope(requestScope(user, 'request_id'), n, 'request_id');   // application.request_id
+  appScope.where = `(${appScope.where}) AND ${applicationVisibilitySql(user, 'application')}`;
+  const ivScope = narrowScope(requestScope(user, 'request_id'), n, 'request_id');
+  const offScope = narrowScope(requestScope(user, 'request_id'), n, 'request_id');
 
   // ---- Requests ----
   const reqByStatus = all(`SELECT status, COUNT(*) c FROM recruitment_request WHERE ${scope.where} GROUP BY status`, scope.params);
@@ -39,12 +65,15 @@ router.get('/', (req, res) => {
   const headcount = get(`SELECT COALESCE(SUM(headcount),0) h, COALESCE(SUM(headcount_filled),0) f FROM recruitment_request WHERE ${scope.where}`, scope.params);
   const fillRate = headcount.h > 0 ? Math.round((headcount.f / headcount.h) * 100) : 0;
 
-  // Aging buckets (open requests by age of opened_at/created_at)
-  const agingRows = all(`SELECT opened_at, created_at FROM recruitment_request WHERE ${scope.where} AND status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')})`, [...scope.params, ...NON_TERMINAL_REQ]);
+  // Aging buckets: approved, running requests by days since approval. A request
+  // still waiting for its decision has not started and is counted separately.
+  const agingRows = all(`SELECT opened_at FROM recruitment_request WHERE ${scope.where} AND opened_at IS NOT NULL AND status IN (${ACTIVE_REQ.map(() => '?').join(',')})`, [...scope.params, ...ACTIVE_REQ]);
   const now = Date.now();
   const aging = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };
+  const waitingRows = all(`SELECT created_at FROM recruitment_request WHERE ${scope.where} AND status IN ('pending_approval','draft','budget_validation')`, scope.params);
+  const awaitingApproval = { count: waitingRows.length, oldestDays: waitingRows.length ? Math.floor(Math.max(...waitingRows.map((r) => (now - new Date(r.created_at).getTime()) / 86400000))) : null };
   for (const r of agingRows) {
-    const t = new Date(r.opened_at || r.created_at).getTime();
+    const t = new Date(r.opened_at).getTime();
     const days = (now - t) / 86400000;
     if (days <= 30) aging['0-30']++; else if (days <= 60) aging['31-60']++; else if (days <= 90) aging['61-90']++; else aging['90+']++;
   }
@@ -85,7 +114,7 @@ router.get('/', (req, res) => {
     // request list — without it the row has a name but nothing to filter by.
     recruiterLoad = all(`SELECT u.id id, u.full_name name, COUNT(*) c
       FROM recruitment_request r JOIN users u ON u.id=r.owner_id
-      WHERE r.status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')}) GROUP BY u.id, u.full_name ORDER BY c DESC LIMIT 8`, NON_TERMINAL_REQ);
+      WHERE r.status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')})${n.applied ? ' AND r.' + n.sql.replace(/ AND /g, ' AND r.') : ''} GROUP BY u.id, u.full_name ORDER BY c DESC LIMIT 8`, [...NON_TERMINAL_REQ, ...n.params]);
   }
 
   // ---- My work (always scoped to the user) ----
@@ -106,6 +135,8 @@ router.get('/', (req, res) => {
     },
     requestsByStatus: reqByStatus.map((r) => ({ status: r.status, count: r.c })),
     aging,
+    awaitingApproval,
+    filters: n.applied ? Object.fromEntries(['projectId', 'departmentId', 'ownerId'].filter((k) => Number(req.query[k]) > 0).map((k) => [k, Number(req.query[k])])) : null,
     applicationsByStatus: appByStatus.map((r) => ({ status: r.status, count: r.c })),
     interviewsByStatus: ivByStatus.map((r) => ({ status: r.status, count: r.c })),
     offersByStatus: offByStatus.map((r) => ({ status: r.status, count: r.c })),

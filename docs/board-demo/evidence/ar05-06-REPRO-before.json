@@ -1,0 +1,17 @@
+{
+ "tablet": {
+  "headTop": 11,
+  "barBottom": 56,
+  "closeClickable": false,
+  "notesLeft": 518.203125,
+  "segOverlapsNotes": false
+ },
+ "resize": {
+  "typed": "UNSAVED RESIZE PROBE"
+ },
+ "afterResize": {
+  "drawerStayedOpen": false,
+  "notesNow": "Sound grasp of Primavera P6 baselines",
+  "restoredNote": false
+ }
+}

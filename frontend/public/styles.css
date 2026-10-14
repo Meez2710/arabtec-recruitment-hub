@@ -330,6 +330,11 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .notif-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .notif-head strong { font-size: 13px; }
 .linklike { background: none; border: none; color: var(--action); font-size: 12px; cursor: pointer; padding: 0; }
+/* A CV filename opens the CV side panel (production fix 12 Oct 2026): it must
+   look and behave like the control it is — pointer, underline, focus ring. */
+.cv-file-link { background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: 600; color: var(--action); cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.cv-file-link:hover { color: var(--action-dark, var(--action)); }
+.cv-file-link:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: 4px; }
 .notif-list { max-height: 360px; overflow-y: auto; }
 .notif-empty { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 13px; }
 .notif-item { padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
@@ -579,11 +584,11 @@ table.table tbody tr:hover, .table tbody tr:hover { background: var(--action-pri
 .state-empty .se-title { color: var(--text-strong); font-weight: 600; margin: 8px 0 4px; }
 .field-error { color: var(--danger); font-size: 11.5px; margin-top: 5px; }
 .field input.is-invalid, .field select.is-invalid, .field textarea.is-invalid { border-color: var(--danger); }
-.notice { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm, 7px); padding: 10px 12px; font-size: 12.5px; }
-.notice-info { background: var(--info-tint); border-left-color: var(--info); }
-.notice-warn { background: var(--warning-tint); border-left-color: var(--warning); color: var(--warning-ink); }
-.notice-danger { background: var(--danger-tint); border-left-color: var(--danger); color: var(--danger); }
-.notice-success { background: var(--action-success-tint); border-left-color: var(--action-success); }
+.notice { border: 1px solid var(--border); border-radius: var(--radius-sm, 7px); padding: 10px 12px; font-size: 12.5px; }
+.notice-info { background: var(--info-tint); }
+.notice-warn { background: var(--warning-tint); color: var(--warning-ink); }
+.notice-danger { background: var(--danger-tint); color: var(--danger); }
+.notice-success { background: var(--action-success-tint); }
 
 /* --- Branding Settings preview (tokens are the single source of truth) ---- */
 .swatch { width: 100%; height: 34px; border-radius: 6px; border: 1px solid var(--border); }
@@ -1174,3 +1179,223 @@ tr.row-pending td { pointer-events: none; }
 .act-ico { color: var(--muted); display: grid; place-items: center; padding-top: 2px; }
 .act-sentence { font-size: 13.5px; color: var(--text-strong); line-height: 1.45; }
 .act-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+/* Interview assessment — interactive form. Calm and spacious: dark neutral
+   headings, light-gray dividers only between sections and rows, green (the
+   app's action colour) for selections, red kept for warnings and errors. The
+   printable form keeps the approved sheet styling (lib/assessment.js).
+   Scoped to .assess / .assess-* so nothing else in the ATS changes. */
+.assess { --assess-red: var(--brand-dark, #b01420); --assess-line: var(--border, #e6e9ee); --assess-soft: var(--border-soft, #f0f2f5); --assess-accent: var(--green, #008064); --assess-accent-dark: var(--green-700, #00664f); --assess-accent-tint: var(--green-50, #e6f4f0); }
+.assess-doc { background: #fff; color: var(--ink); border: 0; padding: 24px; max-width: 920px; line-height: 1.5; }
+.assess-doc-title { color: var(--ink); font-size: 18px; font-weight: 600; text-align: left; letter-spacing: 0; margin: 0 0 24px; }
+.assess-sec { margin: 0; }
+.assess-sec + .assess-sec { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--assess-soft); }
+.assess-sec-title { color: var(--ink); font-size: 16px; font-weight: 600; margin: 0 0 4px; padding: 0; border: 0; }
+.assess-sec-meta { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.assess-instruction { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.assess-muted { color: var(--muted); font-size: 12px; }
+/* Candidate context: one quiet panel, label above value. */
+.assess-info { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; margin: 0; padding: 16px 24px; background: var(--surface-2, #f4f5f7); border-radius: 8px; border: 0; }
+.assess-info-cell { border: 0; min-width: 0; }
+/* An odd field out (a withheld neighbour) takes the full row instead of leaving a hole. */
+.assess-info-cell:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.assess-info dt { background: none; color: var(--muted); font-weight: 500; font-size: 12px; padding: 0; margin: 0 0 4px; }
+.assess-info dd { margin: 0; padding: 0; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.assess-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; margin-top: 4px; }
+/* The score column is sized for its six buttons at every width; Notes takes the rest (AR-05). */
+.assess-col-crit { width: 18%; } .assess-col-desc { width: 28%; } .assess-col-score { width: 248px; }
+.assess-table thead th { background: none; color: var(--muted); text-align: left; font-weight: 600; font-size: 12px; text-transform: none; letter-spacing: normal; padding: 0 12px 8px; border: 0; border-bottom: 1px solid var(--assess-line); }
+.assess-table td, .assess-table tbody th { border: 0; border-bottom: 1px solid var(--assess-soft); padding: 12px; vertical-align: middle; text-align: left; }
+.assess-table tbody tr:last-child td, .assess-table tbody tr:last-child th { border-bottom: 0; }
+.assess-table tbody th { font-weight: 600; color: var(--ink); }
+.assess-desc { color: var(--ink-soft); }
+.assess-seg { display: inline-flex; gap: 4px; border: 0; overflow: visible; }
+.assess-seg-btn { border: 1px solid var(--assess-line); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; min-width: 32px; height: 32px; padding: 0 4px; cursor: pointer; }
+.assess-seg-btn:last-child { min-width: 40px; }
+.assess-seg-btn:hover { background: var(--assess-accent-tint); border-color: var(--green-border, #b7dcd3); }
+.assess-seg-btn.on { background: var(--assess-accent); border-color: var(--assess-accent); color: #fff; }
+.assess-seg-btn:focus-visible { outline: 2px solid var(--assess-accent); outline-offset: 2px; position: relative; }
+.assess-score-val { display: inline-flex; align-items: baseline; gap: 4px; }
+.assess-score-val strong { color: var(--ink); font-size: 15px; }
+.assess-score-val span { color: var(--ink-soft); font-size: 13px; }
+.assess-score-empty { color: var(--muted); }
+.assess-notes textarea { width: 100%; min-height: 40px; resize: vertical; border: 1px solid var(--assess-line); background: #fff; padding: 8px; font: inherit; font-size: 13px; border-radius: 8px; }
+.assess-notes textarea:hover { border-color: var(--green-border, #b7dcd3); }
+.assess-notes textarea:focus-visible { outline: 2px solid var(--assess-accent); outline-offset: 0; border-color: var(--assess-accent); }
+.assess-notes-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.assess-guide { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+.assess-summary { font-size: 13px; margin: 8px 0 0; text-align: right; color: var(--ink-soft); }
+.assess-note { font-size: 13px; margin: 12px 0; line-height: 1.5; }
+.assess-warn { color: var(--assess-red); }
+.assess-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 4px 0; font-size: 13px; }
+.assess-flags + .assess-flags { margin-top: 12px; }
+.assess-flags-who { flex-basis: 100%; font-size: 12px; font-weight: 600; color: var(--muted); }
+.assess-flag { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+.assess-flag input:focus-visible, .assess-choice input:focus-visible { outline: 2px solid var(--assess-accent); outline-offset: 2px; }
+.assess-flag input, .assess-choice input { accent-color: var(--assess-accent); }
+.assess-final { margin-bottom: 16px; }
+.assess-decision, .assess-fit-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 13px; margin: 0 0 12px; }
+.assess-box { white-space: nowrap; color: var(--ink-soft); }
+.assess-box.on { color: var(--assess-accent-dark); font-weight: 600; }
+.assess-choice { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.assess-fit { border-top: 1px solid var(--assess-soft); padding-top: 16px; margin-top: 16px; }
+.assess-fit-row { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 8px 16px; align-items: start; margin: 12px 0; font-size: 13px; }
+.assess-fit-row label { color: var(--ink-soft); padding-top: 8px; }
+.assess-fit-row select, .assess-fit-row textarea { width: 100%; font: inherit; font-size: 13px; }
+.assess-fit-row textarea { min-height: 64px; border-radius: 8px; }
+.assess-fit-row select { max-width: 320px; }
+.assess-fit-value { padding-top: 8px; color: var(--ink); }
+.assess-just-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 24px; }
+.assess-final-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.assess-bar { background: var(--surface-2, #f4f5f7); border-top: 1px solid var(--assess-line); margin: 32px -24px -24px; padding: 16px 24px; display: grid; gap: 12px; }
+.assess-bar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.assess-bar-state { font-size: 13px; }
+.assess-actions { display: flex; justify-content: flex-end; margin-top: 12px; max-width: 920px; }
+.assess-drawer { max-width: 960px; margin-left: auto; height: 100vh; border-radius: 0; display: flex; flex-direction: column; }
+.assess-drawer .modal-body { flex: 1; overflow-y: auto; }
+.assess-pol { overflow-x: auto; }
+.assess-pol-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.assess-pol-table th, .assess-pol-table td { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; }
+.assess-pol-table thead th { font-size: 12px; color: var(--muted); font-weight: 700; }
+.assess-pol-cell { text-align: center; white-space: nowrap; }
+.assess-pol-section th { font-weight: 700; }
+.assess-pol-field th { padding-left: 24px; font-weight: 500; }
+.assess-pol-group th { background: var(--brand-tint, #fcefef); color: var(--brand-dark, #b01420); font-weight: 700; }
+.assess-pol-reset { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 12px; }
+/* Tablet and phone: each criterion becomes a stacked card — name, guidance,
+   score row, then full-width notes — instead of four squeezed columns. */
+@media (max-width: 900px) {
+  .assess-table, .assess-table tbody, .assess-table tr, .assess-table td, .assess-table tbody th { display: block; width: 100%; }
+  .assess-table thead, .assess-table colgroup { display: none; }
+  .assess-table tr { border-bottom: 1px solid var(--assess-soft); padding: 16px 0; }
+  .assess-table tbody tr:last-child { border-bottom: 0; }
+  .assess-table td, .assess-table tbody th { border: 0; padding: 0; }
+  .assess-table tbody th { font-size: 14px; }
+  .assess-table .assess-desc { margin-top: 4px; }
+  .assess-table .assess-score { margin-top: 12px; }
+  .assess-table .assess-notes { margin-top: 8px; }
+}
+@media (max-width: 640px) {
+  .assess-doc { padding: 16px; }
+  .assess-info { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  .assess-info-cell:last-child:nth-child(odd) { grid-column: auto; }
+  .assess-fit-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .assess-fit-row label { padding-top: 0; }
+  .assess-bar { margin: 24px -16px -16px; padding: 16px; }
+  .assess-seg-btn { min-width: 40px; height: 40px; }
+}
+
+/* Sign-in — the system's own palette: light grey canvas (as inside the app),
+   one white bordered card, Arabtec red only as hard accents (top rule, eyebrow
+   dash, full stop), a 4% logo watermark. Own signin-* classes; the legacy
+   .login-* rules above (artwork background, dark card) are no longer rendered. */
+.signin { position: relative; min-height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--canvas, #f4f5f7); color: var(--ink); border-top: 4px solid var(--brand, #d01827); }
+.signin-header { position: relative; z-index: 1; padding: 24px 32px 0; }
+.signin-main { position: relative; z-index: 1; flex: 1; width: 100%; max-width: 1120px; margin-inline: auto; padding: 32px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 400px); align-items: center; gap: 32px; }
+.signin-intro { max-width: 520px; }
+.signin-eyebrow { display: flex; align-items: center; gap: 12px; margin: 0 0 16px;
+  font-size: 11px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
+.signin-dash { flex: none; width: 24px; height: 2px; background: var(--brand, #d01827); }
+.signin-title { font-family: var(--font-display, 'Inter Tight', Inter, Arial, sans-serif); font-size: clamp(36px, 5vw, 60px);
+  font-weight: 800; letter-spacing: -.025em; line-height: 1; color: var(--ink); margin: 0 0 24px; }
+.signin-stop { color: var(--brand, #d01827); }
+.signin-lede { font-size: 16px; line-height: 1.7; color: var(--muted); max-width: 440px; margin: 0; }
+.signin-card { width: 100%; background: var(--surface, #fff); border: 1px solid var(--line, rgba(26, 26, 26, .1));
+  border-radius: var(--card-radius, 10px); padding: 32px; }
+.signin-heading { font-family: var(--font-display, 'Inter Tight', Inter, Arial, sans-serif); font-size: 22px; font-weight: 700;
+  letter-spacing: -.02em; color: var(--ink); margin: 0 0 4px; }
+.signin-sub { font-size: 14px; color: var(--muted); margin: 0 0 24px; }
+.signin-card .field { margin-bottom: 16px; }
+.signin-card .field input { width: 100%; background: var(--surface, #fff); }
+.signin-card .error-banner { margin-bottom: 16px; }
+.signin-password { position: relative; }
+.signin-password input { padding-inline-end: 32px; }
+.signin-reveal { position: absolute; top: 50%; inset-inline-end: 8px; transform: translateY(-50%); display: grid; place-items: center;
+  border: 0; background: none; color: var(--muted); padding: 4px; border-radius: 4px; cursor: pointer; }
+.signin-reveal:hover { color: var(--ink); }
+.signin-reveal:focus-visible, .signin-link:focus-visible { outline: 2px solid var(--green-700, #00664f); outline-offset: 2px; }
+.signin-hint { font-size: 12px; color: var(--brand-dark, #b01420); margin: 4px 0 0; }
+.signin-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 24px; font-size: 13px; }
+.signin-link { border: 0; background: none; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--green-700, #00664f); cursor: pointer; border-radius: 4px; }
+.signin-link:hover { text-decoration: underline; }
+.signin-info { font-size: 13px; line-height: 1.5; color: var(--ink-soft); background: var(--canvas, #f4f5f7); border: 1px solid var(--line, rgba(26, 26, 26, .1));
+  border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+.signin-footer { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px;
+  padding: 16px 32px 24px; font-size: 12px; color: var(--muted); }
+.signin-watermark { position: absolute; z-index: 0; inset-inline-end: -32px; inset-block-end: -32px; width: 420px;
+  opacity: .025; pointer-events: none; user-select: none; }
+@media (max-width: 860px) {
+  .signin-header { padding: 16px 16px 0; }
+  .signin-main { grid-template-columns: minmax(0, 1fr); align-items: start; align-content: start; gap: 24px; padding: 24px 16px; }
+  .signin-lede { font-size: 15px; }
+  .signin-card { padding: 24px; }
+  .signin-footer { flex-direction: column; padding: 16px; }
+  .signin-watermark { display: none; }
+}
+
+/* Footer quotes editor (Control Center › Footer quotes). */
+.kl-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.kl-toolbar input[type=search] { flex: 1 1 240px; min-width: 0; }
+.kl-bulk { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: var(--surface-2, #f4f5f7); }
+.kl-bulk label { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+.kl-editor .kl-bulk textarea { width: 100%; min-height: 240px; }
+.kl-form { display: grid; grid-template-columns: minmax(0, 1fr) 200px 160px; gap: 12px 16px; align-items: start; border: 1px solid var(--green-border, #b7dcd3); background: var(--green-50, #e6f4f0); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.kl-form .field { margin: 0; }
+.kl-form textarea, .kl-form input, .kl-form select { width: 100%; }
+.kl-editor .kl-form textarea { min-height: 64px; }
+.kl-form-quote { position: relative; }
+.kl-count { display: block; text-align: right; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.kl-count.error, .kl-form-error { color: var(--critical, #c0392b); }
+.kl-form-error { grid-column: 1 / -1; font-size: 13px; }
+.kl-form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.kl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kl-table thead th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 12px 8px; border-bottom: 1px solid var(--border); }
+.kl-table td { padding: 12px; border-bottom: 1px solid var(--border-soft, #f0f2f5); vertical-align: top; }
+.kl-table .kl-q { color: var(--ink); line-height: 1.5; }
+.kl-table .kl-by { color: var(--ink-soft); white-space: nowrap; }
+.kl-table .kl-t { color: var(--ink-soft); white-space: nowrap; text-transform: capitalize; }
+.kl-table .kl-actions { white-space: nowrap; text-align: right; }
+.kl-table .kl-form { margin: 0; }
+.kl-savebar { position: sticky; bottom: 0; background: #fff; border-top: 1px solid var(--border); padding-top: 12px; }
+@media (max-width: 640px) {
+  .kl-form { grid-template-columns: minmax(0, 1fr); }
+  .kl-table .kl-by, .kl-table .kl-t { white-space: normal; }
+}
+
+/* Director dashboard (owner review, 4 Oct 2026): narrow-down bar, attention
+   list first, six figures, details on demand. */
+.dash-view-switch { margin: 0 0 16px; }
+.dash-view-note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.dash-filter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin: 0 0 16px; }
+.dash-filter label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); min-width: 180px; }
+.dash-filter select { min-width: 180px; }
+.dash-filter-scope { font-size: 13px; color: var(--ink-soft); padding-bottom: 8px; }
+.dash-attention { margin-bottom: 16px; }
+.dash-allclear { padding: 16px 24px; font-size: 14px; color: var(--ink-soft); }
+.dash-more { margin: 4px 16px 12px; }
+.dash-kpi-row.dash-kpi-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.dash-details-toggle { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: center; margin: 16px 0; }
+.dash-details-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.dash-note { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+@media (max-width: 1100px) { .dash-kpi-row.dash-kpi-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .dash-filter label, .dash-filter select { min-width: 0; width: 100%; }
+  .dash-kpi-row.dash-kpi-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Hiring Requests — role panels (owner review, 4 Oct 2026). */
+.req-overview, .req-control { margin: 0 0 16px; }
+.req-overview .dash-details-toggle { margin: 12px 0; }
+.req-process { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.req-step { display: inline-flex; align-items: baseline; gap: 8px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; font: inherit; color: var(--ink); position: relative; }
+.req-step:hover { border-color: var(--green-border, #b7dcd3); background: var(--green-50, #e6f4f0); }
+.req-step:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.req-step-n { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.req-step-l { font-size: 13px; color: var(--ink-soft); }
+.req-step-arrow { color: var(--muted); margin-left: 4px; }
+.req-mine { display: inline-flex; gap: 4px; margin: 0 0 12px; padding: 4px; border-radius: 8px; background: var(--surface-2, #f4f5f7); }
+.owner-cell { display: grid; gap: 4px; }
+.owner-actions { display: inline-flex; gap: 4px; }
+.text-risk { color: var(--critical, #c0392b); font-weight: 600; }
+.req-control-stack { display: grid; gap: 12px; }

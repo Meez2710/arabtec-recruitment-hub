@@ -1,0 +1,11 @@
+  ✓ at least 100 lines, each with a quote and an attribution
+  ✓ every line fits one footer row: 160 characters or fewer, no line breaks
+  ✓ no duplicate quotes
+  ✓ the script is loaded before the app, so the list exists when the footer first renders
+  ✓ the footer is rendered in both page shells and re-drawn per route
+  ✓ the owner’s list is parsed with the bundled list’s rules
+  ✓ the bundled list itself passes the owner-list parser (the two rule sets agree)
+  ✓ the app prefers the owner’s saved list and falls back to the bundled one
+
+=== UI KNOWLEDGE LINES: 8 passed, 0 failed ===
+

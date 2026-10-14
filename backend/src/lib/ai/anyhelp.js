@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { candidateScopeClause } from '../candidate-scope.js';
 
 const searchSchema = z.object({
   query: z.string().trim().max(120).default(''),
@@ -24,9 +25,11 @@ export function capabilitiesFor(user) {
 }
 
 // Tool input never contains SQL, URLs, permissions or user identifiers. Query
-// structure and ownership are entirely server-owned. The production talent
-// pool grants candidate.view access to all non-erased candidates; requests use
-// the same owner/requester/creator scope as GET /api/requests/:id.
+// structure and ownership are entirely server-owned. Candidates follow the same
+// assignment boundary as /api/candidates (lib/candidate-scope.js): broad roles
+// see the whole non-erased pool, scoped roles only candidates they are
+// connected to. Requests use the owner/requester/creator scope of
+// GET /api/requests/:id.
 export function createAnyhelpTools({ user, all }) {
   const caps = capabilitiesFor(user);
   const scope = has(user, 'request.view_all') ? ['1=1', []]
@@ -62,8 +65,9 @@ export function createAnyhelpTools({ user, all }) {
         const params = name === 'get_request' ? [args.id] : [like(args.query), like(args.query)];
         rows = all(`SELECT ${requestColumns} FROM recruitment_request WHERE ${scope[0]} AND ${where} ORDER BY id DESC LIMIT ?`, [...scope[1], ...params, args.limit || 1]);
       } else {
-        const clauses = ['erased_at IS NULL'];
-        const params = [];
+        const [candScope, candScopeParams] = candidateScopeClause(user);
+        const clauses = ['erased_at IS NULL', candScope];
+        const params = [...candScopeParams];
         if (name === 'get_candidate') { clauses.push('id=?'); params.push(args.id); }
         else {
           clauses.push("(LOWER(full_name) LIKE ? ESCAPE '!' OR LOWER(current_position) LIKE ? ESCAPE '!' OR LOWER(skills) LIKE ? ESCAPE '!')");

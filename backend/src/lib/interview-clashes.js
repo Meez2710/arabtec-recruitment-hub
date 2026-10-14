@@ -61,3 +61,50 @@ export function findPanelClashes(proposal, existing) {
   }
   return clashes;
 }
+
+const overlaps = (a, b) => a.start < b.end && b.start < a.end;
+
+/**
+ * Does the same candidate already have an active interview overlapping the
+ * proposal? A person cannot be in two interviews at once, so this one is a
+ * BLOCK, unlike panel overlaps (audit 2026-10-06, decision 2).
+ *
+ * @param {{ start: string, durationMin: number, candidateId: number, excludeId?: number }} proposal
+ * @param {Array<{ id: number, status: string, scheduledAt: string, durationMin: number, candidateId: number }>} existing
+ */
+export function findCandidateConflicts(proposal, existing) {
+  const wanted = intervalOf(proposal.start, proposal.durationMin);
+  if (!wanted || !proposal.candidateId) return [];
+  const out = [];
+  for (const iv of existing) {
+    if (iv.id === proposal.excludeId || !ACTIVE_STATUSES.includes(iv.status)) continue;
+    if (Number(iv.candidateId) !== Number(proposal.candidateId)) continue;
+    const held = intervalOf(iv.scheduledAt, iv.durationMin);
+    if (!held || !overlaps(wanted, held)) continue;
+    out.push({ interviewId: iv.id, start: new Date(held.start).toISOString(), end: new Date(held.end).toISOString() });
+  }
+  return out;
+}
+
+/** Location / meeting-link text normalised for comparison (case, spaces). */
+export const normaliseLocation = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * Active interviews at an IDENTICAL, non-empty location or meeting link that
+ * overlap the proposal. A warning only: free text is not a room-booking
+ * system, so it can only ever say "this looks like the same place".
+ */
+export function findLocationOverlaps(proposal, existing) {
+  const wanted = intervalOf(proposal.start, proposal.durationMin);
+  const where = normaliseLocation(proposal.location);
+  if (!wanted || !where) return [];
+  const out = [];
+  for (const iv of existing) {
+    if (iv.id === proposal.excludeId || !ACTIVE_STATUSES.includes(iv.status)) continue;
+    if (normaliseLocation(iv.locationOrLink) !== where) continue;
+    const held = intervalOf(iv.scheduledAt, iv.durationMin);
+    if (!held || !overlaps(wanted, held)) continue;
+    out.push({ interviewId: iv.id, start: new Date(held.start).toISOString(), end: new Date(held.end).toISOString() });
+  }
+  return out;
+}

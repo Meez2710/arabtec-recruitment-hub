@@ -1,0 +1,68 @@
+{
+ "stage": "request",
+ "steps": [
+  {
+   "s": "screenshot gp-01-login.png"
+  },
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "screenshot gp-02-dashboard.png"
+  },
+  {
+   "s": "open #requests"
+  },
+  {
+   "s": "click \"Create Request\""
+  },
+  {
+   "s": "type \"Position\""
+  },
+  {
+   "s": "choose \"Department\" = Planning"
+  },
+  {
+   "s": "choose \"Project / Site\" = Hills of One — New Zayed"
+  },
+  {
+   "s": "choose \"Priority\" = high"
+  },
+  {
+   "s": "type \"Key Responsibilities\""
+  },
+  {
+   "s": "type \"Key Requirements\""
+  },
+  {
+   "s": "screenshot gp-03-request-form.png"
+  },
+  {
+   "s": "click \"Create Request\""
+  },
+  {
+   "s": "created",
+   "id": 2,
+   "ticketNo": "REQ-2026-00002",
+   "status": "pending_approval"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "screenshot gp-04-request-created.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

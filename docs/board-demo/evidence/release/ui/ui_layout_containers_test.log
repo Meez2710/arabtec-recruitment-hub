@@ -1,0 +1,15 @@
+  ✓ the laptop band declares no control size at all
+  ✓ control height comes from one token, and only the phone raises it
+  ✓ card padding resolves to the value the product actually uses
+  ✓ distinct card types keep their own identity
+  ✓ sidebar wordmark keeps display:grid inside the 1180px restore band
+  ✓ KPI row gap and card inset resolve to the compact 12px/16px rhythm
+  ✓ the two-line clamp outranks every display rule that competes with it
+  ✓ a stacked phone cell grows with its content instead of keeping the 40px desktop row
+  ✓ a stacked phone card uses its full width — no dead lane down the right edge
+  ✓ the three list tables actually use the clamp on their free-text cells
+  ✓ page gutters only ever shrink as the viewport shrinks
+  ✓ the min-width:0 floor is declared for the containers that need it
+  ✓ local overflow ownership is unchanged and the page still never scrolls
+
+=== UI LAYOUT CONTAINERS: 13 passed, 0 failed ===

@@ -1,0 +1,223 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:64901) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4394 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"0f499697-cadb-46d3-8f6a-630e47aa348f","method":"GET","path":"/api/auth/me","status":503,"ms":4,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"21128241-b2e7-48d6-b28a-90f39bc8bd22","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4394/api/health
+
+{"level":"warn","msg":"request","requestId":"3249e528-39a4-45f1-9231-fd3635234667","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"529837e4-2c6b-4fe8-b7e0-3b476dbdd849","method":"POST","path":"/api/auth/login","status":200,"ms":212,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c63ae550-4d67-458e-913d-a8a1343fc719","method":"POST","path":"/api/auth/login","status":200,"ms":229,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"01f529b9-a280-4c65-b868-eecf831dea45","method":"POST","path":"/api/auth/login","status":200,"ms":246,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"44e287d0-c804-4bad-949f-b1cdc98bba58","method":"POST","path":"/api/auth/login","status":200,"ms":261,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b91aa2d8-2fc7-4c83-8df1-1b1e1220637c","method":"POST","path":"/api/auth/login","status":200,"ms":261,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f1f889c8-2160-49d8-aa6a-005bd3bbd278","method":"POST","path":"/api/auth/login","status":200,"ms":249,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f6e1c223-fa66-4fab-a76e-7f0a26992c43","method":"POST","path":"/api/auth/login","status":200,"ms":240,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3a31cd51-6ac8-42cd-b67e-b090e11abde6","method":"POST","path":"/api/auth/login","status":200,"ms":179,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d4f15627-9e0b-4a4e-98a9-7b3ce3e43d54","method":"GET","path":"/api/requests/meta/form","status":200,"ms":4,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ced163b7-0b9d-4ce4-9b70-f8b8b930fdb5","method":"POST","path":"/api/requests","status":201,"ms":7,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"17e5cfba-b639-45e9-8fe2-7a956bcc2cf7","method":"POST","path":"/api/requests/1/submit","status":200,"ms":15,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"87894ec3-174c-497f-bd5e-2c25848415ad","method":"POST","path":"/api/requests/1/approve","status":200,"ms":7,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — SCOPE Assigned Request","messageId":"<6a4255ac-da3a-f6d3-2304-102abb48024f@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — SCOPE Assigned Request","messageId":"<638c1936-76f4-f710-936a-b232f8c776bb@localhost>"}
+{"level":"info","msg":"request","requestId":"f33c8642-dae5-4b40-bcb9-2d95ee1b9d54","method":"POST","path":"/api/requests/1/assign","status":200,"ms":5,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — SCOPE Assigned Request","messageId":"<8e4e9b29-f4a6-ac39-3043-8f84902839e9@localhost>"}
+{"level":"info","msg":"request","requestId":"225bf9b5-c3cb-4972-b3ad-d0dd55696aac","method":"POST","path":"/api/requests","status":201,"ms":4,"userId":6,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — SCOPE Assigned Request","messageId":"<d6669817-6910-3478-43ce-a2c59dd73901@localhost>"}
+{"level":"info","msg":"request","requestId":"ef78217c-dd78-4ea2-9daa-8f6978419ff8","method":"POST","path":"/api/requests/2/submit","status":200,"ms":6,"userId":6,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"447098f1-33c7-4622-87c1-5558de63f989","method":"POST","path":"/api/requests/2/approve","status":200,"ms":5,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00002 Approval needed: REQ-2026-00002 — SCOPE Hiring Manager Request","messageId":"<0a27fca2-9949-3bc9-e815-d294b373afaa@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00002 Approval needed: REQ-2026-00002 — SCOPE Hiring Manager Request","messageId":"<42a7a7f1-e7c0-0d6c-226c-3783b15e6c6c@localhost>"}
+{"level":"info","msg":"request","requestId":"b3b97e24-8f56-4a90-91d7-fa5edacefdfb","method":"POST","path":"/api/requests/2/assign","status":200,"ms":6,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hiring.manager@arabtec.com","subject":"Approved — REQ-2026-00002 Approved: REQ-2026-00002 — SCOPE Hiring Manager Request","messageId":"<d90b8cbe-f353-cea1-96f4-90b4c86c8730@localhost>"}
+{"level":"info","msg":"request","requestId":"9531ceaf-2d1e-4c66-ad34-bfeef78e6014","method":"POST","path":"/api/requests","status":201,"ms":5,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00002 You’ve been assigned: REQ-2026-00002 — SCOPE Hiring Manager Request","messageId":"<07323f40-af95-ded0-fceb-a8e5a63378df@localhost>"}
+{"level":"info","msg":"request","requestId":"566ec4b2-0908-471b-8963-e43bd60f9c05","method":"POST","path":"/api/requests/3/submit","status":200,"ms":7,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3e665698-d732-485c-b81a-10c8c979a8f4","method":"POST","path":"/api/requests/3/approve","status":200,"ms":4,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00003 Approval needed: REQ-2026-00003 — SCOPE Unrelated Confidential Request","messageId":"<bf880002-8335-bd2d-7d83-109d4bcf5c50@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00003 Approval needed: REQ-2026-00003 — SCOPE Unrelated Confidential Request","messageId":"<36c4ba09-ebda-2adc-52b4-d27fdc29bb4f@localhost>"}
+{"level":"info","msg":"request","requestId":"c87ee2ac-c42f-4168-8e64-13ea13e3dd67","method":"POST","path":"/api/requests/3/assign","status":200,"ms":5,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00003 Approved: REQ-2026-00003 — SCOPE Unrelated Confidential Request","messageId":"<b7d9eea6-df2a-af6f-bbca-3802ffe4cd4a@localhost>"}
+{"level":"info","msg":"request","requestId":"03add43c-612d-422a-b69a-b62ff1af90bd","method":"POST","path":"/api/candidates","status":201,"ms":11,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00003 You’ve been assigned: REQ-2026-00003 — SCOPE Unrelated Confidential Request","messageId":"<4e8792e9-11e3-4b8d-fb8b-1465a08b2aab@localhost>"}
+{"level":"info","msg":"request","requestId":"935b9edb-80d6-485b-ae61-0a3e22406a40","method":"POST","path":"/api/candidates","status":201,"ms":3,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bf815f22-cde5-4a2e-ac73-f227e405c870","method":"POST","path":"/api/candidates","status":201,"ms":3,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ca82bbb7-b81d-483d-8dd6-def8dc31f83a","method":"POST","path":"/api/applications","status":201,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8520ec01-ffd4-4b66-ac21-a1d46ee078af","method":"POST","path":"/api/applications/1/move","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3d0c19ee-5169-41a4-83d2-6af3babd0250","method":"POST","path":"/api/applications","status":201,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"be432562-ebff-45ba-9179-f1ef7e632c7e","method":"POST","path":"/api/applications","status":201,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"79940a2c-1236-4e7f-b571-5e9c49df097b","method":"POST","path":"/api/applications","status":201,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"48aff40d-f5ae-4f6a-9f04-7484cd1cb633","method":"POST","path":"/api/applications/2/move","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0df4193f-fa6b-4274-b7ff-6292caa5e653","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"965658ec-913f-4ec9-a5f2-ca5e3d5ac821","method":"POST","path":"/api/interviews","status":201,"ms":49,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1057039f-7bde-4e46-b93f-d39b62106daf","method":"POST","path":"/api/candidates/3/resume","status":201,"ms":876,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0d45f167-052f-428a-b6ed-a9ce97ecf46c","method":"POST","path":"/api/candidates/1/notes","status":201,"ms":8,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<9c83001b-e518-bf0d-c7a5-b0b107e5bf20@localhost>"}
+{"level":"info","msg":"request","requestId":"5cf63ca7-c51f-48ff-b975-f0da1b295c1c","method":"POST","path":"/api/offers","status":201,"ms":7,"userId":3,"ip":"::1"}
+
+— Technical Interviewer —
+{"level":"info","msg":"request","requestId":"52fc3fb0-06fc-4499-ae73-c253bdba7455","method":"GET","path":"/api/candidates","status":200,"ms":5,"userId":8,"ip":"::1"}
+  ✅ list contains only the assigned candidate
+  ✅ list total reflects scope, not the whole pool
+{"level":"warn","msg":"request","requestId":"391988c4-a29c-4251-ae01-7c4d8f7314d4","method":"GET","path":"/api/candidates/3","status":403,"ms":2,"userId":8,"ip":"::1"}
+  ✅ unrelated candidate detail denied
+  ✅ unrelated name and request title absent from denial
+{"level":"info","msg":"request","requestId":"1b4f61a4-8090-4ff3-a0e7-42b76f4abcd6","method":"GET","path":"/api/candidates/1","status":200,"ms":5,"userId":8,"ip":"::1"}
+  ✅ assigned candidate detail allowed
+  ✅ …without salary
+  ✅ …and without the unrelated request it is also linked to
+  ✅ …but the assigned request remains linked
+{"level":"warn","msg":"request","requestId":"3f829c6c-1f9a-4c02-8af8-f09d35ae5713","method":"GET","path":"/api/candidates/3/resume","status":403,"ms":2,"userId":8,"ip":"::1"}
+  ✅ unrelated résumé download denied
+{"level":"warn","msg":"request","requestId":"52b24cec-96bc-45c2-94d8-a3f4304fdf9b","method":"GET","path":"/api/candidates/3/proposals","status":403,"ms":2,"userId":8,"ip":"::1"}
+  ✅ unrelated proposals denied
+{"level":"warn","msg":"request","requestId":"2aad8d41-58ca-49a4-808f-eec7d41af743","method":"POST","path":"/api/candidates/check-duplicate","status":403,"ms":2,"userId":8,"ip":"::1"}
+  ✅ duplicate check cannot be used to look up unrelated people
+{"level":"warn","msg":"request","requestId":"046d5687-7be5-4f38-a245-b142b06d6a43","method":"GET","path":"/api/candidates/intakes","status":403,"ms":1,"userId":8,"ip":"::1"}
+  ✅ CV intake queue denied
+{"level":"info","msg":"request","requestId":"7948b3c9-9c79-419b-87b5-830bb18c28b5","method":"GET","path":"/api/candidates/intakes","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ literal routes still work for broad roles (/intakes)
+{"level":"warn","msg":"request","requestId":"1e47708f-6381-4106-98f0-5c37023c85e4","method":"GET","path":"/api/candidates/3/resume","status":403,"ms":2,"userId":8,"ip":"::1"}
+  ✅ stored unrelated résumé denied (file exists)
+{"level":"info","msg":"request","requestId":"70130885-0c3e-4017-918c-9c5c6f918716","method":"GET","path":"/api/candidates/3/resume","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ …while HR downloads the same stored file
+{"level":"warn","msg":"request","requestId":"a38724b6-7f59-4067-84ac-e986466ddd9c","method":"GET","path":"/api/candidates/3e0","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"98283543-e09a-46e8-af1c-0e6ad80c35b0","method":"GET","path":"/api/candidates/3e0/resume","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"443d0137-e76d-475b-a7df-ca4f3cfbf436","method":"GET","path":"/api/candidates/3e0/proposals","status":400,"ms":2,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"24e72681-6ef8-4a7a-b6c5-4c9c025f10b8","method":"POST","path":"/api/candidates/3e0/notes","status":400,"ms":1,"userId":6,"ip":"::1"}
+  ✅ non-canonical id "3e0" never resolves past scope
+{"level":"warn","msg":"request","requestId":"82f7c1a1-b66a-4cdf-b9e2-ac05f1dff89e","method":"GET","path":"/api/candidates/0x3","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"885e26d4-d12a-4e72-a437-b1fa453fcd14","method":"GET","path":"/api/candidates/0x3/resume","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"9eedecf8-b640-4375-a210-06e5443ae116","method":"GET","path":"/api/candidates/0x3/proposals","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"824bc589-58df-43b9-b470-5bafff49f221","method":"POST","path":"/api/candidates/0x3/notes","status":400,"ms":2,"userId":6,"ip":"::1"}
+  ✅ non-canonical id "0x3" never resolves past scope
+{"level":"warn","msg":"request","requestId":"485e5af5-6f86-43d5-93a5-09c8bc836aea","method":"GET","path":"/api/candidates/+3","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"b8c00832-8718-4bba-8f50-0dc474cc9d12","method":"GET","path":"/api/candidates/+3/resume","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"f663fd35-06fb-4a87-b3fc-8e603ea8d967","method":"GET","path":"/api/candidates/+3/proposals","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"a0c748c6-2829-48c0-8472-dd75e0f89f87","method":"POST","path":"/api/candidates/+3/notes","status":400,"ms":1,"userId":6,"ip":"::1"}
+  ✅ non-canonical id "+3" never resolves past scope
+{"level":"warn","msg":"request","requestId":"cdd63036-da36-434f-b77f-3b27ff4c935f","method":"GET","path":"/api/candidates/%203","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"b44b682d-d2ab-459c-82e5-828c4e3b266f","method":"GET","path":"/api/candidates/%203/resume","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"cc1a6254-64a4-48d0-8402-ec60d3f51a79","method":"GET","path":"/api/candidates/%203/proposals","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"5288e0e4-9509-40ab-a918-7ae45232c86c","method":"POST","path":"/api/candidates/%203/notes","status":400,"ms":1,"userId":6,"ip":"::1"}
+  ✅ non-canonical id " 3" never resolves past scope
+{"level":"warn","msg":"request","requestId":"ad34a7ba-d4d5-4a8c-91e7-0b4edd326740","method":"GET","path":"/api/candidates/3%20","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"22dcc9a5-e03c-4612-9f74-bb38ad079889","method":"GET","path":"/api/candidates/3%20/resume","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"ef6feb5d-48b4-44f7-be8f-d5a19cee55bf","method":"GET","path":"/api/candidates/3%20/proposals","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"8ceaa541-1d0e-47c4-867b-10d62f2e8f76","method":"POST","path":"/api/candidates/3%20/notes","status":400,"ms":1,"userId":6,"ip":"::1"}
+  ✅ non-canonical id "3 " never resolves past scope
+{"level":"warn","msg":"request","requestId":"7f5fa03f-0e4a-4f70-bf8f-e6da33b38562","method":"GET","path":"/api/candidates/3.0","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"fad8ec31-1ffb-45ba-bb46-a3f441221e8f","method":"GET","path":"/api/candidates/3.0/resume","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"15322897-2e1b-4e62-bd33-8a0d46de9ef0","method":"GET","path":"/api/candidates/3.0/proposals","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"2a786612-05bf-492b-bf00-307432846ae1","method":"POST","path":"/api/candidates/3.0/notes","status":400,"ms":1,"userId":6,"ip":"::1"}
+  ✅ non-canonical id "3.0" never resolves past scope
+{"level":"warn","msg":"request","requestId":"74f1e00b-f3c9-43c4-9a23-174713f2141b","method":"GET","path":"/api/candidates/03","status":403,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"bfb00bd3-d4ca-44ef-9dcc-4bf4b21fbb95","method":"GET","path":"/api/candidates/03/resume","status":403,"ms":2,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"445354b7-b182-4b0f-800b-757099af597f","method":"GET","path":"/api/candidates/03/proposals","status":403,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"808dbddc-57bd-4557-a8fe-30edd708692d","method":"POST","path":"/api/candidates/03/notes","status":403,"ms":1,"userId":6,"ip":"::1"}
+  ✅ non-canonical id "03" never resolves past scope
+{"level":"warn","msg":"request","requestId":"b50e5732-c3f0-435e-ae6b-0deb05bc4d82","method":"GET","path":"/api/candidates/%2B3","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"646bc6bd-2cb7-470b-ade0-794c26cb0870","method":"GET","path":"/api/candidates/%2B3/resume","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"cfee47ec-1b76-4701-8b71-99e660ba7081","method":"GET","path":"/api/candidates/%2B3/proposals","status":400,"ms":1,"userId":8,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"e800539c-0fc4-42ca-bfa7-ede6922ca1d9","method":"POST","path":"/api/candidates/%2B3/notes","status":400,"ms":1,"userId":6,"ip":"::1"}
+  ✅ non-canonical id "+3" never resolves past scope
+{"level":"info","msg":"request","requestId":"e284510c-fc7c-4d1a-893e-5f06317554a6","method":"GET","path":"/api/candidates/1","status":200,"ms":2,"userId":8,"ip":"::1"}
+  ✅ note tied to the unrelated application omitted
+  ✅ activity tied to the unrelated application omitted (incl. its rejection reason)
+  ✅ activity on the assigned application kept
+{"level":"info","msg":"request","requestId":"85161920-b191-44e7-9a63-845bf67ffb84","method":"GET","path":"/api/candidates/1","status":200,"ms":3,"userId":3,"ip":"::1"}
+  ✅ HR still sees the unrelated note and activity
+
+— anyhelp assistant tools (real seeded DB, no AI call) —
+  ✅ search returns only the assigned candidate
+  ✅ get_candidate on the unrelated id is unavailable
+{"level":"info","msg":"request","requestId":"0fef7c07-23c6-4666-9ca6-a2ecfa99e5d5","method":"GET","path":"/api/auth/me","status":200,"ms":1,"userId":3,"ip":"::1"}
+  ✅ HR assistant still searches the whole pool
+{"level":"warn","msg":"request","requestId":"4bc76a4f-1b99-425a-a146-b3aa6341207f","method":"GET","path":"/api/requests/3","status":403,"ms":1,"userId":8,"ip":"::1"}
+  ✅ unrelated request still denied
+
+— Hiring Manager (requester) —
+{"level":"info","msg":"request","requestId":"850cc6e5-8e69-491a-a709-26ba6a97fbcb","method":"GET","path":"/api/candidates","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ✅ sees own request's candidate only
+{"level":"warn","msg":"request","requestId":"b4d94603-0f9b-4024-902d-6fa067b40c41","method":"GET","path":"/api/candidates/3","status":403,"ms":1,"userId":6,"ip":"::1"}
+  ✅ unrelated detail denied
+{"level":"warn","msg":"request","requestId":"42b4602a-87be-4405-b676-f042f0da773d","method":"POST","path":"/api/candidates/3/notes","status":403,"ms":1,"userId":6,"ip":"::1"}
+  ✅ unrelated note denied
+{"level":"info","msg":"request","requestId":"4f7758c9-7253-4389-896c-c8447246522c","method":"GET","path":"/api/candidates/2","status":200,"ms":3,"userId":6,"ip":"::1"}
+  ✅ standalone offer on an unrelated request is not exposed to the scoped offer viewer
+{"level":"info","msg":"request","requestId":"1297ff4a-75e3-49e5-b951-7331f8821021","method":"GET","path":"/api/candidates/2","status":200,"ms":3,"userId":3,"ip":"::1"}
+  ✅ HR still sees that offer
+
+— Offers module follows the same scope —
+{"level":"info","msg":"request","requestId":"880d1fdb-8285-4c97-bcfd-a1f152f42642","method":"POST","path":"/api/offers","status":201,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"092d7dde-1f17-419b-82dd-187ed24987e7","method":"POST","path":"/api/offers","status":201,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d953fe1b-9c9c-4b19-b4b1-c0ab81c65326","method":"GET","path":"/api/offers","status":200,"ms":3,"userId":6,"ip":"::1"}
+  ✅ HM offer list includes the offer on their own request
+  ❌ HM offer list excludes offers on unrelated requests [3,2,1]
+{"level":"info","msg":"request","requestId":"ad255c81-5e58-4246-8e54-6c21188feace","method":"GET","path":"/api/offers/3","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ❌ HM opening an unrelated offer is refused (403) 200 {"offer":{"id":3,"offerNo":"OFR-2026-00003","applicationId":4,"candidateId":3,"r
+{"level":"info","msg":"request","requestId":"0bc4241f-634d-4232-865f-984f18c6a6a3","method":"GET","path":"/api/offers/1","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ❌ HM unrelated standalone offer refused (403) 
+{"level":"info","msg":"request","requestId":"ebd2d22f-4dba-459e-87d8-a75b6b8fda41","method":"GET","path":"/api/offers/3/preview","status":200,"ms":10,"userId":6,"ip":"::1"}
+  ❌ HM unrelated offer letter refused (403) 200
+{"level":"info","msg":"request","requestId":"fdb0eae2-13fc-4c93-974b-073ef2584a33","method":"GET","path":"/api/offers/application/4","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ❌ HM offers-by-application for an unrelated application reveal nothing 200 {"offers":[{"id":3,"offerNo":"OFR-2026-00003","applicationId":4,"candidateId":3,
+{"level":"info","msg":"request","requestId":"930e7988-3e62-4c80-97c8-370298443e95","method":"GET","path":"/api/offers/2","status":200,"ms":2,"userId":6,"ip":"::1"}
+  ✅ HM opens the offer on their own request, salary masked
+{"level":"info","msg":"request","requestId":"04bb5b7c-14e8-4de2-b8cb-042c1d6bb38f","method":"GET","path":"/api/offers","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ HR still lists every offer
+
+— Project Manager (no interview scope) —
+{"level":"info","msg":"request","requestId":"e915f5b6-0834-429e-961e-1471fe1f145c","method":"GET","path":"/api/candidates","status":200,"ms":1,"userId":7,"ip":"::1"}
+  ✅ sees no unrelated candidates
+
+— Broad roles keep the whole Talent Pool —
+{"level":"info","msg":"request","requestId":"2c117275-b81e-442d-8393-14065939b796","method":"GET","path":"/api/candidates","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ HR manager lists every candidate
+{"level":"info","msg":"request","requestId":"5fcd63b8-1eab-4399-922f-9f4eb9a56aac","method":"GET","path":"/api/candidates/3","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ HR manager opens the unrelated candidate
+{"level":"info","msg":"request","requestId":"a33e1d0f-db5b-4e7c-b5ad-ba96bfc6861e","method":"GET","path":"/api/candidates","status":200,"ms":3,"userId":2,"ip":"::1"}
+  ✅ HR director lists every candidate
+{"level":"info","msg":"request","requestId":"75daf701-8350-43bb-b12e-8897930bc776","method":"GET","path":"/api/candidates/3","status":200,"ms":2,"userId":2,"ip":"::1"}
+  ✅ HR director opens the unrelated candidate
+{"level":"info","msg":"request","requestId":"9ec0b669-82e2-469b-ac38-72c88794c047","method":"GET","path":"/api/candidates","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ recruiter lists every candidate
+{"level":"info","msg":"request","requestId":"6a6053d5-1610-442b-8670-f8d9d521787c","method":"GET","path":"/api/candidates/3","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ recruiter opens the unrelated candidate
+{"level":"info","msg":"request","requestId":"b8f7bd00-f192-4b66-a3f4-65d9e9073158","method":"GET","path":"/api/candidates","status":200,"ms":3,"userId":9,"ip":"::1"}
+  ✅ viewer lists every candidate
+{"level":"info","msg":"request","requestId":"6f4c6567-9bb2-4f15-a5d8-102192508532","method":"GET","path":"/api/candidates/3","status":200,"ms":2,"userId":9,"ip":"::1"}
+  ✅ viewer opens the unrelated candidate
+{"level":"info","msg":"request","requestId":"f8cdaebf-5993-4c37-9e40-4ebfd9ccf5ff","method":"GET","path":"/api/candidates/1","status":200,"ms":3,"userId":3,"ip":"::1"}
+  ✅ HR still sees every request the candidate is on
+
+=== CANDIDATE SCOPE: 49 passed, 5 failed ===
+

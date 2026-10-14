@@ -1,0 +1,88 @@
+
+Using PG_TEST_URL (external disposable PostgreSQL).
+  ✅ driver is postgres (not sqlite, not pglite) postgres
+
+— 1. commit: multiple writes persist together —
+  ✅ all three rows persisted n=3
+
+— 2. rollback: injected failure persists nothing —
+  ✅ the failure propagated to the caller
+  ✅ no row from the failed transaction persisted 3 -> 3
+  ✅ rolled-back values are absent
+
+— 3. affinity: BEGIN, writes and COMMIT share one backend —
+  ✅ three statements recorded
+  ✅ all statements ran on ONE backend pid pids=414
+
+— 4. two overlapping transactions do not contaminate —
+  ✅ raw transaction primitives available on postgres
+  ✅ two transactions got distinct ids tx4 / tx5
+  ✅ they hold DIFFERENT backend connections 414 vs 415
+  ✅ A cannot see B uncommitted row
+  ✅ B cannot see A uncommitted row
+  ✅ an outside pooled read sees neither yet
+  ✅ A committed and survived
+  ✅ B rolled back and left nothing
+
+— 4b. settled ids are rejected, unknown ids are rejected —
+  ✅ committing an already-settled transaction is refused
+  ✅ an unknown transaction id is refused
+  ✅ a query after settle is refused, not silently pooled
+  ✅ and wrote nothing
+
+— 5. more transactions than the pool size (max: 4) —
+  ✅ 12 sequential transactions on a pool of 4 all completed
+  ✅ every one committed
+
+— 6. no connection left idle in transaction —
+  ✅ no idle-in-transaction backends after commits and rollbacks n=0
+
+— 7. failure paths release the client —
+  ✅ a query failure inside a transaction propagates
+  ✅ and rolls the whole thing back
+  ✅ still no idle-in-transaction backend
+  ✅ the pool still works afterwards
+
+— 7b. nesting, and use after settle —
+  ✅ nested tx joins the outer one and both rows commit
+  ✅ an outer failure rolls back the inner writes too
+  ✅ no transaction is left open on the process
+
+— 7c. tx() enforces a synchronous callback —
+  ✅ an async callback is rejected
+  ✅ and its write was rolled back
+  ✅ no transaction context survives the rejection
+  ✅ a bare thenable is rejected too
+  ✅ no context survives that either
+  ✅ an async callback nested in a sync tx is rejected
+  ✅ and the outer transaction rolled back
+  ✅ no context survives the nested rejection
+
+— 7d. non-transactional queries never join an open transaction —
+  ✅ a plain read does not see the open transaction row
+  ✅ inTransaction() is false — the raw primitive did not touch the public stack
+  ✅ after rollback the row is still absent
+
+— 7e. context is clean after every settle path —
+  ✅ clean after commit
+  ✅ clean after callback failure
+  ✅ clean after query failure
+  ✅ a later transaction still works
+
+— 7f. INSERT into a table with no `id` column inside a transaction —
+  ✅ a transaction with an id-less INSERT commits
+  ✅ …both rows persisted
+  ✅ a second upsert in a new transaction also commits
+  ✅ 50 id-less inserts in one transaction commit
+  ✅ a genuine constraint error in an id-less INSERT still fails the transaction duplicate key value violates unique constraint "noid_probe_1791108861807_pkey"
+  ✅ …and rolls back the earlier write in the same transaction
+  ✅ …leaving the stored row unchanged
+
+— 8. an abandoned transaction is reclaimed —
+  ✅ orphan transaction is open and holding a connection
+  ✅ reclaimed: no idle-in-transaction backend remains
+  ✅ its uncommitted write was rolled back
+  ✅ the reclaimed id is no longer usable
+
+✓ PostgreSQL transactions: 55 passed, 0 failed
+

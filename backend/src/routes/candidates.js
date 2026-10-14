@@ -6,8 +6,8 @@ import {
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile, uploadPath, readBlob } from '../lib/upload.js';
-import { isDocx, docxPreviewHtml } from '../lib/cv-preview.js';
-import { run as dbRun, get as dbGet } from '../lib/db.js';
+import { sendDocxPreview } from '../lib/cv-preview.js';
+import { run as dbRun, get as dbGet, all as dbAll } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
 // Resolved per request through the parsing registry, never imported directly.
@@ -23,12 +23,36 @@ import { ingestIntake } from '../lib/cv-intake/auto-ingest.js';
 import { raiseProposal, pendingProposal, proposalsFor, reviewProposal } from '../lib/proposal-store.js';
 import { toCandidatePayload, toParseMetadata, fileHash, toImportReport, FIELD_MAP } from '../lib/cv-mapper.js';
 import { getWatcherStatus } from '../lib/cv-watcher.js';
+import { hasBroadCandidateAccess, visibleCandidateIds, canSeeCandidate, applicationScopeFilter } from '../lib/candidate-scope.js';
+import { hasFullPipelineAccess, visibleStageHistory } from '../lib/pipeline-visibility.js';
+import { resolveCandidateCv, loadCandidateCv, loadCvDocument, cvDocumentStatus } from '../lib/candidate-cv.js';
 import { importInboxFile, inboxDirectory, isInboxFile } from '../lib/cv-import.js';
 import { interpretSearch } from '../lib/ai/recruiter-ai.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const router = Router();
+
+// Every /candidates/:id route — read, write, documents, notes, privacy — is
+// limited to candidates in the caller's assignment scope (AR-01). Literal paths
+// such as /intakes are not numeric ids and pass through untouched.
+router.param('id', (req, res, next, id) => {
+  const raw = String(id);
+  if (!/^\d+$/.test(raw)) {
+    // Literal paths (/intakes, /meta, /smart-search…) are words. Anything that
+    // Number() would still read as a number (2e0, 0x2, +2, " 2", 2.0) is a
+    // non-canonical spelling of an id: refuse it rather than let a handler's
+    // Number(req.params.id) resolve it past this check.
+    if (raw.trim() !== '' && Number.isFinite(Number(raw))) return res.status(400).json({ error: 'Invalid candidate id.' });
+    return next();
+  }
+  if (!req.user) return res.status(401).json({ error: 'Authentication required.' }); // fail closed
+  if (!canSeeCandidate(req.user, Number(id))) return res.status(403).json({ error: 'You can only view candidates assigned to you.' });
+  next();
+});
+// The CV intake queue holds people who are not candidates yet; it is for the
+// roles that build the Talent Pool, never for scoped viewers.
+const requireBroadCandidates = (req, res, next) => (hasBroadCandidateAccess(req.user) ? next() : res.status(403).json({ error: 'Insufficient permissions.' }));
 router.use(requireAuth);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -48,7 +72,27 @@ function serialize(c, user, { withDetail = false } = {}) {
   // Read once and derive both the count and the compact link summary below.
   // The count already cost this query; the summary is what the Talent Pool
   // needs to show WHICH request a candidate is on without opening the profile.
-  const applications = Applications.forCandidate(c.id);
+  // Nested request/application metadata is limited to the caller's scope (AR-01).
+  const inScope = applicationScopeFilter(user);
+  const applications = Applications.forCandidate(c.id).filter(inScope);
+  // Only explicit intake -> candidate provenance; hashes/names are not identity.
+  const emailDates = dbAll(`SELECT mi.received_at FROM mailbox_ingestion mi
+    JOIN candidate_intake ci ON ci.id = mi.intake_id
+    WHERE ci.candidate_id = ? AND mi.received_at IS NOT NULL`, [c.id])
+    .map((r) => r.received_at).filter((d) => /^\d{4}-\d{2}-\d{2}T/.test(d) && Number.isFinite(Date.parse(d)))
+    .sort((a, b) => Date.parse(a) - Date.parse(b));
+  // Scope history BEFORE deriving labels. No blacklist authority/audit workflow
+  // exists here, so even a legacy blacklisted state must remain Unknown.
+  const stages = applications.flatMap((a) => visibleStageHistory(user, StageHistory.forApplication(a.id)));
+  let poolStatus = 'unknown';
+  if (c.candidate_state === 'active') {
+    if (applications.some((a) => a.status === 'shortlisted')
+      || stages.some((h) => h.to_status === 'shortlisted' && h.actor_id)) poolStatus = 'shortlisted';
+    else if (applications.some((a) => !['sourced', 'applied'].includes(a.status))
+      || stages.some((h) => h.actor_id && !['sourced', 'applied'].includes(h.to_status))) poolStatus = 'considered';
+    else if (hasBroadCandidateAccess(user) && !applications.length
+      && (!c.screening_status || c.screening_status === 'new')) poolStatus = 'new';
+  }
   // Phase 2 Talent Pool — returning/rehire signal, filled during the links pass below (no extra queries).
   const _hist = { returning: false, rehire: false, priorApplications: 0, lastOutcome: null, lastSeenAt: null };
   const out = {
@@ -59,7 +103,13 @@ function serialize(c, user, { withDetail = false } = {}) {
     // enhancement fields (HR-leadership requested)
     employer: c.employer, currentProject: c.current_project,
     graduationYear: c.graduation_year, university: c.university, major: c.major,
-    resumeName: c.resume_name, hasResume: !!c.resume_path,
+    applyDate: emailDates[0] || c.created_at,
+    applyDateSource: emailDates.length ? 'application_email' : 'candidate_created',
+    poolStatus,
+    // Legacy match_score has no stored explanation: it is not a defensible ranking.
+    roleRanking: null,
+    // An auto-ingested CV is the intake's stored file (see lib/candidate-cv.js).
+    ...(() => { const cv = resolveCandidateCv(c); return { resumeName: cv ? cv.fileName : c.resume_name, hasResume: !!cv }; })(),
     tags: c.tags ? JSON.parse(c.tags) : [], candidateState: c.candidate_state,
     // Always arrays through the API, even when the column is NULL.
     skills: decodeList(c.skills), languages: decodeList(c.languages),
@@ -115,6 +165,7 @@ function serialize(c, user, { withDetail = false } = {}) {
         ticketNo: r ? r.ticket_no : null,
         requestTitle: r ? r.title : null,
         requestStatus: r ? r.status : null,
+        departmentId: r ? r.department_id : null,
         status: a.status,
       };
     }),
@@ -122,14 +173,22 @@ function serialize(c, user, { withDetail = false } = {}) {
     customFields: CustomFields.valuesFor('candidate', c.id),
   };
   if (withDetail) {
-    out.documents = CandidateDocuments.forCandidate(c.id);
-    out.notes = CandidateNotes.forCandidate(c.id);
-    out.activity = CandidateActivity.forCandidate(c.id);
+    // Each CV row says whether ITS OWN bytes can be opened (by document id).
+    out.documents = CandidateDocuments.forCandidate(c.id).map((d) => (d.doc_type === 'cv'
+      ? { ...d, cvViewable: cvDocumentStatus(c.id, d).ok, cvProblem: cvDocumentStatus(c.id, d).problem || null } : d));
+    // A note or activity tied to an application outside the caller's scope
+    // would reveal that application/request; candidate-level ones stay.
+    const appInScope = new Set(applications.map((a) => Number(a.id)));
+    const ownLevel = (row) => !row.application_id || appInScope.has(Number(row.application_id));
+    out.notes = CandidateNotes.forCandidate(c.id).filter(ownLevel);
+    out.activity = CandidateActivity.forCandidate(c.id).filter(ownLevel)
+      .filter((row) => hasFullPipelineAccess(user) || !(['application_status_changed', 'stage_changed', 'linked_to_request'].includes(row.type) && /\b(sourced|sourcing|new|applied)\b/i.test(row.note || '')));
     // Interviews for this candidate (scoped: full-view roles see all; others see only theirs).
     const seeAllIv = user.permissions.includes('interview.view_all');
     const seeAssignedIv = user.permissions.includes('interview.view_assigned');
     if (seeAllIv || seeAssignedIv) {
       out.interviews = Interviews.forCandidate(c.id)
+        .filter((iv) => hasFullPipelineAccess(user) || (iv.application_id && appInScope.has(Number(iv.application_id))))
         .filter((iv) => {
           if (seeAllIv) return true;
           if (iv.organizer_id === user.id || Interviews.isPanelist(iv.id, user.id)) return true;
@@ -146,7 +205,8 @@ function serialize(c, user, { withDetail = false } = {}) {
     // Offers for this candidate (offer-salary masked unless offer.salary_view).
     if (user.permissions.includes('offer.view')) {
       const seeOfferSalary = user.permissions.includes('offer.salary_view');
-      out.offers = Offers.forCandidate(c.id).map((o) => {
+      // Standalone offers carry a request too; they are filtered by it, not passed through.
+      out.offers = Offers.forCandidate(c.id).filter((o) => inScope({ id: o.application_id, request_id: o.request_id })).map((o) => {
         const req = o.request_id ? Requests.byId(o.request_id) : null;
         return { id: o.id, offerNo: o.offer_no, applicationId: o.application_id, requestId: o.request_id,
           ticketNo: req?.ticket_no, positionTitle: o.position_title, status: o.status,
@@ -154,7 +214,7 @@ function serialize(c, user, { withDetail = false } = {}) {
           salaryOffered: seeOfferSalary ? o.salary_offered : null, currency: o.currency, createdAt: o.created_at };
       });
     } else { out.offers = []; }
-    out.applications = Applications.forCandidate(c.id).map((a) => {
+    out.applications = applications.map((a) => {
       const req = a.request_id ? Requests.byId(a.request_id) : null;
       const proj = req?.project_id ? Projects.byId(req.project_id) : null;
       const rec = a.recruiter_id ? Users.byId(a.recruiter_id) : null;
@@ -165,7 +225,7 @@ function serialize(c, user, { withDetail = false } = {}) {
         status: a.status, matchScore: a.match_score,
         recruiter: rec ? { id: rec.id, name: rec.full_name } : null,
         lastActivityAt: a.last_activity_at, createdAt: a.created_at,
-        stageHistory: StageHistory.forApplication(a.id), // detail only
+        stageHistory: visibleStageHistory(user, StageHistory.forApplication(a.id)), // detail only
       };
     });
   }
@@ -190,6 +250,14 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
     qualityFlag: q.qualityFlag, flagged: q.flagged,
     sort: q.sort, dir: q.dir,
   };
+  const idsIn = visibleCandidateIds(req.user);
+  if (idsIn) filters.idsIn = idsIn;
+  if (q.departmentId) {
+    filters.departmentId = /^\d+$/.test(String(q.departmentId)) ? Number(q.departmentId) : -1;
+    if (!hasBroadCandidateAccess(req.user)) filters.departmentScope = {
+      userId: req.user.id, assigned: req.user.permissions.includes('interview.view_assigned'),
+    };
+  }
   const total = Candidates.count(filters);
   const rows = Candidates.list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
   res.json({
@@ -198,7 +266,7 @@ router.get('/', requirePermission('candidate.view'), (req, res) => {
     // tabs do not change as you page or filter. Dropped by accident when this
     // handler gained pagination; `Candidates.screeningCounts()` was left with
     // no caller.
-    screeningCounts: Candidates.screeningCounts(),
+    screeningCounts: Candidates.screeningCounts(idsIn),
     pagination: {
       page, pageSize, total,
       totalPages: Math.max(Math.ceil(total / pageSize), 1),
@@ -242,8 +310,9 @@ router.get('/smart-search', requirePermission('candidate.view'), async (req, res
 
   const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 1), 200);
   const filters = outcome.filters;
-  const total = Candidates.count(filters);
-  const rows = Candidates.list({ ...filters, limit: pageSize, offset: 0 });
+  const idsIn = visibleCandidateIds(req.user);
+  const total = Candidates.count(idsIn ? { ...filters, idsIn } : filters);
+  const rows = Candidates.list({ ...filters, ...(idsIn ? { idsIn } : {}), limit: pageSize, offset: 0 });
 
   res.json({
     candidates: rows.map((c) => serialize(c, req.user)),
@@ -267,7 +336,7 @@ router.get('/:id', requirePermission('candidate.view'), (req, res, next) => {
 });
 
 /* ---------------- DUPLICATE CHECK ---------------- */
-router.post('/check-duplicate', requirePermission('candidate.view'), (req, res) => {
+router.post('/check-duplicate', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const { email, phone, linkedinUrl, excludeId } = req.body || {};
   const dups = Candidates.findDuplicates({ email, phone, linkedinUrl, excludeId: excludeId ? Number(excludeId) : null });
   res.json({ duplicates: dups.map((c) => ({ id: c.id, candidateNo: c.candidate_no, fullName: c.full_name, email: c.email, phone: c.phone, currentCompany: c.current_company })) });
@@ -570,11 +639,11 @@ router.get('/parse-cv-async/:jobId', requirePermission('candidate.add'), (req, r
 
 /* ---------------- PRE-CANDIDATE INTAKES (review before creation) ---------------- */
 
-router.get('/intakes', requirePermission('candidate.view'), (req, res) => {
+router.get('/intakes', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   res.json({ intakes: pendingIntakes() });
 });
 
-router.get('/intakes/:iid', requirePermission('candidate.view'), (req, res) => {
+router.get('/intakes/:iid', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const intake = intakeById(Number(req.params.iid));
   if (!intake) return res.status(404).json({ error: 'Intake not found.' });
   res.json({ intake });
@@ -584,20 +653,8 @@ router.get('/intakes/:iid', requirePermission('candidate.view'), (req, res) => {
 // it was read from. Uses the existing upload storage and the existing auth.
 // `?as=html`: a Word CV rendered for the side panel, where the browser cannot
 // preview .docx itself. Same permission as the file; see cv-preview.js.
-async function sendDocxPreview(storedName, fallbackName, res) {
-  const f = readBlob(storedName);
-  if (!f) return res.status(404).json({ error: 'File not found.' });
-  if (!isDocx(f.mime, f.originalName || fallbackName)) {
-    return res.status(415).json({ error: 'Only Word (.docx) CVs are rendered here; PDFs and images preview directly.' });
-  }
-  try {
-    return res.json({ html: await docxPreviewHtml(f.data) });
-  } catch {
-    return res.status(422).json({ error: 'This Word file could not be read. Download it instead.' });
-  }
-}
 
-router.get('/intakes/:iid/document', requirePermission('candidate.view'), (req, res) => {
+router.get('/intakes/:iid/document', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
   const intake = intakeById(Number(req.params.iid));
   if (!intake) return res.status(404).json({ error: 'Intake not found.' });
   if (!intake.storedName) return res.status(404).json({ error: 'No document on file.' });
@@ -1063,6 +1120,20 @@ router.post('/:id/resume', requirePermission('candidate.edit'), multipart, async
   dbRun('UPDATE candidate SET resume_path=?, resume_name=?, updated_at=? WHERE id=?',
     [req.uploadedFile.storedName, req.uploadedFile.originalName, new Date().toISOString(), c.id]);
 
+  // ?parse=0 — store the CV as the source of truth and do nothing else. The
+  // interview scheduler attaches a CV this way: a manual booking must never
+  // wait on, or depend on, AI parsing (audit 2026-10-06, decision 3). The
+  // candidate's profile can still be re-parsed later (POST /:id/reparse).
+  if (req.query.parse === '0' || req.query.parse === 'false') {
+    try {
+      CandidateDocuments.add({ candidateId: c.id, docType: 'cv', fileName: req.uploadedFile.originalName,
+        fileHash: fileHash(uploadPath(req.uploadedFile.storedName)), uploadedBy: req.user.id });
+    } catch { /* the document row is a convenience; the file is already stored */ }
+    CandidateActivity.add({ candidateId: c.id, actorId: req.user.id, actorName: req.user.fullName, type: 'resume_uploaded', note: req.uploadedFile.originalName });
+    writeAudit(req, { action: 'candidate.resume_uploaded', entityType: 'candidate', entityId: c.id, newValue: { fileName: req.uploadedFile.originalName, parsed: false } });
+    return res.status(201).json({ candidate: serialize(Candidates.byId(c.id), req.user, { withDetail: true }), parsed: false });
+  }
+
   // Parse the newly attached CV (D-01). A parser failure must never fail the
   // upload — the file is already stored and is the source of truth.
   let report = null;
@@ -1129,9 +1200,23 @@ router.post('/:id/reparse', requirePermission('candidate.edit'), async (req, res
 router.get('/:id/resume', requirePermission('candidate.view'), (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
-  if (!c.resume_path) return res.status(404).json({ error: 'No resume on file.' });
-  if (req.query.as === 'html') return sendDocxPreview(c.resume_path, c.resume_name, res);
-  streamFile(c.resume_path, res, c.resume_name || 'resume');
+  // Profile upload, or the auto-ingested intake file (provenance-checked and
+  // re-hashed). Scope was already enforced by router.param('id').
+  const cv = loadCandidateCv(c);
+  if (cv.error) return res.status(cv.status).json({ error: cv.error });
+  if (req.query.as === 'html') return sendDocxPreview(cv.ref.storedName, cv.ref.fileName, res);
+  streamFile(cv.ref.storedName, res, cv.ref.fileName || 'resume');
+});
+
+// One CV document's own bytes (an older or newer version), by document id —
+// never by filename. Same scope (router.param) and permission as /resume.
+router.get('/:id/documents/:docId/file', requirePermission('candidate.view'), (req, res) => {
+  const c = Candidates.byId(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Candidate not found.' });
+  const cv = loadCvDocument(c.id, Number(req.params.docId));
+  if (cv.error) return res.status(cv.status).json({ error: cv.error, problem: cv.problem || null });
+  if (req.query.as === 'html') return sendDocxPreview(cv.ref.storedName, cv.ref.fileName, res);
+  streamFile(cv.ref.storedName, res, cv.ref.fileName || 'cv');
 });
 
 /* ---------------- NOTES ---------------- */

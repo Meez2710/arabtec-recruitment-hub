@@ -35,6 +35,7 @@ try {
 
   const recruiter = await cluster.login('recruiter@arabtec.com');
   const hrMgr = await cluster.login('hr.manager@arabtec.com');
+  const recMgr = await cluster.login('rec.manager@arabtec.com'); // close / reopen: Recruitment Manager (owner, 4 Oct 2026)
 const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only the HR Director approves
   const meta = await api(0, '/api/requests/meta/form', { token: hrMgr });
 
@@ -59,8 +60,8 @@ const hrDir = await cluster.login('hr.director@arabtec.com'); // requests: only 
   };
   const mkReopened = async (hc) => {
     const id = await mkSourcing(hc);
-    await api(0, `/api/requests/${id}/close`, { method: 'POST', token: hrMgr, body: { reason: 'setup' } });
-    await api(0, `/api/requests/${id}/reopen`, { method: 'POST', token: hrMgr, body: { reason: 'setup' } });
+    await api(0, `/api/requests/${id}/close`, { method: 'POST', token: recMgr, body: { reason: 'setup' } });
+    await api(0, `/api/requests/${id}/reopen`, { method: 'POST', token: recMgr, body: { reason: 'setup' } });
     return id;
   };
   /** Six competing targets, all from the SAME expected old headcount. */

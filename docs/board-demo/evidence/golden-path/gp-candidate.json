@@ -1,0 +1,51 @@
+{
+ "stage": "candidate",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #candidates/3"
+  },
+  {
+   "s": "screenshot gp-09-candidate-profile.png"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click \"Add Candidate\""
+  },
+  {
+   "s": "link dialog",
+   "fields": [
+    "Candidate <SELECT> — Select —|Omar Hassan (BOARD DEMO) (CAN-00003) — Planning Engineer|Laila Mansour (BOARD DEMO) (CAN-00002) — Senior Quantity Surveyor|Youssef Kamal (BOARD DEMO) (CAN-00001) — Quantity Surveyor",
+    "Initial Status <SELECT> Sourced|Screening|Interview|Offer|Hired",
+    "Match Score (0–100) <INPUT> ",
+    "Source <INPUT> "
+   ],
+   "buttons": [
+    "",
+    "Existing candidate",
+    "Create new & link",
+    "Cancel",
+    "Link"
+   ]
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

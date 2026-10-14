@@ -1,0 +1,48 @@
+[BABEL] Note: The code generator has deoptimised the styling of undefined as it exceeds the max of 500KB.
+  ✓ initial render shows the skeleton, then the table
+  ✓ sorting keeps the table mounted and the rows visible while in flight
+  ✓ repeated sorting never unmounts the table
+  ✓ the sort direction cycles ascending then descending on the same column
+  ✓ a stale response cannot overwrite a newer sort
+  ✓ a failed refetch still surfaces the error and a retry
+  ✓ sorting from page 1 issues exactly one request
+  ✓ sorting from page 3 issues one request, and it asks for page 1
+  ✓ the old page is never requested under the new sort
+  ✓ ascending then descending still costs one request each and stays correct
+  ✓ changing a filter still returns to page 1
+  ✓ an unsorted header renders the neutral state with its icon present
+  ✓ neutral, ascending and descending are dimensionally identical
+  ✓ sorting one column does not disturb its neighbours
+  ✓ no state carries a font-size, font-weight or transform of its own
+  ✓ the header stays clickable while the table body is busy
+  ✓ label and click target are shared by the whole header
+  ✓ the candidates table opts into the scoped fixed-width layout
+  ✓ every column is named, so widths cannot be reassigned by position
+  ✓ education columns step aside when nobody in the list has education recorded
+  ✓ the widths are not equal thirds — they reflect each column purpose
+  ✓ sorting does not change the column strategy
+  ✓ wildly different name lengths do not change the column configuration
+  ✓ long values truncate with a title rather than escaping the cell
+  ✓ overflow is owned by the table wrapper, not the page
+  ✓ the phone card layout releases the fixed widths
+  ✓ the candidates secondary columns step aside above the 1280 laptop
+  ✓ the breakpoint is scoped — the product-wide 1200px rule is untouched
+  ✓ only University and Graduation are ever hidden; the operational columns stay
+  ✓ every rule these guards depend on is present
+  ✓ CV and Stage are allocated enough for their controls in the nine-column regime
+  ✓ CV and Stage are allocated enough once the secondary columns are hidden
+  ✓ the seven-column floor outranks the product-wide min-width reset
+  ✓ no operational column was starved to pay for CV and Stage
+  ✓ a filter change from page 3 sends one request, and it asks for page 1
+  ✓ every secondary filter control behaves the same from page 3
+  ✓ a screen-tab change from page 4 sends one request, and it asks for page 1
+  ✓ changing the page size sends one request, with the new size and page 1
+  ✓ clearing one filter chip sends one request, for page 1 without that filter
+  ✓ clear-all sends one request, for page 1 with nothing set
+  ✓ the pipeline view search box resets the page like any other filter
+  ✓ paging itself is NOT reset — the one query change that keeps its page
+      swept 19: table/filter input “Search name / id / company / email…”, table/filter input “Location”, table/filter input “Company”, table/filter input “Grad from”, table/filter input “Grad to”, table/filter input “Tag”, table/filter select “Data quality”, table/filter select “Professional classification”, table/screen tab “All2”, table/screen tab “Not screened2”, table/screen tab “In review0”, table/screen tab “Fit0”, table/screen tab “Unfit0”, table/chip “Remove Search: nadia filter”, table/“Clear all” button, table/page size, pipeline/chip “Remove Search: nadia filter”, pipeline/“Clear all” button, pipeline/pipeline search
+  ✓ EVERY query-changing control on the page returns to page 1 in exactly one request
+  ✓ the page reset cannot be bypassed — each raw setter has exactly one caller
+
+=== UI SORT STABILITY: 44 passed, 0 failed ===

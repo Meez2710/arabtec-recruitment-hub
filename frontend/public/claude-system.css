@@ -1279,6 +1279,74 @@ section.card:has(> .cvi-status) > .cvi-status { padding: 0 0 var(--sp-3); gap: v
   .profile-overview .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* ==========================================================================
+   18c. ROW RULES — one control height, one spacing scale, aligned rows
+   ----------------------------------------------------------------------------
+   Owner review, 4 Oct 2026, on the live Talent Pool at 1920 wide: "buttons are
+   crowded and irregular … where's the spacing and margins rule". Measured on
+   production before this section:
+     • head row: view switch segments 34px beside 40px buttons, gaps 15/8/9/8;
+     • filter row: search 717px, five 112px inputs, a 162px select, and
+       "All classifications" stranded alone on a second line at 280px;
+     • cards: five columns of ~300px with name and university side by side,
+       so both truncated ("Zagazig Univer…", "Senior Store Ke…").
+
+   The rules, which apply to every page that uses these shared parts:
+     R-a  Every control in a head row or a filter row is 40px (--cl-ctl-lg).
+     R-b  8px between controls of one group, 16px between groups, 12px
+          between rows. Nothing else.
+     R-c  A filter row is a grid of equal columns. A control that wraps lands
+          in a column; it is never stretched across a line on its own.
+     R-d  On wide screens the search and the result count share the first row,
+          and the filters own the second — always the same two rows.
+     R-e  A card never sets two text columns side by side; its content stacks
+          under the name, so nothing is cut off at any column count.
+   Geometry only; colour stays in arabtec-design-system.css.
+   ========================================================================= */
+
+/* R-a / R-b — the head row. The view switch is a 40px box (3 + 34 + 3) with
+   the same 8px corner as the buttons beside it, not a pill, and it is a group
+   of its own: 8px gap + 8px margin = 16px to the actions. */
+.page-head-actions { gap: var(--sp-2); }
+.page-head-actions .view-toggle {
+  box-sizing: border-box; height: var(--cl-ctl-lg); /* track inset stays the base 3px */
+  align-items: stretch; border-radius: var(--cl-r-md);
+}
+.page-head-actions .view-toggle-btn { height: 100%; padding: 0 var(--sp-3); border-radius: var(--cl-r-sm); }
+.page-head-actions > .view-toggle { margin-inline-end: var(--sp-2); }
+
+/* R-c / R-d — the filter row on wide screens. Below 1101px the filters live
+   behind the disclosure button (section 18) and keep their stacked layout. */
+@media (min-width: 1101px) {
+  .toolbar.filter-toolbar { flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); }
+  .filter-toolbar > .toolbar-secondary {
+    order: 1; flex: 1 0 100%;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: var(--sp-2); align-items: center;
+  }
+  .filter-toolbar > .toolbar-secondary > input,
+  .filter-toolbar > .toolbar-secondary > select { width: 100%; min-width: 0; max-width: none; }
+  /* The sort-direction button is a standard .btn (40px, R17); a switch is a
+     label, so it is given the control height here. */
+  .filter-toolbar > .toolbar-secondary > .btn { justify-self: start; }
+  .filter-toolbar > .toolbar-secondary > .switch {
+    justify-self: start; box-sizing: border-box;
+    height: var(--cl-ctl-lg); padding-top: 0; padding-bottom: 0;
+  }
+}
+
+/* R-e — candidate cards: wider columns, one stacked text column. */
+.cand-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); }
+.cand-card { padding: var(--sp-4); gap: var(--sp-3); }
+.cand-card .cc-face { grid-template-columns: 40px minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); }
+.cand-card .cc-avatar { grid-row: auto; width: 40px; height: 40px; }
+.cand-card .cc-uni { grid-column: 2; text-align: start; }
+/* An empty education block would only print two dashes. Cards in a row still
+   end level: grid rows stretch and the footer is pushed to the bottom. */
+.cand-card .cc-uni.is-empty { display: none; }
+.cand-card .cc-facts { margin-top: var(--sp-2); }
+.cand-card .cc-foot { padding-top: var(--sp-3); gap: var(--sp-3); }
+
 /* ============================================================================
    19. COMPACT STATE COMPONENTS — badges, chips and tabs are ONE family
    ----------------------------------------------------------------------------
@@ -1843,16 +1911,128 @@ button.cal-slot:focus-visible { outline: 0; }
 .perm-area-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3) var(--sp-5); }
 @media (max-width: 900px) { .perm-area-grid { grid-template-columns: 1fr; } }
 
-/* Interviews: telling the candidate (schedule form, contact window, message
-   templates). Geometry only; colours live in the design-system layer. */
-.notify-choices { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); }
-.notify-note, .contact-note, .tpl-intro { margin: var(--sp-2) 0 0; }
-.tpl-intro { margin-top: 0; margin-bottom: var(--sp-3); }
-.contact-panel { display: grid; gap: var(--sp-3); margin-top: var(--sp-4); }
-.contact-text { width: 100%; resize: vertical; }
-.contact-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.contact-actions a.btn { text-decoration: none; }
-.call-script { white-space: pre-wrap; padding: var(--sp-3) var(--sp-4); border-width: 1px; border-style: solid; border-radius: var(--cl-r-sm, 8px); line-height: 1.6; }
-.ph-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); margin: var(--sp-3) 0; }
-.ph-chip { cursor: pointer; }
-.resp-picker { flex-wrap: wrap; }
+/* ==========================================================================
+   22. OFFER COMPOSE — the form beside the letter it produces
+   ----------------------------------------------------------------------------
+   Owner request, 5 Oct 2026: on Create offer, preview the offer letter on the
+   right half and show each field still to be filled as a blank in the letter,
+   updating while typing. The letter is the server's own (lib/offer-letter.js),
+   in a sandboxed frame scaled to the pane. Geometry only.
+   ========================================================================= */
+.modal.offer-compose { width: min(1320px, 96vw); max-width: none; height: min(920px, 94vh); display: flex; flex-direction: column; }
+.offer-compose-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.offer-compose-form { min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-5); }
+.offer-compose-form .section-title { margin: var(--sp-5) 0 var(--sp-2); }
+.offer-compose-form .section-title:first-of-type { margin-top: var(--sp-3); }
+.offer-compose-form .notice { margin-bottom: var(--sp-3); }
+.offer-letter-pane { min-height: 0; overflow-y: auto; padding: var(--sp-4); border-left-width: 1px; border-left-style: solid; }
+.offer-letter-scale { overflow: hidden; }
+.offer-letter-scale iframe { display: block; border: 0; }
+.offer-total { min-height: var(--cl-ctl-lg); display: flex; align-items: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.modal.offer-letter-modal { width: min(940px, 96vw); max-width: none; height: min(960px, 94vh); display: flex; flex-direction: column; }
+.modal.offer-letter-modal .modal-body { flex: 1 1 auto; min-height: 0; padding: 0; display: flex; }
+.modal.offer-letter-modal .offer-letter-pane { flex: 1 1 auto; border-left-width: 0; }
+@media (max-width: 900px) {
+  .modal.offer-compose { height: 94vh; }
+  .offer-compose-body { grid-template-columns: 1fr; overflow-y: auto; }
+  .offer-compose-form, .offer-letter-pane { overflow: visible; }
+  .offer-letter-pane { border-left-width: 0; border-top-width: 1px; border-top-style: solid; }
+}
+
+/* ==========================================================================
+   23. ASSESSMENT PROGRESS, CHANGE REASON AND HISTORY (audit 2026-10-05)
+   ----------------------------------------------------------------------------
+   The form opens with where each part stands; changing a submitted evaluation
+   asks why; the history lists who did what. Geometry only.
+   ========================================================================= */
+.assess-progress { margin: 0 0 var(--sp-5); }
+.assess-progress ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.assess-progress a { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--cl-ctl-lg); padding: 0 var(--sp-3); border-width: 1px; border-style: solid; border-radius: var(--cl-r-md); text-decoration: none; }
+.assess-progress-label { font-weight: 600; }
+/* The save row is a wrapping flex row; the reason takes a full line of its own,
+   between the state line and the buttons. */
+.assess-reason { flex: 1 0 100%; display: grid; gap: var(--sp-1); margin: var(--sp-1) 0; }
+.assess-bar-row > .btn-row { margin-left: auto; }
+.assess-reason textarea { width: 100%; }
+.assess-history { margin-top: var(--sp-5); }
+.assess-history-list { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.assess-history-list li { display: grid; gap: var(--sp-1); padding-bottom: var(--sp-2); border-bottom-width: 1px; border-bottom-style: solid; }
+.assess-history-when { font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .assess-progress ol { display: grid; grid-template-columns: 1fr; }
+  .assess-progress a { width: 100%; justify-content: space-between; }
+}
+
+/* ==========================================================================
+   24. INTERVIEW SCHEDULING & COMMUNICATIONS (audit 2026-10-06)
+   ----------------------------------------------------------------------------
+   One dialog: 1 Candidate & CV, 2 Interview & panel, 3 Invitations (a real
+   sequence, so it is numbered), with the rendered messages beside it. The
+   send dialog and the templates reuse the same editor. Geometry only.
+   ========================================================================= */
+.modal.iv-compose { width: min(1240px, 96vw); max-width: none; height: min(920px, 94vh); display: flex; flex-direction: column; }
+.iv-compose-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.iv-compose-form { min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-5); display: grid; gap: var(--sp-5); align-content: start; }
+.iv-preview { min-height: 0; overflow-y: auto; padding: var(--sp-4); border-left-width: 1px; border-left-style: solid; display: grid; gap: var(--sp-3); align-content: start; }
+.iv-step { display: grid; gap: var(--sp-3); }
+.iv-step h4 { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
+.iv-step-n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; }
+.iv-sub { font-weight: 600; margin-top: var(--sp-1); }
+.iv-cv { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.iv-cv .field-hint { flex: 1 0 100%; margin: 0; }
+.iv-cv-label { font-weight: 600; }
+.iv-cv-file { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.iv-file { cursor: pointer; }
+.iv-panel-pick { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.iv-panel-pick .tag-toggle { min-height: var(--cl-ctl-sm); }
+.iv-avail { display: grid; gap: var(--sp-2); min-height: 24px; }
+.iv-avail .notice { display: grid; gap: var(--sp-2); }
+.iv-ack { display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 500; }
+.iv-recipients { display: grid; gap: var(--sp-2); }
+/* Template note: messages come from the organisation templates; per-interview
+   wording is folded away (owner, 12 Oct 2026). Hairline, no side bar (R20). */
+.iv-template-note { display: grid; gap: var(--sp-2); }
+.iv-customize { display: grid; gap: var(--sp-3); }
+.iv-customize > summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; color: var(--action); font-weight: 600; list-style-position: inside; }
+.iv-customize > summary:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: 8px; }
+.iv-rcpt { display: grid; gap: var(--sp-1); }
+.iv-rcpt > label, label.iv-rcpt { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.iv-rcpt span { display: grid; gap: 4px; }
+.iv-attach { display: inline-flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-6); }
+.iv-editor { display: grid; gap: var(--sp-2); }
+.iv-editor-label { font-weight: 600; }
+.iv-editor textarea { width: 100%; resize: vertical; }
+.iv-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.chip-btn { min-height: 28px; padding: 0 var(--sp-2); border-width: 1px; border-style: solid; border-radius: var(--cl-r-sm); cursor: pointer; }
+.iv-wa { display: grid; gap: var(--sp-2); padding: var(--sp-3); border-width: 1px; border-style: solid; border-radius: var(--cl-r-md); }
+.iv-wa-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-2); }
+.iv-wa textarea { width: 100%; resize: vertical; }
+.iv-preview-title { font-weight: 600; }
+.iv-preview-card { display: grid; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-width: 1px; border-style: solid; border-radius: var(--cl-r-md); }
+.iv-preview-subject { font-weight: 600; }
+.iv-preview-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.modal-foot.iv-foot { flex-wrap: wrap; align-items: center; }
+.iv-foot-error, .iv-foot > .muted { flex: 1 1 280px; margin-right: auto; }
+.iv-result { display: grid; gap: var(--sp-3); }
+.iv-dispatch-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.iv-dispatch-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-1) var(--sp-3); align-items: center; padding: var(--sp-2) 0; border-bottom-width: 1px; border-bottom-style: solid; }
+.iv-dispatch-who { display: grid; gap: var(--sp-1); min-width: 0; }
+.iv-dispatch-reason { grid-column: 1 / -1; }
+.iv-dups { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.iv-dups li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sp-2); }
+.iv-comms { margin-top: var(--sp-4); display: grid; gap: var(--sp-3); }
+.iv-batch { display: grid; gap: var(--sp-1); }
+.iv-batch-head { display: flex; gap: var(--sp-2); align-items: baseline; }
+.iv-tpl-body { display: grid; gap: var(--sp-5); }
+.iv-tpl-link { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+@media (max-width: 900px) {
+  .modal.iv-compose { height: 94vh; }
+  /* One scrolling column: rows size to their content (no min-height:0 squeeze). */
+  .iv-compose-body { grid-template-columns: 1fr; overflow-y: auto; align-content: start; }
+  .iv-compose-form, .iv-preview { overflow: visible; min-height: auto; }
+  .iv-preview { border-left-width: 0; border-top-width: 1px; border-top-style: solid; }
+  .iv-attach { padding-left: var(--sp-5); }
+}
+
+/* Document-only side panel (thread attachments): the file takes the full width. */
+.cvrev-body.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }

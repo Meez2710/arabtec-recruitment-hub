@@ -1,5 +1,6 @@
 // Phase 5 — Offers & Joining tests.
-process.env.DATABASE_URL = 'file:/tmp/arabtec_p5.db';
+import { suiteDatabaseUrl } from './test-support/suite-db.mjs';
+process.env.DATABASE_URL = suiteDatabaseUrl('file:/tmp/arabtec_p5.db');
 process.env.PORT = '4170';
 import fs from 'node:fs';
 import { adminToken, ADMIN_BOOTSTRAP_PASSWORD } from './test-support/admin-session.mjs';
@@ -75,8 +76,9 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   c('application moved to issuing_offer', appAfter.json.application.status === 'issuing_offer', appAfter.json.application.status);
 
   console.log('\n— Salary restriction server-side —');
+  // AR-01: this offer is on HR's request, which the Hiring Manager is not part of.
   const asHm = await api(`/api/offers/${offer.id}`, { token: hm });
-  c('HM sees offer but salary masked (null + false)', asHm.json.offer.salaryVisible === false && asHm.json.offer.salaryOffered === null);
+  c('HM cannot open an offer on an unrelated request (403, AR-01)', asHm.status === 403, `got ${asHm.status}`);
   const asRec = await api(`/api/offers/${offer.id}`, { token: recruiter });
   c('recruiter sees offer salary (30000)', asRec.json.offer.salaryOffered === 30000);
   const interviewerSee = await api(`/api/offers/${offer.id}`, { token: interviewer });
@@ -199,8 +201,22 @@ async function fullOffer(token, recMgr, hrMgr, salary, headcount = 1) {
   console.log('\n— Candidate profile offers tab + masking —');
   const prof = await api(`/api/candidates/${o1.candId}`, { token: recruiter });
   c('candidate profile shows offers', (prof.json.candidate.offers || []).some((x) => x.id === offer.id));
-  const profHm = await api(`/api/candidates/${o1.candId}`, { token: hm });
-  c('HM profile offers: salary masked', (profHm.json.candidate.offers || []).every((x) => x.salaryVisible === false));
+  // AR-01: a hiring manager sees only candidates on requests they raised, own or
+  // created (or interviews they sit on). o1 is on HR's request, so it is refused.
+  const profHmUnrelated = await api(`/api/candidates/${o1.candId}`, { token: hm });
+  c('HM cannot open a candidate on an unrelated request (403, AR-01)', profHmUnrelated.status === 403, `got ${profHmUnrelated.status}`);
+  // Masking is checked on a candidate the HM is genuinely connected to.
+  const hmReq = await approvedRequest(hm, recMgr);
+  const hmLink = await linkApp(recruiter, hmReq, 'HM Offer Cand');
+  const hmOffer = await api('/api/offers', { method: 'POST', token: recruiter, body: { applicationId: hmLink.appId, salaryOffered: 41000, joiningDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10) } });
+  c('offer created on the HM\'s own request', !!hmOffer.json?.offer?.id, JSON.stringify(hmOffer.json).slice(0, 160));
+  const asHmOwn = await api(`/api/offers/${hmOffer.json.offer.id}`, { token: hm });
+  c('HM sees the offer on their own request but salary masked (null + false)', asHmOwn.status === 200 && asHmOwn.json.offer.salaryVisible === false && asHmOwn.json.offer.salaryOffered === null);
+  const profHm = await api(`/api/candidates/${hmLink.candId}`, { token: hm });
+  c('HM opens the candidate on their own request (200)', profHm.status === 200, `got ${profHm.status}`);
+  c('HM profile offers: listed, salary masked', (profHm.json?.candidate?.offers || []).length > 0
+    && profHm.json.candidate.offers.every((x) => x.salaryVisible === false && x.salaryOffered == null && !JSON.stringify(x).includes('41000')),
+    JSON.stringify(profHm.json?.candidate?.offers || []).slice(0, 200));
 
   console.log('\n— Standalone offer (no application / request) —');
   const soloCand = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Solo Offeree', email: 'solo.offer@example.com' } });

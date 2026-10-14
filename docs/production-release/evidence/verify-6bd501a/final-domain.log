@@ -1,0 +1,239 @@
+
+> arabtec-recruitment-hub-backend@1.0.0 test:domain
+> vitest run
+
+
+ RUN  v2.1.9 /Users/moutazadly/Documents/Codex/2026-10-01/referenced-chatgpt-conversation-this-is-an-3/work/repo/backend
+
+ ✓ src/infrastructure/ai/document-smoke/pipeline.smoke.test.ts (29 tests) 256ms
+ ✓ src/infrastructure/db/outbox.test.ts (23 tests) 28929ms
+   ✓ outbox atomicity > writes events in the same transaction as the state change 1775ms
+   ✓ outbox atomicity > writes NO events when the transaction rolls back 666ms
+   ✓ outbox atomicity > records the aggregate type and id from the repository, not from the payload 384ms
+   ✓ outbox atomicity > assigns ids in occurrence order across every aggregate in the transaction 369ms
+   ✓ post-commit relay > delivers after commit and marks the rows published 342ms
+   ✓ post-commit relay > delivers to every interested subscriber and skips uninterested ones 386ms
+   ✓ post-commit relay > leaves the row pending and records the error when a subscriber fails 704ms
+   ✓ post-commit relay > does not fail the caller when the relay throws 1100ms
+   ✓ post-commit relay > one failing subscriber does not roll back a succeeding one 674ms
+   ✓ exactly-once processing > runs a subscriber once even when the same event is relayed twice 398ms
+   ✓ exactly-once processing > writes one ledger row per subscriber per event 332ms
+   ✓ exactly-once processing > releases the claim when a handler throws, so the event is retried 517ms
+   ✓ OutboxDispatcher > respects the backoff and does not re-claim a row before it is due 372ms
+ ✓ src/modules/hiring/infrastructure/repositories.test.ts (23 tests) 29283ms
+   ✓ identity allocation > allocates ids from the table sequence before construction 310ms
+   ✓ identity allocation > emits business numbers in the exact legacy format 317ms
+   ✓ RequisitionRepository > round-trips a requisition and its seats through the database 874ms
+   ✓ RequisitionRepository > returns null for a missing id 852ms
+   ✓ RequisitionRepository > persists a seat fill as an UPDATE, not a duplicate row 623ms
+   ✓ RequisitionRepository > deletes seats removed by a headcount reduction 349ms
+   ✓ RequisitionRepository > moves an application between seats in one save without tripping the unique index 442ms
+   ✓ RequisitionRepository > rolls back root and seats together when the transaction throws 439ms
+   ✓ ApplicationRepository > round-trips an application with its stage history 352ms
+   ✓ ApplicationRepository > appends only the new history entries, never rewriting the trail 309ms
+   ✓ ApplicationRepository > finds an active hire for a candidate and honours the exclusion 365ms
+   ✓ ApplicationRepository > lists non-terminal applications for a requisition 311ms
+   ✓ ApplicationRepository > refuses a second live application for the same candidate and requisition 304ms
+   ✓ optimistic locking > rejects a save whose baseline version is no longer current 302ms
+   ✓ optimistic locking > reports the actual version, and -1 when the row is gone 443ms
+ ✓ src/modules/architecture.test.ts (18 tests) 136ms
+ ↓ src/infrastructure/db/real-postgres.test.ts (9 tests | 9 skipped)
+stdout | src/infrastructure/db/real-postgres.test.ts
+
+  ⏭  Step 11 real-PostgreSQL concurrency tests SKIPPED.
+     No TEST_DATABASE_URL or DATABASE_URL set — using PGlite (real PostgreSQL in WASM, single-connection). Tests needing genuinely concurrent sessions will skip.
+     To run them: TEST_DATABASE_URL=postgres://localhost/arabtec_test npm test
+
+
+ ✓ src/modules/hiring/application/hiring-service.test.ts (26 tests) 138ms
+ ✓ src/modules/interview/application/interview-service.test.ts (33 tests) 133ms
+ ✓ src/api/talent.test.ts (24 tests) 35094ms
+   ✓ candidates — manual, no AI > creates and edits by hand 681ms
+   ✓ candidates — manual, no AI > emits CAN- numbers and refuses a record nobody can contact 395ms
+   ✓ candidates — manual, no AI > warns about possible duplicates without blocking creation 390ms
+   ✓ candidates — manual, no AI > deduplicates documents by content, not by filename 428ms
+   ✓ candidates — manual, no AI > keeps the blob when a document is detached 417ms
+   ✓ candidates — manual, no AI > enforces permissions and optimistic concurrency 376ms
+   ✓ proposals — review before anything is written > applies only the accepted fields and stamps their provenance 674ms
+   ✓ proposals — review before anything is written > supersedes an unreviewed proposal when a new one arrives 303ms
+   ✓ proposals — review before anything is written > cannot be reviewed twice 307ms
+   ✓ talent read model > lists with pagination, a stable total and provenance badges 493ms
+   ✓ talent read model > rolls up documents and applications in one statement 438ms
+   ✓ talent read model > searches, filters and sorts 691ms
+   ✓ talent read model > hides erased records unless asked for explicitly 560ms
+   ✓ talent read model > returns the detail with documents, provenance, proposal and duplicates 492ms
+   ✓ talent read model > shows the current value beside each suggestion 1125ms
+   ✓ talent read model > badges approved AI fields distinctly from typed ones 753ms
+   ✓ talent read model > lists proposal history newest first 552ms
+ ✓ src/api/intake.test.ts (22 tests) 35181ms
+   ✓ bulk upload stages files without creating candidates > accepts a multipart batch and queues one parse task per file 835ms
+   ✓ bulk upload stages files without creating candidates > deduplicates identical bytes within one batch 300ms
+   ✓ parsing an intake batch > records extraction on the item, not on any candidate 352ms
+   ✓ parsing an intake batch > marks an unreadable file PARSE_FAILED so a reviewer is not left waiting 559ms
+   ✓ conversion creates a real Candidate under the ordinary invariants > creates the candidate from accepted fields, with AI provenance 515ms
+   ✓ conversion creates a real Candidate under the ordinary invariants > marks a typed field USER even when the parser also suggested it 316ms
+   ✓ conversion creates a real Candidate under the ordinary invariants > refuses to create a candidate with no name 390ms
+   ✓ conversion creates a real Candidate under the ordinary invariants > refuses to create a candidate nobody can contact 301ms
+   ✓ conversion creates a real Candidate under the ordinary invariants > reports duplicates on conversion without blocking it 427ms
+   ✓ conversion creates a real Candidate under the ordinary invariants > cannot convert the same item twice 649ms
+   ✓ batch lifecycle > completes once every item is settled 714ms
+   ✓ batch lifecycle > discards everything outstanding when a batch is cancelled 475ms
+   ✓ batch lifecycle > never converts a discarded item 328ms
+   ✓ with no AI configured > still stages files, queues nothing, and allows manual conversion 823ms
+   ✓ intake read model > lists batches with progress and a proposal summary, in one query 843ms
+   ✓ intake read model > filters, sorts and paginates 578ms
+   ✓ intake read model > shows live parsing status per item 462ms
+   ✓ intake read model > reports a parse error on the item that failed 305ms
+ ✓ src/infrastructure/ai/ollama/ollama-resume-extractor.test.ts (26 tests) 102ms
+ ✓ src/api/parsing.test.ts (30 tests) 36653ms
+   ✓ with no AI configured > uploads a CV and queues nothing at all 735ms
+   ✓ resume parsing > queues a task on CV upload and idempotently on re-upload 389ms
+   ✓ resume parsing > produces a PROPOSAL and writes nothing to the candidate 588ms
+   ✓ resume parsing > applies only what a human accepts, with AI provenance 706ms
+   ✓ resume parsing > surfaces parse status on the read model without a contract change 637ms
+   ✓ parse task submission is transactional > writes the document and its task in ONE transaction 939ms
+   ✓ parse task submission is transactional > rolls the task back when the document write fails 529ms
+   ✓ abstention permanence > keeps a TEMPORARY abstention retryable instead of losing the work 502ms
+   ✓ abstention permanence > succeeds on a later pass once the provider returns 509ms
+   ✓ abstention permanence > gives up after maxAttempts so a broken task stays visible 302ms
+   ✓ abstention permanence > keeps a PERMANENT abstention terminal 350ms
+   ✓ generation provenance > records everything needed to reproduce the proposal 325ms
+   ✓ generation provenance > surfaces it on the read model for audit 420ms
+   ✓ generation provenance > leaves it null for a human or import origin 399ms
+ ✓ src/modules/hiring/domain/requisition.test.ts (40 tests) 39ms
+ ✓ src/modules/hiring/application/requisition-service.test.ts (21 tests) 117ms
+ ✓ src/api/api.test.ts (36 tests) 37848ms
+   ✓ authentication > rejects a request with no credentials 624ms
+   ✓ authentication > rejects a malformed, unsigned or expired token identically 391ms
+   ✓ authentication > accepts the cookie the live UI already sets 480ms
+   ✓ validation > rejects an unparseable path id before reaching a service 358ms
+   ✓ requisition lifecycle > creates, submits, opens and closes through the real stack 767ms
+   ✓ the full hire flow across three contexts > moves a candidate from sourced to hired and consumes a seat 905ms
+   ✓ the full hire flow across three contexts > refuses a hire before an offer has been accepted 644ms
+   ✓ the full hire flow across three contexts > round-trips offer money as a number, not a concatenated string 811ms
+   ✓ the full hire flow across three contexts > refuses self-approval of an offer (BL-12) 841ms
+   ✓ the full hire flow across three contexts > refuses to overfill a requisition 2570ms
+   ✓ request context and subscribers > echoes a supplied correlation id and stamps it on the audit trail 306ms
+   ✓ request context and subscribers > notifies the assigned recruiter without any service sending a message 415ms
+ ✓ src/modules/offer/application/offer-service.test.ts (24 tests) 222ms
+ ✓ src/modules/hiring/application/pipeline-service.test.ts (24 tests) 218ms
+ ✓ src/api/read.test.ts (23 tests) 39709ms
+   ✓ GET /requisitions > paginates with a total that survives the limit 833ms
+   ✓ GET /requisitions > rolls up seat and application counts without a second query per row 643ms
+   ✓ GET /requisitions > filters by state, project and free text 384ms
+   ✓ GET /requisitions > sorts on a whitelisted column and ignores anything else 346ms
+   ✓ GET /requisitions > returns the detail with its seats, and 404 for anything unreachable 647ms
+   ✓ GET /requisitions > pins a VIEW_OWN caller to their own records 308ms
+   ✓ GET /applications > joins the requisition once for the whole page 445ms
+   ✓ GET /applications > filters by stage, requisition, liveOnly and due date 627ms
+   ✓ GET /applications > returns the detail with its full stage history 695ms
+   ✓ GET /interviews > aggregates the panel without duplicating rows 689ms
+   ✓ GET /interviews > filters by window and panellist 924ms
+   ✓ GET /interviews > pins a VIEW_ASSIGNED caller to interviews they sit on 1138ms
+   ✓ GET /interviews > returns the detail with panel and assessments 994ms
+   ✓ GET /offers > sums compensation in SQL as a number 828ms
+   ✓ GET /offers > filters by status, awaiting approval and expiry 673ms
+   ✓ GET /offers > returns the detail with its lines 584ms
+   ✓ GET /timeline > returns an entity history newest first 568ms
+   ✓ GET /timeline > hides audit rows for entities the caller cannot reach 340ms
+   ✓ GET /dashboard/summary > reports counts grouped in SQL 500ms
+   ✓ GET /dashboard/summary > scopes My Work to the calling user 748ms
+   ✓ GET /dashboard/summary > excludes offers the caller prepared from their own approval queue 1074ms
+ ✓ src/infrastructure/tools/reconcile/checks.test.ts (23 tests) 113ms
+ ✓ src/infrastructure/db/schema/schema.test.ts (32 tests) 678ms
+ ✓ src/modules/talent/talent.test.ts (22 tests) 131ms
+ ✓ src/modules/hiring/infrastructure/mappers.test.ts (8 tests) 275ms
+ ✓ src/infrastructure/db/primitives.test.ts (19 tests) 36ms
+ ✓ src/modules/hiring/domain/application.test.ts (34 tests) 129ms
+ ✓ src/infrastructure/db/concurrency.test.ts (21 tests) 18273ms
+   ✓ pessimistic row locking (ADR-0004) > [STATIC] does not lock rows on a plain read 411ms
+   ✓ pessimistic row locking (ADR-0004) > [REAL] a locked read inside a transaction returns the committed state 521ms
+   ✓ seat acquisition under contention > [MODELLED] the second acquirer of the last seat is refused, not overfilled 361ms
+   ✓ seat acquisition under contention > [MODELLED] N applicants and N seats fill exactly N times, no more 1547ms
+   ✓ seat acquisition under contention > [REAL] the database refuses a second seat for the same application 677ms
+   ✓ optimistic locking — lost update prevention > [MODELLED] the second writer is rejected, and the first writer's change survives 396ms
+   ✓ optimistic locking — lost update prevention > [MODELLED] applications are guarded the same way 436ms
+   ✓ optimistic locking — lost update prevention > [MODELLED] version advances by exactly one per mutation, so no write is skipped 489ms
+   ✓ transaction boundary (ADR-0002) > [REAL] rolls back every aggregate touched, not just the failing one 423ms
+   ✓ transaction boundary (ADR-0002) > [REAL] both repositories in one scope share the same connection 613ms
+   ✓ transaction boundary (ADR-0002) > [REAL] a failed transaction leaves no partially written child rows 324ms
+   ✓ deadlock and serialization retry > gives up after maxAttempts and rethrows the driver error 351ms
+   ✓ deadlock and serialization retry > does not retry a constraint violation 492ms
+   ✓ deadlock and serialization retry > does not retry an application error thrown by the domain 403ms
+   ✓ deadlock and serialization retry > backs off with jitter so two deadlocked transactions do not re-collide 364ms
+   ✓ deadlock and serialization retry > reports each retry so contention is visible in operations, not silent 317ms
+   ✓ deadlock and serialization retry > [REAL] passes an isolation level through to the driver when asked 353ms
+ ✓ src/infrastructure/ai/docling/docling-document-parser.test.ts (20 tests) 178ms
+ ✓ src/modules/events.test.ts (10 tests) 43ms
+ ✓ src/modules/offer/infrastructure/mappers.test.ts (11 tests) 191ms
+ ✓ src/api/auth/auth.test.ts (12 tests) 162ms
+ ✓ src/modules/hiring/domain/invariants.test.ts (7 tests) 629ms
+ ✓ src/modules/interview/infrastructure/mappers.test.ts (6 tests) 53ms
+ ✓ src/modules/shared/kernel/text.test.ts (24 tests) 47ms
+ ✓ src/modules/surface.test.ts (11 tests) 56ms
+ ✓ src/infrastructure/ai/extraction/evidence-locator.test.ts (7 tests) 69ms
+stdout | src/infrastructure/db/performance.test.ts
+
+  Step 12 benchmarks (pglite)
+  seat fill x40                1933ms   one transaction each, row-locked
+  load 200-seat requisition     501ms   root + seats
+  outbox drain                  173ms   claim + fan-out + mark
+  post-commit relay x20         592ms   write + commit + deliver
+
+
+ ✓ src/infrastructure/db/performance.test.ts (12 tests) 23728ms
+   ✓ no N+1 query patterns > loads a requisition in a constant number of queries regardless of seat count 805ms
+   ✓ no N+1 query patterns > loads an application and its whole history in two queries 719ms
+   ✓ no N+1 query patterns > loads the close cascade in two queries for any number of applications 2099ms
+   ✓ no N+1 query patterns > loads expirable offers and their lines in two queries 1210ms
+   ✓ no N+1 query patterns > loads booked interviews and their full panels in two queries 785ms
+   ✓ no N+1 query patterns > writes N new seats in a single INSERT 580ms
+   ✓ no N+1 query patterns > writes the outbox for a whole transaction in a single INSERT 407ms
+   ✓ throughput > fills seats at a workable rate 2772ms
+   ✓ throughput > loads a large requisition quickly 783ms
+   ✓ throughput > relays a backlog through the dispatcher 1003ms
+   ✓ throughput > delivers on the fast path without a poll 771ms
+ ✓ src/modules/hiring/application/auth-context.test.ts (12 tests) 11ms
+ ✓ src/modules/hiring/index.test.ts (8 tests) 52ms
+ ✓ src/modules/interview/infrastructure/interview-repository.test.ts (11 tests) 17599ms
+   ✓ InterviewRepository > round-trips an interview with its panel 391ms
+   ✓ InterviewRepository > moves the lead without tripping the one-lead index 458ms
+   ✓ InterviewRepository > removes panel members dropped by the aggregate 566ms
+   ✓ InterviewRepository > upserts an assessment rather than appending a second row 442ms
+   ✓ InterviewRepository > scopes through the requisition, not a denormalised project column 446ms
+   ✓ InterviewRepository > rejects a duplicate interview number at the database 350ms
+ ✓ src/infrastructure/tools/reconcile/report.test.ts (6 tests) 20ms
+ ✓ src/modules/offer/infrastructure/offer-repository.test.ts (10 tests) 17537ms
+   ✓ OfferRepository > emits offer numbers in the legacy format 336ms
+   ✓ OfferRepository > round-trips compensation lines as NUMBERS, not strings 701ms
+   ✓ OfferRepository > replaces compensation lines rather than accumulating them 339ms
+   ✓ OfferRepository > finds the live offer for an application and nothing once it is withdrawn 468ms
+   ✓ OfferRepository > refuses a second live offer on the same application 459ms
+ ✓ src/infrastructure/ai/extraction/validate.test.ts (6 tests) 14ms
+ ✓ src/modules/hiring/domain/errors.test.ts (13 tests) 13ms
+ ✓ src/api/matching.test.ts (13 tests) 23662ms
+   ✓ requesting matches > queues a task and returns 202 rather than pretending results are ready 1381ms
+   ✓ requesting matches > is idempotent, and a refresh token forces a new run 1001ms
+   ✓ requesting matches > queues nothing when no matcher is configured 984ms
+   ✓ recording suggestions > records suggestions and enters nobody into a pipeline 736ms
+   ✓ recording suggestions > orders by score, best first 662ms
+   ✓ recording suggestions > refreshes an open suggestion but never resurrects a dismissed one 1220ms
+   ✓ recording suggestions > abstains when the matcher finds nobody 453ms
+   ✓ recording suggestions > keeps a missing matcher retryable 334ms
+   ✓ acting on a suggestion > links through the Hiring context, creating a real application 433ms
+   ✓ acting on a suggestion > refuses to link without the Hiring permission the command needs 581ms
+   ✓ acting on a suggestion > cannot dismiss or link a settled suggestion twice 750ms
+   ✓ acting on a suggestion > enforces optimistic concurrency 431ms
+   ✓ acting on a suggestion > filters by minimum score 302ms
+ ✓ src/api/workers/workers.test.ts (6 tests) 9644ms
+   ✓ outbox worker > drains what the fast path never delivered 9629ms
+ ✓ src/api/search.test.ts (12 tests) 16572ms
+   ✓ candidate search > finds people by name, company and candidate number 560ms
+   ✓ candidate search > searches inside skills, which no name search could reach 541ms
+   ✓ candidate search > hides erased records 403ms
+
+ Test Files  43 passed | 1 skipped (44)
+      Tests  798 passed | 9 skipped (807)
+   Start at  13:13:11
+   Duration  69.51s (transform 5.90s, setup 0ms, collect 62.30s, tests 373.97s, environment 17ms, prepare 13.31s)
+

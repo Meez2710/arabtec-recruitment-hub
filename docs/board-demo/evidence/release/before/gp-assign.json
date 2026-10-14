@@ -1,0 +1,40 @@
+{
+ "stage": "assign",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as rec.manager@arabtec.com"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Assign recruiter\""
+  },
+  {
+   "s": "choose \"Recruiter / Owner\" = Karim Adel"
+  },
+  {
+   "s": "click \"Assign\""
+  },
+  {
+   "s": "after assign",
+   "status": "sourcing",
+   "owner": "Karim Adel"
+  },
+  {
+   "s": "screenshot gp-06-request-assigned.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

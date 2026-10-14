@@ -70,6 +70,14 @@ describe('local-only enforcement', () => {
     }
   });
 
+  it('allows a hosted endpoint only when explicitly approved and over https', () => {
+    const approved = ['pod-abc.proxy.runpod.net'];
+    expect(() => assertLocalHost('https://pod-abc.proxy.runpod.net', approved)).not.toThrow();
+    expect(() => assertLocalHost('http://pod-abc.proxy.runpod.net', approved)).toThrow(/https/i);
+    expect(() => assertLocalHost('https://other.proxy.runpod.net', approved)).toThrow(/non-local/i);
+    expect(() => assertLocalHost('https://api.openai.com', approved)).toThrow(/non-local/i);
+  });
+
   it('refuses to construct a client without a pinned model', () => {
     expect(() => new OllamaClient({ model: '' })).toThrow(/pinned Ollama model is required/);
     expect(() => new OllamaClient({})).toThrow(/pinned Ollama model is required/);

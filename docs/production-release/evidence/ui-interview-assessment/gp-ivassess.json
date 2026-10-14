@@ -1,0 +1,143 @@
+{
+ "stage": "ivassess",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #interviews"
+  },
+  {
+   "s": "click \"Schedule interview\""
+  },
+  {
+   "s": "click Talent Pool search"
+  },
+  {
+   "s": "click pick Laila"
+  },
+  {
+   "s": "choose \"Hiring request (optional)\" = REQ-2026-00001 — Quantity Surveyor (BOARD DEMO)"
+  },
+  {
+   "s": "choose \"Type\" = technical"
+  },
+  {
+   "s": "click \"Mona Sami\""
+  },
+  {
+   "s": "click \"Schedule\""
+  },
+  {
+   "s": "A scheduled",
+   "id": 5,
+   "application": "APP-00002"
+  },
+  {
+   "s": "open #interviews/5"
+  },
+  {
+   "s": "click \"Open assessment\""
+  },
+  {
+   "s": "A sheet open",
+   "unlocked": true
+  },
+  {
+   "s": "screenshot gp-30-assessment-from-interviews-with-request.png"
+  },
+  {
+   "s": "click close sheet"
+  },
+  {
+   "s": "open #interviews"
+  },
+  {
+   "s": "click back to Interviews"
+  },
+  {
+   "s": "click \"Schedule interview\""
+  },
+  {
+   "s": "click Talent Pool search"
+  },
+  {
+   "s": "click pick Youssef"
+  },
+  {
+   "s": "choose \"Type\" = technical"
+  },
+  {
+   "s": "click \"Mona Sami\""
+  },
+  {
+   "s": "click \"Schedule\""
+  },
+  {
+   "s": "B scheduled",
+   "id": 6,
+   "application": null
+  },
+  {
+   "s": "open #interviews/6"
+  },
+  {
+   "s": "click \"Open assessment\""
+  },
+  {
+   "s": "screenshot gp-31-link-dialog.png"
+  },
+  {
+   "s": "click \"Link and open assessment\""
+  },
+  {
+   "s": "B linked",
+   "application": "APP-00001",
+   "request": "REQ-2026-00001"
+  },
+  {
+   "s": "screenshot gp-32-assessment-after-link.png"
+  },
+  {
+   "s": "click close sheet"
+  },
+  {
+   "s": "open #interviews/6"
+  },
+  {
+   "s": "click \"Mark Completed\""
+  },
+  {
+   "s": "C completed",
+   "status": "completed"
+  },
+  {
+   "s": "click \"Reopen interview\""
+  },
+  {
+   "s": "screenshot gp-33-reopen-confirm.png"
+  },
+  {
+   "s": "click \"Reopen\""
+  },
+  {
+   "s": "C reopened",
+   "status": "scheduled"
+  },
+  {
+   "s": "screenshot gp-34-reopened.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

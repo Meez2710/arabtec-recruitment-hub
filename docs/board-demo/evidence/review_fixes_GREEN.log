@@ -1,0 +1,112 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"development","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:58979) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4395 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"2c562cb4-d0f1-431f-8527-2d719f624922","method":"GET","path":"/api/auth/me","status":503,"ms":8,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"6a97896c-5ecd-48af-a44e-be5597e45045","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4395/api/health
+
+{"level":"warn","msg":"request","requestId":"aae18409-31bc-41fb-a836-e0c12aa8d5d4","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1986de00-f5b8-4a36-9015-551fb533bcdb","method":"POST","path":"/api/auth/login","status":200,"ms":224,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"967ff81d-5166-493a-8f45-a132c1983242","method":"POST","path":"/api/auth/change-password","status":200,"ms":639,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"91084d94-d2ef-4fcc-ad94-8bc228859b1f","method":"POST","path":"/api/auth/login","status":200,"ms":318,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c7dee95f-9595-4ee6-b6b0-e465fba7a8c6","method":"POST","path":"/api/auth/login","status":200,"ms":252,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b391d2f6-97cb-439c-abb6-bd0e9916d978","method":"POST","path":"/api/auth/login","status":200,"ms":260,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"42a0ac27-c0ab-4484-8e26-d9313acbf757","method":"POST","path":"/api/auth/login","status":200,"ms":262,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"26e06e37-ed57-492b-8f3f-f7bfea12295b","method":"POST","path":"/api/auth/login","status":200,"ms":258,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"967a7585-7ded-4906-955b-7be4d2a1156d","method":"GET","path":"/api/requests/meta/form","status":200,"ms":7,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"70d94de0-3a10-458f-8624-ffdb8f3cc730","method":"POST","path":"/api/requests","status":201,"ms":8,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f7b028a1-01aa-4419-85d4-fb76a2f45b37","method":"POST","path":"/api/requests/1/submit","status":200,"ms":23,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a6f4bc00-e942-4c22-892f-55621b19b4db","method":"POST","path":"/api/requests/1/approve","status":200,"ms":8,"userId":2,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — ARFIX Request","messageId":"<e28e668b-fd70-cf6d-c552-e65830fd4efa@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — ARFIX Request","messageId":"<d7efaa2c-36e1-e8e1-239b-c5c3500c4d44@localhost>"}
+{"level":"info","msg":"request","requestId":"61e6965b-6042-42a4-84f8-334db3c34beb","method":"POST","path":"/api/requests/1/assign","status":200,"ms":7,"userId":4,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — ARFIX Request","messageId":"<9f8c60a2-0089-0299-e9ff-113505523098@localhost>"}
+{"level":"info","msg":"request","requestId":"c031ae74-6b18-47e3-b669-a36f3875c2e0","method":"POST","path":"/api/candidates","status":201,"ms":6,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — ARFIX Request","messageId":"<17d0eb2d-5290-ed17-2ef8-aae965d52ab5@localhost>"}
+{"level":"info","msg":"request","requestId":"4a82b84c-3394-43f9-996c-ab042e929305","method":"POST","path":"/api/applications","status":201,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0ef590ad-fb49-4f23-8c20-ae61081956f5","method":"POST","path":"/api/applications/1/move","status":200,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e456c0c6-b5a8-43e3-a818-c6c346ee0da2","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"57d598d5-b085-4c04-9e7d-94bd294b9176","method":"POST","path":"/api/interviews","status":201,"ms":53,"userId":5,"ip":"::1"}
+
+— AR-02 omitted submitted keeps state —
+{"level":"info","msg":"request","requestId":"7b55923a-1c1d-4ddc-96c4-d75f6970519c","method":"POST","path":"/api/assessments/application/1","status":201,"ms":12,"userId":8,"ip":"::1"}
+  ✅ submit technical (201)
+{"level":"info","msg":"request","requestId":"2c918a4b-f70f-4c4b-b17d-053c81fbefc0","method":"POST","path":"/api/assessments/application/1","status":201,"ms":6,"userId":8,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<3f832f21-5902-e06e-b1a3-c105cf8740af@localhost>"}
+  ✅ partial update without `submitted` accepted
+  ✅ …and the evaluation stays submitted
+  ✅ …with the new score saved
+{"level":"info","msg":"request","requestId":"00d60b25-98fa-4454-9c9c-eff47bf1fb90","method":"GET","path":"/api/audit","status":200,"ms":4,"userId":1,"ip":"::1"}
+  ✅ audited as an update of a submitted evaluation
+{"level":"info","msg":"request","requestId":"ea88dde5-fc49-4a3f-a87e-c4db1789bc0b","method":"POST","path":"/api/assessments/application/1","status":201,"ms":6,"userId":8,"ip":"::1"}
+  ✅ explicit submitted:false still withdraws to draft
+{"level":"info","msg":"request","requestId":"87d6c189-b718-43a2-80b4-6db3cdb6d826","method":"POST","path":"/api/assessments/application/1","status":201,"ms":5,"userId":8,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4a02a3fc-c223-4e90-9fa6-402347330ff2","method":"GET","path":"/api/assessments/application/1","status":200,"ms":4,"userId":8,"ip":"::1"}
+  ✅ resubmitting needs no fields re-sent
+
+— AR-03 one parent/child rule —
+  ✅ resolver: child grant under hidden section is not effective
+  ✅ resolver: hiding Final Recommendation hides its default-visible justification
+  ✅ resolver: read-only evaluation section blocks editing its criteria
+  ✅ resolver: justification edit is independent of the shared decision (default technical)
+{"level":"warn","msg":"request","requestId":"79b53dc4-5a54-4db9-9e35-8c72e4a3c56a","method":"PUT","path":"/api/assessments/policy","status":400,"ms":3,"userId":1,"ip":"::1"}
+  ✅ PUT refuses a field grant under a hidden section (400, explained)
+{"level":"warn","msg":"request","requestId":"022af990-fbcf-4119-9204-7f9aa5642ea8","method":"PUT","path":"/api/assessments/policy","status":400,"ms":2,"userId":1,"ip":"::1"}
+  ✅ PUT refuses an editable criterion under a read-only evaluation section (400)
+{"level":"info","msg":"request","requestId":"846dea97-96ce-4fd7-98c9-2e188bff9bef","method":"POST","path":"/api/assessments/policy/preview","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ preview returns server-resolved effective result for unsaved changes
+{"level":"info","msg":"request","requestId":"c18ebc76-a155-48e5-a46c-4fdcd8618f6a","method":"POST","path":"/api/assessments/policy/preview","status":200,"ms":4,"userId":1,"ip":"::1"}
+  ✅ preview reports an invalid draft instead of guessing
+{"level":"warn","msg":"request","requestId":"ba258073-2554-4b66-8ef2-ead86f944801","method":"POST","path":"/api/assessments/policy/preview","status":403,"ms":2,"userId":3,"ip":"::1"}
+  ✅ preview needs the settings permission (403 for HR manager)
+{"level":"info","msg":"request","requestId":"10ed21b2-45d8-439a-9284-7964837a7682","method":"GET","path":"/api/assessments/policy","status":200,"ms":4,"userId":1,"ip":"::1"}
+  ✅ policy definition marks which sections gate their fields
+
+— AR-04 hidden Final Recommendation: API and print agree —
+{"level":"info","msg":"request","requestId":"248ce88a-397d-46f6-915d-2f588778428b","method":"PUT","path":"/api/assessments/policy","status":200,"ms":4,"userId":1,"ip":"::1"}
+  ✅ hide Final Recommendation for technical (200)
+{"level":"info","msg":"request","requestId":"273d3e74-1681-46fd-81ad-f2383c15d2cc","method":"GET","path":"/api/assessments/application/1","status":200,"ms":3,"userId":8,"ip":"::1"}
+  ✅ API: shared decision absent
+  ✅ API: technical justification absent
+  ✅ API: technical fit still present (belongs to the technical section)
+{"level":"info","msg":"request","requestId":"6d563a54-f281-4d68-a468-292ff3f5e60d","method":"GET","path":"/api/assessments/application/1/preview","status":200,"ms":6,"userId":8,"ip":"::1"}
+  ✅ print: Technical Fit shown
+  ✅ print: justification and decision line omitted
+{"level":"info","msg":"request","requestId":"3b320d93-6000-44fe-91e3-df4f785cd9d3","method":"PUT","path":"/api/assessments/policy","status":200,"ms":3,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6cf7d555-3ae5-4166-bcc2-4eaed0a54295","method":"GET","path":"/api/assessments/application/1/preview","status":200,"ms":5,"userId":8,"ip":"::1"}
+  ✅ print with defaults: justification shown again
+
+— AR-07 printable document carries its own no-script CSP —
+  ✅ meta CSP is in the document head, before any content
+  ✅ meta CSP forbids scripts (no script-src, default none)
+
+=== ASSESSMENT REVIEW FIXES: 26 passed, 0 failed ===
+

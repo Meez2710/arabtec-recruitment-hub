@@ -1,3 +1,5 @@
+import { applicationScopeFilter, canSeeCandidate } from '../lib/candidate-scope.js';
+import { hasFullPipelineAccess } from '../lib/pipeline-visibility.js';
 // Ticket thread — email-style conversation on a recruitment request.
 // The request details are the "subject"; posts below form a chronological feed
 // (messages, file attachments, CV uploads, structured feedback, system entries),
@@ -7,7 +9,8 @@ import { Posts, Requests, Candidates, Applications, Users } from '../lib/models.
 import { requireAuth } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile } from '../lib/upload.js';
-import { run as dbRun } from '../lib/db.js';
+import { sendDocxPreview } from '../lib/cv-preview.js';
+import { run as dbRun, get as dbGet } from '../lib/db.js';
 import fs from 'node:fs';
 
 const router = Router();
@@ -15,15 +18,29 @@ router.use(requireAuth);
 
 // The ticket is a shared hiring conversation. Reading is open to everyone involved
 // (request.view_all holders incl. read-only viewers, owner/requester/creator, the
-// assigned hiring manager, and interviewers). Posting requires an active participant
+// assigned hiring manager, and the interviewers on its panels). Posting requires an active participant
 // role — viewers (read-only) can follow the thread but cannot contribute.
+//
+// Request-specific (security fix, 12 Oct 2026): request.create and
+// interview.feedback used to admit their holders to EVERY thread, so project
+// managers, hiring managers and interviewers could read CVs posted in requests
+// they have no link to. Those grants now apply only to roles that already see
+// every request (view_all / view_team); everyone else needs a link to THIS one.
+function onInterviewPanelFor(userId, requestId) {
+  return !!dbGet(`SELECT 1 AS x FROM interview_panel ip JOIN interview i ON i.id = ip.interview_id
+                   LEFT JOIN application a ON a.id = i.application_id
+                  WHERE ip.interviewer_id = ? AND (i.request_id = ? OR a.request_id = ?) LIMIT 1`,
+  [userId, requestId, requestId]);
+}
 function isParticipant(user, r) {
+  const p = user.permissions;
   if (r.hiring_manager_id && r.hiring_manager_id === user.id) return true;
-  if (user.permissions.includes('request.view_own') &&
+  if (p.includes('request.view_own') &&
       (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id)) return true;
-  if (user.permissions.includes('request.create')) return true;       // recruiters / HR / HM
-  if (user.permissions.includes('interview.feedback')) return true;   // interviewers
-  if (user.permissions.includes('request.assign_recruiter')) return true; // recruitment managers
+  if (p.includes('request.assign_recruiter')) return true;             // recruitment managers
+  const orgWide = p.includes('request.view_all') || p.includes('request.view_team');
+  if (orgWide && (p.includes('request.create') || p.includes('interview.feedback'))) return true; // HR / recruiters
+  if (p.includes('interview.feedback') && onInterviewPanelFor(user.id, r.id)) return true;       // this request's panelists
   return false;
 }
 function canView(user, r) {
@@ -52,8 +69,22 @@ function out(p) {
   };
 }
 // Build a nested tree: top-level posts (parent null) with their replies in order.
-function tree(requestId) {
-  const all = Posts.forRequest(requestId).map(out);
+function visiblePost(user, post) {
+  if (hasFullPipelineAccess(user)) return true;
+  let payload = {};
+  try { payload = JSON.parse(post.payload || '{}'); } catch { /* Legacy unstructured post. */ }
+  const appId = post.application_id || payload.applicationId;
+  const candidateId = post.candidate_id || payload.candidateId;
+  if (appId) {
+    const app = Applications.byId(Number(appId));
+    if (!app || !applicationScopeFilter(user)(app)) return false;
+  } else if (candidateId && !canSeeCandidate(user, Number(candidateId))) return false;
+  // Historical sourcing events remain private after a candidate is released.
+  if (['sourced', 'new', 'applied'].includes(payload.fromStatus) || ['sourced', 'new', 'applied'].includes(payload.toStatus)) return false;
+  return true;
+}
+function tree(requestId, user) {
+  const all = Posts.forRequest(requestId).filter((p) => visiblePost(user, p)).map(out);
   const byParent = new Map();
   for (const p of all) { if (p.parentPostId) { if (!byParent.has(p.parentPostId)) byParent.set(p.parentPostId, []); byParent.get(p.parentPostId).push(p); } }
   return all.filter((p) => !p.parentPostId).map((p) => ({ ...p, replies: byParent.get(p.id) || [] }));
@@ -62,7 +93,7 @@ function tree(requestId) {
 /* ---------------- GET thread ---------------- */
 router.get('/request/:requestId', (req, res) => {
   const r = loadRequest(req, res); if (!r) return;
-  res.json({ posts: tree(r.id) });
+  res.json({ posts: tree(r.id, req.user) });
 });
 
 /* ---------------- POST message / reply ---------------- */
@@ -96,10 +127,12 @@ router.post('/request/:requestId/file', multipart, (req, res) => {
 /* ---------------- Download a post's file ---------------- */
 router.get('/post/:postId/file', (req, res) => {
   const post = Posts.byId(Number(req.params.postId));
-  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  if (!post || !visiblePost(req.user, post)) return res.status(404).json({ error: 'Post not found.' });
   const r = Requests.byId(post.request_id);
   if (!r || !canView(req.user, r)) return res.status(403).json({ error: 'Not allowed.' });
   if (!post.file_path) return res.status(404).json({ error: 'No file on this post.' });
+  // `?as=html`: a Word file rendered for the in-app side panel (same check as above).
+  if (req.query.as === 'html') return sendDocxPreview(post.file_path, post.file_name, res);
   streamFile(post.file_path, res, post.file_name || 'file');
 });
 
@@ -162,7 +195,7 @@ router.post('/request/:requestId/feedback', (req, res) => {
 /* ---------------- Edit / delete own post ---------------- */
 router.put('/post/:postId', (req, res) => {
   const post = Posts.byId(Number(req.params.postId));
-  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  if (!post || !visiblePost(req.user, post)) return res.status(404).json({ error: 'Post not found.' });
   if (post.author_id !== req.user.id) return res.status(403).json({ error: 'You can only edit your own posts.' });
   if (post.post_type === 'system') return res.status(400).json({ error: 'System posts cannot be edited.' });
   const { body } = req.body || {};
@@ -173,7 +206,7 @@ router.put('/post/:postId', (req, res) => {
 
 router.delete('/post/:postId', (req, res) => {
   const post = Posts.byId(Number(req.params.postId));
-  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  if (!post || !visiblePost(req.user, post)) return res.status(404).json({ error: 'Post not found.' });
   const isAdmin = req.user.permissions.includes('audit.view') || (req.user.roles || []).includes('system_admin');
   if (post.author_id !== req.user.id && !isAdmin) return res.status(403).json({ error: 'You can only delete your own posts.' });
   Posts.remove(post.id);

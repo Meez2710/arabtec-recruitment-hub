@@ -66,15 +66,17 @@ const login = async (email, pw = 'Arabtec@123') => (await api('/api/auth/login',
   c('recruiter blocked from assigning (403)', recruiterCantAssign.status === 403, `got ${recruiterCantAssign.status}`);
 
   console.log('\n— Reason-required actions —');
-  const holdNoReason = await api(`/api/requests/${reqId}/hold`, { method: 'POST', token: hrMgr, body: {} });
+  // Owner, 4 Oct 2026: only the Recruitment Manager and the System Administrator control a request.
+  c('HR manager can no longer hold a request (403)', (await api(`/api/requests/${reqId}/hold`, { method: 'POST', token: hrMgr, body: { reason: 'x' } })).status === 403);
+  const holdNoReason = await api(`/api/requests/${reqId}/hold`, { method: 'POST', token: recMgr, body: {} });
   c('hold without reason rejected (400)', holdNoReason.status === 400, `got ${holdNoReason.status}`);
-  const hold = await api(`/api/requests/${reqId}/hold`, { method: 'POST', token: hrMgr, body: { reason: 'Awaiting client sign-off' } });
+  const hold = await api(`/api/requests/${reqId}/hold`, { method: 'POST', token: recMgr, body: { reason: 'Awaiting client sign-off' } });
   c('hold with reason → on_hold', hold.json?.request?.status === 'on_hold', hold.json?.request?.status);
-  const resume = await api(`/api/requests/${reqId}/resume`, { method: 'POST', token: hrMgr });
+  const resume = await api(`/api/requests/${reqId}/resume`, { method: 'POST', token: recMgr });
   c('resume → previous (sourcing)', resume.json?.request?.status === 'sourcing', resume.json?.request?.status);
-  const close = await api(`/api/requests/${reqId}/close`, { method: 'POST', token: hrMgr, body: { reason: 'Position filled externally' } });
+  const close = await api(`/api/requests/${reqId}/close`, { method: 'POST', token: recMgr, body: { reason: 'Position filled externally' } });
   c('close with reason → closed', close.json?.request?.status === 'closed', close.json?.request?.status);
-  const reopen = await api(`/api/requests/${reqId}/reopen`, { method: 'POST', token: hrMgr, body: { reason: 'New attrition seat' } });
+  const reopen = await api(`/api/requests/${reqId}/reopen`, { method: 'POST', token: recMgr, body: { reason: 'New attrition seat' } });
   c('reopen with reason → reopened', reopen.json?.request?.status === 'reopened', reopen.json?.request?.status);
 
   console.log('\n— Reject path (separate req) + RBAC —');

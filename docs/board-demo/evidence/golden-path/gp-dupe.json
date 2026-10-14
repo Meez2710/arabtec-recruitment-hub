@@ -1,0 +1,85 @@
+{
+ "stage": "dupe",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #requests/1"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "s": "click \"Schedule Interview\""
+  },
+  {
+   "s": "choose \"Type\" = technical"
+  },
+  {
+   "s": "click \"Mona Sami\""
+  },
+  {
+   "s": "overlap warning shown",
+   "warning": null
+  },
+  {
+   "s": "screenshot gp-25-overlap-warning.png"
+  },
+  {
+   "s": "Schedule still enabled despite overlap",
+   "enabled": true
+  },
+  {
+   "s": "double-click result",
+   "before": 0,
+   "after": 1,
+   "created": 1
+  },
+  {
+   "s": "open #interviews/2"
+  },
+  {
+   "s": "click \"Cancel\""
+  },
+  {
+   "s": "cancel dialog",
+   "text": "Cancel InterviewProvide a reason. Recorded in the audit trail.Reason (required)CancelConfirm",
+   "buttons": [
+    "Cancel",
+    "Confirm"
+   ],
+   "fields": [
+    "Reason (required)"
+   ]
+  },
+  {
+   "s": "type \"Reason (required)\""
+  },
+  {
+   "s": "click \"Confirm\""
+  },
+  {
+   "s": "after cancel",
+   "status": "cancelled"
+  },
+  {
+   "s": "screenshot gp-26-interview-cancelled.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

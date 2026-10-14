@@ -1,0 +1,75 @@
+{
+ "stage": "offer",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "open #offers/1"
+  },
+  {
+   "s": "screenshot gp-21-offer-submitted.png"
+  },
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.director@arabtec.com"
+  },
+  {
+   "s": "open #offers/1"
+  },
+  {
+   "s": "click \"Approve\""
+  },
+  {
+   "s": "after offer approve",
+   "status": "approved"
+  },
+  {
+   "s": "screenshot gp-22-offer-approved.png"
+  },
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as hr.manager@arabtec.com"
+  },
+  {
+   "s": "open #reports"
+  },
+  {
+   "s": "screenshot gp-23-reports.png"
+  },
+  {
+   "s": "open #dashboard"
+  },
+  {
+   "s": "screenshot gp-24-dashboard-after.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

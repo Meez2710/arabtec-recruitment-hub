@@ -92,7 +92,13 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
 
   console.log('\n— ACTION: Interview assessment (unlocks at interview stage) → persists + shared —');
   await api(`/api/applications/${cv.json.applicationId}/move`, { method: 'POST', token: recruiter, body: { status: 'interviewing' } });
-  const asmt = await api(`/api/assessments/application/${cv.json.applicationId}`, { method: 'POST', token: interviewer, body: { evaluatorType: 'technical', technical: { technical_knowledge: { score: 4 } }, recommendation: 'proceed', technicalFit: 'strong' } });
+  // A scoped interviewer may assess only an application they are assigned to:
+  // put them on the panel of a real interview first. Submission is explicit and
+  // needs every criterion answered; fit is derived by the server.
+  const panelist = (await api('/api/interviews/meta/form', { token: recruiter })).json.interviewers.find((u) => u.name === 'Mona Sami');
+  await api('/api/interviews', { method: 'POST', token: recruiter, body: { applicationId: cv.json.applicationId, interviewType: 'technical', scheduledAt: new Date(Date.now() + 86400000).toISOString(), panel: [{ interviewerId: panelist.id, isLead: true }] } });
+  const techScores = Object.fromEntries(['technical_knowledge', 'relevant_experience', 'problem_solving', 'tools_software', 'planning_organizing'].map((k) => [k, { score: 4, notes: '' }]));
+  const asmt = await api(`/api/assessments/application/${cv.json.applicationId}`, { method: 'POST', token: interviewer, body: { evaluatorType: 'technical', submitted: true, technical: techScores, recommendation: 'proceed' } });
   c('assessment submitted (201)', asmt.status === 201);
   c('→ assessment persisted + readable', (await api(`/api/assessments/application/${cv.json.applicationId}`, { token: recruiter })).json.assessment.technical?.recommendation === 'proceed');
   c('→ audited assessment.submitted', (await auditActions()).has('assessment.submitted'));

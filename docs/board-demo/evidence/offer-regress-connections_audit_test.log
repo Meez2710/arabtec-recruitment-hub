@@ -1,0 +1,148 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:65182) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4288 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"a20f187f-2d3c-43c7-926d-4d391e9b6d6e","method":"GET","path":"/api/auth/me","status":503,"ms":6,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"158dd6bb-4ae2-48d9-9855-8dc2edd4c87d","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4288/api/health
+
+{"level":"warn","msg":"request","requestId":"3985d220-bad2-4beb-ad91-f6d10a9dd687","method":"GET","path":"/api/auth/me","status":401,"ms":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"aaeea71f-c59b-4ad4-af40-fdf270d61454","method":"POST","path":"/api/auth/login","status":200,"ms":291,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"72e7a11e-ea98-42a0-bd0e-c60be62355da","method":"POST","path":"/api/auth/change-password","status":200,"ms":513,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1b24d7f6-b709-4386-a446-4d9d18d6656e","method":"POST","path":"/api/auth/login","status":200,"ms":260,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"96ddee7e-62ae-4e32-a2fd-843f91842e4d","method":"POST","path":"/api/auth/login","status":200,"ms":241,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e0984f49-7de1-4868-87a2-58f822f83631","method":"POST","path":"/api/auth/login","status":200,"ms":264,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"afc88510-3d1f-45cd-bf89-f05288f16c0d","method":"POST","path":"/api/auth/login","status":200,"ms":232,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b77289d2-1ec6-4bff-8212-be393262de3d","method":"POST","path":"/api/auth/login","status":200,"ms":190,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5af0eee7-c6b0-4a88-b1f3-3fd687988123","method":"GET","path":"/api/requests/meta/form","status":200,"ms":5,"userId":3,"ip":"::1"}
+
+— ACTION: Create request → persists + audited + listed —
+{"level":"info","msg":"request","requestId":"3bf38527-6bcd-4bde-b25f-b45eb00d70fa","method":"POST","path":"/api/requests","status":201,"ms":12,"userId":3,"ip":"::1"}
+  ✅ create returns 201 
+{"level":"info","msg":"request","requestId":"7cab1ec7-77da-4016-9f83-7608c887b156","method":"GET","path":"/api/requests/1","status":200,"ms":3,"userId":3,"ip":"::1"}
+  ✅ → persisted (detail GET returns it) 
+{"level":"info","msg":"request","requestId":"3592c8b6-39a5-4059-b6e0-1e433e37902b","method":"GET","path":"/api/requests","status":200,"ms":4,"userId":3,"ip":"::1"}
+  ✅ → appears in the requests list (view) 
+{"level":"info","msg":"request","requestId":"8833469d-7b7a-4a99-819a-3d2119006106","method":"GET","path":"/api/audit","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ → audited request.created 
+
+— ACTION: Submit → approve → assign (workflow path) —
+{"level":"info","msg":"request","requestId":"3bf596cf-aa9e-4a30-b8fd-c07fd728ffb4","method":"POST","path":"/api/requests/1/submit","status":200,"ms":16,"userId":3,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"285f5995-7838-406b-9925-1f668ddb14dd","method":"GET","path":"/api/requests/1","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ → status pending_approval 
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Audit Engineer","messageId":"<fbb68eef-5dac-790f-0ab3-1e789d03ebd1@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Audit Engineer","messageId":"<657022c9-e182-fba5-263f-ee4e20ea2153@localhost>"}
+{"level":"info","msg":"request","requestId":"394aea58-3178-4281-8f9b-2c4d97dad72b","method":"POST","path":"/api/requests/1/approve","status":200,"ms":7,"userId":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7a8b8765-e1fc-4b62-a3aa-1f07eaa98d30","method":"GET","path":"/api/requests/1","status":200,"ms":2,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Audit Engineer","messageId":"<8df7387f-0bd6-991a-3642-44360ebc395d@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Audit Engineer","messageId":"<1ee449a5-d67b-a298-c7bc-14de6b8d5296@localhost>"}
+  ✅ → status sourcing (approval flows into sourcing) 
+{"level":"info","msg":"request","requestId":"679d2d62-8d20-4970-80de-eafca602d789","method":"GET","path":"/api/audit","status":200,"ms":1,"userId":1,"ip":"::1"}
+  ✅ → audited request.approval_decision 
+{"level":"info","msg":"request","requestId":"34620228-a888-4a44-af9a-538414800bee","method":"POST","path":"/api/requests/1/assign","status":200,"ms":7,"userId":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"39c4419f-1457-48ab-b985-2b956f227d35","method":"GET","path":"/api/requests/1","status":200,"ms":2,"userId":3,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Audit Engineer","messageId":"<e7c967af-d7aa-664f-9ea5-0e1594f959ef@localhost>"}
+  ✅ → owner set + status sourcing 
+{"level":"info","msg":"request","requestId":"28540c8e-7dcf-4299-821e-5dfe889c54ba","method":"GET","path":"/api/audit","status":200,"ms":1,"userId":1,"ip":"::1"}
+  ✅ → audited request.recruiter_assigned 
+
+— ACTION: Ticket thread message → lands in the thread (right path) —
+{"level":"info","msg":"request","requestId":"dc0ced4e-5ac7-4f09-8c3b-fe029dd1aa20","method":"POST","path":"/api/thread/request/1","status":201,"ms":3,"userId":5,"ip":"::1"}
+  ✅ message posted (201) 
+{"level":"info","msg":"request","requestId":"4158f8b1-5a03-43de-8e0e-4271878734fa","method":"GET","path":"/api/thread/request/1","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ → appears in the thread feed 
+{"level":"info","msg":"request","requestId":"64638d55-36a1-4c1f-8b36-4eb754197d8d","method":"GET","path":"/api/audit","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ → audited ticket.post_created 
+
+— ACTION: CV upload (Candidates page path) → résumé persists durably + downloadable —
+{"level":"info","msg":"request","requestId":"f92a0086-1751-434c-b2ff-f48f48f4903e","method":"POST","path":"/api/candidates","status":201,"ms":9,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"09cd2596-76bb-42d8-ae7b-fdfcbe7064da","method":"POST","path":"/api/candidates/1/resume","status":201,"ms":775,"userId":5,"ip":"::1"}
+  ✅ résumé upload (201) 
+{"level":"info","msg":"request","requestId":"1f2d24ce-d93c-422d-954a-86dfd810621e","method":"GET","path":"/api/candidates/1","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ → candidate shows hasResume 
+{"level":"info","msg":"request","requestId":"ec8169b9-a60d-4f83-b35f-3e3489580fc4","method":"GET","path":"/api/candidates/1/resume","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ → résumé downloads with exact bytes (durable store) 
+{"level":"info","msg":"request","requestId":"c98af33b-5d43-466c-95c3-4ceda3fd9c7d","method":"GET","path":"/api/audit","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ → audited candidate.resume_uploaded 
+
+— ACTION: Post CV in ticket → creates candidate + application + downloadable file —
+{"level":"info","msg":"request","requestId":"e910c4bb-b168-4f26-ac66-79cb93bfb551","method":"POST","path":"/api/thread/request/1/cv","status":201,"ms":7,"userId":5,"ip":"::1"}
+  ✅ CV post (201) 
+{"level":"info","msg":"request","requestId":"d5bc1185-ab47-4a2e-9018-359445065d5b","method":"GET","path":"/api/candidates/2/resume","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ → posted CV stored as candidate résumé (durable) 
+{"level":"info","msg":"request","requestId":"9bd7e659-d374-4756-93d4-5f5e8ef1ef0a","method":"GET","path":"/api/applications/request/1","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ → application linked to this request (pipeline view) 
+
+— ACTION: Stage move → reflects in pipeline + auto-posts to thread —
+{"level":"info","msg":"request","requestId":"3c1f605c-8233-425c-bd3b-0da8ab600b78","method":"POST","path":"/api/applications/1/move","status":200,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d067581d-510c-42a5-b952-b58d375702e5","method":"GET","path":"/api/applications/request/1","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ → application status reflects in pipeline 
+{"level":"info","msg":"request","requestId":"37b78a9e-12cb-48f9-94d8-b2c05a0545a1","method":"GET","path":"/api/audit","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ → audited application.status_changed 
+{"level":"info","msg":"request","requestId":"52470705-9248-422d-a7f0-1ea76111ff96","method":"GET","path":"/api/thread/request/1","status":200,"ms":1,"userId":3,"ip":"::1"}
+  ✅ → stage move auto-posted into thread 
+
+— ACTION: Interview assessment (unlocks at interview stage) → persists + shared —
+{"level":"info","msg":"request","requestId":"c6a32cfa-d66f-4e64-bacc-d55e600ea768","method":"POST","path":"/api/applications/1/move","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2a82cc4a-95f0-4512-b2c0-76963f9dd7a9","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6b903b0c-0a43-4091-a51c-415e7ec3d6b4","method":"POST","path":"/api/interviews","status":201,"ms":50,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c4fdac8f-bdd0-4af7-8ad1-ff7e6ddba8e6","method":"POST","path":"/api/assessments/application/1","status":201,"ms":7,"userId":8,"ip":"::1"}
+  ✅ assessment submitted (201) 
+{"level":"info","msg":"request","requestId":"097a8fc2-3da2-4acd-9bf9-56f9194d253a","method":"GET","path":"/api/assessments/application/1","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation — QA","messageId":"<d77bab01-c281-d886-ea8f-8343eb83b23f@localhost>"}
+  ✅ → assessment persisted + readable 
+{"level":"info","msg":"request","requestId":"de64fb1d-903e-424c-9baa-3c32e8eee809","method":"GET","path":"/api/audit","status":200,"ms":1,"userId":1,"ip":"::1"}
+  ✅ → audited assessment.submitted 
+
+— ACTION: Request attachment upload → persists durably + downloadable —
+{"level":"info","msg":"request","requestId":"371741ef-f63d-46f1-a5bd-7108b54c8c83","method":"POST","path":"/api/requests/1/attachment","status":201,"ms":5,"userId":3,"ip":"::1"}
+  ✅ attachment upload (201) 
+{"level":"info","msg":"request","requestId":"b1472698-893c-4f82-9a3f-f73136225bc8","method":"GET","path":"/api/requests/1/attachment","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ → attachment downloads with exact bytes 
+
+— ACTION: Dashboard reflects the activity (read path) —
+{"level":"info","msg":"request","requestId":"bb3a49e7-ff8c-4900-9419-8bdb4f628df7","method":"GET","path":"/api/dashboard","status":200,"ms":3,"userId":3,"ip":"::1"}
+  ✅ dashboard returns KPIs 
+  ✅ → request appears in requests-by-status 
+
+— ACTION: Audit log is the system of record (everything traced) —
+{"level":"info","msg":"request","requestId":"afa2e546-f539-4ed5-b38a-8ee5bcd92f8f","method":"GET","path":"/api/audit","status":200,"ms":1,"userId":1,"ip":"::1"}
+  ✅ audit trail has request.created 
+  ✅ audit trail has request.submitted 
+  ✅ audit trail has request.recruiter_assigned 
+  ✅ audit trail has ticket.post_created 
+  ✅ audit trail has ticket.cv_posted 
+  ✅ audit trail has candidate.resume_uploaded 
+  ✅ audit trail has application.status_changed 
+  ✅ audit trail has assessment.submitted 
+  ✅ audit trail has request.attachment_uploaded 
+
+=== CONNECTIONS AUDIT (SQLITE): 38 passed, 0 failed ===
+

@@ -1,0 +1,96 @@
+{
+ "technicalInterviewer": {
+  "talentPool": {
+   "status": 200,
+   "ids": [
+    3,
+    1
+   ],
+   "leaks": [
+    "unrelatedName",
+    "unrelatedRequest"
+   ]
+  },
+  "unrelatedCandidate_2": 403,
+  "unrelatedCandidate_1": 200,
+  "assignedCandidate": {
+   "status": 200,
+   "expectedSalaryValue": null,
+   "currentSalaryValue": null,
+   "requestsShown": [
+    2
+   ],
+   "leaks": []
+  },
+  "unrelatedRequest": 403,
+  "requestList": {
+   "status": 403,
+   "leaks": []
+  },
+  "offers": {
+   "status": 403,
+   "leaks": []
+  },
+  "offerDetail": 403,
+  "offerLetter": 403,
+  "assessment": {
+   "status": 200,
+   "salaryVisible": false,
+   "hrSectionKeys": null,
+   "finalDecision": [
+    "decision",
+    "decisionLabel",
+    "historical",
+    "decidedById",
+    "decidedByName",
+    "notes",
+    "decidedAt"
+   ],
+   "leaks": []
+  },
+  "assessmentPrint": {
+   "status": 200,
+   "leaks": []
+  },
+  "cvIntakes": 403
+ },
+ "hiringManager": {
+  "talentPool": {
+   "status": 200,
+   "ids": [],
+   "leaks": []
+  },
+  "unrelatedCandidate_2": 403,
+  "unrelatedCandidate_1": 403,
+  "assignedCandidate": {
+   "status": 403,
+   "expectedSalaryValue": null,
+   "currentSalaryValue": null,
+   "requestsShown": [],
+   "leaks": []
+  },
+  "unrelatedRequest": 403,
+  "requestList": {
+   "status": 200,
+   "leaks": []
+  },
+  "offers": {
+   "status": 200,
+   "leaks": []
+  },
+  "offerDetail": 403,
+  "offerLetter": 403,
+  "assessment": {
+   "status": 403,
+   "salaryVisible": null,
+   "hrSectionKeys": null,
+   "finalDecision": null,
+   "leaks": []
+  },
+  "assessmentPrint": {
+   "status": 403,
+   "leaks": []
+  },
+  "cvIntakes": 403
+ }
+}

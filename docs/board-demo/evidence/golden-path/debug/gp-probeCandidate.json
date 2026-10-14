@@ -1,0 +1,55 @@
+{
+ "stage": "probeCandidate",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #cvIntake"
+  },
+  {
+   "s": "screenshot gp-07-cv-inbox.png"
+  },
+  {
+   "s": "open #candidates"
+  },
+  {
+   "s": "click \"Add manually\""
+  },
+  {
+   "s": "form",
+   "fields": [
+    "Full Name * <INPUT>",
+    "Email <INPUT>",
+    "Phone <INPUT>",
+    "Nationality <INPUT>",
+    "Location <INPUT>",
+    "LinkedIn URL <INPUT>",
+    "Current Company <INPUT>",
+    "Current Position <INPUT>",
+    "Years of Experience <INPUT>",
+    "Notice Period <SELECT>",
+    "Source <SELECT>",
+    "Tags (comma-separated) <INPUT>",
+    "CV / Résumé (optional) <INPUT>"
+   ],
+   "buttons": [
+    "",
+    "Cancel",
+    "Save"
+   ]
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

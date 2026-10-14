@@ -1,0 +1,149 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:64046) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4856 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"df35c6dd-d03c-4e9c-94b5-82a4a3753cbd","method":"GET","path":"/api/auth/me","status":503,"ms":5,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"a769939f-cffe-423f-bd2f-ffd679497455","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4856/api/health
+
+{"level":"warn","msg":"request","requestId":"95d18d6c-691f-47b4-bb2a-031aa8912acb","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+
+— setup —
+{"level":"info","msg":"request","requestId":"2d7cd4b7-4258-4c0a-8a7c-c7a51fcc6c0a","method":"POST","path":"/api/auth/login","status":200,"ms":178,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c2510bf6-cc5b-441e-bcc8-1634f5fbcb48","method":"POST","path":"/api/auth/change-password","status":200,"ms":517,"userId":1,"ip":"::1"}
+  ✅ admin authenticated
+{"level":"info","msg":"request","requestId":"13b9d7d5-f323-4bcc-ad49-bb1133488913","method":"GET","path":"/api/requests/meta/form","status":200,"ms":5,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"95e1f280-095c-4c5e-84eb-652f4c99fbfb","method":"GET","path":"/api/users","status":200,"ms":6,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e03b4fee-399b-4e43-86a2-1c5d401bb9a3","method":"GET","path":"/api/users","status":200,"ms":3,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e7b131ad-bd46-4bdb-943c-17e254225b72","method":"GET","path":"/api/users","status":200,"ms":5,"userId":1,"ip":"::1"}
+  ✅ reference data present
+
+— hiring request lifecycle —
+{"level":"info","msg":"request","requestId":"d97b7672-1d26-4107-8566-c7b583474df7","method":"POST","path":"/api/requests","status":201,"ms":8,"userId":1,"ip":"::1"}
+  ✅ request created  HTTP 201
+{"level":"info","msg":"request","requestId":"6950c2ba-4b79-420f-a7da-789056c2d458","method":"POST","path":"/api/requests/1/submit","status":200,"ms":17,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Site Engineer","messageId":"<934af7bb-c695-865a-2ee0-ab08bd097490@arabtecegy.com>"}
+  ✅ request.submitted → approvers emailed  ["hr.director@arabtec.com"]
+{"level":"info","msg":"request","requestId":"fd5a81f3-7186-49a2-918a-784e4faa8d11","method":"POST","path":"/api/requests/1/approve","status":200,"ms":8,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hiring.manager@arabtec.com","subject":"Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Site Engineer","messageId":"<238fe9f2-720a-7e34-c56d-a7c42bc13004@arabtecegy.com>"}
+  ✅ request.approved fires  ["hiring.manager@arabtec.com"]
+{"level":"info","msg":"request","requestId":"3236b247-fdad-4790-bf4b-ee5a12e2d193","method":"POST","path":"/api/requests/1/assign","status":200,"ms":9,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Site Engineer","messageId":"<2512c1f8-1d38-1586-cf8a-bba3095e1512@arabtecegy.com>"}
+  ✅ request.assigned → the new owner  ["recruiter@arabtec.com"]
+{"level":"info","msg":"request","requestId":"333da4a0-1eea-4c16-84da-f08f9a77c871","method":"POST","path":"/api/requests/1/hold","status":200,"ms":5,"userId":1,"ip":"::1"}
+  ✅ request.on_hold is in-app only by default (no email)  no email — as configured
+{"level":"info","msg":"request","requestId":"e2ac955e-987b-4546-a584-3d79ee545ec3","method":"POST","path":"/api/requests/1/resume","status":200,"ms":4,"userId":1,"ip":"::1"}
+
+— candidate & application —
+{"level":"info","msg":"request","requestId":"406f7e46-06c2-408b-95b5-21f006ade532","method":"POST","path":"/api/candidates","status":201,"ms":5,"userId":1,"ip":"::1"}
+  ✅ candidate created  HTTP 201
+{"level":"info","msg":"request","requestId":"9118d29c-e46f-4716-a0e6-12703eaff402","method":"POST","path":"/api/applications","status":201,"ms":6,"userId":1,"ip":"::1"}
+  ✅ application created  HTTP 201
+  ✅ candidate.application_received is OFF by default → silent  no email — as configured
+
+— interview —
+{"level":"info","msg":"request","requestId":"5495762d-4cb2-44ea-a605-35aaf95c6d26","method":"POST","path":"/api/interviews","status":201,"ms":29,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hiring.manager@arabtec.com","subject":"Interview invitation","messageId":"<99ad04d7-6f20-e2a7-130c-717e3390c19d@arabtecegy.com>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"candidate.e2e@gmail.com","subject":"Interview invitation","messageId":"<44d24589-b85c-7ed9-ed4b-44bdd3a1c7b3@arabtecegy.com>"}
+  ✅ interview scheduled  HTTP 201
+  ✅ interview.scheduled → candidate emailed  ["hiring.manager@arabtec.com","candidate.e2e@gmail.com"]
+
+— offer lifecycle —
+{"level":"info","msg":"request","requestId":"95099f16-8cc3-429c-9564-784d9edbaded","method":"POST","path":"/api/offers","status":201,"ms":6,"userId":1,"ip":"::1"}
+  ✅ offer created  HTTP 201
+{"level":"info","msg":"request","requestId":"8488264e-f991-4e39-ae40-a570b039b84c","method":"POST","path":"/api/offers/1/submit","status":200,"ms":8,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00001","messageId":"<573a6123-480d-b20b-2fa7-90df0717af38@arabtecegy.com>"}
+  ✅ offer.pending_approval → approvers  ["hr.director@arabtec.com"]
+{"level":"info","msg":"request","requestId":"fe3345c5-78d5-4ed7-8c35-0cc8c781710a","method":"POST","path":"/api/offers/1/approve","status":200,"ms":7,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer approved — OFR-2026-00001 Test Candidate","messageId":"<065d71e8-46a4-3e3c-9b63-2c2019b1677a@arabtecegy.com>"}
+  ✅ offer.approved fires  HTTP 200 ["recruiter@arabtec.com"]
+{"level":"info","msg":"request","requestId":"fad83ccb-4d1a-41f7-a564-8548e95a2866","method":"POST","path":"/api/offers/1/send","status":200,"ms":13,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"candidate.e2e@gmail.com","subject":"Job Offer — Site Engineer — Arabtec Construction","messageId":"<dea785e4-206a-d8e9-cdbd-2b207918eb1c@arabtecegy.com>"}
+  ✅ offer.sent → the candidate  ["candidate.e2e@gmail.com"]
+{"level":"info","msg":"request","requestId":"9f75f82d-1231-4cd9-83c8-9c916ec04141","method":"POST","path":"/api/offers/1/result","status":200,"ms":6,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"recruiter@arabtec.com","subject":"Offer accepted — Test Candidate","messageId":"<5ff8ba0f-64b4-7bcc-4c08-d37ea97647be@arabtecegy.com>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hiring.manager@arabtec.com","subject":"Offer accepted — Test Candidate","messageId":"<359f3e79-921b-3a14-ba88-67d42f5e49fe@arabtecegy.com>"}
+  ✅ offer.accepted → internal staff, and NOT the candidate  HTTP 200 ["recruiter@arabtec.com","hiring.manager@arabtec.com"]
+
+— salary confinement —
+  ✅ no internal alert subject carries the salary figure  8 internal message(s) checked
+
+— catalogue integrity —
+{"level":"info","msg":"request","requestId":"89372cda-d2bf-4b0d-b61c-283af365c293","method":"GET","path":"/api/settings/notifications","status":200,"ms":2,"userId":1,"ip":"::1"}
+  ✅ console lists every catalogued event  17 of 17
+  ✅ no event is left unconfigured after seeding  all configured
+  ✅ every event names at least one recipient  all have recipients
+  ✅ candidate-facing events are flagged external
+
+— the console actually governs sending —
+{"level":"info","msg":"request","requestId":"1d077de1-933c-405b-a6e3-0735af83dfed","method":"PUT","path":"/api/settings/notifications/request.approved","status":200,"ms":2,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"69980624-4334-4274-8063-6b5aeeb386a6","method":"POST","path":"/api/requests","status":201,"ms":4,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5942da8e-4883-4d7a-b2f5-be84e754beb7","method":"POST","path":"/api/requests/2/submit","status":200,"ms":5,"userId":1,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Approval needed — REQ-2026-00002 Approval needed: REQ-2026-00002 — Second Role","messageId":"<d5afa025-809c-94c3-903c-cc13d4f74fe0@arabtecegy.com>"}
+{"level":"info","msg":"request","requestId":"8a15e3e3-b0bb-4ec4-a59c-8e1596b2d370","method":"POST","path":"/api/requests/2/approve","status":200,"ms":4,"userId":1,"ip":"::1"}
+  ✅ switching request.approved email OFF stops the mail  suppressed
+{"level":"info","msg":"request","requestId":"73b5cbd7-38a2-4827-94fb-4765bea6b5ae","method":"PUT","path":"/api/settings/notifications/request.approved","status":200,"ms":6,"userId":1,"ip":"::1"}
+
+— who may configure notifications —
+{"level":"info","msg":"request","requestId":"4ca31c9f-9aaa-4051-a65e-37b8e49529b1","method":"POST","path":"/api/auth/login","status":200,"ms":181,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0d2d95cf-c62b-4a7e-b83d-1cba487d175a","method":"PUT","path":"/api/settings/notifications/request.approved","status":200,"ms":2,"userId":2,"ip":"::1"}
+  ✅ HR Director can edit the console  HTTP 200
+{"level":"info","msg":"request","requestId":"79ebcbe8-7395-4620-9979-b68b559fc335","method":"POST","path":"/api/auth/login","status":200,"ms":227,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fd7ac3d4-7bbf-4e49-9179-90b81c7d28b5","method":"PUT","path":"/api/settings/notifications/request.approved","status":200,"ms":2,"userId":3,"ip":"::1"}
+  ✅ HR Manager can edit the console  HTTP 200
+{"level":"info","msg":"request","requestId":"d438809f-923a-414b-852a-2160baa6e2f6","method":"POST","path":"/api/auth/login","status":200,"ms":202,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4e1c438a-f21a-449b-973b-6415cc4d2d80","method":"PUT","path":"/api/settings/notifications/request.approved","status":200,"ms":2,"userId":4,"ip":"::1"}
+  ✅ Recruitment Manager can edit the console  HTTP 200
+{"level":"info","msg":"request","requestId":"8b38a8aa-49ca-4ab5-a4df-5599b71b2f8b","method":"POST","path":"/api/auth/login","status":200,"ms":221,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"38f18133-686f-4830-86ae-e58173ec394b","method":"PUT","path":"/api/settings/notifications/request.approved","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ✅ Recruiter can edit the console  HTTP 200
+{"level":"info","msg":"frontend.compiled","ms":3874}
+{"level":"info","msg":"request","requestId":"66ed4f89-c2f1-47a8-88f7-1f00ec24d069","method":"POST","path":"/api/auth/login","status":200,"ms":206,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"09c2e51d-856d-4156-bca1-d274acb81e23","method":"PUT","path":"/api/settings/notifications/request.approved","status":403,"ms":1,"userId":9,"ip":"::1"}
+  ✅ Viewer cannot edit the console  HTTP 403
+{"level":"info","msg":"request","requestId":"a4e66837-1c88-4186-aef2-8c1201e158de","method":"POST","path":"/api/auth/login","status":200,"ms":145,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"7fd6c632-ac79-4836-9894-b4e4a06e8711","method":"PUT","path":"/api/settings/notifications/request.approved","status":403,"ms":1,"userId":8,"ip":"::1"}
+  ✅ Interviewer cannot edit the console  HTTP 403
+
+— every message this run produced —
+     → hr.director@arabtec.com            Approval needed — REQ-2026-00001 Approval needed: REQ-2026-00001 — Site Engineer
+     → hiring.manager@arabtec.com         Approved — REQ-2026-00001 Approved: REQ-2026-00001 — Site Engineer
+     → recruiter@arabtec.com              Assigned to you — REQ-2026-00001 You’ve been assigned: REQ-2026-00001 — Site Engineer
+     → hiring.manager@arabtec.com         Interview invitation
+     → candidate.e2e@gmail.com            Interview invitation
+     → hr.director@arabtec.com            Offer approval needed — OFR-2026-00001
+     → recruiter@arabtec.com              Offer approved — OFR-2026-00001 Test Candidate
+     → candidate.e2e@gmail.com            Job Offer — Site Engineer — Arabtec Construction
+     → recruiter@arabtec.com              Offer accepted — Test Candidate
+     → hiring.manager@arabtec.com         Offer accepted — Test Candidate
+     → hr.director@arabtec.com            Approval needed — REQ-2026-00002 Approval needed: REQ-2026-00002 — Second Role
+
+=== NOTIFICATION E2E: 29 passed, 0 failed ===
+

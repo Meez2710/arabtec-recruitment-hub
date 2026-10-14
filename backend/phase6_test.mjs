@@ -5,8 +5,11 @@ import fs from 'node:fs';
 for (const f of ['/tmp/arabtec_p6.db', '/tmp/arabtec_p6.db-journal']) { try { fs.rmSync(f); } catch {} }
 await import('./prisma/seed.js');
 await import('./src/server.js');
-await new Promise((r) => setTimeout(r, 700));
 const B = 'http://localhost:4185';
+// Wait for the readiness gate (503 until ready), not a fixed sleep: under load a
+// 700ms sleep let the first login land during warm-up (seen in the full run).
+const { waitForReady } = await import('./test-support/wait-ready.mjs');
+await waitForReady(B);
 let pass = 0, fail = 0;
 const c = (n, ok, x = '') => { console.log((ok ? '  ✅ ' : '  ❌ ') + n + ' ' + x); ok ? pass++ : fail++; };
 async function api(p, { method = 'GET', token, body } = {}) {

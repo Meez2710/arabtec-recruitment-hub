@@ -233,7 +233,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
 
   console.log('\n— 2b. a CLOSED requisition does not release the candidate —');
   {
-    await api(`/api/requests/${blocked.first.reqId}/close`, { method: 'POST', token: hrMgr, body: { reason: 'project ended' } });
+    await api(`/api/requests/${blocked.first.reqId}/close`, { method: 'POST', token: recMgr, body: { reason: 'project ended' } });
     c('the blocking requisition is closed', reqRow(blocked.first.reqId).status === 'closed', reqRow(blocked.first.reqId).status);
     const r = await move(blocked.secondApp, 'joined');
     c('the candidate is still blocked', r.status === 409, `got ${r.status}`);

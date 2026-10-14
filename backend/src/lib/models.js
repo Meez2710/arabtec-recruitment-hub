@@ -549,6 +549,12 @@ export const Audit = {
   forActor(actorId, limit = 100) {
     return all('SELECT * FROM audit_log WHERE actor_id = ? ORDER BY occurred_at DESC, id DESC LIMIT ?', [actorId, limit]);
   },
+  /** Every entry for one record, newest first, with parsed values. */
+  forEntity(entityType, entityId, limit = 500) {
+    const parse = (v) => { if (!v) return null; try { return JSON.parse(v); } catch { return null; } };
+    return all('SELECT * FROM audit_log WHERE entity_type = ? AND entity_id = ? ORDER BY occurred_at DESC, id DESC LIMIT ?', [entityType, String(entityId), limit])
+      .map((r) => ({ id: r.id, action: r.action, actorName: r.actor_name, comments: r.comments, at: r.occurred_at, oldValue: parse(r.old_value), newValue: parse(r.new_value) }));
+  },
   facets() {
     return {
       actions: all('SELECT DISTINCT action FROM audit_log ORDER BY action').map((r) => r.action),
@@ -954,12 +960,39 @@ export const Candidates = {
     // buckets; a candidate created before the column existed has NULL and is
     // simply not in any bucket, never excluded from an unfiltered search.
     if (f.disciplineClass) { sql += ' AND discipline_class=?'; p.push(f.disciplineClass); }
+    if (f.departmentId != null) {
+      // Actual request department only. EXISTS keeps filtering/counting paged
+      // without expanding a large department into thousands of placeholders.
+      sql += ` AND EXISTS (SELECT 1 FROM application a
+        JOIN recruitment_request r ON r.id=a.request_id
+        JOIN department d ON d.id=r.department_id
+        WHERE a.candidate_id=candidate.id AND d.id=? AND d.status='active'`;
+      p.push(f.departmentId);
+      if (f.departmentScope) {
+        const { userId, assigned } = f.departmentScope;
+        sql += ' AND (r.requester_id=? OR r.owner_id=? OR r.created_by=?';
+        p.push(userId, userId, userId);
+        if (assigned) {
+          sql += ` OR EXISTS (SELECT 1 FROM interview i WHERE i.application_id=a.id
+            AND (i.organizer_id=? OR EXISTS (SELECT 1 FROM interview_panel ip
+              WHERE ip.interview_id=i.id AND ip.interviewer_id=?)))`;
+          p.push(userId, userId);
+        }
+        sql += ')';
+      }
+      sql += ')';
+    }
     // Data-quality label. Same JSON-LIKE pattern the `tags` filter above uses,
     // so no new index and no new query machinery. Filtering is OPT-IN: the
     // default Talent Pool never hides a flagged candidate.
     if (f.qualityFlag) { sql += ' AND quality_flags LIKE ?'; p.push(`%"${f.qualityFlag}"%`); }
     if (f.flagged === 'yes') { sql += " AND quality_flags IS NOT NULL AND quality_flags <> ''"; }
     if (f.flagged === 'no') { sql += " AND (quality_flags IS NULL OR quality_flags = '')"; }
+    // Assignment scope (lib/candidate-scope.js): an explicit id allow-list.
+    if (Array.isArray(f.idsIn)) {
+      if (!f.idsIn.length) sql += ' AND 1=0';
+      else { sql += ` AND id IN (${f.idsIn.map(() => '?').join(',')})`; p.push(...f.idsIn.map(Number)); }
+    }
     return { sql, p };
   },
 
@@ -995,8 +1028,9 @@ export const Candidates = {
     return this.byId(id);
   },
   // Counts per screening bucket for the Talent Pool tabs.
-  screeningCounts() {
-    const rows = all("SELECT screening_status s, COUNT(*) c FROM candidate WHERE candidate_state != 'merged' GROUP BY screening_status");
+  screeningCounts(idsIn = null) {
+    const scope = Array.isArray(idsIn) ? (idsIn.length ? ` AND id IN (${idsIn.map(() => '?').join(',')})` : ' AND 1=0') : '';
+    const rows = all(`SELECT screening_status s, COUNT(*) c FROM candidate WHERE candidate_state != 'merged'${scope} GROUP BY screening_status`, Array.isArray(idsIn) ? idsIn.map(Number) : []);
     const out = { new: 0, screening: 0, fit: 0, unfit: 0 };
     for (const r of rows) out[r.s] = Number(r.c);
     return out;
@@ -1087,11 +1121,11 @@ export const Applications = {
   },
   // Pipeline summary per request: { [requestId]: { total, byStage: {status:count} } }.
   // One grouped query feeds the inline funnel mini-bar on the requests board.
-  stageCountsByRequest(requestIds) {
+  stageCountsByRequest(requestIds, visibility = '1=1') {
     const out = {};
     if (!requestIds || !requestIds.length) return out;
     const ph = requestIds.map(() => '?').join(',');
-    const rows = all(`SELECT request_id, status, COUNT(*) c FROM application WHERE request_id IN (${ph}) GROUP BY request_id, status`, requestIds);
+    const rows = all(`SELECT request_id, status, COUNT(*) c FROM application WHERE request_id IN (${ph}) AND ${visibility} GROUP BY request_id, status`, requestIds);
     for (const r of rows) {
       const id = r.request_id;
       (out[id] ??= { total: 0, byStage: {} });
@@ -1155,14 +1189,22 @@ export const Assessments = {
       technical_justification: d.technicalJustification || null,
       submitted: d.submitted ? 1 : 0,
     };
+    // evaluator_id/evaluator_name are the "last saved by" shown on the form, so
+    // an update records the actual editor; earlier authors stay in the audit log.
     if (existing) {
-      run(`UPDATE application_assessment SET behavioral=?,technical=?,critical_flags=?,recommendation=?,behavioral_fit=?,technical_fit=?,behavioral_justification=?,technical_justification=?,submitted=?,updated_at=? WHERE id=?`,
-        [cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted, nowISO(), existing.id]);
+      run(`UPDATE application_assessment SET evaluator_id=?,evaluator_name=?,behavioral=?,technical=?,critical_flags=?,recommendation=?,behavioral_fit=?,technical_fit=?,behavioral_justification=?,technical_justification=?,submitted=?,updated_at=? WHERE id=?`,
+        [d.evaluatorId, d.evaluatorName, cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted, nowISO(), existing.id]);
       return get('SELECT * FROM application_assessment WHERE id=?', [existing.id]);
     }
-    const r = run(`INSERT INTO application_assessment (application_id,evaluator_type,evaluator_id,evaluator_name,behavioral,technical,critical_flags,recommendation,behavioral_fit,technical_fit,behavioral_justification,technical_justification,submitted) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [d.applicationId, d.evaluatorType, d.evaluatorId, d.evaluatorName, cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted]);
+    const now = nowISO();
+    const r = run(`INSERT INTO application_assessment (application_id,evaluator_type,evaluator_id,evaluator_name,behavioral,technical,critical_flags,recommendation,behavioral_fit,technical_fit,behavioral_justification,technical_justification,submitted,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [d.applicationId, d.evaluatorType, d.evaluatorId, d.evaluatorName, cols.behavioral, cols.technical, cols.critical_flags, cols.recommendation, cols.behavioral_fit, cols.technical_fit, cols.behavioral_justification, cols.technical_justification, cols.submitted, now, now]);
     return get('SELECT * FROM application_assessment WHERE id=?', [Number(r.lastInsertRowid)]);
+  },
+  /** Change only the submitted state (reopen); scores and authorship are kept. */
+  setSubmitted(appId, type, submitted) {
+    run('UPDATE application_assessment SET submitted=?, updated_at=? WHERE application_id=? AND evaluator_type=?', [submitted ? 1 : 0, nowISO(), appId, type]);
+    return this.byType(appId, type);
   },
   finalDecision(appId) { return get('SELECT * FROM application_final_decision WHERE application_id=?', [appId]); },
   setFinalDecision(d) {
@@ -1211,14 +1253,22 @@ export const Interviews = {
     return `${prefix}-${String(cur).padStart(5, '0')}`;
   },
   byId(id) { return get('SELECT * FROM interview WHERE id=?', [id]); },
+  byIdempotencyKey(key) { return key ? get('SELECT * FROM interview WHERE idempotency_key=?', [key]) : null; },
+  /** Raise the calendar revision and record what is still to be communicated. */
+  setNotice(id, notice, { bumpSeq = false } = {}) {
+    run(`UPDATE interview SET notice_state=?, calendar_seq=COALESCE(calendar_seq,0)+?, updated_at=? WHERE id=?`,
+      [notice ? JSON.stringify(notice) : null, bumpSeq ? 1 : 0, nowISO(), id]);
+    return this.byId(id);
+  },
+  setOverlapReason(id, reason) { run('UPDATE interview SET overlap_reason=?, updated_at=? WHERE id=?', [reason || null, nowISO(), id]); },
   create(d) {
     const r = run(
       `INSERT INTO interview (interview_no,application_id,candidate_id,request_id,round,interview_type,mode,
-        scheduled_at,duration_min,location_or_link,organizer_id,status,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        scheduled_at,duration_min,location_or_link,organizer_id,status,created_by,idempotency_key,overlap_reason,calendar_seq,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [d.interviewNo, d.applicationId ?? null, d.candidateId, d.requestId ?? null, d.round || 1, d.interviewType || 'technical',
        d.mode || 'onsite', d.scheduledAt || null, d.durationMin || 60, d.locationOrLink || null,
-       d.organizerId, d.status || 'scheduled', d.createdBy, nowISO(), nowISO()],
+       d.organizerId, d.status || 'scheduled', d.createdBy, d.idempotencyKey || null, d.overlapReason || null, 0, nowISO(), nowISO()],
     );
     return this.byId(Number(r.lastInsertRowid));
   },
@@ -1238,7 +1288,13 @@ export const Interviews = {
     return this.byId(id);
   },
   setOutcome(id, outcome) { run('UPDATE interview SET overall_outcome=?, updated_at=? WHERE id=?', [outcome, nowISO(), id]); },
+  // What the candidate answered to the invitation, as recorded by HR (audit A3).
   setCandidateResponse(id, response) { run('UPDATE interview SET candidate_response=?, updated_at=? WHERE id=?', [response, nowISO(), id]); },
+  // Attach a standalone interview to the candidate's application (and its request).
+  linkApplication(id, applicationId, requestId) {
+    run('UPDATE interview SET application_id=?, request_id=?, updated_at=? WHERE id=? AND application_id IS NULL', [applicationId, requestId, nowISO(), id]);
+    return this.byId(id);
+  },
   forApplication(appId) { return all('SELECT * FROM interview WHERE application_id=? ORDER BY round, scheduled_at', [appId]); },
   forCandidate(candId) { return all('SELECT * FROM interview WHERE candidate_id=? ORDER BY scheduled_at DESC', [candId]); },
   forRequest(reqId) { return all('SELECT * FROM interview WHERE request_id=? ORDER BY scheduled_at DESC', [reqId]); },
@@ -1316,20 +1372,27 @@ export const Offers = {
   create(d) {
     const r = run(
       `INSERT INTO offer (offer_no,application_id,candidate_id,request_id,position_title,salary_offered,currency,
-        benefits,joining_date,expiry_date,notes,status,prepared_by,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        benefits,joining_date,expiry_date,notes,status,prepared_by,created_by,title_prefix,salutation_name,salary_components,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [d.offerNo, d.applicationId ?? null, d.candidateId, d.requestId ?? null, d.positionTitle || null, d.salaryOffered ?? null,
        d.currency || 'EGP', d.benefits || null, d.joiningDate || null, d.expiryDate || null, d.notes || null,
-       d.status || 'draft', d.preparedBy, d.createdBy, nowISO(), nowISO()],
+       d.status || 'draft', d.preparedBy, d.createdBy, d.titlePrefix || null, d.salutationName || null,
+       d.salaryComponents ? JSON.stringify(d.salaryComponents) : null, nowISO(), nowISO()],
     );
     return this.byId(Number(r.lastInsertRowid));
   },
   update(id, fields, { salaryAllowed = false } = {}) {
     const c = this.byId(id);
     const salary = salaryAllowed && fields.salaryOffered !== undefined ? fields.salaryOffered : c.salary_offered;
-    run(`UPDATE offer SET position_title=?,salary_offered=?,currency=?,benefits=?,joining_date=?,expiry_date=?,notes=?,version=version+1,updated_at=? WHERE id=?`,
+    // Salary components: only with salary rights; `null` clears, absent keeps.
+    const comps = salaryAllowed && fields.salaryComponents !== undefined
+      ? (fields.salaryComponents ? JSON.stringify(fields.salaryComponents) : null)
+      : c.salary_components;
+    run(`UPDATE offer SET position_title=?,salary_offered=?,currency=?,benefits=?,joining_date=?,expiry_date=?,notes=?,
+           title_prefix=?,salutation_name=?,salary_components=?,version=version+1,updated_at=? WHERE id=?`,
       [fields.positionTitle ?? c.position_title, salary, fields.currency ?? c.currency,
-       fields.benefits ?? c.benefits, fields.joiningDate ?? c.joining_date, fields.expiryDate ?? c.expiry_date, fields.notes ?? c.notes, nowISO(), id]);
+       fields.benefits ?? c.benefits, fields.joiningDate ?? c.joining_date, fields.expiryDate ?? c.expiry_date, fields.notes ?? c.notes,
+       fields.titlePrefix ?? c.title_prefix, fields.salutationName ?? c.salutation_name, comps, nowISO(), id]);
     return this.byId(id);
   },
   setStatus(id, status, extra = {}) {

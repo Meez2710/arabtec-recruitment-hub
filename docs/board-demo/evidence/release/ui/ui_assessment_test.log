@@ -1,0 +1,28 @@
+[BABEL] Note: The code generator has deoptimised the styling of undefined as it exceeds the max of 500KB.
+  ✓ score control: 1 2 3 4 5 N/A in the cell with the guide as accessible names; notes labelled
+  ✓ document follows the PDF: title, section order, table columns, instruction, guide, justification label; no fit selector
+  ✓ save draft: partial rows, N/A as "na", unanswered as null, per-row notes; no identity or fit fields
+  ✓ live summary: numeric rows only, N/A counted separately; all-N/A is "Not rated" with a warning
+  ✓ submit: blocked until every row is answered and a recommendation chosen; then sends submitted:true
+  ✓ failed save keeps every edit, reports the error and retries the same save
+  ✓ a second click while saving never sends a duplicate submission
+  ✓ a submitted evaluation opens read-only; "Edit evaluation" enters edit mode with truthful draft wording
+  ✓ a refresh never discards unsaved edits; a clean form follows the refreshed record
+  ✓ critical flag shows "Review required" and never rejects; historical manual fit stays visible
+  ✓ a user without edit rights gets no save controls
+  ✓ final decision: PDF choices as boxes, historical "hired" shown but not selected, failure keeps the choice
+  ✓ a save answer replaces the bundle without a second read; preview opens the scoped server render
+  ✓ drawer: unsaved assessment edits ask before closing; nothing is discarded silently
+  ✓ candidate grid: zero years kept, missing shown as "Not recorded"; a withheld field is absent and the grid reflows
+  ✓ hidden section is absent; view-only section renders values without controls and has no save row
+  ✓ field override: a hidden criterion row and the average it would reveal are absent; a read-only row is not sent
+  ✓ flags and justification follow their own policies in the payload
+  ✓ both evaluations live on one document and keep independent drafts
+  ✓ accessibility: every recommendation, justification, flag, score group and save button has a real name
+  ✓ interviewer route: an assigned interview offers "Open assessment", which opens the panel for that application
+  ✓ settings: the matrix shows server-resolved permissions; toggles cascade; Save sends what the server will enforce
+  ✓ settings (AR-03): hiding Final Recommendation shows its justification as enforced — unticked and locked; an invalid draft cannot be saved
+  ✓ AR-06: unsaved assessment edits survive the drawer being unmounted (shell breakpoint) and are restored on reopen
+
+=== UI ASSESSMENT: 24 passed ===
+

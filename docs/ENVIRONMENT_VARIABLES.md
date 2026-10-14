@@ -103,6 +103,7 @@ is no SMTP password anywhere: mail is sent as the careers mailbox through
 | `DEEPSEEK_MODEL` | `deepseek-chat` | Model name. |
 | `ANTHROPIC_API_KEY` | — | Enables the on-demand Anthropic CV parser. **Requires `@anthropic-ai/sdk` installed** (currently not a dependency). |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Model for the Anthropic parser. |
+| `OLLAMA_ALLOWED_HOSTS` | *(empty = local/private hosts only)* | Comma-separated hostnames of hosted Ollama endpoints the owner approves (e.g. a Runpod pod). Must be reached over https. Any other non-local host is refused, so CV text cannot leave the network by misconfiguration. |
 
 ## Uploads & CV watcher (optional)
 

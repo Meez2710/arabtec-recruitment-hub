@@ -1,0 +1,13 @@
+[BABEL] Note: The code generator has deoptimised the styling of undefined as it exceeds the max of 500KB.
+  ✓ the toolbar renders one shared structure, not a per-page layout
+  ✓ the disclosure button is declared specifically enough to stay hidden on desktop
+  ✓ the primary search grows faster than the filter group
+  ✓ the result count stays out of the wrap flow
+  ✓ selecting a screen tab cannot change its width
+  ✓ the toolbar section introduces no colour and no font-size
+  ✓ the Candidates toolbar still composes the shared component
+  ✓ no filter can absorb a whole wrapped line
+  ✓ the cap is a wide-toolbar rule only; the phone stack still fills its row
+  ✓ Hiring Requests composes the same shared toolbar, unmodified
+
+=== UI TOOLBAR LAYOUT: 10 passed, 0 failed ===

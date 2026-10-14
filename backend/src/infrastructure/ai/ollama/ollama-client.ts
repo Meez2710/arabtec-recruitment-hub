@@ -43,20 +43,46 @@ export const OLLAMA_DEFAULTS = {
   contextSize: 8192,
 } as const;
 
+/** Hosted Ollama endpoints the owner has explicitly approved, from OLLAMA_ALLOWED_HOSTS (comma-separated hostnames). */
+export const allowedRemoteHosts = (raw: string | undefined = process.env.OLLAMA_ALLOWED_HOSTS): string[] =>
+  (raw || '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+
 /**
- * Reject any host that is not local or private.
+ * Reject any host that is not local or private, unless it is explicitly approved.
  *
  * The local-only policy is a privacy guarantee about candidates' CVs. A
  * guarantee enforced only by documentation is not a guarantee.
+ *
+ * A hosted endpoint (e.g. Runpod — the owner's 11 Aug 2026 decision in 25547bc)
+ * is allowed only when its exact hostname is listed in OLLAMA_ALLOWED_HOSTS and
+ * it is reached over https. Nothing else leaves this host.
  */
-export const assertLocalHost = (baseUrl: string): void => {
+export const assertLocalHost = (baseUrl: string, approved: readonly string[] = allowedRemoteHosts()): void => {
   let url: URL;
   try {
     url = new URL(baseUrl);
   } catch {
     throw new OllamaError(`Invalid Ollama base URL: ${baseUrl}`, false, 'protocol');
   }
-  // Disabled the local-only restriction to allow external hosted Ollama (e.g., Runpod)
+  const host = url.hostname.toLowerCase();
+  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+  // RFC 1918 / container networks, plus a bare hostname (docker-compose service).
+  const isPrivate = /^10\./.test(host)
+    || /^192\.168\./.test(host)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    || (!host.includes('.') && host !== '');
+  if (isLoopback || isPrivate) return;
+  if (approved.includes(host)) {
+    if (url.protocol !== 'https:') {
+      throw new OllamaError(`Approved hosted Ollama ${host} must use https — CV content must not travel in clear text.`, false, 'protocol');
+    }
+    return;
+  }
+  throw new OllamaError(
+    `Refusing to use a non-local Ollama host: ${host}. CV content must not leave this host unless OLLAMA_ALLOWED_HOSTS approves it.`,
+    false,
+    'protocol',
+  );
 };
 
 /** What the runtime reports about the loaded model. Used to pin provenance. */

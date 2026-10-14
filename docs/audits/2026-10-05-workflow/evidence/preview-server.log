@@ -1,0 +1,184 @@
+{"level":"info","msg":"config.summary","env":"test","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":true,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+
+🏗️  Arabtec Recruitment Hub listening on 4398 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Schema: added 59 new permission(s) [dashboard.view, request.view_all, request.view_own, request.view_team, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 59 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"info","msg":"schema.request_control_policy","removed":[],"granted":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4398/api/health
+
+{"level":"info","msg":"frontend.compiled","ms":2184}
+{"level":"info","msg":"request","requestId":"055d61c0-9618-4609-98ac-a0bf1b97c819","method":"GET","path":"/","status":200,"ms":19,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0adab181-da87-45f7-a28f-1399403c617c","method":"GET","path":"/arabtec-approved-ui.css","status":200,"ms":26,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1affd842-77cb-406a-a72e-26417aed72c3","method":"GET","path":"/styles.css","status":200,"ms":36,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"88564d34-6380-4d5e-992a-c6e504e1e2e1","method":"GET","path":"/arabtec-design-system.css","status":200,"ms":35,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"04bcc478-71c5-44b1-8cc4-08bce0b3cb9e","method":"GET","path":"/arabtec-responsive.css","status":200,"ms":23,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ec951b39-a10a-4274-a819-3c90c8d00b99","method":"GET","path":"/arabtec-mobile.css","status":200,"ms":20,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a3f4096a-f427-4821-9532-aff2f4701338","method":"GET","path":"/claude-system.css","status":200,"ms":46,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9c5a341a-06c9-4fc1-9bbb-89591c4c11cb","method":"GET","path":"/vendor/react.production.min.js","status":200,"ms":38,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b7153beb-206a-4a4e-99f4-5c66c982af6a","method":"GET","path":"/build/cv-intake.js","status":200,"ms":17,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1cef5b79-83e7-4746-b2a5-cf6f397c55c0","method":"GET","path":"/build/intake-review.js","status":200,"ms":25,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0add943b-8ad6-4800-99f3-54e0102673d9","method":"GET","path":"/knowledge-lines.js","status":200,"ms":35,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"12a316c7-24b5-49b4-95c8-2636ad4b2b0f","method":"GET","path":"/build/email-settings.js","status":200,"ms":28,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a98b3cbf-5fca-4ad6-9ca5-0c4608e939b8","method":"GET","path":"/vendor/react-dom.production.min.js","status":200,"ms":62,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2dc08cd9-50d3-4ca2-bee1-cb3dc088830e","method":"GET","path":"/build/org-structure.js","status":200,"ms":16,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"89171c0c-a996-461e-be78-9ec7d7230331","method":"GET","path":"/build/app.js","status":200,"ms":45,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c3d652a8-cd2a-4471-9865-5a55b39f8bd5","method":"GET","path":"/api/settings/branding","status":200,"ms":17,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5354c5af-0756-48bf-a06c-98a5efd1ce32","method":"GET","path":"/arabtec-favicon.svg","status":200,"ms":8,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8533307b-cf2f-4a57-bf51-851e94e10646","method":"GET","path":"/arabtec-favicon.svg","status":200,"ms":21,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6df8b0d4-8931-4b4e-a305-c6862d702e34","method":"GET","path":"/arabtec-logo.svg","status":200,"ms":32,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"834f9c05-4bb0-423a-adbb-0c8f4ec3e0ac","method":"POST","path":"/api/auth/login","status":200,"ms":132,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6a695b26-40b9-4420-8e8a-39d78293bfff","method":"GET","path":"/api/settings/system","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a0029c35-9dae-4bfd-91c2-a9b0442f7728","method":"GET","path":"/api/settings/branding","status":304,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a517adeb-6f26-4016-ab3c-504538333c89","method":"GET","path":"/api/notifications","status":200,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e1a2b897-b80b-49bb-aa52-b61ff94735a7","method":"GET","path":"/api/dashboard","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6084fe0c-fd42-4acd-b65b-835512105015","method":"GET","path":"/api/requests","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9a88a327-4a5a-4aac-a29e-003134242500","method":"GET","path":"/api/interviews","status":200,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"89509e86-b6d5-4f6f-a387-e28fa2fa36de","method":"GET","path":"/api/candidates/intakes","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a69e03ac-53ec-4414-bf1c-e3c9de704b25","method":"GET","path":"/api/dashboard","status":200,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f94d3446-2fa4-4e09-9af0-9bcd52145246","method":"GET","path":"/arabtec-watermark.webp","status":200,"ms":8,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"67075f40-9f42-4f2f-b17e-1c7fa99607f3","method":"GET","path":"/api/requests","status":304,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"057d700b-5b3d-47e6-a9fe-e7dc8b7ff604","method":"GET","path":"/api/interviews","status":304,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9081b9c7-6d24-40c6-b78e-36b0a8e6c50c","method":"GET","path":"/api/offers","status":200,"ms":29,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"93186c93-77e1-4f81-9c18-92619f4a1ead","method":"GET","path":"/api/offers/meta/form","status":200,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b4d34373-2493-447d-be04-b216e3ee1169","method":"GET","path":"/api/requests","status":304,"ms":2,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"36a72d7f-2eae-4018-8abd-11cef0ffca7a","method":"GET","path":"/api/notifications","status":304,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"87c513eb-26b5-46ab-923b-3378cd458a4e","method":"GET","path":"/api/notifications","status":304,"ms":46,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2b2cecfd-19a0-4184-a310-ca0f2328cd74","method":"GET","path":"/api/notifications","status":304,"ms":32,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c4eb478c-bfc2-4bd6-864f-64efa7c3a2c8","method":"GET","path":"/api/notifications","status":304,"ms":35,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f47ab4c1-9306-469f-bde0-2827c524605b","method":"GET","path":"/api/notifications","status":304,"ms":410,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"933bffa5-26e4-40d6-a35e-ded193a21f6a","method":"POST","path":"/api/candidates","status":201,"ms":201,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"92446fe5-4516-4f43-a1c2-ae22524cfa87","method":"POST","path":"/api/offers","status":201,"ms":59,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"41eadd7b-4d2d-453a-99eb-4d4f55b93e9c","method":"GET","path":"/api/offers","status":200,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d8ba31e5-cb56-4adf-b6ba-01ad236e0697","method":"GET","path":"/api/notifications","status":304,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"84ef7401-bad6-46eb-848f-9e976401958b","method":"GET","path":"/api/settings/buttons/resolved","status":200,"ms":36,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"167ee9d2-139d-4369-b6bc-dbf760ce16aa","method":"GET","path":"/api/offers/1","status":200,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"be5f7c07-1a50-4111-8669-f141174181fa","method":"GET","path":"/","status":304,"ms":6,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"08380959-277b-46b0-8185-c9c07c8f7ee4","method":"GET","path":"/build/cv-intake.js","status":304,"ms":2,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"749ca5a7-309a-4d42-8275-2b334804a756","method":"GET","path":"/build/app.js","status":304,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"7fbec43b-31fa-4fab-9819-f9b67bcb73e6","method":"GET","path":"/build/intake-review.js","status":304,"ms":0,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"22cc977d-223c-4375-8abc-f1ea1603cdb1","method":"GET","path":"/build/email-settings.js","status":304,"ms":0,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d5fa0cc8-9195-46e2-9492-86119b4e64d2","method":"GET","path":"/build/org-structure.js","status":304,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"26c89a06-5ca0-4544-949f-f7825565ce5a","method":"GET","path":"/api/settings/branding","status":304,"ms":4,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e40c6731-411d-491f-940d-ed6a38902acb","method":"GET","path":"/api/auth/me","status":200,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"e3f7a794-5084-4eb8-9978-a0ac7b7e43ce","method":"GET","path":"/api/settings/system","status":200,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"657895b8-e0c2-41e8-8db4-4c4cc52a5fa0","method":"GET","path":"/api/dashboard","status":200,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fdb7e218-4e0b-40f6-975e-46abf705a479","method":"GET","path":"/api/notifications","status":304,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a9c3301e-10b3-4bb2-9db5-67e21a58f6b8","method":"GET","path":"/api/interviews","status":304,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6a2e0330-38d0-4aa6-9e64-59978a583009","method":"GET","path":"/api/requests","status":304,"ms":104,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"860646ba-7162-418f-91f5-a2102513b70c","method":"GET","path":"/api/offers","status":304,"ms":13,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d3300529-1a4c-44cc-b90b-583534734c7e","method":"GET","path":"/api/dashboard","status":200,"ms":7,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"26322c05-4114-4554-9ede-4ca3505da554","method":"GET","path":"/api/candidates/intakes","status":304,"ms":167,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"29309e46-8d5b-42de-9228-d2090bec04d6","method":"GET","path":"/api/offers/1","status":304,"ms":7,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3154fc96-3648-4d92-94b5-af4a724565dc","method":"GET","path":"/api/settings/buttons/resolved","status":304,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b3e2c47b-2d37-4804-a4e5-bb839db3924b","method":"POST","path":"/api/offers/1/submit","status":200,"ms":100,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"admin@arabtec.com","subject":"Offer approval needed — OFR-2026-00001","messageId":"<075376a0-a768-e868-f439-3d9fa3a1f958@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"hr.director@arabtec.com","subject":"Offer approval needed — OFR-2026-00001","messageId":"<e5af3f79-0067-e62e-0d90-55bdbac80f70@localhost>"}
+{"level":"info","msg":"request","requestId":"d61572c5-1fb6-4865-b138-573987e255e0","method":"GET","path":"/api/notifications","status":304,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d0d79a3c-bfa5-4e75-a2e2-1415e6e1b75b","method":"GET","path":"/api/notifications","status":304,"ms":40,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"26bb5208-3af4-4661-9067-63b0ef2c7ccf","method":"GET","path":"/api/notifications","status":304,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"299cc408-7f1f-4250-be4c-6cec4d51f13c","method":"GET","path":"/api/offers/1/preview","status":200,"ms":236,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"fdaf2fe2-b4a9-4dd1-af2a-2aba70170049","method":"GET","path":"/favicon.ico","status":200,"ms":56,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c58e1944-64d7-403b-a1e2-3f0550496366","method":"GET","path":"/api/notifications","status":304,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9c2a1ec0-e861-491e-85ea-f66e0ef3cd8c","method":"GET","path":"/api/notifications","status":304,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c0b8414b-723a-4c81-918a-4f8c0a772703","method":"GET","path":"/api/notifications","status":304,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0e856850-2b8f-41e8-a9ef-fe27edb6486f","method":"GET","path":"/api/notifications","status":304,"ms":37,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b5a15656-d712-45e7-9538-136ee47b3348","method":"GET","path":"/api/notifications","status":304,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"badd015a-4e79-472f-b3e5-399cc27954fc","method":"GET","path":"/api/notifications","status":304,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5d281c2d-02bb-4324-9b41-a97e8c654d44","method":"GET","path":"/api/notifications","status":304,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"31ae90fd-08de-44e4-bd9f-b1af28de6b9a","method":"GET","path":"/api/notifications","status":304,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f16b8d03-8196-4806-8740-67f594a8035b","method":"GET","path":"/api/notifications","status":304,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"cdc13c39-108c-45d7-abae-098139d1abf5","method":"GET","path":"/api/notifications","status":304,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c8298d94-73e7-4d06-863c-62436172fd34","method":"GET","path":"/api/notifications","status":304,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"547caf6c-2c56-4cca-b970-3536b378869a","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a9790122-73e2-4d9e-9c17-6ea4bfbfedb1","method":"GET","path":"/api/notifications","status":304,"ms":15,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ddda32e8-3965-4a66-8e07-2038b49a61d0","method":"GET","path":"/api/notifications","status":304,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3f77ee31-2eb1-4859-9cc3-eae8c328f35c","method":"GET","path":"/api/notifications","status":304,"ms":11,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"cf0dcf0f-46f7-46da-93b1-352e9a6a905a","method":"GET","path":"/api/notifications","status":304,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9307b064-0240-4004-a568-a068c429aaf3","method":"GET","path":"/api/notifications","status":304,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a29ebc59-b2df-4537-9312-af51f7503eb9","method":"GET","path":"/api/notifications","status":304,"ms":28,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"26f9863d-547c-462b-a1df-05fb5ae37055","method":"GET","path":"/api/notifications","status":304,"ms":16,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c7e9185b-fdc1-470c-b479-f77d907c0fd8","method":"GET","path":"/api/notifications","status":304,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f8dff2e2-dcd1-4765-bec3-35cf58bee10d","method":"GET","path":"/api/notifications","status":304,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"eac23cd9-9ae4-4071-8f53-ea0037a39816","method":"GET","path":"/api/notifications","status":304,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"29383c2d-2aa4-4b9e-9c96-b2bb128ab66b","method":"GET","path":"/api/notifications","status":304,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"af14d8b3-4c03-4270-986c-8241b4db688f","method":"GET","path":"/api/notifications","status":304,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0bcde0a0-ae75-4644-b1d1-3defa38a0fee","method":"GET","path":"/api/notifications","status":304,"ms":17,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0ee6cb77-ffed-4387-8b9b-279b483d3298","method":"GET","path":"/api/notifications","status":304,"ms":39,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"61359068-5e2c-439d-bd8d-b8bb5379764a","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"15871abf-527a-4820-acab-ca7b7e5ead76","method":"GET","path":"/api/notifications","status":304,"ms":14,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ebe1b60a-6bf0-4fdd-8ddd-3f7064911b42","method":"GET","path":"/api/notifications","status":304,"ms":36,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c7d34a39-4041-4726-9a69-0aa558beca13","method":"GET","path":"/api/notifications","status":304,"ms":24,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4fdb957c-20b4-486a-876b-0603b7938b48","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bbd3b56c-e74e-40cf-92aa-6e6c7907bd3d","method":"GET","path":"/api/notifications","status":304,"ms":26,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a11d1da9-9e07-4a56-a96c-4cebc1b5db2e","method":"GET","path":"/api/notifications","status":304,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"f894d77b-7dc3-4532-ba23-1deb921cfed0","method":"GET","path":"/api/notifications","status":304,"ms":33,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"36ef8e2a-e726-4bfc-accc-b21cdbdfb9c3","method":"GET","path":"/api/notifications","status":304,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"4bff73af-5a35-4445-8bdd-de8ac091c7ea","method":"GET","path":"/api/notifications","status":304,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1e536fbb-7d2c-40d8-a687-4c5f9e5d5486","method":"GET","path":"/api/notifications","status":304,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"588ea795-c380-4ab9-9ccb-c876f633fe4e","method":"GET","path":"/api/notifications","status":304,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6e5f41d9-46e6-4672-bc97-2875456de32f","method":"GET","path":"/api/notifications","status":304,"ms":33,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d9e86ba8-7a09-481d-bbaa-f286ae9b4abf","method":"GET","path":"/api/notifications","status":304,"ms":38,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c4ba9a88-8d96-44e7-8ab2-b54e7b784098","method":"GET","path":"/api/notifications","status":304,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"420c8f15-0f3e-442a-81c1-82c6a0c4677f","method":"GET","path":"/api/notifications","status":304,"ms":7,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b84570d5-1f8f-4b17-81a8-d863b1fd5be9","method":"GET","path":"/api/notifications","status":304,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0eb0259b-53e3-40f3-affb-b7aad655655e","method":"GET","path":"/api/notifications","status":304,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1ddec190-a185-4697-913e-92a5ff182ed7","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"09456332-69ce-4dfb-8257-19584b8d09f1","method":"GET","path":"/api/notifications","status":304,"ms":60,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9de2689c-97dd-4341-9dfe-552ef1b66be7","method":"GET","path":"/api/notifications","status":304,"ms":18,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9efaa62d-6e1a-4dda-9ec1-c8032c999934","method":"GET","path":"/api/notifications","status":304,"ms":86,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d5a2c5d6-f2c9-4b41-a31f-0676199b934e","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3866ae2b-93ce-46a5-9311-26b1eca1c6ec","method":"GET","path":"/api/notifications","status":304,"ms":34,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"797d2901-c5b8-4cab-b968-7f26e4726821","method":"GET","path":"/api/notifications","status":304,"ms":41,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6d813822-e0b1-4304-bb1a-b212526e0c51","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"de361193-0ea7-4243-bc34-ebfc7c421975","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a8fc9a49-85a7-47a2-820d-2c35c893db7e","method":"GET","path":"/api/notifications","status":304,"ms":22,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5094a528-2cb5-47a1-9668-4f7d3ccc9a48","method":"GET","path":"/api/notifications","status":304,"ms":21,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"19116eba-1882-4395-9d93-fc5326e67db9","method":"GET","path":"/api/notifications","status":304,"ms":19,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"233b595e-819e-48f3-ad01-3596be367305","method":"GET","path":"/api/notifications","status":304,"ms":38,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0240d323-ed09-470e-bbdc-fcb927ca9e90","method":"GET","path":"/api/notifications","status":304,"ms":28,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0142273d-fb3c-4d75-af59-52dcf87f621f","method":"GET","path":"/api/notifications","status":304,"ms":20,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a3ac6658-9a6d-4e01-8c81-5ea21533fb94","method":"GET","path":"/api/notifications","status":304,"ms":119,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"5f1af57c-03a9-4b0d-95a9-a1f61aefd27e","method":"GET","path":"/api/notifications","status":304,"ms":61,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"40a4cfa9-5a98-46ff-b15e-ef861911fbd1","method":"GET","path":"/api/notifications","status":304,"ms":70,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0d7dbf74-2c26-4914-b6ac-33e1cae8deb4","method":"GET","path":"/api/notifications","status":304,"ms":42,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"2108ae36-3a0e-4735-bd71-518f000cf14a","method":"GET","path":"/api/notifications","status":304,"ms":51,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"6b5f9480-6f5f-40e5-b705-172747c982be","method":"GET","path":"/api/notifications","status":304,"ms":40,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"ebef0bc4-74eb-44ba-856a-ffa37e765bb3","method":"GET","path":"/api/notifications","status":304,"ms":134,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"27261382-5a55-4018-8676-865e1ae88174","method":"GET","path":"/api/notifications","status":304,"ms":74,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1118d736-d857-43a3-b0b4-5360a96d9ecd","method":"GET","path":"/api/notifications","status":304,"ms":107,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"685fbf25-b07d-4635-afcb-393901d7993b","method":"GET","path":"/api/notifications","status":304,"ms":102,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bf78627b-4d28-447f-bab6-9c5845fe34b9","method":"GET","path":"/api/notifications","status":304,"ms":119,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"b0f18d46-d703-4fea-b60c-1b2aaa668cce","method":"GET","path":"/api/notifications","status":304,"ms":44,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1e911aa0-7779-464e-b09f-284e70baf14f","method":"GET","path":"/api/notifications","status":304,"ms":114,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c368d580-7682-4653-b4a8-d66ac0e24e3a","method":"GET","path":"/api/notifications","status":304,"ms":31,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"3d32b41d-aece-4d26-b7d7-b1e74992b435","method":"GET","path":"/api/notifications","status":304,"ms":36,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"78b1b625-4b81-45c2-a802-79fbf50eca76","method":"GET","path":"/api/notifications","status":304,"ms":55,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1c1cd90c-a0a8-43b1-a7b2-3d2d2f2a0e8e","method":"GET","path":"/api/notifications","status":304,"ms":48,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"c6f68a9e-dd1a-4f0a-86e3-c12bd6449ad8","method":"GET","path":"/api/notifications","status":304,"ms":452,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"31f37564-6af4-4564-aabf-4c024a5950ee","method":"GET","path":"/api/notifications","status":304,"ms":57,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"cf5b4996-9c62-47bd-aaec-d0044e74be08","method":"GET","path":"/api/notifications","status":304,"ms":39,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0faa1656-e888-4718-b22c-a8bcaef60252","method":"GET","path":"/api/notifications","status":304,"ms":89,"userId":5,"ip":"::1"}

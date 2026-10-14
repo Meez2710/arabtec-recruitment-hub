@@ -8,6 +8,7 @@ export const PERMISSIONS = [
   // Requests (Phase 2 functional, permissions seeded now)
   ['request.view_all', 'request', 'view_all', 'View all requests'],
   ['request.view_own', 'request', 'view_own', 'View own requests'],
+  ['request.view_team', 'request', 'view_team', 'View every hiring request'],
   ['request.create', 'request', 'create', 'Create request'],
   ['request.edit', 'request', 'edit', 'Edit request'],
   ['request.delete', 'request', 'delete', 'Delete request'],
@@ -37,6 +38,9 @@ export const PERMISSIONS = [
   ['interview.schedule', 'interview', 'schedule', 'Schedule interview'],
   ['interview.edit', 'interview', 'edit', 'Reschedule / cancel interview'],
   ['interview.feedback', 'interview', 'feedback', 'Add interview feedback'],
+  // Granted to system_admin only (system_admin holds every code); an administrator
+  // may delegate it to another role in Roles & Permissions.
+  ['interview.assessment_policy', 'interview', 'assessment_policy', 'Configure who may view or edit each part of the interview assessment'],
   // Sensitive fields
   ['salary.view', 'salary', 'view', 'View salary fields'],
   ['offer.view', 'offer', 'view', 'View offer fields'],
@@ -97,6 +101,7 @@ export const PERMISSIONS = [
 
 export const ROLES = [
   ['system_admin', 'System Admin', 'Full platform configuration and governance.'],
+  ['ceo', 'CEO', 'Read-only executive visibility across the complete recruitment pipeline.'],
   ['hr_director', 'HR Director', 'Executive oversight and high-level approvals.'],
   ['hr_manager', 'HR Manager', 'Recruitment policy, approvals, recruiter & offer management.'],
   ['recruitment_manager', 'Recruitment Manager', 'Owns the recruiting function; assigns recruiters.'],
@@ -110,14 +115,14 @@ export const ROLES = [
 // Default role → permission matrix (codes). Editable at runtime via admin.
 export const ROLE_PERMISSIONS = {
   system_admin: PERMISSIONS.map((p) => p[0]), // all permissions
+  ceo: ['dashboard.view', 'request.view_all', 'candidate.view', 'interview.view_all', 'offer.view', 'report.export'],
   hr_director: [
     'dashboard.view', 'request.view_all', 'request.approve', 'request.reject',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
-    'request.budget_approve', 'request.cancel', 'request.close',
+    'request.budget_approve',
     // Widened: a director can now assign/reassign a recruiter and put a
     // request on hold/resume it directly, not just approve it — the same
     // authority hr_manager and recruitment_manager already hold.
-    'request.assign_recruiter', 'request.hold',
     'candidate.view', 'candidate.privacy', 'salary.view',
     'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
     'interview.view_all', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
@@ -126,8 +131,8 @@ export const ROLE_PERMISSIONS = {
   hr_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
-    'request.submit', 'request.approve', 'request.reject', 'request.assign_recruiter',
-    'request.budget_approve', 'request.hold', 'request.cancel', 'request.close', 'request.reopen',
+    'request.submit', 'request.approve', 'request.reject',
+    'request.budget_approve',
     'candidate.view', 'candidate.add', 'candidate.edit', 'candidate.link', 'candidate.move_stage',
     'candidate.merge', 'candidate.note', 'candidate.privacy', 'application.bulk_action',
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',
@@ -139,7 +144,7 @@ export const ROLE_PERMISSIONS = {
   recruitment_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
-    'request.submit', 'request.assign_recruiter', 'request.hold', 'request.close', 'request.reopen',
+    'request.submit', 'request.assign_recruiter', 'request.hold', 'request.cancel', 'request.close', 'request.reopen',
     'candidate.view', 'candidate.add',
     'candidate.edit', 'candidate.link', 'candidate.move_stage', 'candidate.merge', 'candidate.note',
     'application.bulk_action',
@@ -149,7 +154,7 @@ export const ROLE_PERMISSIONS = {
     'notification.manage',
   ],
   recruiter: [
-    'dashboard.view', 'request.view_own', 'request.create', 'request.edit', 'request.submit',
+    'dashboard.view', 'request.view_own', 'request.view_team', 'request.create', 'request.edit', 'request.submit',
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
     'candidate.view', 'candidate.add', 'candidate.edit', 'candidate.link', 'candidate.move_stage',
     'candidate.note', 'application.bulk_action',

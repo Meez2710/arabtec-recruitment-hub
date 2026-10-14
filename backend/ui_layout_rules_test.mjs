@@ -57,13 +57,13 @@ rule('R8 a disabled control uses the product\'s one opacity, never a local value
     assert.equal(local.length, 0, `${file} declares disabled opacity ${local.join(', ')}`);
   }
 });
-rule('R10 emoji reach the screen only through the EMOJI map, in a Hint or the knowledge line (never a button, title, badge or cell)', () => {
+rule('R10 no pictographic emoji reach the screen (owner review, 4 Oct 2026: no emoji icons) — the EMOJI map is data only', () => {
   // Pictographic emoji only: ✓ and ○ are typographic marks and stay allowed.
   const emoji = /[\u{1F300}-\u{1FAFF}]|✅/u;
   const offenders = jsx.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => emoji.test(l) && !/^\s*(hint|leadership): '/.test(l));
   assert.deepEqual(offenders.map(([n]) => n), [], `emoji outside the EMOJI map on lines ${offenders.map(([n]) => n).join(', ')}`);
   assert.match(jsx, /function Hint\(\{ emoji = 'hint', children, action \}\)/);
-  assert.match(jsx, /EMOJI\[line\.t\] && <span className="kl-emoji"/);
+  assert.equal(/EMOJI\[/.test(jsx), false, 'nothing renders an EMOJI-map entry: hints, empty states, footer quotes and the quote editor are emoji-free');
 });
 rule('R11 every page title carries its eyebrow with the brand dash, tracked and muted (the crumb is the eyebrow)', () => {
   const b = block('arabtec-design-system.css', '.page-head .breadcrumb::before, .dash-eyebrow::before {');
@@ -71,11 +71,11 @@ rule('R11 every page title carries its eyebrow with the brand dash, tracked and 
   const t = block('claude-system.css', '.breadcrumb, .page-head .breadcrumb, .dash-eyebrow {');
   assert.match(t, /text-transform: uppercase/); assert.match(t, /letter-spacing: \.18em/);
 });
-rule('R12 the sidebar is charcoal with one red bar on the active item; buttons are one solid green action, badges never pills', () => {
+rule('R12 the sidebar is light grey (a step darker than the canvas) with the green active item; buttons are one solid green action, badges never pills', () => {
   const ds = css['arabtec-design-system.css'].slice(css['arabtec-design-system.css'].indexOf('12. WORKFORCE'));
-  assert.match(ds, /\.sidebar \{ background: var\(--sidebar-bg\); color: #fff;/);
-  assert.match(ds, /--sidebar-bg: #1A1A1A/);
-  assert.match(ds, /\.nav-item\.active::before \{[^}]*background: var\(--brand\)/s);
+  assert.match(ds, /\.sidebar \{ background: var\(--sidebar-bg\); color: var\(--ink\);/);
+  assert.match(ds, /--sidebar-bg: #E8EAED/, 'owner, 4 Oct 2026: light grey, darker than the #F4F5F7 canvas');
+  assert.match(ds, /\.nav-item\.active \{ background: var\(--green-50\); color: var\(--green-700\);/);
   assert.match(ds, /\.btn \{ background: var\(--green-700\); color: #fff;/);
   assert.match(ds, /\.badge, \.status-chip \{ border-radius: 6px;/);
   assert.equal(/border-width|min-height|padding: 0/.test(ds.slice(ds.indexOf('/* Buttons'), ds.indexOf('/* Badges'))), false, 'button colour rules never touch the box');
@@ -150,6 +150,28 @@ rule('R17 one button spec: no page-scoped .btn height or padding outside claude-
   assert.doesNotMatch(resp.replace(/\/\*[\s\S]*?\*\//g, ''), /page-head-actions > \.btn[^{]*\{[^}]*flex:\s*1 1/, 'head buttons never grow');
   assert.match(jsx, /<button className="btn btn-secondary" onClick=\{\(\) => setCreating\(true\)\} title="Enter a candidate by hand/, 'Add manually is a secondary, not a ghost');
   assert.doesNotMatch(jsx, /className="upload-cta"/, 'no wrapper box around Bulk Upload');
+});
+rule('R20 no surface carries a thick side bar (the notice "bracket" on Talent Pool, owner review 4 Oct 2026)', () => {
+  // A 2px+ left/right edge on a rounded box bends into a bracket and matches no
+  // other surface. Tone is a tint and a border colour, never an edge. Named
+  // exceptions only: calendar event chips (the colour edge is the calendar
+  // convention) and the legacy nav item's transparent 2px placeholder.
+  const ALLOWED = new Set(['.cal-ev', '.cal-mev', '.nav-item']);
+  const sheets = { ...css, 'arabtec-approved-ui.css': fs.readFileSync(pub + 'arabtec-approved-ui.css', 'utf8') };
+  const SIDE = /border-(?:left|right|inline-start|inline-end)(?:-width)?\s*:\s*([0-9.]+)px/g;
+  const offenders = [];
+  for (const [file, text] of Object.entries(sheets)) {
+    const clean = text.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = m[1].trim().split('\n').pop().trim();
+      for (const d of m[2].matchAll(SIDE)) {
+        if (Number(d[1]) < 2) continue;
+        const first = selector.split(',')[0].trim();
+        if (!ALLOWED.has(first)) offenders.push(`${file} | ${selector} | ${d[0]}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], 'side bars found:\n        ' + offenders.join('\n        '));
 });
 console.log(`\n=== UI LAYOUT RULES: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed ? 1 : 0);

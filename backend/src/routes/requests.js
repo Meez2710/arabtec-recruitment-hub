@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { visibleCandidateIds } from '../lib/candidate-scope.js';
+import { applicationVisibilitySql } from '../lib/pipeline-visibility.js';
 import {
   Requests, Seats, Approvals, RequestActivity, CustomFields,
   Projects, Sites, Departments, Designations, BusinessUnits, Users, SystemSettings, Posts, Applications, Workflows,
@@ -191,7 +193,7 @@ function serialize(r, user, { withDetail = false } = {}) {
 
 /* ---------------- Scope helper: can this user view this request? ---------------- */
 function canView(user, r) {
-  if (user.permissions.includes('request.view_all')) return true;
+  if (user.permissions.includes('request.view_all') || user.permissions.includes('request.view_team')) return true;
   if (user.permissions.includes('request.view_own')) {
     return r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id;
   }
@@ -200,22 +202,59 @@ function canView(user, r) {
 
 /* ===================== LIST ===================== */
 router.get('/', (req, res) => {
-  if (!req.user.permissions.includes('request.view_all') && !req.user.permissions.includes('request.view_own')) {
+  const p = req.user.permissions;
+  if (!p.includes('request.view_all') && !p.includes('request.view_team') && !p.includes('request.view_own')) {
     return res.status(403).json({ error: 'Insufficient permissions.' });
   }
-  const ownedOnly = !req.user.permissions.includes('request.view_all');
+  const ownedOnly = !p.includes('request.view_all') && !p.includes('request.view_team');
   const rows = Requests.list({
     status: req.query.status, priority: req.query.priority, projectId: req.query.projectId,
     departmentId: req.query.departmentId, ownerId: req.query.ownerId, q: req.query.q,
     sort: req.query.sort, dir: req.query.dir, ownedOnly, userId: req.user.id,
   });
   // Pipeline summary per request → inline funnel mini-bar on the board cards.
-  const pipeline = Applications.stageCountsByRequest(rows.map((r) => r.id));
+  const pipeline = Applications.stageCountsByRequest(rows.map((r) => r.id), applicationVisibilitySql(req.user, 'application'));
   const out = rows.map((r) => { const s = serialize(r, req.user); s.pipeline = pipeline[r.id] || { total: 0, byStage: {} }; return s; });
   res.json({ requests: out, counts: Requests.counts() });
 });
 
 /* ===================== DETAIL ===================== */
+/* ===================== RECRUITER STATUS ===================== */
+// One row per recruiter for the Recruitment Manager: what each is carrying and
+// where it is stuck. Registered before `/:id`, which would read the path as an id.
+const ACTIVE_APP = ['sourced', 'new', 'applied', 'screening', 'matched', 'screened', 'cv_screening', 'shortlisted', 'interviewing', 'interview_hr', 'interview_technical', 'interview_1', 'interview_2', 'waiting_feedback', 'issuing_offer', 'offer', 'offer_sent'];
+router.get('/recruiter-status', (req, res) => {
+  const p = req.user.permissions;
+  if (!p.includes('request.assign_recruiter') && !p.includes('request.view_all')) return res.status(403).json({ error: 'Insufficient permissions.' });
+  const open = NON_TERMINAL.filter((s) => s !== STATUS.PENDING);
+  const ph = (xs) => xs.map(() => '?').join(',');
+  const people = all(`SELECT DISTINCT u.id, u.full_name name FROM users u
+    LEFT JOIN user_role ur ON ur.user_id = u.id LEFT JOIN role ro ON ro.id = ur.role_id
+    WHERE u.status = 'active' AND (ro.code = 'recruiter' OR u.id IN (SELECT owner_id FROM recruitment_request WHERE owner_id IS NOT NULL AND status IN (${ph(open)})))
+    ORDER BY u.full_name`, open);
+  const now = new Date().toISOString();
+  const rows = people.map((u) => {
+    const reqs = all(`SELECT id, opened_at, created_at, target_join_date, status FROM recruitment_request WHERE owner_id = ? AND status IN (${ph(open)})`, [u.id, ...open]);
+    const ids = reqs.map((r) => r.id);
+    const inList = ids.length ? `IN (${ph(ids)})` : 'IN (NULL)';
+    const counts = ids.length ? Applications.stageCountsByRequest(ids, applicationVisibilitySql(req.user, 'application')) : {};
+    const active = (id) => Object.entries((counts[id] || {}).byStage || {}).filter(([st]) => ACTIVE_APP.includes(st)).reduce((n, [, c]) => n + c, 0);
+    const health = reqs.map((r) => requestHealth(r));
+    return {
+      id: u.id, name: u.name,
+      openRequests: reqs.length,
+      withoutCandidates: reqs.filter((r) => active(r.id) === 0).length,
+      inPipeline: reqs.reduce((n, r) => n + active(r.id), 0),
+      interviewsAhead: ids.length ? Number(all(`SELECT COUNT(*) c FROM interview WHERE request_id ${inList} AND status IN ('scheduled','rescheduled') AND scheduled_at >= ?`, [...ids, now])[0].c) : 0,
+      offersOut: ids.length ? Number(all(`SELECT COUNT(*) c FROM offer WHERE request_id ${inList} AND status IN ('draft','pending_approval','approved','sent')`, ids)[0].c) : 0,
+      overdue: health.filter((h) => h.level === 'red').length,
+      attention: health.filter((h) => h.level === 'amber').length,
+    };
+  });
+  const unassigned = all(`SELECT COUNT(*) c FROM recruitment_request WHERE owner_id IS NULL AND status IN (${ph(open)})`, open)[0];
+  res.json({ recruiters: rows, unassigned: Number(unassigned.c) });
+});
+
 router.get('/:id', (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
@@ -507,6 +546,22 @@ router.post('/:id/assign', requirePermission('request.assign_recruiter'), (req, 
   res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
 });
 
+/* ===================== UNASSIGN ===================== */
+// Takes the recruiter off a request (owner review: assign, re-assign or remove).
+// The request keeps its status and pipeline; it simply has no recruiter until
+// someone is assigned again.
+router.post('/:id/unassign', requirePermission('request.assign_recruiter'), (req, res) => {
+  const r = Requests.byId(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Request not found.' });
+  if (!r.owner_id) return res.status(409).json({ error: 'No recruiter is assigned to this request.' });
+  const prev = Users.byId(r.owner_id);
+  Requests.setOwner(r.id, null);
+  RequestActivity.add(r.id, req.user, 'unassigned', { note: `Removed ${prev ? prev.full_name : 'the recruiter'}` });
+  Posts.system(r.id, `Recruiter removed: ${prev ? prev.full_name : 'the recruiter'}.`, { event: 'unassigned', ownerId: null }, req.user);
+  writeAudit(req, { action: 'request.recruiter_unassigned', entityType: 'recruitment_request', entityId: r.id, oldValue: { ownerId: r.owner_id }, newValue: { ownerId: null } });
+  res.json({ request: serialize(Requests.byId(r.id), req.user, { withDetail: true }) });
+});
+
 /* ===================== HOLD / RESUME ===================== */
 router.post('/:id/hold', requirePermission('request.hold'), (req, res) => {
   const r = Requests.byId(Number(req.params.id));
@@ -696,7 +751,8 @@ router.get('/meta/form', (req, res) => {
     // not a hardcoded role list, so it stays correct as roles are edited in
     // Control Center. A new field, not a change to `recruiters` above, so
     // nothing already reading the unfiltered list is affected.
-    assignableRecruiters: Users.withPermission('candidate.move_stage').map((u) => ({ id: u.id, name: u.full_name })),
+    // The System Administrator is never offered as a request owner (owner review, 4 Oct 2026).
+    assignableRecruiters: (() => { const admins = new Set(Users.withPermission('system.manage').map((u) => u.id)); return Users.withPermission('candidate.move_stage').filter((u) => !admins.has(u.id)).map((u) => ({ id: u.id, name: u.full_name })); })(),
     hiringManagers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name })),
     justifications: [
       { value: 'replacement', label: 'Replacement' },
@@ -757,7 +813,9 @@ router.post('/:id/suggest-candidates', requirePermission('candidate.view'), asyn
   // roughly 12k tokens of candidates — well inside the window, and honest about
   // being a cap rather than silently reading the first N rows.
   const POOL_CEILING = 300;
-  const pool = Candidates.list({ limit: POOL_CEILING, sort: 'created', dir: 'desc' })
+  // Suggestions come only from candidates the caller may already see (AR-01).
+  const scopedIds = visibleCandidateIds(req.user);
+  const pool = Candidates.list({ limit: POOL_CEILING, sort: 'created', dir: 'desc', ...(scopedIds ? { idsIn: scopedIds } : {}) })
     .filter((c) => !linked.has(c.id) && c.candidate_state !== 'merged')
     .map((c) => ({
       id: c.id,

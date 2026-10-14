@@ -521,7 +521,7 @@ img, svg, video, canvas {
   width: 100%;
 }
 .page-head:has(+ .ask-bar) .view-toggle {
-  margin-right: 4px;
+  margin-right: 8px; /* 8px gap + 8px = 16px between groups (claude-system.css 18c, R-b) */
 }
 .tp-page .tp-actions {
   display: inline-flex;
@@ -723,3 +723,43 @@ img, svg, video, canvas {
   .login-form-side > .login-card { width: 100%; }
   .login-phone-mark { display: block; }
 }
+/* Talent Pool keeps the same eight columns at every viewport. */
+.card.flush > .talent-table-wrap { overflow-x: auto; max-width: 100%; }
+.card.flush > .table-wrap > table.talent-pool-table.candidates-table { table-layout: fixed; min-width: 1080px; width: 100%; }
+.talent-pool-table > thead > tr > th[data-col="name"] { width: 22%; }
+.talent-pool-table > thead > tr > th[data-col="position"] { width: 14%; }
+.talent-pool-table > thead > tr > th[data-col="university"] { width: 14%; }
+.talent-pool-table > thead > tr > th[data-col="graduation"] { width: 7%; }
+.talent-pool-table > thead > tr > th[data-col="location"] { width: 10%; }
+.talent-pool-table > thead > tr > th[data-col="apply-date"] { width: 11%; }
+.talent-pool-table > thead > tr > th[data-col="ranking"] { width: 10%; }
+.talent-pool-table > thead > tr > th[data-col="request"] { width: 12%; }
+table.talent-pool-table > tbody > tr > td,
+table.talent-pool-table > thead > tr > th {
+  padding: 12px 8px; vertical-align: middle; text-align: left;
+  white-space: normal; overflow-wrap: anywhere; overflow: visible;
+}
+.talent-pool-table td[data-label="Location"] { display: table-cell; white-space: normal; overflow: visible; text-overflow: clip; }
+.pool-candidate, .pool-candidate-heading { display: flex; align-items: center; gap: 8px; }
+.pool-candidate > div { min-width: 0; }
+.pool-candidate-heading button { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0; }
+.pool-request-link { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 4px 0; border: 0; background: transparent; color: var(--action-success); font: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.pool-request-link + .pool-request-link { margin-top: 8px; }
+.pool-status { display: inline-block; max-width: 100%; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; line-height: 1.4; font-weight: 600; }
+.pool-status-new { color: var(--green-700); background: var(--green-50); border-color: var(--green-border); }
+.pool-status-considered { color: var(--warning-ink); background: var(--warning-tint); border-color: #F3D48A; }
+.pool-status-shortlisted { color: #1D4ED8; background: #EFF6FF; border-color: #C7DBFB; }
+.pool-status-blacklisted { color: #B42318; background: #FEF3F2; border-color: #FECDCA; }
+.pool-status-unknown { color: var(--muted); background: var(--surface); }
+.pool-status-guide { display: flex; justify-content: flex-end; margin: 8px 0; }
+.pool-status-desktop { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.pool-status-mobile { display: none; }
+@media (max-width: 640px) {
+  .pool-status-desktop { display: none; }
+  .pool-status-mobile { display: block; }
+  .pool-status-mobile summary { cursor: pointer; font-size: 12px; }
+  .pool-status-mobile > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .card.flush > .table-wrap.talent-table-wrap { overflow-x: auto; }
+}
+.talent-pool-table .datecell { white-space: normal; }
+.pool-cv-actions { display: flex; gap: 4px; margin-top: 4px; }

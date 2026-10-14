@@ -1,0 +1,47 @@
+  • Schema: added 59 new permission(s) [dashboard.view, request.view_all, request.view_own, request.view_team, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 59 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"info","msg":"schema.request_control_policy","removed":[],"granted":0}
+  ✓ admin user: admin@arabtec.com
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+
+— A. six overlapping reopens of the SAME requisition —
+  ✅ exactly one reopen succeeded 1 succeeded
+  ✅ every other attempt returned the standard conflict 5 conflicts of 5 failures
+  ✅ the race really spanned processes
+  ✅ exactly one reopened activity entry n=1
+  ✅ exactly one reopened audit entry
+  ✅ no duplicate seats were created 4 -> 4
+  ✅ final capacity equals approved headcount available=4
+  ✅ final status is reopened
+  ✅ no duplicate seat identities
+
+— B. simultaneous reopens of DIFFERENT requisitions —
+  ✅ all four unrelated reopens succeeded — no unnecessary serialization 4/4
+  ✅ each has exactly its own capacity restored 2,2,2,2
+  ✅ no cross-requisition seat changes
+  ✅ each got exactly one activity entry
+
+— hygiene —
+  ✅ no idle-in-transaction connection remains n=0
+  ✅ no orphan child process remains
+
+✓ BL-04 concurrency: 15 passed, 0 failed
+

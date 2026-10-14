@@ -1,0 +1,24 @@
+  ✓ the resolver reproduces the two numbers a "last declared wins" reader gets wrong
+  ✓ the resolver skipped nothing that belongs to the control family
+  ✓ section 20 exists and introduces no colour, background or typeface
+  ✓ section 20 changes no rendered font size
+  ✓ the outline COLOUR is not declared in the geometry layer
+  ✓ every default button variant resolves to the same box
+  ✓ every compact button variant resolves to the same box
+  ✓ a compact button carries no vertical padding
+  ✓ no hover, focus, active or disabled state resolves to a different box
+  ✓ the state sweep really reached the state rules
+  ✓ every control resolves the same focus ring, and none resolves to none
+  ✓ the focus ring is ONE ring, not an outline plus a halo
+  ✓ the design system owns the focus colour and names the scoped forms
+  ✓ every disabled button rule declares the same opacity
+  ✓ a disabled control changes nothing but its opacity and cursor
+  ✓ the 44px mobile touch floor is intact, and now reaches the composer picker
+  ✓ control height is monotonic — no step at either edge of the laptop band
+  ✓ .ask-input keeps the min-width release that makes it usable on a phone
+  ✓ the pill radius is gone from the selects and the ramp is respected
+  ✓ the composer request picker is real markup, not a dead selector
+  ✓ .pcard-actions still holds no .btn, which is why its rules are dead
+  ✓ no button carries inline geometry
+
+=== UI FORM CONTROLS: 22 passed, 0 failed ===

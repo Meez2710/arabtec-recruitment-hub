@@ -1,0 +1,18 @@
+sha=6818227a3e48ac1a4ad7aa27088d81fa3a47642d
+tracked_dirty=0
+node=v22.23.3
+started=2026-10-04T12:29:08Z
+build exit=0
+typecheck exit=0
+npm-test exit=0
+domain exit=0
+pg-pg_tx_test exit=0
+pg-pg_appnumber_race_test exit=0
+pg-pg_sequence_test exit=0
+pg-pg_reopen_race_test exit=0
+pg-reconciliation_test exit=0
+pg-pg_headcount_race_test exit=0
+pg-pg_join_race_test exit=0
+pg-behaviour exit=0
+finished=2026-10-04T12:36:25Z
+DONE

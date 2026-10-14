@@ -1,0 +1,76 @@
+{
+ "stage": "schedule",
+ "steps": [
+  {
+   "s": "click email"
+  },
+  {
+   "s": "click password"
+  },
+  {
+   "s": "click \"Sign in\""
+  },
+  {
+   "s": "signed in as recruiter@arabtec.com"
+  },
+  {
+   "s": "open #requests/2"
+  },
+  {
+   "s": "click \"Candidates\""
+  },
+  {
+   "s": "click actions menu"
+  },
+  {
+   "s": "click \"Schedule Interview\""
+  },
+  {
+   "s": "choose \"Type\" = technical"
+  },
+  {
+   "s": "choose \"Mode\" = video"
+  },
+  {
+   "s": "set Date & Time = 2026-10-05 10:00 (local)"
+  },
+  {
+   "s": "type \"Duration (min)\""
+  },
+  {
+   "s": "type \"Google Meet link\""
+  },
+  {
+   "s": "click \"Mona Sami\""
+  },
+  {
+   "s": "screenshot gp-12-schedule-dialog.png"
+  },
+  {
+   "s": "click \"Schedule\""
+  },
+  {
+   "s": "scheduled",
+   "id": 1,
+   "no": "INT-00001",
+   "scheduledAt": "2026-10-05T07:00:00.000Z",
+   "durationMin": 60,
+   "status": "scheduled"
+  },
+  {
+   "s": "open #interviews"
+  },
+  {
+   "s": "screenshot gp-13-interviews-calendar.png"
+  },
+  {
+   "s": "open #interviews/1"
+  },
+  {
+   "s": "screenshot gp-14-interview-detail.png"
+  }
+ ],
+ "consoleErrors": [],
+ "httpErrors": [],
+ "ok": true
+}

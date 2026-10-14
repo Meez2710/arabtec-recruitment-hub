@@ -1,0 +1,21 @@
+  ✓ R1 a filter select never clips its own label on wide toolbars (was "All statu" at 1440)
+  ✓ R2 the phone candidate header is a grid with the actions on their own row (name wrapped letter by letter)
+  ✓ R3 a card title never wraps under its subtitle on a phone
+  ✓ R4 buttons on the brand-coloured bulk bar keep readable labels (white-on-white Clear, green-on-green Move)
+  ✓ R5 five pipeline columns fit the 1440 content column, and the board shows its scrollbar below that
+  ✓ R6 no form value is read back through document.getElementById (bulk destination was a DOM lookup)
+  ✓ R7 every dashboard KPI tile can withhold its number (a zero must never stand in for a failed read)
+  ✓ R8 a disabled control uses the product's one opacity, never a local value
+  ✓ R10 emoji reach the screen only through the EMOJI map, in a Hint or the knowledge line (never a button, title, badge or cell)
+  ✓ R11 every page title carries its eyebrow with the brand dash, tracked and muted (the crumb is the eyebrow)
+  ✓ R12 the sidebar is charcoal with one red bar on the active item; buttons are one solid green action, badges never pills
+  ✓ R13 headers, toolbars and tabs never stack as bordered surfaces above the working content (three rectangles before the table)
+  ✓ R14 the phone shell has its own composition: one scrolling action row, no count chip in the filter bar, one board stage per screen
+  ✓ R15 a conditional render never prints a bare zero (`x && y.length` rendered "0" above the board)
+  ✓ R9 an in-card error state is the shared Empty/LoadError, never a hand-rolled red box
+  ✓ R18 the phone dashboard leads with decisions: tiles 2x2, charts folded, one-tap role rows; desktop unchanged
+  ✓ R16 no new margin, padding or gap off the 4/8/12/16/24/32 scale; the legacy list only shrinks
+  ✓ R17 one button spec: no page-scoped .btn height or padding outside claude-system.css, and no stretched head buttons
+
+=== UI LAYOUT RULES: 18 passed, 0 failed ===
+

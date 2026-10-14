@@ -81,21 +81,31 @@ function makePostgres() {
   const q = (sql, params, txId) =>
     call({ type: 'query', sql: translate(sql), params: normParams(params), txId });
 
+  const NO_ID_TABLES = new Set(); // tables with no `id` column, learned on first insert
   return {
     kind: engine === 'pglite' ? 'pglite' : 'postgres',
     run(sql, params = [], txId) {
       const t = translate(sql);
       const p = normParams(params);
       // Capture the new id for INSERTs (parity with SQLite lastInsertRowid). Tables
-      // with a composite PK have no `id` column — fall back to a plain INSERT then.
-      if (/^\s*insert\s/i.test(t) && !/returning/i.test(t)) {
+      // keyed without an `id` column (composite or natural PK) fall back to a plain
+      // INSERT. Inside a transaction the failed attempt would abort the whole
+      // transaction on PostgreSQL, so it runs under a SAVEPOINT; and a table seen
+      // without `id` is remembered so it is never attempted again.
+      const table = (/^\s*insert\s+into\s+"?([a-z0-9_]+)/i.exec(t) || [])[1]?.toLowerCase();
+      if (/^\s*insert\s/i.test(t) && !/returning/i.test(t) && !(table && NO_ID_TABLES.has(table))) {
+        if (txId) call({ type: 'query', sql: 'SAVEPOINT ats_returning_id', params: [], txId });
         try {
           const r = call({ type: 'query', sql: t.replace(/;?\s*$/, ' RETURNING id'), params: p, txId });
+          if (txId) call({ type: 'query', sql: 'RELEASE SAVEPOINT ats_returning_id', params: [], txId });
           return { lastInsertRowid: r.rows?.[0]?.id ?? null, changes: r.affected ?? 0 };
         } catch (e) {
           if (!/column "id" does not exist/i.test(e.message)) throw e;
-          const r = call({ type: 'query', sql: t, params: p, txId });
-          return { lastInsertRowid: null, changes: r.affected ?? 0 };
+          if (txId) {
+            call({ type: 'query', sql: 'ROLLBACK TO SAVEPOINT ats_returning_id', params: [], txId });
+            call({ type: 'query', sql: 'RELEASE SAVEPOINT ats_returning_id', params: [], txId });
+          }
+          if (table) NO_ID_TABLES.add(table);
         }
       }
       const r = call({ type: 'query', sql: t, params: p, txId });

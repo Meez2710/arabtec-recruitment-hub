@@ -138,6 +138,20 @@ await check('mobile navigation follows persona order and never adds an unauthori
   const limited=select(nav.filter(n=>['dashboard','interviews','candidateReview'].includes(n.key)),'interviewer');
   assert.equal(JSON.stringify(limited.map(n=>n.key)),JSON.stringify(['dashboard','interviews']));
 });
+await check('scoped roles are not offered Candidate Review or its count (AR-01)',async()=>{
+  const broad=get('hasBroadCandidateAccess');
+  const interviewer={id:7,permissions:['dashboard.view','candidate.view','interview.view_assigned','interview.feedback']};
+  const hm={id:6,permissions:['dashboard.view','request.view_own','request.create','candidate.view','interview.view_assigned','offer.view']};
+  const recruiter={id:5,permissions:['dashboard.view','candidate.view','candidate.add']};
+  assert.equal(broad(interviewer),false);assert.equal(broad(hm),false);assert.equal(broad(recruiter),true);
+  assert.equal(get('NAV').find(n=>n.key==='candidateReview').broadCandidates,true);
+  const calls=[];window.ARABTEC_API.get=async path=>{calls.push(path);return path==='/dashboard'?{}:{intakes:[{id:1}]};};
+  const probe=user=>{const p=mount(function Probe(){return get('useWorkCounts')(user)[0];});p.render();return p;};
+  const scoped=probe(interviewer);await flush();scoped.render();
+  assert.ok(!calls.includes('/candidates/intakes'),JSON.stringify(calls));
+  const hr=probe(recruiter);await flush();const counts=hr.render();
+  assert.ok(calls.includes('/candidates/intakes'));assert.equal(counts.intakes,1);
+});
 await check('dirty Roles edits survive cancelled role picks, internal navigation and page exit; save clears the guard',async()=>{
   const roles=[{id:1,name:'Role A',permissions:[]},{id:2,name:'Role B',permissions:[]}];
   window.ARABTEC_API.get=async path=>path==='/roles'?{roles}:{permissions:[{code:'candidate.view',description:'View candidates',resource:'candidate'}]};
@@ -417,8 +431,9 @@ await check('organization empty and failed loads show actionable content without
     const shell = mount(Shell, { user: USER, branding: BRANDING, onLogout() {}, refreshBranding() {} });
     const tree = shell.render();
     const drawer = nodes(tree).find((n) => n.type === MobileDrawer);
+    const broad = ['request.view_all', 'interview.view_all', 'candidate.add'].some((p) => PERMS.includes(p));
     const expected = get('NAV').filter((n) => n.section
-      || (n.anyPerm ? n.anyPerm.some((p) => PERMS.includes(p)) : (!n.perm || PERMS.includes(n.perm))));
+      || ((!n.broadCandidates || broad) && (n.anyPerm ? n.anyPerm.some((p) => PERMS.includes(p)) : (!n.perm || PERMS.includes(n.perm)))));
     assert.deepEqual(drawer.props.nav.map((n) => n.key || n.section), expected.map((n) => n.key || n.section),
       'the drawer must show the same list the desktop sidebar computes — not its own');
     assert.ok(!drawer.props.nav.some((n) => n.perm && !PERMS.includes(n.perm)),
@@ -710,13 +725,15 @@ await check('quality labels render through the canonical Badge, never in the rej
     const calls = [];
     const director = { id: 2, roles: ['hr_director'], permissions: ['dashboard.view', 'request.view_all', 'request.approve', 'offer.approve'] };
     const data = { d: { kpis: {}, aging: {}, offersByStatus: [{ status: 'pending_approval', count: 1 }] }, requests: [{ id: 44, ticketNo: 'REQ-2026-0044', title: 'Site Engineer', status: 'pending_approval', headcount: 1 }], interviews: [], unavailable: {}, sectionErrors: {}, loaded: {}, reload() {} };
-    const tree = get('DirectorDashboard')({ user: director, data, onNavigate: (...a) => calls.push(a) });
+    window.ARABTEC_API.get = async () => ({ projects: [], departments: [], recruiters: [] });
+    const dash = mount(get('DirectorDashboard'), { user: director, data, onNavigate: (...a) => calls.push(a) }); const tree = dash.render();
     const items = nodes(tree).filter((n) => n.type === ActionItem);
     items.find((n) => n.props.cta === 'Open request').props.onCta();
     assert.equal(window.__atsPendingRequestId, 44, 'the request awaiting approval is opened by id');
     items.find((n) => n.props.cta === 'Open offers').props.onCta();
     // Objects born inside the vm realm have a different prototype, so compare by shape.
     assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['offers', { status: 'pending_approval' }]), 'the offers queue is filtered to those held for a decision');
+    dash.dispose();
     const iv = get('InterviewerDashboard')({ user: { id: 9, roles: ['interviewer'], permissions: [] }, data: { interviews: [{ id: 77, interviewNo: 'INT-77', status: 'completed', overallOutcome: null, scheduledAt: new Date().toISOString(), candidate: { fullName: 'C' }, request: { title: 'R' } }], unavailable: {} }, onNavigate: (...a) => calls.push(a) });
     nodes(iv).find((n) => n.type === ActionItem && n.props.cta === 'Open interview').props.onCta();
     assert.equal(JSON.stringify(calls[calls.length - 1]), JSON.stringify(['interviews', { openId: 77 }]), 'the interview needing feedback is opened by id');

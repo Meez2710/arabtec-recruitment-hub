@@ -261,3 +261,36 @@ export function syncBatchSize() {
 
 /** CV attachment types the existing intake flow accepts. */
 export const CV_EXTENSIONS = Object.freeze(['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png']);
+
+/**
+ * Opt-in automatic parsing of NEW mailbox CVs (owner decision pending, 12 Oct).
+ *
+ * Discovery records every CV attachment as WAITING and spends nothing; until
+ * now a person had to pick categories before any of it was read, so new CVs
+ * never reached the Talent Pool on their own. When enabled, the scheduled scan
+ * also reads WAITING CVs — through the same parseWaiting → ingestIntake path —
+ * but ONLY those received on or after MS_AUTO_PARSE_SINCE. That date is
+ * required: without it this stays off, so switching it on can never sweep the
+ * historical backlog (the 17 Sep `limit: 0` lesson). Bounded per run and per
+ * attachment, so a bad file cannot be paid for on every scan.
+ *
+ *   MS_AUTO_PARSE_NEW=true            switch (default off)
+ *   MS_AUTO_PARSE_SINCE=2026-10-13    received on/after this instant (required)
+ *   MS_AUTO_PARSE_MAX=10              CVs read per scan (1–50)
+ *   MS_AUTO_PARSE_ATTEMPTS=3          reads per attachment before it waits for a person (1–10)
+ */
+export function autoParseConfig(env = process.env) {
+  const on = String(env.MS_AUTO_PARSE_NEW ?? '').trim().toLowerCase() === 'true';
+  if (!on) return { enabled: false, reason: 'off' };
+  const raw = String(env.MS_AUTO_PARSE_SINCE ?? '').trim();
+  const at = raw ? Date.parse(raw) : NaN;
+  if (!Number.isFinite(at)) return { enabled: false, reason: 'MS_AUTO_PARSE_SINCE is missing or not a date' };
+  const max = Number.parseInt(env.MS_AUTO_PARSE_MAX ?? '', 10);
+  const attempts = Number.parseInt(env.MS_AUTO_PARSE_ATTEMPTS ?? '', 10);
+  return {
+    enabled: true,
+    since: new Date(at).toISOString(),
+    max: Number.isFinite(max) && max > 0 ? Math.min(max, 50) : 10,
+    maxAttempts: Number.isFinite(attempts) && attempts > 0 ? Math.min(attempts, 10) : 3,
+  };
+}

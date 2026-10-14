@@ -1,0 +1,27 @@
+{
+ "tablet": {
+  "headTop": 61.953125,
+  "barBottom": 56,
+  "closeClickable": true,
+  "segRight": 544.59375,
+  "notesLeft": 559.984375,
+  "segOverlapsNotes": false
+ },
+ "resize": {
+  "typed": "UNSAVED RESIZE PROBE"
+ },
+ "afterResize": {
+  "drawerStayedOpen": false,
+  "notesNow": "UNSAVED RESIZE PROBE",
+  "restoredNote": true
+ },
+ "ar01": {
+  "seesBasma": false,
+  "seesAssigned": true,
+  "directStatus": 403
+ },
+ "csp": {
+  "metaCsp": true,
+  "canaryBlocked": true
+ }
+}

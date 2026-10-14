@@ -1040,6 +1040,52 @@ export function ensureSchema() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_msoauth_expires ON microsoft_oauth_state(expires_at);
+
+  -- Interview communications (audit 2026-10-06). A message edited for ONE
+  -- interview: kind = invite | update | cancel, audience = candidate | panel |
+  -- whatsapp | panel_removed. Absent rows fall back to the global templates.
+  CREATE TABLE IF NOT EXISTS interview_message (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interview(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    subject TEXT,
+    body TEXT NOT NULL,
+    updated_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (interview_id, kind, audience)
+  );
+  -- One row per recipient per channel per send action. batch_key is the
+  -- client's one-time key for that action: a double click or retry of the same
+  -- action finds its rows instead of sending again. status: queued | accepted
+  -- (provider accepted) | dry_run (test transport, not delivered) | not_sent
+  -- (with reason) | failed (with reason) | manual_handoff (WhatsApp opened by a
+  -- person — never counted as sent). "delivered" is never claimed: no
+  -- provider here confirms delivery.
+  CREATE TABLE IF NOT EXISTS interview_dispatch (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id INTEGER NOT NULL REFERENCES interview(id) ON DELETE CASCADE,
+    batch_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 0,
+    audience TEXT NOT NULL,
+    recipient_key TEXT NOT NULL,
+    recipient_user_id INTEGER REFERENCES users(id),
+    recipient_name TEXT,
+    recipient_address TEXT,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT,
+    attach_cv INTEGER NOT NULL DEFAULT 0,
+    subject TEXT,
+    provider TEXT,
+    retry_of INTEGER,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (batch_key, recipient_key, channel)
+  );
+  CREATE INDEX IF NOT EXISTS idx_ivdispatch_interview ON interview_dispatch(interview_id, created_at);
   `);
 
   // Organization Structure v2 (docs/org-chart/ORG_CHART_V2_PLAN.md section 3).
@@ -1128,12 +1174,41 @@ export function ensureSchema() {
   addColumnIfMissing('mailbox_ingestion', 'subject', 'TEXT');
   addColumnIfMissing('mailbox_ingestion', 'sender', 'TEXT');
   addColumnIfMissing('mailbox_ingestion', 'category', 'TEXT');
+  // How many times a WAITING attachment was read (automatic parsing stops at a cap). Additive.
+  addColumnIfMissing('mailbox_ingestion', 'parse_attempts', 'INTEGER DEFAULT 0');
   addColumnIfMissing('microsoft_connection', 'sync_lease_owner', 'TEXT');
   addColumnIfMissing('microsoft_connection', 'sync_lease_until', 'TEXT');
 
   // Offer expiry: the date after which an unanswered offer lapses. Display and
   // entry only; nothing expires an offer automatically.
   addColumnIfMissing('offer', 'expiry_date', 'TEXT');
+  // Offer letter fields (lib/offer-letter.js): the addressee's title (Mr./Eng.),
+  // an optional salutation first name, and the salary breakdown the signed
+  // letters show (JSON { basic, accommodation, transportation, others,
+  // area_allowance }). salary_offered stays the total.
+  addColumnIfMissing('offer', 'title_prefix', 'TEXT');
+  addColumnIfMissing('offer', 'salutation_name', 'TEXT');
+  addColumnIfMissing('offer', 'salary_components', 'TEXT');
+  // Interview booking and communications (audit 2026-10-06,
+  // INTERVIEW_IMPLEMENTATION_BRIEF.md). All additive and nullable.
+  //   idempotency_key — a client's one-time submission key: a retried or
+  //                     double-clicked "Save" returns the same interview
+  //   overlap_reason  — why a shared panelist was knowingly double-booked
+  //   calendar_seq    — the calendar entry's revision (ICS SEQUENCE); rises on
+  //                     every material change and on cancellation, UID stays
+  //   notice_state    — JSON: the change or cancellation not yet communicated
+  addColumnIfMissing('interview', 'idempotency_key', 'TEXT');
+  addColumnIfMissing('interview', 'overlap_reason', 'TEXT');
+  addColumnIfMissing('interview', 'calendar_seq', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('interview', 'notice_state', 'TEXT');
+  try { exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_interview_idempotency ON interview(idempotency_key)'); } catch (e) { console.error('  ! interview idempotency index:', e.message); }
+  // A row that booking transactions lock first, so two concurrent bookings
+  // cannot both pass the conflict check (PostgreSQL row lock; SQLite has one writer).
+  try {
+    if (!get("SELECT key FROM system_setting WHERE key='interview_booking_lock'")) {
+      run('INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)', ['interview_booking_lock', '0', new Date().toISOString()]);
+    }
+  } catch (e) { console.error('  ! interview booking lock row:', e.message); }
   addColumnIfMissing('org_chart_version', 'based_on_updated_at', 'TEXT');
   addColumnIfMissing('org_chart_version', 'base_payload_json', 'TEXT');
   addColumnIfMissing('org_chart', 'legacy_root_node_id', 'INTEGER');
@@ -1144,6 +1219,7 @@ export function ensureSchema() {
   migrateLegacyActionColor();
   syncCatalogAdditions();
   backfillCvInboxGrants();
+  applyRequestControlPolicy();
   ensureOneJoinedPerCandidate();
 }
 
@@ -1177,6 +1253,46 @@ const CV_INBOX_BACKFILL = {
   hr_manager:          CV_INBOX_CODES,
   hr_director:         CV_INBOX_CODES,
 };
+
+// Owner decision, 4 Oct 2026: only the Recruitment Manager and the System
+// Administrator control a hiring request — assign / re-assign / remove the
+// recruiter, hold, resume, cancel, close and reopen. Applied ONCE per database
+// (flag below) so a later change in Roles & Permissions is never reverted.
+const REQUEST_CONTROL_KEY = 'policy_request_control_v1';
+const REQUEST_CONTROL_CODES = ['request.assign_recruiter', 'request.hold', 'request.cancel', 'request.close', 'request.reopen'];
+const REQUEST_CONTROL_ROLES = ['recruitment_manager', 'system_admin'];
+function applyRequestControlPolicy() {
+  try {
+    const result = tx(() => {
+      if (get('SELECT id FROM system_setting WHERE key = ?', [REQUEST_CONTROL_KEY])) return null;
+      const permId = Object.fromEntries(all('SELECT id, code FROM permission').map((p) => [p.code, p.id]));
+      const roles = all('SELECT id, code FROM role');
+      const keep = roles.filter((r) => REQUEST_CONTROL_ROLES.includes(r.code));
+      if (!REQUEST_CONTROL_CODES.every((c) => permId[c]) || keep.length < REQUEST_CONTROL_ROLES.length) return null; // catalog not seeded yet
+      const ids = REQUEST_CONTROL_CODES.map((c) => permId[c]);
+      const keepIds = keep.map((r) => r.id);
+      // Only reshape a matrix that is in use: if no role holds any of these
+      // codes yet (an unseeded catalog), leave it alone and do not mark it done.
+      if (!get(`SELECT 1 AS x FROM role_permission WHERE permission_id IN (${ids.map(() => '?').join(',')}) LIMIT 1`, ids)) return null;
+      const removed = all(`SELECT r.code role, p.code perm FROM role_permission rp JOIN role r ON r.id = rp.role_id JOIN permission p ON p.id = rp.permission_id
+        WHERE rp.permission_id IN (${ids.map(() => '?').join(',')}) AND rp.role_id NOT IN (${keepIds.map(() => '?').join(',')})`, [...ids, ...keepIds]);
+      run(`DELETE FROM role_permission WHERE permission_id IN (${ids.map(() => '?').join(',')}) AND role_id NOT IN (${keepIds.map(() => '?').join(',')})`, [...ids, ...keepIds]);
+      let granted = 0;
+      for (const roleRow of keep) for (const pid of ids) {
+        if (get('SELECT 1 AS x FROM role_permission WHERE role_id=? AND permission_id=?', [roleRow.id, pid])) continue;
+        run('INSERT INTO role_permission (role_id,permission_id) VALUES (?,?) ON CONFLICT DO NOTHING RETURNING role_id', [roleRow.id, pid]);
+        granted++;
+      }
+      const stamp = new Date().toISOString();
+      run('INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)',
+        [REQUEST_CONTROL_KEY, JSON.stringify({ appliedAt: stamp, removed, granted }), stamp]);
+      return { removed, granted };
+    });
+    if (result) console.log(JSON.stringify({ level: 'info', msg: 'schema.request_control_policy', removed: result.removed, granted: result.granted }));
+  } catch (e) {
+    console.error('  ! Request control policy failed (continuing):', e.message);
+  }
+}
 
 function backfillCvInboxGrants() {
   try {

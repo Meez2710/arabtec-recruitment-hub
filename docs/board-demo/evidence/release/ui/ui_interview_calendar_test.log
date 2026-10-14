@@ -1,0 +1,46 @@
+[BABEL] Note: The code generator has deoptimised the styling of undefined as it exceeds the max of 500KB.
+
+— the working week is Saturday to Thursday —
+  ✅ a Monday belongs to the week that started the Saturday before
+  ✅ a Saturday starts its own week
+  ✅ a Friday closes the week that started the Saturday before
+  ✅ the week view fetches Saturday 00:00 to the next Saturday 00:00
+  ✅ the month view covers whole Saturday-first weeks
+  ✅ the day view is one calendar day
+  ✅ columns are Sat, Sun, Mon, Tue, Wed, Thu with nothing booked on Friday
+  ✅ Friday appears (last) only when an interview is booked on it
+  ✅ the column dates run 26 Sep → 1 Oct (+ 2 Oct when Friday shows)
+
+— hours: 09:00 to 17:00, never hiding a booking —
+  ✅ an empty week shows 09–17
+  ✅ an 08:00 interview pulls the grid back to 08:00
+  ✅ an interview ending 17:30 pushes the grid to 18:00
+
+— placing interviews on a day —
+  ✅ a 10:30 start sits 1.5 hours down a 09:00 grid
+  ✅ two interviews at the same time sit side by side
+  ✅ back-to-back interviews each take the full width
+  ✅ a short interview is still tall enough to read and click
+
+— booking from the grid —
+  ✅ a slot before now is closed; one after now is open
+  ✅ clicking a future day books 09:00
+  ✅ clicking today books the next half hour
+  ✅ a day that is over offers nothing
+  ✅ the form receives the slot in datetime-local format
+
+— navigation —
+  ✅ next from Thursday skips Friday to Saturday in day view
+  ✅ previous from Saturday skips Friday to Thursday in day view
+  ✅ week steps are seven days
+  ✅ month steps land on the 1st
+
+— wiring —
+  ✅ the calendar is the first screen on desktop and a single day on phones
+  ✅ the page offers Day, Week, Month and List
+  ✅ calendar views ask the server for the visible range only
+  ✅ an open slot opens the schedule form on that time
+  ✅ the schedule form checks the panel for clashes and only warns
+
+=== UI INTERVIEW CALENDAR: 30 passed, 0 failed ===
+

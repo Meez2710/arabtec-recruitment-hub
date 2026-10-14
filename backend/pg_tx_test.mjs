@@ -263,6 +263,36 @@ try {
   c('a later transaction still works', (() => { tx(() => run('INSERT INTO t (v) VALUES ($1)', ['after-all'])); return all("SELECT v FROM t WHERE v='after-all'").length === 1; })());
 
   /* ------------------- 8. abandoned transaction timeout ----------------- */
+  console.log('\n— 7f. INSERT into a table with no `id` column inside a transaction —');
+  // Regression: the RETURNING-id probe failed inside tx() and aborted the whole
+  // PostgreSQL transaction, so saving an assessment final decision returned 500.
+  // A uniquely named table per run; nothing is dropped.
+  const NOID = 'noid_probe_' + Date.now();
+  exec(`CREATE TABLE IF NOT EXISTS ${NOID} (app_id INTEGER PRIMARY KEY, v TEXT)`);
+  let noIdErr = null;
+  try {
+    tx(() => {
+      run(`INSERT INTO ${NOID} (app_id, v) VALUES (?, ?) ON CONFLICT(app_id) DO UPDATE SET v=excluded.v`, [1, 'first']);
+      run('INSERT INTO t (v) VALUES (?)', ['after-noid']);
+    });
+  } catch (e) { noIdErr = e.message; }
+  c('a transaction with an id-less INSERT commits', noIdErr === null, noIdErr || '');
+  c('…both rows persisted', get(`SELECT v FROM ${NOID} WHERE app_id=1`)?.v === 'first' && !!get("SELECT 1 AS ok FROM t WHERE v='after-noid'"));
+  tx(() => { run(`INSERT INTO ${NOID} (app_id, v) VALUES (?, ?) ON CONFLICT(app_id) DO UPDATE SET v=excluded.v`, [1, 'second']); });
+  c('a second upsert in a new transaction also commits', get(`SELECT v FROM ${NOID} WHERE app_id=1`)?.v === 'second');
+  tx(() => { for (let i = 2; i < 52; i++) run(`INSERT INTO ${NOID} (app_id, v) VALUES (?, ?)`, [i, 'bulk']); });
+  c('50 id-less inserts in one transaction commit', get(`SELECT COUNT(*) AS n FROM ${NOID} WHERE v='bulk'`)?.n == 50);
+  let dupErr = null;
+  try {
+    tx(() => {
+      run('INSERT INTO t (v) VALUES (?)', ['must-roll-back']);
+      run(`INSERT INTO ${NOID} (app_id, v) VALUES (?, ?)`, [1, 'duplicate key']);
+    });
+  } catch (e) { dupErr = e.message; }
+  c('a genuine constraint error in an id-less INSERT still fails the transaction', /duplicate key|unique/i.test(dupErr || ''), dupErr || 'no error');
+  c('…and rolls back the earlier write in the same transaction', !get("SELECT 1 AS ok FROM t WHERE v='must-roll-back'"));
+  c('…leaving the stored row unchanged', get(`SELECT v FROM ${NOID} WHERE app_id=1`)?.v === 'second');
+
   console.log('\n— 8. an abandoned transaction is reclaimed —');
   const orphanId = P.begin();
   P.run('INSERT INTO t (v) VALUES ($1)', ['orphan'], orphanId);

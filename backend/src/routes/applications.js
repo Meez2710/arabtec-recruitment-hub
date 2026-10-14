@@ -4,11 +4,14 @@ import {
   Users, Projects, SystemSettings, RejectReasons, Posts,
 } from '../lib/models.js';
 import { tx } from '../lib/db.js';
+import { applicationScopeClause, applicationScopeFilter } from '../lib/candidate-scope.js';
+import { hasFullPipelineAccess, visibleStageHistory } from '../lib/pipeline-visibility.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
 import { hasOpenSeat } from '../lib/vacancy.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
+import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
 import {
   APP, APP_STATUSES as STAGES, APP_REASON_REQUIRED, APP_TERMINAL,
   appNorm, appCanMove, APP_LABELS,
@@ -63,14 +66,12 @@ function maybeNotifyRejection(a, toStatus, req) {
     linkType: 'candidate', linkId: candidate.id,
     vars: { candidateName: candidate.full_name, position: request ? request.title : candidate.current_position },
     title: 'Application update',
+    onExternalResult: candidateEmailReporter({ candidateId: candidate.id, applicationId: a.id, actorId: req.user.id, what: 'Rejection email' }),
   });
-  if (r.sent) {
-    try {
-      CandidateActivity.add({ candidateId: candidate.id, applicationId: a.id, actorId: req.user.id,
-        actorName: 'System', type: 'email_sent', note: 'Rejection email sent' });
-    } catch { /* the activity note must never fail the move */ }
-  }
-  return { sent: r.sent, reason: r.reason || null, to: r.sent && candidate.email ? candidate.email : null };
+  // Queued is not delivered: the outcome is recorded on the candidate's
+  // activity by the reporter when the mailer finishes (lib/candidate-email.js).
+  const plan = deliveryPlan(r, candidate);
+  return { sent: plan.state === 'queued', reason: plan.reason || r.reason || null, to: plan.state === 'queued' ? plan.to : null, delivery: plan };
 }
 const TERMINAL = APP_TERMINAL;
 // hasOpenSeat / fillSeatAndCount now live in lib/vacancy.js (shared with offers).
@@ -284,11 +285,11 @@ router.get('/', (req, res) => {
   const q = req.query;
   const pageSize = Math.min(Math.max(parseInt(q.pageSize, 10) || 50, 1), 200);
   const page = Math.max(parseInt(q.page, 10) || 1, 1);
-  const scope = requestScope(req.user, 'a.request_id'); // scoping column = application.request_id
+  const [scopeWhere, scopeParams] = applicationScopeClause(req.user);
   const filters = {
     status: q.status, requestId: q.requestId, recruiterId: q.recruiterId,
     projectId: q.projectId, q: q.q, sort: q.sort, dir: q.dir,
-    scopeWhere: scope.where, scopeParams: scope.params,
+    scopeWhere, scopeParams,
   };
   const total = Applications.count(filters);
   const rows = Applications.list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize });
@@ -318,9 +319,10 @@ router.get('/request/:requestId', (req, res) => {
   if (!req.user.permissions.includes('candidate.view')) return res.status(403).json({ error: 'Insufficient permissions.' });
   const request = Requests.byId(Number(req.params.requestId));
   if (!request) return res.status(404).json({ error: 'Request not found.' });
-  if (!canScopeRequest(req.user, request.id)) return res.status(404).json({ error: 'Request not found.' });
-  const apps = Applications.forRequest(request.id).map((a) => appOut(a, req.user));
-  res.json({ applications: apps, statuses: APP_STATUSES });
+  const visible = Applications.forRequest(request.id).filter(applicationScopeFilter(req.user));
+  if (!canScopeRequest(req.user, request.id) && !visible.length) return res.status(404).json({ error: 'Request not found.' });
+  const apps = visible.map((a) => appOut(a, req.user));
+  res.json({ applications: apps, statuses: APP_STATUSES.filter((s) => hasFullPipelineAccess(req.user) || s !== 'sourced') });
 });
 
 /* ---------------- APPLICATION detail ---------------- */
@@ -328,8 +330,8 @@ router.get('/:id', (req, res) => {
   if (!req.user.permissions.includes('candidate.view')) return res.status(403).json({ error: 'Insufficient permissions.' });
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
-  if (!canScopeRequest(req.user, a.request_id)) return res.status(404).json({ error: 'Application not found.' });
-  res.json({ application: appOut(a, req.user), history: StageHistory.forApplication(a.id) });
+  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
+  res.json({ application: appOut(a, req.user), history: visibleStageHistory(req.user, StageHistory.forApplication(a.id)) });
 });
 
 /* ---------------- helper: move one application, handle reasons + automation ----------------
@@ -372,6 +374,7 @@ function joinBlocker(appRow) {
 router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) => {
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
+  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
   const toStatus = appNorm((req.body || {}).status);
   if (!APP_STATUSES.includes(toStatus)) return res.status(400).json({ error: 'Invalid status.' });
   const fromStatus = appNorm(a.status);
@@ -409,6 +412,7 @@ router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) =
 router.post('/:id/next-action', requirePermission('candidate.move_stage'), (req, res) => {
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
+  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
   const { nextAction, nextActionDate } = req.body || {};
   Applications.setNextAction(a.id, nextAction || null, nextActionDate || null);
   CandidateActivity.add({ candidateId: a.candidate_id, applicationId: a.id, actorId: req.user.id, actorName: req.user.fullName, type: 'next_action_set', note: nextAction || null });
@@ -420,6 +424,7 @@ router.post('/:id/next-action', requirePermission('candidate.move_stage'), (req,
 router.post('/:id/assign', requirePermission('request.assign_recruiter'), (req, res) => {
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
+  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
   const recruiterId = Number((req.body || {}).recruiterId);
   if (!Users.byId(recruiterId)) return res.status(400).json({ error: 'Recruiter not found.' });
   Applications.setRecruiter(a.id, recruiterId);
@@ -445,7 +450,7 @@ router.post('/bulk', requirePermission('application.bulk_action'), (req, res) =>
   const skipped = []; // safe partial-failure reporting
   for (const id of ids) {
     const a = Applications.byId(Number(id));
-    if (!a) { skipped.push({ id, reason: 'not_found' }); continue; }
+    if (!a || !applicationScopeFilter(req.user)(a)) { skipped.push({ id, reason: 'not_found' }); continue; }
     if (action === 'move') {
       const from = appNorm(a.status);
       if (TERMINAL.includes(from)) { skipped.push({ id, reason: `terminal_${from}` }); continue; }

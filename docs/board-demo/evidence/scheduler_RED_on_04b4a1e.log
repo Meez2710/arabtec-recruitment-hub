@@ -1,0 +1,122 @@
+  • Schema: added 58 new permission(s) [dashboard.view, request.view_all, request.view_own, request.create, request.edit, request.delete, request.submit, request.approve, request.reject, request.assign_recruiter, request.budget_approve, request.hold, request.cancel, request.close, request.reopen, candidate.view, candidate.add, candidate.edit, candidate.delete, candidate.link, candidate.move_stage, candidate.merge, candidate.note, candidate.privacy, application.bulk_action, interview.view_all, interview.view_assigned, interview.schedule, interview.edit, interview.feedback, interview.assessment_policy, salary.view, offer.view, offer.create, offer.edit, offer.approve, offer.approve_director, offer.send, offer.result_update, offer.salary_view, offer.salary_edit, cv_intake.view, cv_intake.preview, cv_intake.approve_batch, cv_intake.control, cv_intake.import, report.export, user.manage, role.manage, branding.manage, button.manage, app.manage_ui, workflow.manage, org.manage, org_chart.manage, system.manage, notification.manage, audit.view] and 0 role grant(s).
+  • Schema: added 17 new notification event row(s).
+{"level":"info","msg":"config.summary","env":"development","db":"sqlite","email":false,"aiParsing":false,"sentry":false,"watcher":false,"microsoftMailbox":false,"mailProvider":"auto","trustProxy":"false (default)"}
+(node:63859) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+🏗️  Arabtec Recruitment Hub listening on 4396 (initialising…)
+{"level":"info","msg":"security.headers","hsts":false,"directHttp":false,"hstsMaxAge":15552000,"cspReportOnly":false,"cspAllowsUnsafeEval":false,"disabled":false}
+{"level":"info","msg":"observability: Sentry disabled (no SENTRY_DSN)"}
+  • Empty database detected — seeding initial + demo data…
+🌱 Seeding Arabtec Recruitment Hub (with demo data)...
+  ✓ 58 permissions
+  ✓ 9 roles
+  ✓ role→permission mappings
+{"level":"info","msg":"schema.cv_inbox_backfill","grants":0}
+{"level":"error","msg":"request","requestId":"53fafaf4-92c8-44a5-b6a5-6ba801e750c5","method":"GET","path":"/api/auth/me","status":503,"ms":4,"ip":"::1"}
+  ✓ admin user: admin@arabtec.com
+{"level":"error","msg":"request","requestId":"c45f97fd-a2b6-4108-a760-2241104093aa","method":"GET","path":"/api/auth/me","status":503,"ms":1,"ip":"::1"}
+  ✓ 8 sample users (password: Arabtec@123)
+  ✓ 6 departments
+  ✓ 3 projects, 3 sites
+  ✓ 24 branding settings
+  ✓ 48 button configs
+  ✓ 17 notification events (0 new)
+  ✓ 3 workflow settings
+  ✓ 23 system settings
+  ✓ 11 reject reasons
+✅ Seed complete.
+
+   Admin login:  admin@arabtec.com  (password set via SEED_ADMIN_PASSWORD or shown once on first run; must be rotated at first login)
+   Sample users: <role>@arabtec.com  /  Arabtec@123  (demo only)
+
+  ✓ Initial data seeded.
+   ✓ Ready. API health: http://localhost:4396/api/health
+
+{"level":"warn","msg":"request","requestId":"9f66e84e-a2e1-4b12-9e7d-24cfa5c0ac68","method":"GET","path":"/api/auth/me","status":401,"ms":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"d9d46125-241f-44a5-a6e3-9d225417fe08","method":"POST","path":"/api/auth/login","status":200,"ms":231,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"8b4071c6-895a-416c-83d4-02f0f5d1b73b","method":"POST","path":"/api/auth/change-password","status":200,"ms":533,"userId":1,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"31ca2246-3e86-4948-9d09-955202c974bd","method":"POST","path":"/api/auth/login","status":200,"ms":246,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"a3ff5646-ded9-4721-bcc3-5fd57c61f4fd","method":"GET","path":"/api/interviews/meta/form","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"1526ddc7-737d-4fe2-89af-a7b760cf2248","method":"POST","path":"/api/candidates","status":201,"ms":9,"userId":5,"ip":"::1"}
+
+— POST refuses unusable input —
+{"level":"info","msg":"request","requestId":"bcc5274a-8024-499a-ae80-7c96a3918f5d","method":"GET","path":"/api/interviews","status":200,"ms":5,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"bc1f1abc-20a0-410a-851b-7f973ba7af8b","method":"POST","path":"/api/interviews","status":201,"ms":23,"userId":5,"ip":"::1"}
+  ❌ POST unparseable date string → 400 201 {"interview":{"id":1,"interviewNo":"INT-00001","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"f1a022fd-39dd-41f3-afa3-8d90f741a8c6","method":"POST","path":"/api/interviews","status":201,"ms":50,"userId":5,"ip":"::1"}
+  ❌ POST impossible calendar date → 400 201 {"interview":{"id":2,"interviewNo":"INT-00002","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<ae2f5d48-563b-64a4-8dc0-ce506e837618@localhost>"}
+{"level":"info","msg":"request","requestId":"51e4f3c3-6fc1-4210-9fdd-b0ee336e0d24","method":"POST","path":"/api/interviews","status":201,"ms":7,"userId":5,"ip":"::1"}
+  ❌ POST negative duration → 400 201 {"interview":{"id":3,"interviewNo":"INT-00003","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"746f5d1c-bb77-4e13-b6a5-de5f7c324366","method":"POST","path":"/api/interviews","status":201,"ms":9,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<586fef7d-8e18-1d49-a90b-95d8be1d6aba@localhost>"}
+  ❌ POST zero duration → 400 201 {"interview":{"id":4,"interviewNo":"INT-00004","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"f3838b95-a020-4349-bf42-c14ef0aa1c42","method":"POST","path":"/api/interviews","status":201,"ms":8,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<5e39ea3a-26f3-f4a5-a69a-43742d0a6314@localhost>"}
+  ❌ POST non-numeric duration → 400 201 {"interview":{"id":5,"interviewNo":"INT-00005","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"0d19bfe6-fc68-46ce-92ec-5076befa76d6","method":"POST","path":"/api/interviews","status":201,"ms":7,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<ee0c6998-4ebe-4e7e-aa19-b1dc805c9af4@localhost>"}
+  ❌ POST fractional duration → 400 201 {"interview":{"id":6,"interviewNo":"INT-00006","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"ef025e9f-9b67-460f-aad9-7d8cc822aa4b","method":"POST","path":"/api/interviews","status":201,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<45dc64b4-4f65-cf98-126d-1d6797b67624@localhost>"}
+  ❌ POST date without a timezone (server would guess) → 400 201 {"interview":{"id":7,"interviewNo":"INT-00007","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"04fa1774-7c18-4616-8bc2-7b84a733301e","method":"POST","path":"/api/interviews","status":201,"ms":9,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<af5f4164-b997-c865-9c4e-ec9570a5e011@localhost>"}
+  ❌ POST duration beyond the calendar maximum (8h) → 400 201 {"interview":{"id":8,"interviewNo":"INT-00008","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"2936027a-2c6f-4e1d-8275-fb2809e85ae9","method":"GET","path":"/api/interviews","status":200,"ms":7,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<27fb28e0-0c11-b1b1-d590-9625f7bda663@localhost>"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<9545e9dd-032a-90d2-0cc6-7004add3cb71@localhost>"}
+{"level":"info","msg":"request","requestId":"59e3fc37-c5fb-43ab-87cc-a9d45ccf68db","method":"GET","path":"/api/interviews","status":200,"ms":5,"userId":5,"ip":"::1"}
+  ❌ …and none of the refused requests created an interview 8 vs 0
+
+— POST stores one canonical instant —
+{"level":"info","msg":"request","requestId":"85493e6c-73eb-4308-9fc8-55630accf4ca","method":"POST","path":"/api/interviews","status":201,"ms":10,"userId":5,"ip":"::1"}
+  ✅ offset input accepted (201)
+  ❌ stored as ISO UTC 2031-01-06T12:00:00+02:00
+  ✅ duration stored as given
+{"level":"info","msg":"request","requestId":"b0a57d9b-70b4-4e3c-b62a-12029b3f3d1e","method":"GET","path":"/api/interviews","status":200,"ms":2,"userId":5,"ip":"::1"}
+  ❌ calendar range starting after it (10:30Z) does not list a 10:00Z interview [9]
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<016b186f-aa11-01ec-8418-67c1ad000842@localhost>"}
+{"level":"info","msg":"request","requestId":"1afb115a-1a4f-46c7-b9e5-a67838247480","method":"POST","path":"/api/interviews","status":201,"ms":8,"userId":5,"ip":"::1"}
+  ✅ omitted duration defaults to 60
+
+— PUT refuses unusable input and never half-applies —
+{"level":"info","msg":"request","requestId":"446d10de-fc85-4911-aa6b-d411600eeebb","method":"GET","path":"/api/interviews/9","status":200,"ms":3,"userId":5,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"9bb8b3fe-eb01-4357-9fe3-dccc0b5ad66d","method":"PUT","path":"/api/interviews/9","status":200,"ms":6,"userId":5,"ip":"::1"}
+{"level":"info","msg":"email.sent","provider":"dry-run","to":"interviewer@arabtec.com","subject":"Interview invitation","messageId":"<16cec601-4c92-45ba-1239-238730a2920e@localhost>"}
+  ❌ PUT unparseable date string → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"b667d21c-1142-489e-95c9-7b8d692dbf23","method":"PUT","path":"/api/interviews/9","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ❌ PUT empty date string → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"af5669b0-6d57-4de7-8174-38709dddbf76","method":"PUT","path":"/api/interviews/9","status":200,"ms":5,"userId":5,"ip":"::1"}
+  ❌ PUT negative duration → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"9cbfc6c8-7ef5-4bda-aeae-0738be4fb24f","method":"PUT","path":"/api/interviews/9","status":200,"ms":4,"userId":5,"ip":"::1"}
+  ❌ PUT zero duration → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"5dc18794-4a9b-4a62-8d7e-37a05ccafa85","method":"PUT","path":"/api/interviews/9","status":200,"ms":6,"userId":5,"ip":"::1"}
+  ❌ PUT duration beyond the calendar maximum → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"896547c3-afdb-4751-9bb3-c4e6fca27f2f","method":"PUT","path":"/api/interviews/9","status":200,"ms":4,"userId":5,"ip":"::1"}
+  ❌ PUT unknown interview mode → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"b31466f4-b4bb-4e3c-9b40-6ab4015e2c91","method":"PUT","path":"/api/interviews/9","status":200,"ms":4,"userId":5,"ip":"::1"}
+  ❌ PUT unknown interview type → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"info","msg":"request","requestId":"9a6de3d9-1407-4d2d-a76f-0d7af7bee2c0","method":"PUT","path":"/api/interviews/9","status":200,"ms":5,"userId":5,"ip":"::1"}
+  ❌ PUT date without a timezone (server would guess) → 400 200 {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"intervie
+{"level":"warn","msg":"request","requestId":"056cb3a8-00d7-4f5e-9143-98967196294d","method":"PUT","path":"/api/interviews/9","status":400,"ms":4,"userId":5,"ip":"::1"}
+  ✅ PUT new time + empty panel → 400
+{"level":"info","msg":"request","requestId":"c572fb79-dff2-45d1-915d-60b9e64e3434","method":"GET","path":"/api/interviews/9","status":200,"ms":6,"userId":5,"ip":"::1"}
+  ❌ …stored time, duration and status unchanged by every refused PUT {"before":["2031-01-06T12:00:00+02:00",45,"scheduled"],"after":["2031-01-06T16:00:00.000Z",9999,"rescheduled"]}
+{"level":"info","msg":"request","requestId":"61a69183-a308-4216-94a4-04c4ed37f684","method":"PUT","path":"/api/interviews/9","status":200,"ms":11,"userId":5,"ip":"::1"}
+  ❌ valid reschedule accepted, stored as ISO UTC, status rescheduled {"interview":{"id":9,"interviewNo":"INT-00009","applicationId":null,"candidateId":1,"requestId":null,"round":1,"interviewType":"vibes","mode":"carrier-pigeon","scheduledAt":"2031-01-06T17:30:00+02:00"
+{"level":"info","msg":"request","requestId":"084f2dc6-5c07-4d16-af91-dbfbaab01426","method":"PUT","path":"/api/interviews/9","status":200,"ms":4,"userId":5,"ip":"::1"}
+{"level":"warn","msg":"request","requestId":"4f18c6c0-7d66-41f8-a248-b4f06a459a0a","method":"POST","path":"/api/auth/login","status":401,"ms":245,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"0fc6b80a-950a-47af-8505-81d8fcb1af8a","method":"POST","path":"/api/auth/login","status":200,"ms":262,"ip":"::1"}
+{"level":"info","msg":"request","requestId":"07919d90-4bdc-4392-bf67-38e7dca702ed","method":"GET","path":"/api/audit","status":200,"ms":3,"userId":1,"ip":"::1"}
+  ✅ the same instant in another spelling is not a second reschedule
+
+— intentional overlap is a warning, not a block —
+{"level":"info","msg":"request","requestId":"1d070fc2-b548-4d1f-8ef6-d6249773085c","method":"POST","path":"/api/interviews","status":201,"ms":7,"userId":5,"ip":"::1"}
+  ✅ an overlapping panel booking is still accepted (201)
+{"level":"info","msg":"request","requestId":"d7e38413-4e35-40b8-9e73-9d41ce85b5d8","method":"GET","path":"/api/interviews/clashes","status":200,"ms":3,"userId":5,"ip":"::1"}
+  ✅ …and the clash check warns about Mona
+
+=== SCHEDULER VALIDATION: 7 passed, 21 failed ===
+

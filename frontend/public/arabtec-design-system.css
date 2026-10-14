@@ -367,11 +367,15 @@ input:focus {
 .dot { border-radius: 999px; }
 
 /* Notices carry meaning in a 4px left rule, never a coloured field. */
-.notice { border: 1px solid var(--line); border-left-width: 4px; border-radius: 14px; background: #fff; }
-.notice-info { border-left-color: var(--muted); background: #F0F1F3; }
-.notice-success { border-left-color: var(--green); background: var(--green-50); }
-.notice-warn { border-left-color: var(--warning); background: var(--warning-tint); }
-.notice-danger { border-left-color: var(--brand); background: var(--brand-tint); }
+/* Notices: a hairline box like every other surface — no side bar (owner
+   review, 4 Oct 2026: the 4px bar on a rounded box read as a bracket that
+   matched nothing else). Tone is the tint and the border colour, never an edge.
+   Corner radius comes from claude-system.css §5 (the card radius). */
+.notice { border: 1px solid var(--line); background: #fff; }
+.notice-info { border-color: var(--line); background: #fff; }
+.notice-success { border-color: var(--green-100, var(--line)); background: var(--green-50); }
+.notice-warn { border-color: #F3D48A; background: var(--warning-tint); }
+.notice-danger { border-color: #F3C3C8; background: var(--brand-tint); }
 /* A refresh failed but the rows underneath are still usable — this reports it
    without taking the page, which is what `LoadError` does and what makes sense
    only on a first load. Warning, not danger: nothing is broken, the content is
@@ -379,8 +383,8 @@ input:focus {
 .refetch-error {
   display: flex; align-items: center; gap: var(--cl-3, 8px);
   margin: 0 0 12px; padding: 10px 14px;
-  border: 1px solid #F3D48A; border-left-width: 4px; border-left-color: var(--warning);
-  border-radius: 14px; background: var(--warning-tint); color: var(--warning-ink);
+  border: 1px solid #F3D48A;
+  border-radius: var(--cl-r-xl, 10px); background: var(--warning-tint); color: var(--warning-ink);
   font-size: 12.5px;
 }
 .refetch-error > span { flex: 1 1 auto; min-width: 0; }
@@ -515,17 +519,17 @@ tr.row-selected > td { background: var(--green-50); }
   background: var(--green); margin-right: 8px; vertical-align: 2px;
 }
 
-/* "Today" rail — tinted event cards, tone carried by a left rule. */
+/* "Today" rail — tinted event cards; tone is the tint, no side rule. */
 .event-list { display: grid; gap: 10px; padding: 16px 20px; }
 .event {
-  border: 1px solid var(--line); border-left: 3px solid var(--line-strong);
-  border-radius: 14px; padding: 11px 13px; background: #F9F9FA;
+  border: 1px solid var(--line);
+  border-radius: var(--cl-r-xl, 10px); padding: 11px 13px; background: #F9F9FA;
 }
 .event strong { display: block; font-size: 12.5px; color: var(--ink); }
 .event span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
-.event.good { border-left-color: var(--green); background: var(--green-50); }
-.event.warn { border-left-color: var(--warning); background: var(--warning-tint); }
-.event.risk { border-left-color: var(--brand); background: var(--brand-tint); }
+.event.good { background: var(--green-50); }
+.event.warn { background: var(--warning-tint); }
+.event.risk { background: var(--brand-tint); }
 .event.risk strong { color: var(--brand-dark); }
 
 /* Role health rows — one line per requisition. */
@@ -1116,11 +1120,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 /* Bare legacy tables own their horizontal overflow instead of being clipped by
    body overflow-x:hidden. Responsive tables keep their stacked mobile rules. */
-.card:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table)),
-.card-pad:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table)),
-.modal-body:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table)) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.card table:not(.responsive-table):not(.review-table):not(.parse-review-table),
-.modal-body table:not(.responsive-table):not(.review-table):not(.parse-review-table) { min-width: 680px; }
+.card:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table)),
+.card-pad:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table)),
+.modal-body:has(table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table)) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.card table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table),
+.modal-body table:not(.responsive-table):not(.review-table):not(.parse-review-table):not(.assess-table) { min-width: 680px; }
 
 /* CV intake belongs to the same readable product as the rest of the ATS. */
 .intake-queue { border-top-color: var(--at-action); }
@@ -1140,7 +1144,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .intake-review-head p, .intake-back { font-size: 12.5px; }
 .intake-banner { font-size: 12.5px; line-height: 1.5; }
 .intake-banner strong { font-size: 13px; }
-.review-summary > div { border-left-color: var(--at-action); border-radius: 14px; }
+.review-summary > div { border-radius: var(--cl-r-xl, 10px); }
 .review-summary span { font-size: 10.5px; }
 .review-panel { border-radius: 16px; }
 .review-panel-head h2 { font-size: 16px; }
@@ -1357,7 +1361,8 @@ button.pcard-name { color: var(--ink); background: transparent; }
   --font-display: 'Inter Tight', Inter, Arial, Helvetica, sans-serif;
   --font-ui: Inter, Arial, Helvetica, sans-serif;
   --card-radius: 10px; --radius: 10px; --r-md: 10px;
-  --sidebar-bg: #1A1A1A; --sidebar-line: rgba(255, 255, 255, .08);
+  /* Owner, 4 Oct 2026: light grey, a little darker than the page canvas (#F4F5F7), as on the phone. */
+  --sidebar-bg: #E8EAED; --sidebar-line: #D8DCE1;
 }
 html, body, button, input, select, textarea, .field textarea { font-family: var(--font-ui); }
 .page-title, .page-head .page-title, .dash-head .page-title, .dash-kpi-val, .kpi-value,
@@ -1373,26 +1378,25 @@ html, body, button, input, select, textarea, .field textarea { font-family: var(
   background: var(--brand); vertical-align: middle;
 }
 
-/* Sidebar: charcoal, quiet items, the active one white with a red bar. */
-.sidebar { background: var(--sidebar-bg); color: #fff; border-right: 0; }
+/* Sidebar: light grey rail (a step darker than the canvas), dark text, and the
+   phone menu's green for the active item and its count. */
+.sidebar { background: var(--sidebar-bg); color: var(--ink); border-right: 1px solid var(--sidebar-line); }
 .sidebar-head { border-bottom-color: var(--sidebar-line); }
-.side-txt strong, .sidebar-title { color: #fff; }
-.side-txt span { color: rgba(255, 255, 255, .55); }
-.nav-section { color: rgba(255, 255, 255, .45); }
-.nav-item { color: rgba(255, 255, 255, .72); position: relative; }
-.nav-item:hover { background: rgba(255, 255, 255, .06); color: #fff; }
-.nav-item.active { background: rgba(255, 255, 255, .09); color: #fff; }
-.nav-item.active::before {
-  content: ''; display: block; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 18px; border-radius: 2px; background: var(--brand);
-}
-.nav-item .nav-icon, .nav-item.active .nav-icon { color: inherit; opacity: 1; }
-.nav-item:focus-visible { outline-color: #fff; }
-.nav-count { background: rgba(255, 255, 255, .12); color: rgba(255, 255, 255, .85); }
-.nav-item.active .nav-count { background: #fff; color: var(--ink); }
-.scope-card { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
-.scope-card strong { color: #fff; }
-.scope-card p { color: rgba(255, 255, 255, .55); }
+.side-txt strong, .sidebar-title { color: var(--ink); }
+.side-txt span { color: var(--muted); }
+.nav-section { color: var(--muted); }
+.nav-item { color: var(--ink); position: relative; }
+.nav-item:hover { background: #DCDFE3; color: var(--ink); }
+.nav-item.active { background: var(--green-50); color: var(--green-700); font-weight: 700; }
+.nav-item.active::before { display: none; }
+.nav-item .nav-icon { color: var(--muted); opacity: 1; }
+.nav-item.active .nav-icon { color: var(--green-700); }
+.nav-item:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.nav-count { background: #fff; color: var(--ink-soft); }
+.nav-item.active .nav-count { background: #fff; color: var(--green-700); }
+.scope-card { background: #fff; border-color: var(--sidebar-line); }
+.scope-card strong { color: var(--ink); }
+.scope-card p { color: var(--muted); }
 
 /* Buttons: one solid green action, white secondary, transparent ghost.
    Colour only — the box (height, padding, border width) stays in claude-system.css. */
@@ -1412,7 +1416,7 @@ html, body, button, input, select, textarea, .field textarea { font-family: var(
    the work. Never an opinion, never inside a table or a button. */
 .hint {
   display: flex; align-items: flex-start; gap: 10px; margin: 0 0 16px;
-  padding: 10px 14px; border-left: 2px solid var(--green); border-radius: 0 10px 10px 0;
+  padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--cl-r-xl, 10px);
   background: #fff; font-size: 12.5px; line-height: 1.5; color: var(--muted);
 }
 .hint-emoji { flex: 0 0 auto; font-size: 15px; line-height: 1.25; }
@@ -1544,6 +1548,27 @@ th.recip-external::after { content: none; }
 td.recip-external { background: var(--warning-tint); }
 .notif-grid td:first-child, .notif-grid th:first-child { background: var(--surface); }
 
-/* Interviews: the call script reads as a card to read out loud. */
-.call-script { background: var(--surface-2); border-color: var(--line); color: var(--text-strong); }
-.contact-to strong { color: var(--text-strong); }
+/* Offer compose: the letter sits on the canvas grey, like paper on a desk. */
+.offer-letter-pane { background: var(--canvas, #F4F5F7); border-color: var(--line); }
+.assess-progress a { border-color: var(--line); background: #fff; color: var(--ink); }
+.assess-progress a:hover { border-color: var(--line-strong, #cfd4da); }
+.assess-history-list li { border-color: var(--line); }
+.assess-history-when, .assess-history-reason { color: var(--muted); font-size: 12.5px; }
+
+/* Interview scheduling & communications (claude-system.css §24). */
+.iv-preview { background: var(--canvas, #F4F5F7); border-color: var(--line); }
+.iv-preview-card, .iv-wa { background: #fff; border-color: var(--line); }
+.iv-step-n { background: var(--green-50); color: var(--green-700); }
+.iv-preview-meta, .iv-dispatch-reason { color: var(--muted); }
+.iv-error { color: var(--danger, #B42318); }
+.iv-avail-ok { color: var(--green-700); }
+.chip-btn { background: #fff; border-color: var(--line); color: var(--ink); }
+.chip-btn:hover { border-color: var(--green-700); color: var(--green-700); }
+.iv-dispatch-list li { border-color: var(--line); }
+.iv-step h4 { font-size: 15px; }
+.iv-step-n { font-size: 12px; font-weight: 700; }
+.iv-editor textarea, .iv-wa textarea, .chip-btn { font: inherit; }
+.chip-btn { font-size: 12px; }
+.iv-error { font-size: 13px; }
+.iv-preview-meta, .iv-dispatch-reason { font-size: 12px; }
+.iv-preview-body { font-size: 13px; line-height: 1.55; }
