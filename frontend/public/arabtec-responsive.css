@@ -763,3 +763,69 @@ table.talent-pool-table > thead > tr > th {
 }
 .talent-pool-table .datecell { white-space: normal; }
 .pool-cv-actions { display: flex; gap: 4px; margin-top: 4px; }
+
+/* Talent Pool table polish (2026-10-14): ONLY this eight-column table.
+   Header/cell alignment is stable regardless of candidate content; the entire
+   table scrolls at phone widths instead of clipping actions or dropping fields. */
+.talent-table-wrap { overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.table-wrap > table.talent-pool-table.candidates-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+table.talent-pool-table > thead > tr > th,
+table.talent-pool-table > tbody > tr > td {
+  box-sizing: border-box;
+  padding: 11px 9px;
+  text-align: left;
+  vertical-align: middle;
+  line-height: 1.4;
+  min-width: 0;
+}
+table.talent-pool-table > thead > tr > th { white-space: normal; }
+.talent-pool-table .sort-th-inner,
+.talent-pool-table .pool-candidate-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+.talent-pool-table .sort-th-inner .sort-label {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+.talent-pool-table .sort-th .sort-caret { flex: 0 0 16px; margin-left: 0; }
+.talent-pool-table .pool-candidate > div { flex: 1 1 auto; min-width: 0; }
+.talent-pool-table .pool-candidate .cell-strong {
+  display: block;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.talent-pool-table .pool-candidate .pool-status { margin: 5px 0 3px; }
+.talent-pool-table .pool-candidate .cell-sub { overflow-wrap: anywhere; }
+.talent-pool-table td[data-label="Apply Date"] .datecell { white-space: nowrap; }
+.talent-pool-table td[data-label="Request"] .pool-request-link {
+  max-width: 100%;
+  min-height: 30px;
+  gap: 2px;
+  padding: 5px 0;
+  line-height: 1.35;
+}
+.talent-pool-table .pool-cv-actions .icon-btn { flex: 0 0 auto; }
+@media (max-width: 640px) {
+  /* Override generic stacked-table behaviour ONLY for Talent Pool. */
+  .card.flush > .table-wrap.talent-table-wrap {
+    overflow-x: auto;
+    max-width: 100%;
+    scrollbar-width: thin;
+  }
+  .card.flush > .table-wrap > table.talent-pool-table.candidates-table {
+    table-layout: fixed;
+    min-width: 1080px;
+    width: 1080px;
+  }
+}
