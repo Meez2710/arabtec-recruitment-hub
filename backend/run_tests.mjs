@@ -36,6 +36,7 @@ const SUITES = [
   'assessment_team_edit_test.mjs', // audit 2026-10-05: recruitment team edits both sections; reopen/edit with reason; history
   'talent_pool_test.mjs', // exact values and scoped department filtering
   'shortlist_visibility_test.mjs', // shortlist release boundary for restricted roles
+  'cv_access_rule_test.mjs',    // CVs are for HR; outside HR only on the request after Shortlisted (15 Oct 2026)
   'release_unlink_test.mjs',    // Shortlisted release notification + Unlink (2026-10-15)
   'request_detachment_test.mjs', // request-only deletion keeps linked records (2026-10-15)
   'candidate_scope_test.mjs', // AR-01: candidate visibility follows assignment scope (API, nested data, ids, assistant tools)

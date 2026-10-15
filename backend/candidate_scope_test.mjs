@@ -177,11 +177,16 @@ try {
   c('sees no unrelated candidates', pl.status === 200 && !ids(pl).includes(unrelated) && !ids(pl).includes(assigned));
 
   console.log('\n— Broad roles keep the whole Talent Pool —');
-  for (const [who, t] of [['HR manager', hrMgr], ['HR director', hrDir], ['recruiter', recruiter], ['viewer', viewer]]) {
+  for (const [who, t] of [['HR manager', hrMgr], ['HR director', hrDir], ['recruiter', recruiter]]) {
     const l = await api('/api/candidates?pageSize=200', { token: t });
     c(`${who} lists every candidate`, [assigned, hmCand, unrelated].every((id) => ids(l).includes(id)));
     c(`${who} opens the unrelated candidate`, (await api(`/api/candidates/${unrelated}`, { token: t })).status === 200);
   }
+  // CV rule (15 Oct 2026): a read-only Viewer is outside HR. Seeing every
+  // request no longer opens every candidate and CV; it is on none of these.
+  const vl = await api('/api/candidates?pageSize=200', { token: viewer });
+  c('viewer (outside HR) lists none of the scoped candidates', vl.status === 200 && ![assigned, hmCand, unrelated].some((id) => ids(vl).includes(id)));
+  c('viewer (outside HR) cannot open the unrelated candidate', [403, 404].includes((await api(`/api/candidates/${unrelated}`, { token: viewer })).status));
   const hrDetail = await api(`/api/candidates/${assigned}`, { token: hrMgr });
   c('HR still sees every request the candidate is on', (hrDetail.json?.candidate?.links || []).some((l) => l.requestId === rSecret));
 } catch (e) { console.error(e); fail++; }

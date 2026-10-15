@@ -162,7 +162,9 @@ async function linkApp(token, reqId, name, status = 'technical_interview') {
   // interviewer is on iv2 (candId belongs to appId's candidate? No — iv2 is on appId=QA Cand=candId). Mona on iv2.
   c('interviewer sees their interview on candidate profile', (profInterviewer.json.candidate.interviews || []).some((x) => x.id === iv2));
   const profViewer = await api(`/api/candidates/${candId}`, { token: viewer });
-  c('viewer (view_all) sees interviews on profile', Array.isArray(profViewer.json.candidate.interviews));
+  // CV rule (15 Oct 2026): the read-only Viewer is outside HR and not on this
+  // request, so the candidate profile (and its CV) is not open to it.
+  c('viewer (outside HR, not on the request) cannot open the candidate profile', [403, 404].includes(profViewer.status));
 
   console.log('\n— 10. Audit coverage —');
   const audit = await api('/api/audit?pageSize=400', { token: admin });

@@ -292,8 +292,8 @@ function maybeNotifyRelease(appId, toStatus, req) {
 function requestScope(user, col = 'id') {
   if (user.permissions.includes('request.view_all')) return { where: '1=1', params: [] };
   return {
-    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=?)`,
-    params: [user.id, user.id, user.id],
+    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=? OR hiring_manager_id=?)`,
+    params: [user.id, user.id, user.id, user.id],
   };
 }
 
@@ -307,7 +307,7 @@ function canScopeRequest(user, requestId) {
   if (user.permissions.includes('request.view_all')) return true;
   if (!requestId) return false;
   const r = Requests.byId(requestId);
-  return !!r && (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id);
+  return !!r && (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id || r.hiring_manager_id === user.id);
 }
 
 router.get('/', (req, res) => {

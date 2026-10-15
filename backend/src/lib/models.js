@@ -652,7 +652,7 @@ export const Requests = {
     else if (filters.ownerId) { sql += ' AND owner_id=?'; p.push(Number(filters.ownerId)); }
     if (filters.requesterId) { sql += ' AND requester_id=?'; p.push(Number(filters.requesterId)); }
     if (filters.q) { sql += ' AND (title LIKE ? OR ticket_no LIKE ? OR discipline LIKE ?)'; const l = `%${filters.q}%`; p.push(l, l, l); }
-    if (filters.ownedOnly && filters.userId) { sql += ' AND (owner_id=? OR requester_id=? OR created_by=?)'; p.push(filters.userId, filters.userId, filters.userId); }
+    if (filters.ownedOnly && filters.userId) { sql += ' AND (owner_id=? OR requester_id=? OR created_by=? OR hiring_manager_id=?)'; p.push(filters.userId, filters.userId, filters.userId, filters.userId); }
     const sortCol = ({ created: 'created_at', priority: 'priority', title: 'title', status: 'status', target: 'target_join_date', ticket: 'ticket_no' })[filters.sort] || 'created_at';
     const dir = (filters.dir || 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
     sql += ` ORDER BY ${sortCol} ${dir}`;
@@ -967,8 +967,8 @@ export const Candidates = {
       p.push(f.departmentId);
       if (f.departmentScope) {
         const { userId, assigned } = f.departmentScope;
-        sql += ' AND (r.requester_id=? OR r.owner_id=? OR r.created_by=?';
-        p.push(userId, userId, userId);
+        sql += ' AND (r.requester_id=? OR r.owner_id=? OR r.created_by=? OR r.hiring_manager_id=?';
+        p.push(userId, userId, userId, userId);
         if (assigned) {
           sql += ` OR EXISTS (SELECT 1 FROM interview i WHERE i.application_id=a.id
             AND (i.organizer_id=? OR EXISTS (SELECT 1 FROM interview_panel ip

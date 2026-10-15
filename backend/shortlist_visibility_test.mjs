@@ -65,7 +65,10 @@ try {
   for(const role of ['hiring_manager','technical_interviewer','viewer','hr_manager']) c(role+' restricted pipeline',!hasFullPipelineAccess({roles:[role],permissions:['request.view_all']}));
   const tokens={};
   for(const [key,email] of Object.entries({recruiter:'recruiter@arabtec.com',director:'hr.director@arabtec.com',manager:'rec.manager@arabtec.com',hm:'hiring.manager@arabtec.com',interviewer:'interviewer@arabtec.com',viewer:'viewer@arabtec.com',hr:'hr.manager@arabtec.com'})) tokens[key]=await login(email);
-  for(const who of ['hm','interviewer','viewer','hr']) {
+  // CV rule (15 Oct 2026): the read-only Viewer is outside HR and on none of
+  // these requests, so it sees none of them — released or not.
+  for(const f of allFixtures) c('viewer (outside HR, not on the request) cannot open '+f.cand.full_name,[403,404].includes((await api('/api/candidates/'+f.cand.id,{token:tokens.viewer})).status));
+  for(const who of ['hm','interviewer','hr']) {
     const token=tokens[who];
     for(const f of [sourced,rejectedEarly]) {
       const detail=await api('/api/candidates/'+f.cand.id,{token});
