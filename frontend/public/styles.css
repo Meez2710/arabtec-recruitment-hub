@@ -437,6 +437,9 @@ tbody tr:hover { background: var(--surface-2); }
 @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 /* ---------------- Modal ---------------- */
+/* The overlay host and its slot in .shell carry no box of their own: they only
+   give dialogs a DOM home outside <main> (see OVERLAY_HOST in app.jsx). */
+.overlay-slot, .overlay-host { display: contents; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(20,24,28,.42); display: grid; place-items: center; z-index: 100; padding: 20px; backdrop-filter: blur(1px); }
 .modal { background: #fff; border-radius: var(--card-radius); width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-pop); }
 .modal-head { padding: 18px 22px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }

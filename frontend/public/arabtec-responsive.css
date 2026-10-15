@@ -797,7 +797,6 @@ table.talent-pool-table > thead > tr > th { white-space: normal; }
   text-overflow: clip;
 }
 .talent-pool-table .sort-th .sort-caret { flex: 0 0 16px; margin-left: 0; }
-.talent-pool-table .pool-candidate > div { flex: 1 1 auto; min-width: 0; }
 .talent-pool-table .pool-candidate .cell-strong {
   display: block;
   white-space: normal;
@@ -845,13 +844,23 @@ table.talent-pool-table.candidates-table > thead > tr > th {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 table.talent-pool-table.candidates-table .datecell { white-space: nowrap; }
-.talent-pool-table .pool-candidate { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.talent-pool-table .pool-id { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; flex: 1 1 auto; }
+.talent-pool-table .pool-candidate {
+  /* The ONLY layout rule for the table's candidate cell. Three grid tracks:
+     selection | identity (shrinks, ends in "…") | CV actions (fixed width).
+     A grid rather than flex so no broader rule can let the action track
+     shrink — a `> div { flex: 1 1 auto }` rule did, clipping Download by 10px
+     on phones — and so the icons sit at the same x on every row. */
+  display: grid; align-items: center; column-gap: 12px; min-width: 0;
+  /* 36 = selection hit area; 92 = two 44px touch icon buttons + 4px gap, reserved
+     on every row (desktop 40px buttons fit inside it, right-aligned). */
+  grid-template-columns: 36px minmax(0, 1fr) 92px;
+}
+.talent-pool-table .pool-id { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
 .talent-pool-table .pool-id .cell-sub {
   display: block; max-width: 100%; font-size: 12px; line-height: 16px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.talent-pool-table .pool-id-actions { flex: 0 0 auto; display: flex; }
+.talent-pool-table .pool-id-actions { display: flex; justify-content: flex-end; }
 .talent-pool-table .pool-id-actions .pool-cv-actions { margin-top: 0; gap: 4px; }
 
 .pool-name {

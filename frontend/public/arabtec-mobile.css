@@ -42,7 +42,8 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow-x: hidden;                 /* a wide table scrolls in its own wrap */
+  overflow-x: hidden;                 /* fallback for engines without clip */
+  overflow-x: clip;                   /* clip cannot be scrolled by focus; a wide table scrolls in its own wrap */
 }
 
 /* -------------------------------------------------------------- app bar */
@@ -600,22 +601,9 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
 .shell-phone .content, .shell-phone .content.content-phone { padding: 12px 16px calc(var(--ats-mtab-h) + var(--ats-msafe) + var(--ats-fab-size, 52px) + 16px); padding-top: calc(var(--ats-mtop-h) + 12px); }
 .shell-phone .page-head, .shell-phone .dash-head { margin-bottom: 10px; }
 .shell-phone .page-title { font-size: 19px; line-height: 1.2; }
-.shell-phone .page-head-actions, .shell-phone .dash-actions {
-  display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 10px; align-items: center;
-  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
-  margin-left: -16px; margin-right: -16px; padding: 2px 16px;
-}
-.shell-phone .page-head-actions::-webkit-scrollbar, .shell-phone .dash-actions::-webkit-scrollbar { display: none; }
-.shell-phone .page-head-actions > .btn, .shell-phone .dash-actions > .btn,
-.shell-phone .page-head-actions > .upload-cta, .shell-phone .page-head-actions > .upload-cta > .btn,
-.shell-phone .page-head-actions > .btn:only-of-type, .shell-phone .dash-actions > .btn:only-of-type {
-  width: auto; min-width: max-content; flex: 0 0 auto; min-height: 40px; padding: 0 14px; white-space: nowrap; grid-column: auto;
-}
-.shell-phone .page-head:has(+ .ask-bar) .page-head-actions > .btn, .shell-phone .page-head:has(+ .ask-bar) .upload-cta .btn { width: auto; min-width: max-content; flex: 0 0 auto; }
-.shell-phone .page-head-actions > .view-toggle { flex: 0 0 auto; display: inline-flex; grid-column: auto; }
-.shell-phone .page-head-actions > .view-toggle > * { flex: 0 0 auto; min-height: 36px; }
-.shell-phone .page-head-actions > .badge, .shell-phone .page-head-actions > .status-chip { flex: 0 0 auto; grid-column: auto; }
-.shell-phone .upload-cta-hint { display: none; }
+/* Action row: owned by section 2 above (view switch on its own row, actions
+   in a two-column grid). The horizontally scrolling strip that used to be
+   here hid actions off-screen with no affordance and has been removed. */
 
 .shell-phone .toolbar, .shell-phone .toolbar.ask-bar { margin-bottom: 10px; }
 .shell-phone .filter-toolbar > .toolbar-count { display: none; }

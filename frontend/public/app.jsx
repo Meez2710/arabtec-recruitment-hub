@@ -403,6 +403,30 @@ function ReasonModal({ title, label, confirmLabel, placeholder, onClose, onConfi
   );
 }
 
+/* ONE overlay host for every dialog and drawer (2026-10-15).
+   Dialogs used to render inside <main>, whose `isolation: isolate` traps any
+   z-index — so the phone app bar (z 72, outside <main>) painted over a
+   dialog's title and close button. Every overlay now portals into this single
+   element. Its identity never changes (so React never remounts an open
+   dialog), and <OverlaySlot/> moves it inside `.shell` once the shell is
+   mounted, so `.shell-phone …` control sizing still reaches dialog content.
+   Before sign-in it lives on <body>. */
+const OVERLAY_HOST = (typeof document !== 'undefined' && document.body)
+  ? (() => { const n = document.createElement('div'); n.className = 'overlay-host'; document.body.appendChild(n); return n; })()
+  : null;
+function toPageLevel(node) {
+  return OVERLAY_HOST && typeof ReactDOM !== 'undefined' && ReactDOM.createPortal
+    ? ReactDOM.createPortal(node, OVERLAY_HOST) : node;
+}
+function OverlaySlot() {
+  const ref = useCallback((slot) => {
+    if (!OVERLAY_HOST) return;
+    if (slot) slot.appendChild(OVERLAY_HOST);
+    else if (OVERLAY_HOST.parentNode !== document.body) document.body.appendChild(OVERLAY_HOST);
+  }, []);
+  return <div className="overlay-slot" ref={ref} />;
+}
+
 const DIALOG_FOCUS_SELECTOR = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 function dialogFocusables(dialog) {
   return dialog ? [...dialog.querySelectorAll(DIALOG_FOCUS_SELECTOR)].filter((node) => node.getClientRects().length > 0) : [];
@@ -433,7 +457,7 @@ function useDialogFocus(onClose) {
 function Modal({ title, children, onClose, footer, wide }) {
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   const titleId = useId();
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="modal" style={wide ? { maxWidth: 760 } : null}
         role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex="-1" onKeyDown={onDialogKeyDown}>
@@ -1643,145 +1667,142 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
      the same work counts, the same user. Nothing here fetches: the phone chrome
      reads what the shell already has, so it adds no request of its own.
 
-     Measured caveat, stated rather than assumed: the two chromes are different
-     element trees, so React cannot reconcile the <main> subtree across them.
-     Crossing the breakpoint on a LIVE window therefore keeps the shell (route,
-     work counts, session) but remounts the page, which reloads its own list —
-     seven requests on Hiring Requests, none of them the shell's. A phone never
-     crosses 900px; only a desktop window being dragged does, and a fresh load
-     of the page you are already on is the right outcome there. */
-  if (isPhone) {
-    return (
-      <div className="shell shell-phone">
-        <MobileAppBar
-          title={(NAV.find((n) => n.key === route) || {}).label || 'Arabtec'}
-          onMenu={() => setMobileNavOpen(true)}
-          onSearch={() => setPaletteOpen(true)}
-          onGo={go}
-        />
-
-        <MobileDrawer
-          open={mobileNavOpen}
-          onClose={() => setMobileNavOpen(false)}
-          nav={visibleNav}
-          route={route}
-          counts={counts}
-          onGo={(key) => { setMobileNavOpen(false); go(key); }}
-          user={user}
-          roleCode={roleCode}
-          branding={branding}
-          onLogout={() => { if (confirmPageExit()) onLogout(); }}
-          onChangePassword={() => { setMobileNavOpen(false); setPwdOpen(true); }}
-        />
-
-        <main id="main-content" className={'content content-phone density-' + density} tabIndex="-1">
-          <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
-          <KnowledgeLine key={route} />
-        </main>
-
-        <MobileTabBar
-          items={primaryMobile}
-          route={route}
-          counts={counts}
-          onGo={go}
-          onMore={() => setMobileNavOpen(true)}
-          moreOpen={mobileNavOpen}
-        />
-
-        {overlays}
-      </div>
-    );
-  }
-
+     The page itself is never remounted by a presentation change; see the
+     single tree below. */
+  /* ONE tree for both presentations (2026-10-15). The phone and desktop
+     chrome used to be two different element trees, so crossing 900px
+     remounted <main> and the page inside it: an open dialog, a typed draft,
+     filters, selection and focus were all lost when a window was resized or
+     a tablet rotated. Now <main> always sits at shell > .main > main, and
+     each chrome slot keeps its position (null when not shown), so React keeps
+     the page mounted and only swaps the chrome around it. */
   return (
-    <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '264px' }}>
-      <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
-        <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
-          <span className="side-mark"><Logo size={30} /></span>
-          {!collapsed && (
-            <span className="side-txt">
-              <strong>{branding?.app_name || 'Arabtec'}</strong>
-              <span>Recruitment Hub</span>
-            </span>
-          )}
-        </div>
-        <nav className="nav" aria-label="Main navigation">
-          {visibleNav.map((n, i) => {
-            if (n.section) return !collapsed && <div key={'s' + i} className="nav-section">{n.section}</div>;
-            const c = navCount(n.key, counts);
-            return (
-              <button key={n.key} className={'nav-item' + (route === n.key ? ' active' : '')}
-                onClick={() => go(n.key)} title={n.label} aria-current={route === n.key ? 'page' : undefined}>
-                <span className="nav-icon"><Icon name={n.icon} size={17} /></span>
-                {!collapsed && <span>{n.label}</span>}
-                {!collapsed && c ? <span className="nav-count">{c}</span> : null}
-              </button>
-            );
-          })}
-        </nav>
-        {!collapsed && (
-          <div className="scope-card">
-            <strong>{ROLE_NAMES[roleCode] || roleCode} scope</strong>
-            <p>{ROLE_SCOPE[roleCode] || 'Access follows your role'}. Access is enforced by your role, not by this menu.</p>
-          </div>
-        )}
-      </aside>
-
-      <div className="main">
-        <header className="topbar">
-          <button className="icon-btn menu-btn" onClick={() => setMobileNavOpen(true)} title="Open menu" aria-label="Open menu">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
-          </button>
-          <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
-            <Icon name="sidebar" size={18} />
-          </button>
-          {collapsed && <div className="tb-brand">
-            <span className="bn">
-              <strong>Recruitment Hub</strong>
-              <span>{branding?.company_name || 'Arabtec Construction'}</span>
-            </span>
-          </div>}
-          {/* Global search. Opens the Ctrl+K palette — no longer a dead placeholder. */}
-          <button type="button" className="gsearch" onClick={() => setPaletteOpen(true)}
-            title="Search candidates (Ctrl K)">
-            <Icon name="search" size={14} />
-            <span className="gsearch-label">Search candidates</span>
-            <span className="kbd">Ctrl K</span>
-          </button>
-          <div className="spacer" />
-          <NotificationBell onNavigate={go} />
-          <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
-            <div className="avatar">{initials(user.fullName)}</div>
-            <div>
-              <div className="profile-name">{user.fullName}</div>
-              <div className="profile-role">{ROLE_NAMES[roleCode] || roleCode}</div>
-            </div>
-            {menuOpen && (
-              <div className="menu" onClick={(e) => e.stopPropagation()}>
-                <div className="menu-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  <strong>{user.fullName}</strong><span className="muted">{user.email}</span>
-                </div>
-                <div style={{ borderTop: '1px solid var(--border)' }} />
-                <div className="menu-item" onClick={() => { setMenuOpen(false); setPwdOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Icon name="shield" size={15} /> Change Password
-                </div>
-                <div style={{ borderTop: '1px solid var(--border)' }} />
-                <div className="menu-item" onClick={() => { if (confirmPageExit()) onLogout(); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
-                  Logout
-                </div>
-              </div>
+    <div className={'shell' + (isPhone ? ' shell-phone' : '')}
+      style={isPhone ? undefined : { '--sidebar-w': collapsed ? '68px' : '264px' }}>
+      {isPhone ? (
+            <MobileAppBar
+              title={(NAV.find((n) => n.key === route) || {}).label || 'Arabtec'}
+              onMenu={() => setMobileNavOpen(true)}
+              onSearch={() => setPaletteOpen(true)}
+              onGo={go}
+            />
+      ) : null}
+      {isPhone ? (
+            <MobileDrawer
+              open={mobileNavOpen}
+              onClose={() => setMobileNavOpen(false)}
+              nav={visibleNav}
+              route={route}
+              counts={counts}
+              onGo={(key) => { setMobileNavOpen(false); go(key); }}
+              user={user}
+              roleCode={roleCode}
+              branding={branding}
+              onLogout={() => { if (confirmPageExit()) onLogout(); }}
+              onChangePassword={() => { setMobileNavOpen(false); setPwdOpen(true); }}
+            />
+      ) : (
+        <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
+          <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
+            <span className="side-mark"><Logo size={30} /></span>
+            {!collapsed && (
+              <span className="side-txt">
+                <strong>{branding?.app_name || 'Arabtec'}</strong>
+                <span>Recruitment Hub</span>
+              </span>
             )}
           </div>
-        </header>
-        <main id="main-content" className={'content has-dock density-' + density} tabIndex="-1">
+          <nav className="nav" aria-label="Main navigation">
+            {visibleNav.map((n, i) => {
+              if (n.section) return !collapsed && <div key={'s' + i} className="nav-section">{n.section}</div>;
+              const c = navCount(n.key, counts);
+              return (
+                <button key={n.key} className={'nav-item' + (route === n.key ? ' active' : '')}
+                  onClick={() => go(n.key)} title={n.label} aria-current={route === n.key ? 'page' : undefined}>
+                  <span className="nav-icon"><Icon name={n.icon} size={17} /></span>
+                  {!collapsed && <span>{n.label}</span>}
+                  {!collapsed && c ? <span className="nav-count">{c}</span> : null}
+                </button>
+              );
+            })}
+          </nav>
+          {!collapsed && (
+            <div className="scope-card">
+              <strong>{ROLE_NAMES[roleCode] || roleCode} scope</strong>
+              <p>{ROLE_SCOPE[roleCode] || 'Access follows your role'}. Access is enforced by your role, not by this menu.</p>
+            </div>
+          )}
+        </aside>
+      )}
+
+      <div className="main">
+        {isPhone ? null : (
+          <header className="topbar">
+            <button className="icon-btn menu-btn" onClick={() => setMobileNavOpen(true)} title="Open menu" aria-label="Open menu">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+            </button>
+            <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
+              <Icon name="sidebar" size={18} />
+            </button>
+            {collapsed && <div className="tb-brand">
+              <span className="bn">
+                <strong>Recruitment Hub</strong>
+                <span>{branding?.company_name || 'Arabtec Construction'}</span>
+              </span>
+            </div>}
+            {/* Global search. Opens the Ctrl+K palette — no longer a dead placeholder. */}
+            <button type="button" className="gsearch" onClick={() => setPaletteOpen(true)}
+              title="Search candidates (Ctrl K)">
+              <Icon name="search" size={14} />
+              <span className="gsearch-label">Search candidates</span>
+              <span className="kbd">Ctrl K</span>
+            </button>
+            <div className="spacer" />
+            <NotificationBell onNavigate={go} />
+            <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
+              <div className="avatar">{initials(user.fullName)}</div>
+              <div>
+                <div className="profile-name">{user.fullName}</div>
+                <div className="profile-role">{ROLE_NAMES[roleCode] || roleCode}</div>
+              </div>
+              {menuOpen && (
+                <div className="menu" onClick={(e) => e.stopPropagation()}>
+                  <div className="menu-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                    <strong>{user.fullName}</strong><span className="muted">{user.email}</span>
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  <div className="menu-item" onClick={() => { setMenuOpen(false); setPwdOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Icon name="shield" size={15} /> Change Password
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  <div className="menu-item" onClick={() => { if (confirmPageExit()) onLogout(); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+                    Logout
+                  </div>
+                </div>
+              )}
+            </div>
+          </header>
+        )}
+        <main id="main-content" className={'content ' + (isPhone ? 'content-phone' : 'has-dock') + ' density-' + density} tabIndex="-1">
           <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
           <KnowledgeLine key={route} />
         </main>
-
       </div>
 
+      {isPhone ? (
+            <MobileTabBar
+              items={primaryMobile}
+              route={route}
+              counts={counts}
+              onGo={go}
+              onMore={() => setMobileNavOpen(true)}
+              moreOpen={mobileNavOpen}
+            />
+      ) : null}
+
       {overlays}
+      <OverlaySlot />
     </div>
   );
 }
@@ -8035,10 +8056,8 @@ function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved, onDirtyCh
 
 // Opens the assessment from an interview the user is assigned to — the
 // Technical Interviewer's way in, without access to the hiring request.
-// Assessment drawers render at page level so no page container's stacking
-// context can put them under the phone top bar (AR-05).
-const toPageLevel = (node) => (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal && typeof document !== 'undefined' && document.body
-  ? ReactDOM.createPortal(node, document.body) : node);
+// Assessment drawers render through toPageLevel (the shared overlay host) so
+// no page container's stacking context can put them under the phone top bar (AR-05).
 function InterviewAssessmentDrawer({ applicationId, title, user, onClose }) {
   const titleId = useId();
   const assessDirty = useRef(false);
@@ -10050,7 +10069,7 @@ function CvReviewPanel({ candidateId, seed, doc, user, onClose }) {
   const sections = cvReviewDetailSections(c).map(([s, rows]) => [s, rows.filter(([, v]) => v != null && v !== '')]);
   const filled = sections.filter(([, rows]) => rows.length > 0);
 
-  return (
+  return toPageLevel(
     <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
         tabIndex="-1" onKeyDown={onDialogKeyDown}>
@@ -10154,7 +10173,7 @@ function DocumentPanel({ path, fileName, title, onClose }) {
   async function download() {
     try { await api.download(path, fileName || 'file'); } catch (e) { toast(e.message || 'Download failed', 'error'); }
   }
-  return (
+  return toPageLevel(
     <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
         tabIndex="-1" onKeyDown={onDialogKeyDown}>
@@ -10270,7 +10289,7 @@ function CvParseReviewOverlay({ rows, intake, fileUrl, fileName, mimeType, onSav
     }
   }
 
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <div className="parse-review-panel">
         <div className="parse-review-head">
@@ -12779,7 +12798,7 @@ function OfferFormModal({ application, offer, user, onClose, onSaved }) {
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   const createBlocked = !offer && !application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim()));
   const title = offer ? `Edit offer — ${offer.offerNo}` : application ? `Create offer — ${application.candidate?.fullName || ''}` : 'Create offer';
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="modal offer-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
         <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
@@ -12844,7 +12863,7 @@ function OfferLetterModal({ offer, onClose }) {
   const frameHost = useRef(null);
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   function print() { const fr = frameHost.current?.querySelector('iframe'); try { fr?.contentWindow?.print(); } catch { /* the browser's own print still works */ } }
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="modal offer-letter-modal" role="dialog" aria-modal="true" aria-label={'Offer letter ' + offer.offerNo} tabIndex="-1" onKeyDown={onDialogKeyDown}>
         <div className="modal-head"><h3>Offer letter — {offer.offerNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>

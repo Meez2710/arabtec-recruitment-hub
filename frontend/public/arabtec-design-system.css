@@ -200,11 +200,13 @@ body { color: var(--ink); font-size: 13px; line-height: 1.45; font-weight: 400; 
   overflow: visible; overflow-x: clip;
 }
 /* APPROVED WATERMARK — exactly one, bottom-right, ~3% opacity, small.
-   It sits behind everything (z-index:-1), never intercepts a pointer, and is
-   clipped by `overflow-x: clip` on .content so it cannot create page overflow. */
+   The ONLY definition of .content::before. It is anchored inside .content
+   (absolute, zero insets) so it can never extend the page's scroll width:
+   negative offsets here made every phone page 78px wider than the screen,
+   and `overflow: hidden` let focus scroll that hidden strip into view. */
 .content::before {
-  content: ''; position: fixed; z-index: -1; pointer-events: none;
-  right: -2%; bottom: -3%; width: min(34vw, 440px); height: min(46vh, 420px);
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  inset-inline-end: 0; inset-block-end: 0; width: min(34vw, 440px); height: min(46vh, 420px);
   background: url('/arabtec-watermark.webp') no-repeat right bottom / contain;
   opacity: .03; filter: none;
 }
@@ -933,7 +935,7 @@ body:has(.modal-overlay) .more-sheet { display: none; }
   .action-item .btn { grid-column: 1 / -1; width: 100%; }
   .role-row { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
   .role-row > div:last-child { text-align: left !important; display: flex; align-items: center; gap: 12px; }
-  .content::before { right: -20vw; width: 108vw; height: 34vh; opacity: .025; }
+  .content::before { width: min(100%, 420px); height: 34vh; opacity: .025; }
   .toolbar { padding: 10px; }
   .modal { border-radius: 18px; max-height: 92vh; }
   .cand-grid, .ats-card-grid { grid-template-columns: 1fr; }

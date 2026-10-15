@@ -606,14 +606,18 @@
   }
 
   function Modal({ title, children, onClose, footer }) {
-    return (
+    // Same overlay host as the app's dialogs (see OVERLAY_HOST in app.jsx), so the
+    // dialog is never trapped under the phone app bar by <main>'s stacking context.
+    const host = document.querySelector('.overlay-host') || document.body;
+    return ReactDOM.createPortal(
       <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="modal" style={{ maxWidth: 520 }} role="dialog" aria-modal="true">
           <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}>{'✕'}</button></div>
           <div className="modal-body">{children}</div>
           {footer && <div className="modal-foot">{footer}</div>}
         </div>
-      </div>
+      </div>,
+      host
     );
   }
 

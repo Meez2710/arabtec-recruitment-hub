@@ -91,9 +91,18 @@ rule('R13 headers, toolbars and tabs never stack as bordered surfaces above the 
   assert.match(ds, /\.toolbar, \.toolbar\.ask-bar \{ background: transparent; border-color: transparent; \}/);
   assert.match(jsx, /className="card profile-shell"/); assert.match(jsx, /className="card card-pad profile-overview"/);
 });
-rule('R14 the phone shell has its own composition: one scrolling action row, no count chip in the filter bar, one board stage per screen', () => {
-  const mb = css['arabtec-mobile.css'].slice(css['arabtec-mobile.css'].indexOf('PHONE COMPOSITION SYSTEM'));
-  assert.match(mb, /\.shell-phone \.page-head-actions, \.shell-phone \.dash-actions \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/s);
+rule('R14 the phone shell has its own composition: every page action visible (no hidden scrolling strip), no count chip in the filter bar, one board stage per screen', () => {
+  const m = css['arabtec-mobile.css'];
+  const mb = m.slice(m.indexOf('PHONE COMPOSITION SYSTEM'));
+  // 2026-10-15: the action row used to be a nowrap, overflow-x:auto strip with
+  // its scrollbar hidden — "Add manually", "Scheduling Setup" and others sat
+  // off-screen with no affordance (measured at 320/390/640 in WebKit and
+  // Chromium). The row is now section 2's grid: view switch on its own row,
+  // actions in two columns, nothing scrolls out of sight.
+  assert.match(m, /\.shell-phone \.page-head-actions,\n\.shell-phone \.dash-actions \{\n  display: grid;\n  grid-template-columns: 1fr 1fr;/, 'the action row is a two-column grid');
+  assert.match(m, /\.shell-phone \.page-head-actions > \.view-toggle \{\n  grid-column: 1 \/ -1;/, 'the view switch takes its own row');
+  assert.doesNotMatch(m, /\.page-head-actions[^{}]*\{[^}]*overflow-x: auto/s, 'no rule turns the action row back into a hidden scrolling strip');
+  assert.doesNotMatch(m, /\.page-head-actions[^{}]*\{[^}]*flex-wrap: nowrap/s, 'no rule stops the action row from wrapping');
   assert.match(mb, /\.shell-phone \.filter-toolbar > \.toolbar-count \{ display: none; \}/);
   assert.match(mb, /\.shell-phone \.kanban \{[^}]*scroll-snap-type: x mandatory;/s);
   assert.match(mb, /\.shell-phone \.kan-col \{[^}]*flex: 0 0 84%;[^}]*scroll-snap-align: start;/s);

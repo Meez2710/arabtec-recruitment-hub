@@ -168,7 +168,6 @@
 /* Reserve the launcher corner only on shells that actually render the dock. */
 .content { padding: var(--sp-page-y) var(--sp-page-x); }
 .content.has-dock { padding-bottom: 104px; }
-.content::before { position: absolute; bottom: 0; }
 
 /* -------------------------------------------------------- 3. navigation */
 .nav-item {
@@ -320,6 +319,25 @@ input:not([type]), .gsearch input, .cmdk input {
 .field textarea, textarea {
   border-radius: var(--cl-r-md);
   padding: var(--cl-4); min-height: 96px; line-height: 1.55; font-size: 14px;
+}
+/* Single-value selects draw their own box (2026-10-15). WebKit — Safari and
+   every iOS browser — ignores min-height and padding on a select painted with
+   the native menulist appearance and sizes it from its font: 21px next to the
+   40/44px inputs it sits beside. With the native appearance off, the select
+   obeys the same control height as every other field in every engine; the
+   chevron replaces the native arrow and the right padding keeps text off it.
+   Multi-row selects (`multiple` / `size`) keep their native list box. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2352606D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right var(--sp-2) center; background-size: 16px 16px;
+  padding-right: var(--sp-6);
+}
+.bulk-bar select:not([multiple]):not([size]) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+/* High-contrast / forced-colours mode may drop the chevron image; give the
+   select its native arrow back there so it still reads as a dropdown. */
+@media (forced-colors: active) {
+  select:not([multiple]):not([size]) { -webkit-appearance: menulist; appearance: auto; background-image: none; padding-right: var(--cl-4); }
 }
 .field { gap: var(--cl-2); }
 .field label, .field > span {
@@ -1336,7 +1354,10 @@ section.card:has(> .cvi-status) > .cvi-status { padding: 0 0 var(--sp-3); gap: v
 }
 
 /* R-e — candidate cards: wider columns, one stacked text column. */
-.cand-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); }
+/* min(320px, 100%): a card column never asks for more than the space it has.
+   A bare 320px minimum loads after the phone rules and overrode them, pushing
+   every card 16px past a 320px screen (2026-10-15). */
+.cand-grid { grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: var(--sp-3); }
 .cand-card { padding: var(--sp-4); gap: var(--sp-3); }
 .cand-card .cc-face { grid-template-columns: 40px minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); }
 .cand-card .cc-avatar { grid-row: auto; width: 40px; height: 40px; }
