@@ -7,13 +7,19 @@ ck(){ printf '%-44s' "$1"; shift; if "$@" >/dev/null 2>&1; then echo PASS; else 
 
 echo "=== services ==="
 ck "arabtec-ats active"          systemctl is-active --quiet arabtec-ats
-ck "cv-scan timer armed"         systemctl is-active --quiet arabtec-cv-scan.timer
+# CV intake is either the folder scan or (on 10.20.0.9 since 12 Oct 2026) the
+# Microsoft 365 sync that replaced it; either timer counts.
+ck "CV intake timer armed"       bash -c 'systemctl is-active --quiet arabtec-cv-scan.timer || systemctl is-active --quiet arabtec-m365-sync.timer'
 ck "backup timer armed"          systemctl is-active --quiet arabtec-ats-backup.timer
 ck "apache active"               systemctl is-active --quiet apache2
 
 echo "=== deployed commit ==="
 BUILT=$(cat /opt/arabtec-ats/DEPLOYED_SHA 2>/dev/null)
-HEAD=$(sudo -u arabtec-ats git -C /opt/arabtec-ats rev-parse HEAD 2>/dev/null)
+# Read HEAD as the user the service actually runs as (`ats` on 10.20.0.9; the
+# original install used `arabtec-ats`, which does not exist there).
+SVC_USER=$(systemctl show -p User --value arabtec-ats 2>/dev/null); SVC_USER=${SVC_USER:-arabtec-ats}
+if [ "$SVC_USER" = "$(id -un)" ]; then HEAD=$(git -C /opt/arabtec-ats rev-parse HEAD 2>/dev/null)
+else HEAD=$(sudo -u "$SVC_USER" git -C /opt/arabtec-ats rev-parse HEAD 2>/dev/null); fi
 printf '%-44s' "running tree == the tree that was built"
 [ -n "$BUILT" ] && [ "$BUILT" = "$HEAD" ] && echo "PASS ($HEAD)" || { echo "FAIL (built=$BUILT head=$HEAD)"; fail=1; }
 
@@ -54,6 +60,6 @@ sudo bash -c 'ls /var/backups/arabtec-ats/*.dump >/dev/null 2>&1' \
   && echo PASS || echo "PENDING (first run is 02:00 Africa/Cairo — or run backup.sh once by hand)"
 
 echo; echo "=== next scheduled jobs ==="
-systemctl list-timers arabtec-cv-scan.timer arabtec-ats-backup.timer --no-pager 2>/dev/null | sed -n '1,4p'
+systemctl list-timers arabtec-cv-scan.timer arabtec-m365-sync.timer arabtec-ats-backup.timer --no-pager 2>/dev/null | sed -n '1,4p'
 
 echo; [ $fail -eq 0 ] && echo "VERIFY OK" || { echo "VERIFY FAILED — do not cut over"; exit 1; }
