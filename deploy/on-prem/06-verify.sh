@@ -27,11 +27,14 @@ echo
 echo "=== the SPA is really being served (not just a 200) ==="
 # index.html is returned with HTTP 200 for ANY unknown path, so a status code
 # proves nothing. Assert on content instead.
+# `grep -c`, not `grep -q`: -q exits at the first match while curl is still
+# writing an ~800 KB bundle; curl then dies with exit 23 and `pipefail` turned a
+# real match into FAIL ("app.jsx is the real bundle", 15 Oct 2026).
 printf '%-44s' "design-system stylesheet is real"
-curl -fsS --max-time 10 "$URL/arabtec-design-system.css" | grep -qi "design system" \
+curl -fsS --max-time 10 "$URL/arabtec-design-system.css" | grep -ci "design system" >/dev/null \
   && echo PASS || { echo "FAIL (got the SPA fallback, not the stylesheet)"; fail=1; }
 printf '%-44s' "app.jsx is the real bundle"
-curl -fsS --max-time 15 "$URL/app.jsx" | grep -q "function App" \
+curl -fsS --max-time 15 "$URL/app.jsx" | grep -c "function App" >/dev/null \
   && echo PASS || { echo "FAIL (fallback or wrong build)"; fail=1; }
 
 echo; echo "=== storage is persistent and private ==="
