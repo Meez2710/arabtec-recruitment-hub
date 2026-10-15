@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { hasFullPipelineAccess } from '../lib/pipeline-visibility.js';
 import { visibleCandidateIds } from '../lib/candidate-scope.js';
 import { applicationVisibilitySql } from '../lib/pipeline-visibility.js';
 import {
@@ -186,7 +187,7 @@ function serialize(r, user, { withDetail = false } = {}) {
     out.hiringManager = hm ? { id: hm.id, name: hm.full_name } : null;
     out.seats = Seats.forRequest(r.id);
     out.approvals = Approvals.forRequest(r.id);
-    out.activity = RequestActivity.forRequest(r.id);
+    out.activity = RequestActivity.forRequest(r.id).filter(a => hasFullPipelineAccess(user) || !['candidate_linked', 'candidate_unlinked'].includes(a.type));
   }
   return out;
 }
@@ -885,54 +886,33 @@ router.post('/:id/suggest-candidates', requirePermission('candidate.view'), asyn
 });
 
 
-/* ===================== DELETE =====================
-   The `request.delete` permission and its button have existed since the first
-   release; the endpoint never did, so the button had nothing to call. This is
-   it.
-
-   Deliberately heavy. Every table that references a request cascades, so this
-   destroys the applications, interviews, offers, seats, approvals, activity and
-   the whole ticket conversation along with it. Closing or cancelling is almost
-   always what someone actually wants — deletion is for records raised in error.
-   Hence: an explicit permission, a written reason, an acknowledgement of the
-   blast radius when there is one, and an audit entry written first. */
+/* Request-only permanent erasure. Linked rows are retained by ON DELETE SET NULL.
+   The global auth boundary restricts deletion and impact previews to System Admin. */
 router.get('/:id/delete-impact', requirePermission('request.delete'), (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
-  const cascaded = HardDelete.requestCounts(r.id);
-  res.json({
-    ticketNo: r.ticket_no, title: r.title, status: r.status, cascaded,
-    // A request nobody has worked yet is the safe case. Anything else is not.
-    destructive: cascaded.applications > 0 || cascaded.interviews > 0 || cascaded.offers > 0,
-  });
+  res.json({ ticketNo: r.ticket_no, title: r.title, status: r.status,
+    detached: HardDelete.requestCounts(r.id), destructive: false, mode: 'request_only' });
 });
 
 router.delete('/:id', requirePermission('request.delete'), (req, res) => {
-  const r = Requests.byId(Number(req.params.id));
-  if (!r) return res.status(404).json({ error: 'Request not found.' });
-
-  const body = req.body || {};
-  const reason = String(body.reason || '').trim();
+  if (!Requests.byId(Number(req.params.id))) return res.status(404).json({ error: 'Request not found.' });
+  const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ error: 'A reason is required to delete a request.' });
-
-  const cascaded = HardDelete.requestCounts(r.id);
-  const destructive = cascaded.applications > 0 || cascaded.interviews > 0 || cascaded.offers > 0;
-  // Refuse to quietly destroy real work. The caller must say it understands what
-  // goes with it — a confirm dialog the API enforces rather than trusts the UI for.
-  if (destructive && body.acknowledgeCascade !== true) {
-    return res.status(409).json({
-      error: 'This request has linked records. Confirm the cascade to delete it.',
-      code: 'CASCADE_NOT_ACKNOWLEDGED', cascaded,
-    });
-  }
-
-  writeAudit(req, {
-    action: 'request.deleted', entityType: 'recruitment_request', entityId: r.id,
-    oldValue: { ticketNo: r.ticket_no, title: r.title, status: r.status, headcount: r.headcount, cascaded },
-    comments: reason,
+  const result = tx(() => {
+    const r = Requests.byId(Number(req.params.id));
+    if (!r) return null;
+    const detached = HardDelete.requestCounts(r.id);
+    writeAudit(req, {
+      action: 'request.deleted', entityType: 'recruitment_request', entityId: r.id,
+      oldValue: { ticketNo: r.ticket_no, title: r.title, status: r.status, detached },
+      comments: reason,
+    }, { strict: true });
+    HardDelete.request(r.id);
+    return { deleted: true, ticketNo: r.ticket_no, detached, mode: 'request_only' };
   });
-  HardDelete.request(r.id);
-  res.json({ deleted: true, ticketNo: r.ticket_no, cascaded });
+  if (!result) return res.status(404).json({ error: 'Request not found.' });
+  res.json(result);
 });
 
 export default router;

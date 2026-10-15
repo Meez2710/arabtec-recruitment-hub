@@ -271,7 +271,11 @@ function colorWithAlpha(hex, alpha) {
 const AppCtx = createContext(null);
 const useApp = () => useContext(AppCtx);
 
-function can(user, perm) { return user?.permissions?.includes(perm); }
+function isSystemAdmin(user) { return !!user?.roles?.includes('system_admin'); }
+function can(user, perm) {
+  if (perm?.endsWith('.delete') && !isSystemAdmin(user)) return false;
+  return user?.permissions?.includes(perm);
+}
 
 /* ----------------------------- Display formatters -----------------------------
    DISPLAY ONLY. These never touch stored values, API payloads, search params or
@@ -1519,7 +1523,15 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
   const EmailSettingsPage = window.ArabtecEmailSettingsPage;
   const CvIntakePage = window.ArabtecCvIntakePage;
-  const Page = {
+  // One guard for every route, using the same rule as the menu. Typed or
+  // bookmarked links (#control, #audit, #roles…) must not render a page the
+  // menu hides; the server already refuses the data, this stops the empty
+  // shell and its 403 errors.
+  const routeDef = NAV.find((n) => n.key === route);
+  const routeAllowed = !routeDef || (
+    (!routeDef.broadCandidates || hasBroadCandidateAccess(user))
+    && (routeDef.anyPerm ? routeDef.anyPerm.some((p) => can(user, p)) : (!routeDef.perm || can(user, routeDef.perm))));
+  const RoutePage = {
     dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} initialFilters={route === 'requests' ? routeParams : null} />,
@@ -1562,6 +1574,8 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       : <Forbidden what="Assessment Settings" need="System Admin" />,
     audit: <AuditPage user={user} />,
   }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />;
+  // Pages that already guard themselves keep their more specific message.
+  const Page = routeAllowed || RoutePage?.type === Forbidden ? RoutePage : <Forbidden what={routeDef.label} />;
 
   // What anyhelp is looking at. Kept deliberately small: the dock never claims
   // more context than the page actually has. RequestDetail publishes the open
@@ -3442,7 +3456,7 @@ function UsersPage({ user }) {
           action={<button className="btn" onClick={load}>Retry</button>} />
           : !users ? <Skeleton /> : users.length === 0 ? <Empty text="No users found." /> : (
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Job Title</th><th>Role(s)</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Job Title</th><th>Role(s)</th><th>Status</th><th>Last Login</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
@@ -3825,7 +3839,7 @@ function ProjectsPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Project</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No projects yet." /> : (
-          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Sites</th><th>PM</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Sites</th><th>PM</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>{rows.map((p) => (
               <tr key={p.id}><td data-label="Code"><strong>{p.code}</strong></td><td data-label="Name">{p.name}</td><td data-label="Client">{p.clientName || '—'}</td><td data-label="Location">{p.location || '—'}</td>
                 <td data-label="Status"><StatusBadge status={p.status} /></td><td data-label="Sites">{p.siteCount}</td><td data-label="PM">{p.projectManager?.name || '—'}</td>
@@ -3852,7 +3866,7 @@ function SitesPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Site</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No sites yet." /> : (
-          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Project</th><th>Location</th><th>Status</th><th>Site Manager</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Project</th><th>Location</th><th>Status</th><th>Site Manager</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>{rows.map((s) => (
               <tr key={s.id}><td data-label="Code"><strong>{s.code}</strong></td><td data-label="Name">{s.name}</td><td data-label="Project">{s.project?.name || '—'}</td><td data-label="Location">{s.location || '—'}</td>
                 <td data-label="Status"><StatusBadge status={s.status} /></td><td data-label="Site Manager">{s.siteManager?.name || '—'}</td>
@@ -3879,7 +3893,7 @@ function DepartmentsPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Department</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No departments yet." /> : (
-          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Head</th><th>Status</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Head</th><th>Status</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>{rows.map((d) => (
               <tr key={d.id}><td data-label="Code"><strong>{d.code}</strong></td><td data-label="Name">{d.name}</td><td data-label="Head">{d.head?.name || '—'}</td>
                 <td data-label="Status"><StatusBadge status={d.status} /></td>
@@ -3980,14 +3994,14 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
   const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
-    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(isSystemAdmin(user) ? [['request-deletion', 'Delete request']] : []), ...(isSystemAdmin(user) && can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
         sub="Super-admin control of the whole app: turn buttons on/off, choose which notifications and emails go out and to whom, upload the logo, show or hide any built-in field, and add your own custom fields." />
-      <div className="control-tabs">
+      <div className="control-tabs" role="tablist" aria-label="Control Center sections">
         {TABS.map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} className={'control-tab' + (tab === k ? ' active' : '')}>{label}</button>
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={'control-tab' + (tab === k ? ' active' : '')}>{label}</button>
         ))}
       </div>
       {tab === 'buttons' && <ButtonsPanel user={user} />}
@@ -3997,8 +4011,56 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
       {tab === 'fields' && <BuiltinFieldsPanel user={user} />}
       {tab === 'custom' && <CustomFieldsPanel user={user} />}
       {tab === 'knowledge' && <KnowledgeLinesPanel />}
+      {tab === 'request-deletion' && isSystemAdmin(user) && <RequestDeletionPanel user={user} />}
     </div>
   );
+}
+
+// Request-only deletion is deliberately kept in the System Admin control surface.
+function RequestDeletionPanel({ user }) {
+  const [rows, setRows] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [impact, setImpact] = useState(null);
+  const [reason, setReason] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const toast = useToast();
+  const load = useCallback(() => api.get('/requests').then(r => setRows(r.requests || [])).catch(e => setError(e.message)), []);
+  useEffect(() => { if (isSystemAdmin(user)) load(); }, [user, load]);
+  if (!isSystemAdmin(user)) return null;
+  async function review(row) {
+    setSelected(null); setImpact(null); setReason(''); setConfirmation(''); setError(''); setBusy(true);
+    try { const result = await api.get(`/requests/${row.id}/delete-impact`); setSelected(row); setImpact(result); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  async function removeRequest() {
+    if (!selected || !impact || !reason.trim() || confirmation !== selected.ticketNo) return;
+    setBusy(true); setError('');
+    try {
+      await api.call(`/requests/${selected.id}`, { method: 'DELETE', body: { reason: reason.trim() } });
+      setSelected(null); setImpact(null); toast('Request deleted. Linked records preserved.'); await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  return <div className="card card-pad">
+    <h3>Delete request permanently</h3>
+    <p>The request is permanently erased. Candidates, applications, interviews, offers, documents and history are preserved; their request link is removed.</p>
+    {error && <div role="alert" className="form-error">{error}</div>}
+    <div className="field"><label htmlFor="delete-request-choice">Request</label>
+      <select id="delete-request-choice" disabled={busy} value={selected?.id || ''} onChange={e => { const row = rows.find(r => r.id === Number(e.target.value)); if (row) review(row); else { setSelected(null); setImpact(null); } }}>
+        <option value="">Choose a request to review</option>
+        {rows.map(r => <option key={r.id} value={r.id}>{r.ticketNo} — {r.title} ({r.status})</option>)}
+      </select>
+    </div>
+    {selected && impact && <>
+      {/* Only what is actually linked; zero counts are noise. */}
+      <p>{(() => { const kept = Object.entries(impact.detached || {}).filter(([, v]) => v > 0);
+        return kept.length ? `${kept.map(([k, v]) => `${v} ${k}`).join(' · ')} will be preserved.` : 'No linked records. Only the request itself will be erased.'; })()}</p>
+      <div className="field"><label htmlFor="delete-request-reason">Reason</label><textarea id="delete-request-reason" value={reason} onChange={e => setReason(e.target.value)} disabled={busy} /></div>
+      <div className="field"><label htmlFor="delete-request-confirm">Type {selected.ticketNo} to confirm permanent deletion</label><input id="delete-request-confirm" autoComplete="off" value={confirmation} onChange={e => setConfirmation(e.target.value)} disabled={busy} /></div>
+      <button className="btn btn-danger" disabled={busy || !reason.trim() || confirmation !== selected.ticketNo} onClick={removeRequest}>{busy ? 'Deleting…' : 'Permanently delete request only'}</button>
+    </>}
+  </div>;
 }
 
 // --- Knowledge lines panel ---
@@ -4367,11 +4429,13 @@ function NotificationsPanel({ user }) {
                   return (
                     <tr key={n.eventKey} style={busy ? { opacity: .55 } : null}>
                       <td data-label="Event">
+                        {/* Two fixed lines: label, then one clamped line (full text on hover).
+                            The candidate-facing warning stays visible as words, inline. */}
                         <span className="cell-strong">{n.label}</span>
-                        <span className="cell-sub">{n.description}</span>
-                        {n.externalRecipients.length > 0 && n.enabled && n.email && (
-                          <span className="badge badge-warning" style={{ marginTop: 6 }}>Reaches candidates</span>
-                        )}
+                        <span className="cell-sub notif-desc" title={n.description}>
+                          {n.externalRecipients.length > 0 && n.enabled && n.email && <span className="notif-ext">Reaches candidates · </span>}
+                          {n.description}
+                        </span>
                       </td>
                       <td data-label="On" className="notif-tick">
                         <input type="checkbox" checked={n.enabled} disabled={!canEdit || busy}
@@ -4448,7 +4512,7 @@ function BrandingLogoPanel({ user, branding, refreshBranding }) {
           <div>
             <label className="btn btn-sm" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (hasLogo ? 'Replace Logo' : '+ Upload Logo')}
               <input type="file" style={{ display: 'none' }} accept=".png,.jpg,.jpeg,.svg" onChange={uploadLogo} disabled={busy} /></label>
-            {hasLogo && <button className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={removeLogo} disabled={busy}>Remove</button>}
+            {hasLogo && isSystemAdmin(user) && <button className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={removeLogo} disabled={busy}>Remove</button>}
             <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>PNG, JPG or SVG. Shown app-wide and on the login screen.</div>
           </div>
         </div>
@@ -4574,7 +4638,7 @@ function CustomFieldsPanel({ user }) {
         </div>
       )}
       {!fields ? <Skeleton rows={4} /> : fields.length === 0 ? <Empty art="none-yet" text="No custom fields yet. Add one above." /> : (
-        <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Visible</th><th></th></tr></thead>
+        <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Visible</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{fields.map((cf) => (
             <tr key={cf.fieldKey}>
               <td><strong>{cf.label}</strong></td>
@@ -4582,7 +4646,7 @@ function CustomFieldsPanel({ user }) {
               <td><span className="chip">{cf.fieldType}</span></td>
               <td><input type="checkbox" checked={cf.required} onChange={(e) => toggle(cf.fieldKey, { required: e.target.checked })} /></td>
               <td><input type="checkbox" checked={cf.visible} onChange={(e) => toggle(cf.fieldKey, { visible: e.target.checked })} /></td>
-              <td><button className="btn btn-sm btn-ghost" onClick={() => remove(cf.fieldKey)}>Delete</button></td>
+              <td>{isSystemAdmin(user) && <button className="btn btn-sm btn-ghost" onClick={() => remove(cf.fieldKey)}>Delete</button>}</td>
             </tr>
           ))}</tbody></table>
       )}
@@ -5125,7 +5189,7 @@ function AuditPage({ user }) {
       </div>
       <div className="card">
         {!data ? <Skeleton /> : data.logs.length === 0 ? <Empty art="none-yet" text="No audit entries match." /> : (
-          <table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Comments</th><th></th></tr></thead>
+          <table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Comments</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{data.logs.map((l) => (
               <tr key={l.id}><td className="muted">{fmtDate(l.occurredAt)}</td><td>{l.actorName || '—'}<div className="muted">{l.actorRole || ''}</div></td>
                 <td><span className="chip">{l.action}</span></td><td>{l.entityType}{l.entityId ? ' #' + l.entityId : ''}</td>
@@ -5342,9 +5406,9 @@ function RequestsControlPanel({ all, rstat, onPick, onAssign }) {
   const overdue = all.filter((r) => isOpenReq(r) && r.status !== 'pending_approval' && (r.health || {}).level === 'red');
   return (
     <section className="req-control" aria-label="Hiring process and recruiters">
-      <div className="req-process" role="list" aria-label="Hiring process">
+      <div className="req-process" role="group" aria-label="Hiring process — filter requests by stage">
         {REQ_FOCUS.map(([k, label], i) => (
-          <button key={k} type="button" role="listitem" className="req-step" onClick={() => onPick({ focus: k })}>
+          <button key={k} type="button" className="req-step" onClick={() => onPick({ focus: k })}>
             <span className="req-step-n">{count(k)}</span><span className="req-step-l">{label}</span>{i < REQ_FOCUS.length - 1 && <span className="req-step-arrow" aria-hidden="true">›</span>}
           </button>
         ))}
@@ -5519,7 +5583,13 @@ function RequestsPage({ user, initialFilters }) {
     filters.departmentId && ['departmentId', `Department: ${(meta.departments.find((x) => String(x.id) === String(filters.departmentId)) || {}).name || filters.departmentId}`, () => setFilters((f) => ({ ...f, departmentId: '' }))],
     filters.focus && ['focus', `Stage: ${(REQ_FOCUS.find(([k]) => k === filters.focus) || [])[1] || filters.focus}`, () => setFilters((f) => ({ ...f, focus: '' }))],
   ].filter(Boolean);
-  const pick = (patch) => setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+  // A chip/KPI/“Show” sets a filter on the list below the fold; bring the list
+  // into view so the click visibly does something (owner audit 2026-10-15).
+  const listTopRef = useRef(null);
+  const pick = (patch) => {
+    setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+    setTimeout(() => listTopRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 60);
+  };
   const unassign = async (r) => {
     if (!window.confirm(`Remove ${r.owner?.name || 'the recruiter'} from ${shortReqCode(r.ticketNo)}? The request stays open with no recruiter until someone is assigned.`)) return;
     try { await api.post(`/requests/${r.id}/unassign`, {}); toast(`Recruiter removed from ${shortReqCode(r.ticketNo)}`); load(); loadPanels(); }
@@ -5545,6 +5615,7 @@ function RequestsPage({ user, initialFilters }) {
         </div>
       )}
 
+      <div ref={listTopRef} className="scroll-anchor" aria-hidden="true" />
       <FilterToolbar activeCount={activeChips.length} search={<input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />}>
         <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
@@ -5831,7 +5902,7 @@ function AiShortlistTab({ request, user }) {
               <th>Candidate</th>
               <th>Why</th>
               <th>Not evidenced</th>
-              <th style={{ width: 96 }}></th>
+              <th style={{ width: 96 }}><span className="sr-only">Actions</span></th>
             </tr></thead>
             <tbody>
               {list.map((s) => (
@@ -6568,12 +6639,26 @@ function pipelineStage(status) {
   if (s.column === 6) return 'hired';
   return status;
 }
+// Mirror of backend/src/lib/stages.js APP_TRANSITIONS. The board used to offer
+// any forward jump (Sourced → Offer / Hired) and the server refused most of
+// them, so menu actions "did nothing". Keep the two tables identical.
+const APP_TRANSITIONS_API = {
+  sourced: ['shortlisted', 'rejected', 'on_hold'],
+  matched: ['shortlisted', 'interviewing', 'unmatched', 'rejected', 'on_hold'],
+  shortlisted: ['interviewing', 'matched', 'rejected', 'on_hold'],
+  unmatched: ['matched', 'shortlisted', 'rejected', 'on_hold'],
+  interviewing: ['waiting_feedback', 'issuing_offer', 'rejected', 'on_hold', 'shortlisted'],
+  waiting_feedback: ['issuing_offer', 'interviewing', 'rejected', 'on_hold', 'shortlisted'],
+  issuing_offer: ['offer_sent', 'rejected', 'offer_declined', 'on_hold'],
+  offer_sent: ['joined', 'offer_declined', 'rejected', 'on_hold'],
+  on_hold: ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'rejected'],
+};
+const LINK_ENTRY_STAGES = ['sourced', 'shortlisted'];
 function canPipelineMove(status, target) {
-  if (!APP_STATUS[status] || TERMINAL_APP.includes(status) || isDisqualified(status)) return false;
-  if (REASON_STATUSES.includes(target)) return true;
-  const from = APP_ORDER.indexOf(pipelineStage(status));
-  const to = APP_ORDER.indexOf(target);
-  return from >= 0 && to > from;
+  if (!APP_STATUS[status] || TERMINAL_APP.includes(status)) return false;
+  const from = APP_TRANSITIONS_API[status] ? status : toApiStatus(pipelineStage(status));
+  const to = toApiStatus(target);
+  return from !== to && (APP_TRANSITIONS_API[from] || []).includes(to);
 }
 function pipelineResidualLabel(status) {
   const column = pipelineStage(status);
@@ -6660,6 +6745,7 @@ function RequestPipeline({ request, user, btns }) {
   const [bulkConfirm, setBulkConfirm] = useState(null); // { go, sum } when hidden rows are part of the move
 
   const load = useCallback(async () => { setLoadError(null); try { setApps((await api.get('/applications/request/' + request.id)).applications); } catch (e) { setLoadError(e.message); } }, [request.id]);
+  const [askUnlink, unlinkModal] = useUnlinkFlow(user, load);
   useEffect(() => { load(); }, [load]);
 
   // Apply candidate search/filter/sort to the loaded applications.
@@ -6703,7 +6789,12 @@ function RequestPipeline({ request, user, btns }) {
   }
   function requestMove(appId, status) {
     const app = (apps || []).find(a => a.id === appId);
-    if (!canMove || pending.has(appId) || !app || !canPipelineMove(app.status, status)) return;
+    if (!canMove || pending.has(appId) || !app) return;
+    if (!canPipelineMove(app.status, status)) {   // say why instead of silently snapping back
+      const from = (APP_STATUS[pipelineStage(app.status)] || {}).label || app.status, to = (APP_STATUS[status] || {}).label || status;
+      toast(`${from} → ${to} is not an allowed move.${pipelineStage(app.status) === 'sourced' ? ' Shortlist the candidate first.' : ''}`, 'error');
+      return;
+    }
     if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
     else move(appId, status);
   }
@@ -6812,7 +6903,7 @@ function RequestPipeline({ request, user, btns }) {
                   <div className="kan-body">
                     {items.length === 0
                       ? <div className="kan-empty">No candidates at this stage</div>
-                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
+                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
                   </div>
                 </PipelineColumn>
               );
@@ -6820,11 +6911,11 @@ function RequestPipeline({ request, user, btns }) {
           </div>
         ) : view === 'list' ? (
           <div className="pipe-list">
-            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
+            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
           </div>
         ) : (
           <div className="card" style={{ overflowX: 'auto' }}><table>
-            <thead><tr>{canBulk && <th></th>}<th>Candidate</th><th>Employer / Project</th><th>Exp</th><th>Education</th><th>Match</th><th>Stage</th><th>Recruiter</th><th>Next Action</th><th>Last Update</th><th></th></tr></thead>
+            <thead><tr>{canBulk && <th><span className="sr-only">Select</span></th>}<th>Candidate</th><th>Employer / Project</th><th>Exp</th><th>Education</th><th>Match</th><th>Stage</th><th>Recruiter</th><th>Next Action</th><th>Last Update</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{visibleApps.map((a) => (
               <tr key={a.id} className={pending.has(a.id) ? 'row-pending' : ''} aria-busy={pending.has(a.id)}>
                 {canBulk && <td><input type="checkbox" checked={selected.has(a.id)} disabled={pending.has(a.id)} onChange={() => toggleSel(a.id)} /></td>}
@@ -6850,6 +6941,7 @@ function RequestPipeline({ request, user, btns }) {
       {noteApp && <NextActionModal app={noteApp} onClose={() => setNoteApp(null)} onSaved={() => { setNoteApp(null); load(); }} />}
       {moveModal && <Confirm title="Provide a reason" message={`Set status to "${APP_STATUS[moveModal.toStatus].label}". This is recorded in the audit trail.`} requireReason danger
         onConfirm={(reason) => { const m = moveModal; setMoveModal(null); m.bulk ? bulkMove(m.toStatus, reason) : move(m.appIds[0], m.toStatus, reason); }} onClose={() => setMoveModal(null)} />}
+      {unlinkModal}
       {linkOpen && <LinkCandidateModal requestId={request.id} user={user} onClose={() => setLinkOpen(false)} onLinked={() => { setLinkOpen(false); load(); }} />}
       {importOpen && <ImportCvsModal request={request} onClose={() => setImportOpen(false)} onDone={load} />}
       {scheduleApp && <ScheduleInterviewModal application={scheduleApp} onClose={() => setScheduleApp(null)} onScheduled={() => { setScheduleApp(null); load(); }} />}
@@ -6858,10 +6950,16 @@ function RequestPipeline({ request, user, btns }) {
   );
 }
 
+// Shows the candidate's real stage and offers only the moves the server accepts
+// (it used to show "Sourced" for a Screening candidate and offer every stage,
+// silently ignoring the ones that were not allowed).
 function StageSelect({ value, onChange, disabled }) {
-  return <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
+  const current = pipelineStage(value);
+  const options = [current, ...APP_ORDER.filter((s) => s !== current && canPipelineMove(value, s))];
+  return <select value={current} disabled={disabled || options.length < 2} aria-label="Move to stage"
+    onChange={(e) => { if (e.target.value !== current) onChange(e.target.value); }}
     style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}>
-    {APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>;
+    {options.map((s) => <option key={s} value={s}>{(APP_STATUS[s] || {}).label || s}</option>)}</select>;
 }
 
 function NextActionModal({ app, onClose, onSaved }) {
@@ -6894,7 +6992,25 @@ function cvReviewOpener(user, app) {
   if (!id || !can(user, 'candidate.view')) return null;
   return () => openCvReview(id, app.candidate || null);
 }
-function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, onReviewCv, btns = {}, showRequest }) {
+// Unlink = undo a link (owner request 2026-10-15). Recruitment only; the server
+// refuses once interviews/offers exist and says to use Disqualify instead.
+function useUnlinkFlow(user, reload) {
+  const toast = useToast();
+  const [target, setTarget] = useState(null);
+  const allowed = hasFullPipelineAccess(user) && can(user, 'candidate.link');
+  const ask = allowed ? (app) => setTarget(app) : null;
+  const modal = target && <Confirm title="Unlink from request"
+    message={`Remove ${target.candidate?.fullName || 'this candidate'} from ${shortReqCode(target.request?.ticketNo || target.ticketNo) || 'this request'}? They go back to the Talent Pool. No rejection is recorded and nothing is sent to the candidate.`}
+    confirmLabel="Unlink"
+    onConfirm={async (reason) => {
+      const a = target; setTarget(null);
+      try { await api.post(`/applications/${a.id}/unlink`, { reason }); toast('Unlinked — the candidate is back in the Talent Pool.'); await reload(); }
+      catch (e) { toast(moveErrorText(e), 'error'); }
+    }}
+    onClose={() => setTarget(null)} />;
+  return [ask, modal];
+}
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, onReviewCv, onUnlink, btns = {}, showRequest }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null), triggerRef = useRef(null);
@@ -6905,11 +7021,44 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
   useEffect(() => { if (pending) setMenu(false); }, [pending]);
   useEffect(() => {
     if (!menu) return;
-    menuRef.current?.querySelector('button')?.focus();
     const close = e => { if (!menuRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target)) setMenu(false); };
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [menu]);
+  // The menu renders at page level (portal) so the scrolling board can never
+  // crop it (owner report 2026-10-15: Disqualify was cut off). It opens below
+  // the trigger, flips above when there is more room there, stays clear of the
+  // phone tab bar, and scrolls inside itself if it is still taller than the space.
+  const [menuPos, setMenuPos] = useState(null);
+  useEffect(() => {
+    if (!menu) { setMenuPos(null); return; }
+    const place = () => {
+      const t = triggerRef.current; if (!t) return;
+      const r = t.getBoundingClientRect();
+      const vh = window.innerHeight, vw = window.innerWidth, w = Math.min(220, vw - 16);
+      const bar = document.querySelector('.mtab')?.parentElement?.getBoundingClientRect();
+      const floor = bar && bar.top > vh / 2 ? bar.top - 8 : vh - 8;
+      const h = menuRef.current ? menuRef.current.scrollHeight : 0;
+      const below = floor - r.bottom - 6, above = r.top - 8 - 6;
+      let top, maxHeight;
+      if (h <= below) { top = r.bottom + 6; maxHeight = below; }            // fits below the trigger
+      else if (h <= above) { top = r.top - 6 - h; maxHeight = above; }      // fits above it
+      else {                                                                 // fits neither (phone): use the full height
+        maxHeight = floor - 16; top = Math.max(8, floor - 8 - Math.min(h, maxHeight));
+      }
+      setMenuPos({ left: Math.min(Math.max(8, r.right - w), vw - w - 8), top, width: w, maxHeight: Math.max(120, maxHeight) });
+    };
+    place();
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(place) : null;
+    window.addEventListener('resize', place); window.addEventListener('scroll', place, true);
+    return () => { if (raf != null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(raf); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [menu]);
+  // Focus moves into the menu once it is placed (it is invisible until then,
+  // and an invisible element cannot take focus — Escape would not reach it).
+  useEffect(() => {
+    if (menu && menuPos && menuRef.current && !menuRef.current.contains(document.activeElement)) menuRef.current.querySelector('button')?.focus();
+  }, [menu, menuPos]);
+  const unlinkable = !!onUnlink && ['sourced', 'shortlisted', 'matched', 'unmatched', 'on_hold'].includes(app.status);
   function action(run) { setMenu(false); triggerRef.current?.focus(); run(); }
   function menuKeys(e) {
     const items = [...menuRef.current.querySelectorAll('button')];
@@ -6932,8 +7081,10 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
         <span className="pcard-role" title={[cand.currentPosition, cand.currentCompany].filter(Boolean).join(' · ')}>{[cand.currentPosition, cand.currentCompany].filter(Boolean).join(' · ') || '—'}</span>
       </div>
       <div className="pcard-actions">
-        <button ref={triggerRef} className="icon-btn pcard-menu-trigger" disabled={pending} aria-label={`Actions for ${cand.fullName || 'candidate'}`} aria-expanded={menu} aria-controls={menuId} aria-haspopup="menu" onClick={() => setMenu(v => !v)}><Icon name="more" size={18} /></button>
-        {menu && <div ref={menuRef} id={menuId} className="menu pipeline-menu" role="menu" onKeyDown={menuKeys}
+        <button ref={triggerRef} className="icon-btn pcard-menu-trigger" disabled={pending} aria-label={`Actions for ${cand.fullName || 'candidate'}`} aria-expanded={menu} aria-controls={menuId} aria-haspopup="menu" onClick={() => setMenu(v => !v)} onKeyDown={e => { if (e.key === 'Escape' && menu) { e.preventDefault(); e.stopPropagation(); setMenu(false); } }}><Icon name="more" size={18} /></button>
+        {menu && toPageLevel(<div ref={menuRef} id={menuId} className="menu pipeline-menu pipeline-menu-floating" role="menu" onKeyDown={menuKeys}
+          style={menuPos ? { position: 'fixed', left: menuPos.left, top: menuPos.top, width: menuPos.width, maxHeight: menuPos.maxHeight, right: 'auto', marginTop: 0 } : { position: 'fixed', visibility: 'hidden', top: 0, left: 0 }}
+          onClick={e => e.stopPropagation()}
           onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget) && e.relatedTarget !== triggerRef.current) setMenu(false); }}>
           <button className="menu-item" role="menuitem" onClick={() => action(onView)}>View candidate</button>
           {onReviewCv && <button className="menu-item" role="menuitem" onClick={() => action(onReviewCv)}>Review CV</button>}
@@ -6942,8 +7093,9 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
           {movable && <button className="menu-item" role="menuitem" onClick={() => action(() => onMove('on_hold'))}>Put On Hold</button>}
           {movable && onSchedule && btns.schedule_interview?.visible && <button className="menu-item" role="menuitem" onClick={() => action(onSchedule)}>Schedule Interview</button>}
           {movable && onOffer && btns.generate_offer?.visible && <button className="menu-item" role="menuitem" onClick={() => action(onOffer)}>Generate Offer</button>}
+          {unlinkable && <button className="menu-item" role="menuitem" onClick={() => action(onUnlink)}>Unlink from request</button>}
           {movable && <button className="menu-item menu-danger" role="menuitem" onClick={() => action(() => onMove('rejected'))}>Disqualify</button>}
-        </div>}
+        </div>)}
       </div>
     </div>
     {showRequest && (app.request?.ticketNo || app.ticketNo) && <span className="pcard-request" title={app.request?.ticketNo || app.ticketNo}>{shortReqCode(app.request?.ticketNo || app.ticketNo)}</span>}
@@ -6989,6 +7141,7 @@ function TalentPipeline({
   const [total, setTotal] = useState(0);
   const [capped, setCapped] = useState(false);
   const canMove = btns.move_stage?.visible;
+  const [askUnlink, unlinkModal] = useUnlinkFlow(user, () => load());
   const load = useCallback(async () => {
     setApps(null); setLoadError(null);
     try {
@@ -7017,7 +7170,12 @@ function TalentPipeline({
   }
   function requestMove(appId, status) {
     const app = (apps || []).find(a => a.id === appId);
-    if (!canMove || pending.has(appId) || !app || !canPipelineMove(app.status, status)) return;
+    if (!canMove || pending.has(appId) || !app) return;
+    if (!canPipelineMove(app.status, status)) {   // say why instead of silently snapping back
+      const from = (APP_STATUS[pipelineStage(app.status)] || {}).label || app.status, to = (APP_STATUS[status] || {}).label || status;
+      toast(`${from} → ${to} is not an allowed move.${pipelineStage(app.status) === 'sourced' ? ' Shortlist the candidate first.' : ''}`, 'error');
+      return;
+    }
     if (REASON_STATUSES.includes(status)) setMoveModal({ appId, toStatus: status });
     else move(appId, status);
   }
@@ -7094,7 +7252,7 @@ function TalentPipeline({
                   <div className="pcard-top">
                     <span className="pcard-av">{initials(c.fullName)}</span>
                     <div className="pcard-id">
-                      <span className="pcard-name">{c.fullName}</span>
+                      <span className="pcard-name" title={c.fullName}>{shortName(c.fullName)}</span>
                       <span className="pcard-role">{c.currentPosition || '—'}</span>
                     </div>
                   </div>
@@ -7122,6 +7280,7 @@ function TalentPipeline({
                       onView={() => onOpenCandidate(a.candidate?.id || a.candidateId)}
                       onMove={(s) => requestMove(a.id, s)}
                       onReviewCv={cvReviewOpener(user, a)}
+                      onUnlink={askUnlink ? () => askUnlink(a) : null}
                       btns={btns} />
                   ))}
               </div>
@@ -7132,6 +7291,7 @@ function TalentPipeline({
       {moveModal && <Confirm title="Provide a reason" message={`Set status to "${APP_STATUS[moveModal.toStatus].label}". This is recorded in the audit trail.`} requireReason danger
         onConfirm={(reason) => { const m = moveModal; setMoveModal(null); move(m.appId, m.toStatus, reason); }}
         onClose={() => setMoveModal(null)} />}
+      {unlinkModal}
     </div>
   );
 }
@@ -8247,7 +8407,7 @@ function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
         </div>
       )}
       <div className="form-grid" style={{ marginTop: 12 }}>
-        <div className="field"><label>Initial Status</label><select value={sel.initialStatus} onChange={(e) => setSel((s) => ({ ...s, initialStatus: e.target.value }))}>{APP_ORDER.slice(0, 10).map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select></div>
+        <div className="field"><label>Initial Status</label><select value={sel.initialStatus} onChange={(e) => setSel((s) => ({ ...s, initialStatus: e.target.value }))}>{LINK_ENTRY_STAGES.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select></div>
         <div className="field"><label>Match Score (0–100)</label><input type="number" min="0" max="100" value={sel.matchScore} onChange={(e) => setSel((s) => ({ ...s, matchScore: e.target.value }))} /></div>
         <div className="field"><label>Source</label><input value={sel.source} onChange={(e) => setSel((s) => ({ ...s, source: e.target.value }))} placeholder="referral, agency…" /></div>
       </div>
@@ -8422,10 +8582,18 @@ function RequestPickList({ candidate, requests, q, setQ, picked, setPicked }) {
 // `rejected` (reason-required, terminal) is what frees the 409.
 async function relinkToRequest(candidateId, fromLink, dest) {
   if (fromLink && fromLink.applicationId) {
-    await api.post(`/applications/${fromLink.applicationId}/move`, {
-      status: 'rejected',
-      reason: `Moved to ${dest.ticketNo} (${dest.title})`,
-    });
+    // Prefer Unlink: moving someone between requests is not a rejection and must
+    // never email the candidate one. Once interviews/offers exist the old record
+    // is kept, closed as Rejected with the move as its reason.
+    try {
+      await api.post(`/applications/${fromLink.applicationId}/unlink`, { reason: `Moved to ${dest.ticketNo} (${dest.title})` });
+    } catch (e) {
+      if (!/Disqualify|interview|offer|unlink/i.test(String(e && e.message))) throw e;
+      await api.post(`/applications/${fromLink.applicationId}/move`, {
+        status: 'rejected',
+        reason: `Moved to ${dest.ticketNo} (${dest.title})`,
+      });
+    }
   }
   return api.post('/applications', { candidateId, requestId: dest.id });
 }
@@ -8765,15 +8933,30 @@ const POOL_STATUS = {
   new: 'New', considered: 'Previously Considered', shortlisted: 'Previously Shortlisted',
   blacklisted: 'Blacklisted', unknown: 'Unknown',
 };
+const poolKey = (status) => (Object.hasOwn(POOL_STATUS, status) ? status : 'unknown');
+// List display rule: first two words of the name, capped in length, so a
+// five-part name never breaks the layout. Full name stays in the tooltip, for
+// screen readers, and on the profile itself.
+const NAME_MAX = 22;
+function shortName(full) {
+  const two = String(full || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+  if (!two) return '—';
+  return two.length > NAME_MAX ? two.slice(0, NAME_MAX - 1).trimEnd() + '…' : two;
+}
+// The candidate's name carries the status as its tint (rendered inline in the
+// Talent Pool table). Colour is never the only signal: hover shows it, and the
+// full name plus status are read by screen readers.
+// Legend swatches are drawn exactly like the names they explain.
 function PoolStatusBadge({ status }) {
-  const key = Object.hasOwn(POOL_STATUS, status) ? status : 'unknown';
-  return <span className={'pool-status pool-status-' + key}>{POOL_STATUS[key]}</span>;
+  const key = poolKey(status);
+  return <span className={'pool-name pool-name-' + key}><span className="pool-name-text">{POOL_STATUS[key]}</span></span>;
 }
 function PoolStatusGuide() {
   const badges = Object.keys(POOL_STATUS).map((key) => <PoolStatusBadge key={key} status={key} />);
   return <div className="pool-status-guide">
+    <span className="pool-status-caption pool-status-desktop-caption">Name colour</span>
     <div className="pool-status-desktop" aria-label="Candidate status legend">{badges}</div>
-    <details className="pool-status-mobile"><summary>Status Guide</summary><div>{badges}</div></details>
+    <details className="pool-status-mobile"><summary>Name colour</summary><div>{badges}</div></details>
   </div>;
 }
 
@@ -9362,10 +9545,18 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     <input type="checkbox" aria-label={`Select ${c.fullName}`}
                       checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
                   </label>
-                  <div><span className="cell-strong">{c.fullName}</span>
-                    <PoolStatusBadge status={c.poolStatus} />
-                    <span className="cell-sub">{c.candidateNo}</span>
-                    {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
+                  {/* The name IS the status: one tinted pill, explained once by the
+                      legend above. Two fixed lines (name, id) keep every row level. */}
+                  <div className="pool-id">
+                    <span className={'pool-name pool-name-' + poolKey(c.poolStatus)} title={`${c.fullName} — ${POOL_STATUS[poolKey(c.poolStatus)]}`}>
+                      <span className="pool-name-text" aria-hidden="true">{shortName(c.fullName)}</span>
+                      <span className="sr-only"><span>{c.fullName}</span>, {POOL_STATUS[poolKey(c.poolStatus)]}</span>
+                    </span>
+                    <span className="cell-sub" title={[c.candidateNo, ...(c.tags || [])].join(' · ')}>
+                      {[c.candidateNo, ...(c.tags || []).slice(0, 2)].join(' · ')}
+                    </span>
+                  </div>
+                  <div className="pool-id-actions">
                     {c.hasResume && <div className="pool-cv-actions" onClick={(e) => e.stopPropagation()}>
                       <button className="icon-btn" aria-label={`Review CV for ${c.fullName}`}
                         onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
@@ -9374,22 +9565,27 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     </div>}
                   </div>
                 </div></td>
-                <td data-label="Position">{c.currentPosition || '—'}</td>
-                <td data-label="University">{c.university || '—'}</td>
+                <td data-label="Position" title={c.currentPosition || ''}>{c.currentPosition || '—'}</td>
+                <td data-label="University" title={c.university || ''}>{c.university || '—'}</td>
                 <td data-label="Year">{c.graduationYear ?? '—'}</td>
-                <td data-label="Location">{c.location || '—'}</td>
+                <td data-label="Location" title={c.location || ''}>{c.location || '—'}</td>
                 <td data-label="Apply Date" title={c.applyDateSource === 'application_email' ? 'Original application email received' : 'Candidate creation date'}>
                   <DateCell value={c.applyDate} dateOnly />
                 </td>
                 <td data-label="Ranking (10)"><span className="muted">Not scored</span></td>
                 <td data-label="Request" onClick={(e) => e.stopPropagation()}>
-                  {(c.links || []).filter((l) => l.requestId && l.requestTitle).length
-                    ? c.links.filter((l) => l.requestId && l.requestTitle).map((l) =>
-                      <button key={l.applicationId} className="pool-request-link"
-                        onClick={() => openRequest(l.requestId, onNavigate)}>
-                        <span>{shortReqCode(l.ticketNo)}</span><span>{l.requestTitle}</span>
-                      </button>)
-                    : <span className="muted">—</span>}
+                  {(() => {
+                    // One request per row (two fixed lines); any further links are counted, not stacked.
+                    const reqLinks = (c.links || []).filter((l) => l.requestId && l.requestTitle);
+                    if (!reqLinks.length) return <span className="muted">—</span>;
+                    const [l, ...more] = reqLinks;
+                    const all = reqLinks.map((x) => `${shortReqCode(x.ticketNo)} — ${x.requestTitle}`).join('\n');
+                    return <button className="pool-request-link" title={all}
+                      onClick={() => openRequest(l.requestId, onNavigate)}>
+                      <span className="pool-req-code">{shortReqCode(l.ticketNo)}{more.length ? ` +${more.length}` : ''}</span>
+                      <span className="pool-req-title">{l.requestTitle}</span>
+                    </button>;
+                  })()}
                 </td>
               </tr>
             ))}</tbody>
@@ -9415,8 +9611,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <div className="cc-face">
                 <div className="cc-avatar">{initials(c.fullName)}</div>
                 <div className="cc-id">
-                  <div className="cc-name">
-                    {c.fullName}
+                  <div className="cc-name" title={c.fullName}>
+                    {shortName(c.fullName)}
                     <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} />
                   </div>
                   <div className="cc-headline">{c.currentPosition || '—'}</div>
@@ -9441,7 +9637,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     grid keeps the dashes, which hold card heights level. */}
                 <div className={'cc-uni' + (!c.university && !c.major ? ' is-empty' : '')}>
                   <div className="cc-uni-name" title={c.university || ''}>{c.university || '—'}</div>
-                  <div className="cc-uni-major" title={c.major || ''}>{c.major || '—'}</div>
+                  <div className={'cc-uni-major' + (!c.major ? ' is-empty' : '')} title={c.major || ''}>{c.major || '—'}</div>
                 </div>
               </div>
               <div className="cc-foot">
@@ -10773,6 +10969,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
 }
 // GDPR/PDPL controls on the candidate profile — consent, data export, erasure.
 function CandidatePrivacyTab({ c, onChanged }) {
+  const { user } = useApp();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const erased = c.candidateState === 'erased';
@@ -10810,7 +11007,7 @@ function CandidatePrivacyTab({ c, onChanged }) {
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('given')}>Mark consent given</button>
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('withdrawn')}>Mark consent withdrawn</button>
           <button className="btn btn-secondary" onClick={exportData}>Export data (JSON)</button>
-          <button className="btn btn-danger" disabled={busy} onClick={erase}>Erase personal data…</button>
+          {isSystemAdmin(user) && <button className="btn btn-danger" disabled={busy} onClick={erase}>Erase personal data…</button>}
         </div>
       )}
       {erased && <div style={{ marginTop: 20 }}><button className="btn btn-secondary" onClick={exportData}>Export retained record</button></div>}
@@ -10963,7 +11160,7 @@ async function ensureApplication(candidateId, requestId) {
   const r = await api.get(`/candidates/${candidateId}`);
   const live = (r.candidate?.applications || []).find((a) => Number(a.requestId) === Number(requestId) && !APP_CLOSED.includes(a.status));
   if (live) return live.id;
-  const created = await api.post('/applications', { candidateId, requestId, initialStatus: 'matched' });
+  const created = await api.post('/applications', { candidateId, requestId, initialStatus: 'shortlisted' });   // an interview involves stakeholders: release at Shortlisted
   return created.application.id;
 }
 

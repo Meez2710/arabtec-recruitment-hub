@@ -1,3 +1,4 @@
+// 2026-10-15 owner rule: Sourced → Shortlisted → Screening (Shortlisted cannot be skipped).
 // Phase 3 QA edge-case suite — overfill, double-count, masking, RBAC, dedup,
 // reason rules, separation, independent applications, all 16 statuses.
 process.env.DATABASE_URL = 'file:/tmp/arabtec_p3qa.db';
@@ -40,7 +41,7 @@ async function linkCandidate(token, requestId, name, contact) {
 }
 // Walk an application from 'sourced' up to 'offer_sent' (one valid hop short of 'joined').
 async function driveToOfferSent(token, appId) {
-  for (const st of ['matched', 'interviewing', 'issuing_offer', 'offer_sent']) {
+  for (const st of ['shortlisted', 'matched', 'interviewing', 'issuing_offer', 'offer_sent']) {
     await api(`/api/applications/${appId}/move`, { method: 'POST', token, body: { status: st } });
   }
 }
@@ -62,14 +63,14 @@ async function driveToOfferSent(token, appId) {
   // Reason-required stages (rejected, offer_declined, on_hold, unmatched) carry a reason on that hop.
   const PATHS = [
     ['sourced', []],
-    ['matched', ['matched']],
+    ['matched', ['shortlisted', 'matched']],
     ['shortlisted', ['shortlisted']],
-    ['interviewing', ['matched', 'interviewing']],
-    ['waiting_feedback', ['matched', 'interviewing', 'waiting_feedback']],
-    ['issuing_offer', ['matched', 'interviewing', 'issuing_offer']],
-    ['offer_sent', ['matched', 'interviewing', 'issuing_offer', 'offer_sent']],
-    ['offer_declined', ['matched', 'interviewing', 'issuing_offer', 'offer_declined']],
-    ['joined', ['matched', 'interviewing', 'issuing_offer', 'offer_sent', 'joined']],
+    ['interviewing', ['shortlisted', 'matched', 'interviewing']],
+    ['waiting_feedback', ['shortlisted', 'matched', 'interviewing', 'waiting_feedback']],
+    ['issuing_offer', ['shortlisted', 'matched', 'interviewing', 'issuing_offer']],
+    ['offer_sent', ['shortlisted', 'matched', 'interviewing', 'issuing_offer', 'offer_sent']],
+    ['offer_declined', ['shortlisted', 'matched', 'interviewing', 'issuing_offer', 'offer_declined']],
+    ['joined', ['shortlisted', 'matched', 'interviewing', 'issuing_offer', 'offer_sent', 'joined']],
     ['rejected', ['rejected']],
     ['on_hold', ['on_hold']],
   ];
@@ -105,8 +106,8 @@ async function driveToOfferSent(token, appId) {
   const REASON_CASES = [
     ['rejected', []],
     ['on_hold', []],
-    ['unmatched', []],
-    ['offer_declined', ['matched', 'interviewing', 'issuing_offer']],
+    ['unmatched', ['shortlisted', 'matched']],
+    ['offer_declined', ['shortlisted', 'matched', 'interviewing', 'issuing_offer']],
   ];
   for (const [st, setup] of REASON_CASES) {
     const { appId } = await linkCandidate(recruiter, reqU, 'R_' + st, { phone: '+2011' + Math.floor(Math.random() * 1e8) });

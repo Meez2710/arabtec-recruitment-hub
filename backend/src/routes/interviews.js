@@ -69,7 +69,10 @@ function ownsRequest(user, requestId) {
   return !!r && (r.requester_id === user.id || r.owner_id === user.id || r.created_by === user.id);
 }
 function canViewInterview(user, iv) {
-  if (!hasFullPipelineAccess(user) && !canSeeApplicationStage(user, { id: iv.application_id })) return false;
+  // The Shortlisted release rule is about an APPLICATION's stage. A standalone
+  // interview has no application, so it must not be refused here — the panel /
+  // organizer / request-owner checks below decide (panelists were getting 403).
+  if (iv.application_id && !hasFullPipelineAccess(user) && !canSeeApplicationStage(user, { id: iv.application_id })) return false;
   if (canViewAll(user)) return true;
   if (!user.permissions.includes('interview.view_assigned')) return false;
   if (iv.organizer_id === user.id) return true;

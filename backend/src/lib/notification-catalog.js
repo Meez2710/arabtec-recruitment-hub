@@ -124,6 +124,18 @@ export const NOTIFICATION_EVENTS = [
     defaults: { enabled: false, inApp: false, email: true, recipients: ['candidate'] },
   },
 
+  {
+    // Owner rule (2026-10-15): Shortlisted is the release point. Linking a
+    // candidate and all Sourcing work stay private to Recruitment; stakeholders
+    // are told once, when the candidate first reaches a stage they can see.
+    key: 'candidate.shortlisted', label: 'Candidate shortlisted', category: 'Candidates',
+    description: 'Tells the request\'s stakeholders when a candidate is shortlisted — the first point '
+      + 'they can see the candidate. Linking and Sourcing never notify anyone outside Recruitment.',
+    template: null,
+    // In-app on; email off so a bulk shortlist cannot flood an inbox. One tick enables email.
+    defaults: { enabled: true, inApp: true, email: false, recipients: ['requester', 'hiring_manager', 'panel'] },
+  },
+
   // ------------------------------------------------------------- interviews
   {
     key: 'interview.scheduled', label: 'Interview scheduled', category: 'Interviews',

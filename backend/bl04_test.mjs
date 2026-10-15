@@ -1,3 +1,4 @@
+// 2026-10-15 owner rule: Sourced → Shortlisted → Screening (Shortlisted cannot be skipped).
 // BL-04 — reopening a requisition restores usable capacity, atomically.
 //
 //   node --experimental-sqlite bl04_test.mjs
@@ -88,7 +89,7 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
     const app = (await api('/api/applications', {
       method: 'POST', token: recruiter, body: { candidateId: cand, requestId: reqId },
     })).json.application.id;
-    for (const st of ['matched', 'interviewing', 'issuing_offer', 'offer_sent', 'joined']) {
+    for (const st of ['shortlisted', 'matched', 'interviewing', 'issuing_offer', 'offer_sent', 'joined']) {
       await api(`/api/applications/${app}/move`, { method: 'POST', token: recruiter, body: { status: st, reason: 'test' } });
     }
     return app;

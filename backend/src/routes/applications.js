@@ -3,9 +3,9 @@ import {
   Applications, Candidates, Requests, Seats, StageHistory, CandidateActivity, RequestActivity,
   Users, Projects, SystemSettings, RejectReasons, Posts,
 } from '../lib/models.js';
-import { tx } from '../lib/db.js';
+import { tx, get as dbGet, all as dbAll2, run as dbRun } from '../lib/db.js';
 import { applicationScopeClause, applicationScopeFilter } from '../lib/candidate-scope.js';
-import { hasFullPipelineAccess, visibleStageHistory } from '../lib/pipeline-visibility.js';
+import { hasFullPipelineAccess, visibleStageHistory, isReleasedStatus, isFirstRelease } from '../lib/pipeline-visibility.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
@@ -252,8 +252,38 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
     vars: { candidateName: candidate.full_name, position: (() => { try { return Requests.byId(requestId)?.title; } catch { return null; } })() },
     title: 'Application received',
   });
+  maybeNotifyRelease(created.id, created.status, req);   // linked directly as Shortlisted
   res.status(201).json({ application: appOut(created, req.user) });
 });
+
+/**
+ * Owner rule (2026-10-15): Shortlisted is the release point. Linking and every
+ * Sourcing move are private to Recruitment; the request's stakeholders hear
+ * about a candidate exactly once — the first time the application reaches a
+ * stage they may see. Call AFTER the history row is written and outside any
+ * transaction (a notification must never roll back a move).
+ */
+function maybeNotifyRelease(appId, toStatus, req) {
+  try {
+    if (!isReleasedStatus(toStatus) || !isFirstRelease(appId)) return null;
+    const a = Applications.byId(appId); if (!a || !a.request_id) return null;
+    const r = Requests.byId(a.request_id); const candidate = Candidates.byId(a.candidate_id);
+    if (!r || !candidate) return null;
+    const panel = dbAll2(`SELECT DISTINCT u.* FROM interview_panel p JOIN interview i ON i.id=p.interview_id
+      JOIN users u ON u.id=p.interviewer_id WHERE i.application_id=?`, [a.id]);
+    return notifyEvent('candidate.shortlisted', {
+      actor: req.user,
+      requester: r.requester_id ? Users.byId(r.requester_id) : null,
+      owner: r.owner_id ? Users.byId(r.owner_id) : null,
+      hiringManager: r.hiring_manager_id ? Users.byId(r.hiring_manager_id) : null,
+      panel,
+      linkType: 'request', linkId: r.id,
+      vars: { candidateName: candidate.full_name, ticketNo: r.ticket_no, position: r.title },
+      title: `Candidate shortlisted — ${r.ticket_no}`,
+      body: `${candidate.full_name} has been shortlisted for ${r.title} (${r.ticket_no}).`,
+    });
+  } catch (e) { console.error('release notification failed:', e.message); return null; }
+}
 
 /* ---------------- GLOBAL application listing (Phase 2 Talent Pool) ----------------
    Registered BEFORE '/:id' so the literal path segment is not read as an id. */
@@ -404,8 +434,51 @@ router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) =
     return res.json({ application: appOut(Applications.byId(a.id), req.user) });
   }
   performMove(a, toStatus, req, reasonField ? reason : null);
+  maybeNotifyRelease(a.id, toStatus, req);
   const outcome = maybeNotifyRejection(a, toStatus, req);
   res.json({ application: appOut(Applications.byId(a.id), req.user), ...(outcome ? { rejectionEmail: outcome } : {}) });
+});
+
+/* ---------------- UNLINK (undo a link) ----------------
+   Owner request (2026-10-15). Removes the candidate from this request and
+   returns them to the Talent Pool WITHOUT recording a rejection: no candidate
+   email, no "rejected" outcome on their history. Recruitment only, and only
+   before the hiring trail starts — once an interview, offer, assessment or
+   final decision exists, Disqualify (which keeps that record) is the action.
+   The audit entry keeps a full snapshot of what was removed. */
+const UNLINKABLE = [APP.SOURCED, APP.SHORTLISTED, APP.MATCHED, APP.UNMATCHED, APP.ON_HOLD];
+router.post('/:id/unlink', requirePermission('candidate.link'), (req, res) => {
+  if (!hasFullPipelineAccess(req.user)) return res.status(403).json({ error: 'Only the recruitment team can unlink candidates.' });
+  const a = Applications.byId(Number(req.params.id));
+  if (!a || !applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
+  const status = appNorm(a.status);
+  if (!UNLINKABLE.includes(status)) {
+    return res.status(409).json({ error: `A candidate at ${APP_LABELS[status] || status} cannot be unlinked. Use Disqualify so the record is kept.`, code: 'NOT_UNLINKABLE' });
+  }
+  const count = (sql) => Number(dbGet(sql, [a.id])?.n || 0);
+  const trail = {
+    interviews: count('SELECT COUNT(*) AS n FROM interview WHERE application_id=?'),
+    offers: count('SELECT COUNT(*) AS n FROM offer WHERE application_id=?'),
+    assessments: count('SELECT COUNT(*) AS n FROM application_assessment WHERE application_id=?'),
+    decisions: count('SELECT COUNT(*) AS n FROM application_final_decision WHERE application_id=?'),
+  };
+  if (trail.interviews || trail.offers || trail.assessments || trail.decisions) {
+    return res.status(409).json({ error: 'This candidate already has interviews, offers or assessments on this request. Use Disqualify so the record is kept.', code: 'HAS_HIRING_TRAIL', trail });
+  }
+  const candidate = Candidates.byId(a.candidate_id);
+  const request = Requests.byId(a.request_id);
+  const reason = String((req.body || {}).reason || '').trim() || null;
+  tx(() => {
+    writeAudit(req, {
+      action: 'application.unlinked', entityType: 'application', entityId: a.id,
+      oldValue: { applicationNo: a.application_no, candidateId: a.candidate_id, requestId: a.request_id, status, history: StageHistory.forApplication(a.id) },
+      comments: reason,
+    }, { strict: true });
+    dbRun('DELETE FROM application WHERE id=?', [a.id]);   // history/activity rows for it cascade; notes/posts are kept (SET NULL)
+    if (request) RequestActivity.add(request.id, req.user, 'candidate_unlinked', { note: `${candidate ? candidate.full_name : 'Candidate'} unlinked (${a.application_no})${reason ? ` — ${reason}` : ''}` });
+    if (candidate) CandidateActivity.add({ candidateId: candidate.id, applicationId: null, actorId: req.user.id, actorName: req.user.fullName, type: 'application_unlinked', note: `Unlinked from ${request ? request.ticket_no : 'request'}${reason ? ` — ${reason}` : ''}` });
+  });
+  res.json({ unlinked: true, candidateId: a.candidate_id, requestId: a.request_id });
 });
 
 /* ---------------- SET next action (recruiter workspace) ---------------- */
@@ -472,6 +545,7 @@ router.post('/bulk', requirePermission('application.bulk_action'), (req, res) =>
         continue;
       }
       performMove(a, status, req, reasonField ? reason : null); affected++;
+      maybeNotifyRelease(a.id, status, req);
     } else if (action === 'assign' && recruiterId) {
       Applications.setRecruiter(a.id, Number(recruiterId)); affected++;
     } else { skipped.push({ id, reason: 'unknown_action' }); }

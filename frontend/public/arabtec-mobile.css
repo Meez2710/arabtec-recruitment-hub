@@ -466,6 +466,7 @@ body:has(.mdrawer-scrim) .mtabbar { display: none; }
    On a phone they took two rows of every auto-ingested card to say so. The
    desktop grid keeps them — there they hold card heights level. */
 .shell-phone .cand-card .cc-uni.is-empty,
+.shell-phone .cand-card .cc-uni-major.is-empty,
 .shell-phone .cand-card .cc-grad.missing {
   display: none;
 }

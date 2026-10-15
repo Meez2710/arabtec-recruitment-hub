@@ -61,11 +61,20 @@ const unwrap = (tree) => tree && tree.type === 'div' && /\bdash-root\b/.test(tre
 let passed=0;
 async function check(name,run){await run();passed++;console.log(`  ✓ ${name}`);}
 
-await check('all board transitions are forward-only; hired, joined and disqualified cards are locked',()=>{
-  const order=get('APP_ORDER'), canMove=get('canPipelineMove');
-  for(let i=0;i<order.length;i++)for(let j=0;j<order.length;j++)assert.equal(canMove(order[i],order[j]),j>i);
-  for(const status of ['hired','joined','rejected','offer_declined','on_hold','unrecognized'])
+// 2026-10-15: the board used to allow any forward jump while the server allowed
+// only specific hops, so menu moves were offered and then refused. The board's
+// rule must now equal the server's rule for every pair of stages.
+const { appCanMove } = await import('./src/lib/stages.js');
+await check('board moves match the server transition table exactly; finished cards are locked',()=>{
+  const order=get('APP_ORDER'), canMove=get('canPipelineMove'), write=get('APP_WRITE');
+  const api=(s)=>write[s]||s;
+  const live=['sourced','shortlisted','matched','unmatched','interviewing','waiting_feedback','issuing_offer','offer_sent','on_hold'];
+  for(const from of live)for(const target of [...order,'rejected','on_hold','offer_declined'])
+    assert.equal(canMove(from,target),appCanMove(from,api(target)),`${from} -> ${target}`);
+  for(const status of ['hired','joined','rejected','offer_declined','unrecognized'])
     for(const target of [...order,'rejected','on_hold'])assert.equal(canMove(status,target),false);
+  assert.equal(canMove('sourced','screening'),false,'Shortlisted cannot be skipped');
+  assert.equal(canMove('sourced','shortlisted'),true);
   assert.equal(canMove('waiting_feedback','offer'),true);
   assert.equal(canMove('interview_technical','screening'),false);
 });
@@ -78,21 +87,23 @@ await check('folded and unknown stages retain their specific status information'
   assert.equal(label('custom_stage'),'Custom stage');
   assert.equal(label('sourced'),'');
 });
-await check('card menu is a keyboard/touch alternative with only forward targets',()=>{
+await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});
   let tree=card.render();assert.equal(tree.props.draggable,true);
   nodes(tree).find(n=>n.props?.['aria-haspopup']==='menu').props.onClick();tree=card.render();
   assert.equal(button(tree,'Move to Sourced'),undefined);
   assert.equal(button(tree,'Move to Screening'),undefined);
-  assert.ok(button(tree,'Move to Offer'));
+  // Screening → Offer is refused by the server (2026-10-15 parity fix); Interview is the next hop.
+  assert.equal(button(tree,'Move to Offer'),undefined);
+  assert.ok(button(tree,'Move to Interview'));
   const menu=nodes(tree).find(n=>n.props?.role==='menu');
   let focused=-1;const targets=[0,1,2].map(i=>({focus(){focused=i;document.activeElement=this;}}));
   menu.ref.current={querySelectorAll:()=>targets,contains:()=>false};document.activeElement=targets[0];
   menu.props.onKeyDown({key:'ArrowDown',preventDefault(){}});assert.equal(focused,1);
   menu.props.onKeyDown({key:'End',preventDefault(){}});assert.equal(focused,2);
   menu.props.onKeyDown({key:'Home',preventDefault(){}});assert.equal(focused,0);
-  button(tree,'Move to Offer').props.onClick();assert.equal(moved,'offer');
+  button(tree,'Move to Interview').props.onClick();assert.equal(moved,'interview_hr');
   assert.equal(nodes(card.render()).some(n=>n.props?.role==='menu'),false);card.dispose();
   for(const status of ['hired','joined','rejected']){
     const locked=mount(get('PipelineCard'),{app:{id:1,status},canMove:true,onView(){}});
@@ -110,10 +121,11 @@ await check('list cards show a stage without requiring a board column header',()
 await check('drop handlers reject backward, hired, pending, foreign, and unauthorized drops',()=>{
   let calls=[];
   const apps=[{id:1,status:'matched'},{id:2,status:'joined'}];
-  const props={stage:'offer',apps,pending:new Set(),canMove:true,onMove:(...args)=>calls.push(args)};
+  // Screening → Interview is the valid next hop (Screening → Offer is refused by the server).
+  const props={stage:'interview_hr',apps,pending:new Set(),canMove:true,onMove:(...args)=>calls.push(args)};
   const col=mount(get('PipelineColumn'),props);
   const drop=id=>({preventDefault(){},dataTransfer:{getData:()=>String(id)}});
-  col.render().props.onDrop(drop(1));assert.deepEqual(calls,[[1,'offer']]);
+  col.render().props.onDrop(drop(1));assert.deepEqual(calls,[[1,'interview_hr']]);
   for(const [changes,id] of [[{stage:'sourced'},1],[{},2],[{pending:new Set([1])},1],[{},999],[{canMove:false},1]])col.render({...props,...changes}).props.onDrop(drop(id));
   assert.equal(calls.length,1);col.dispose();
 });
@@ -125,8 +137,9 @@ await check('guarded writes map API stages and roll back only the failed card',a
   const updatePending=value=>{pending=typeof value==='function'?value(pending):value;};
   const move=get('moveApplication');
   await move({appId:1,status:'sourced',list,setList:updateList,pending,setPending:updatePending,toast(){}});assert.equal(calls.length,0);
-  const result=move({appId:1,status:'offer',list,setList:updateList,pending,setPending:updatePending,toast(){}});
-  assert.equal(calls[0].body.status,'issuing_offer');assert.equal(list[0].status,'issuing_offer');assert.ok(pending.has(1));
+  // Screening → Interview (the valid hop; Screening → Offer is refused by the server).
+  const result=move({appId:1,status:'interview_hr',list,setList:updateList,pending,setPending:updatePending,toast(){}});
+  assert.equal(calls[0].body.status,'interviewing');assert.equal(list[0].status,'interviewing');assert.ok(pending.has(1));
   list=list.map(a=>a.id===2?{...a,status:'matched'}:a);
   reject(new Error('Server refused move'));await result;
   assert.equal(list[0].status,'matched');assert.equal(list[1].status,'matched');assert.equal(pending.size,0);

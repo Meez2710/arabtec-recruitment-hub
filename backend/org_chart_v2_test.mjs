@@ -302,9 +302,12 @@ await check('shares are enforced per employee_id only; same-name people are neve
   assert.match(byId2.json.error, /100% at most/);
 });
 await check('assignment delete works and is audited', async () => {
-  const r = await api(`/api/org/charts/${cid}/assignments/${asg.id}`, { method: 'DELETE', tok: manager });
+  // 2026-10-14 owner rule: every deletion is System Admin only — an org manager is refused.
+  const refused = await api(`/api/org/charts/${cid}/assignments/${asg.id}`, { method: 'DELETE', tok: manager });
+  assert.equal(refused.status, 403); assert.equal(refused.json?.code, 'SYSTEM_ADMIN_REQUIRED');
+  const r = await api(`/api/org/charts/${cid}/assignments/${asg.id}`, { method: 'DELETE', tok: admin });
   assert.equal(r.status, 200);
-  assert.equal((await api(`/api/org/charts/${cid}/assignments/${asg.id}`, { method: 'DELETE', tok: manager })).status, 404);
+  assert.equal((await api(`/api/org/charts/${cid}/assignments/${asg.id}`, { method: 'DELETE', tok: admin })).status, 404);
   assert.ok(get("SELECT id FROM audit_log WHERE action='org_chart_v2.assignment_deleted'"));
 });
 
@@ -451,19 +454,19 @@ await check('deleteBox promote: reports move to its parent; branch removes the s
 });
 await check('delete endpoint: promote by default, branch needs confirmation, published refused', async () => {
   const d2 = (await api(`/api/org/charts/${cid}/drafts`, { method: 'POST', tok: manager, body: { label: 'Option B' } })).json.version;
-  const noConfirm = await api(`/api/org/charts/versions/${d2.id}/boxes/eng?mode=branch`, { method: 'DELETE', tok: manager });
+  const noConfirm = await api(`/api/org/charts/versions/${d2.id}/boxes/eng?mode=branch`, { method: 'DELETE', tok: admin });
   assert.equal(noConfirm.status, 409);
   assert.equal(noConfirm.json.requiresConfirm, true);
   assert.equal(noConfirm.json.boxCount, 2);
-  const promote = await api(`/api/org/charts/versions/${d2.id}/boxes/eng`, { method: 'DELETE', tok: manager });
+  const promote = await api(`/api/org/charts/versions/${d2.id}/boxes/eng`, { method: 'DELETE', tok: admin });
   assert.equal(promote.status, 200, promote.text);
   assert.deepEqual(promote.json.promoted, ['plan']);
-  const branch = await api(`/api/org/charts/versions/${d2.id}/boxes/qa?mode=branch&confirm=true`, { method: 'DELETE', tok: manager });
+  const branch = await api(`/api/org/charts/versions/${d2.id}/boxes/qa?mode=branch&confirm=true`, { method: 'DELETE', tok: admin });
   assert.equal(branch.status, 200, branch.text);
   assert.deepEqual(branch.json.removed, ['qa']);
-  const pub = await api(`/api/org/charts/versions/${draft.id}/boxes/plan`, { method: 'DELETE', tok: manager });
+  const pub = await api(`/api/org/charts/versions/${draft.id}/boxes/plan`, { method: 'DELETE', tok: admin });
   assert.equal(pub.status, 409);
-  assert.equal((await api(`/api/org/charts/versions/${d2.id}/boxes/nope`, { method: 'DELETE', tok: manager })).status, 404);
+  assert.equal((await api(`/api/org/charts/versions/${d2.id}/boxes/nope`, { method: 'DELETE', tok: admin })).status, 404);
 
   // People still sit in the removed boxes: publishing must ask where they go.
   await api(`/api/org/charts/versions/${d2.id}/submit`, { method: 'POST', tok: manager });
@@ -662,7 +665,7 @@ await check('a draft whose base is no longer the published version cannot be sub
   });
   await check('deleting a box in a draft drops the people imported into it', async () => {
     const r = await api('/api/org/charts', { method: 'POST', tok: manager, body: { name: 'Import Two', payload: importPayload(), asDraft: true } });
-    const del = await api(`/api/org/charts/versions/${r.json.version.id}/boxes/ieng?mode=promote`, { method: 'DELETE', tok: manager });
+    const del = await api(`/api/org/charts/versions/${r.json.version.id}/boxes/ieng?mode=promote`, { method: 'DELETE', tok: admin });
     assert.equal(del.status, 200, del.text);
     assert.deepEqual(del.json.version.payload.pages[0].importPeople.map((x) => x.personName), ['Rana Idris']);
   });

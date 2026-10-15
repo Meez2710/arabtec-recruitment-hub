@@ -156,7 +156,9 @@ export const appNorm = (s) => APP_ALIAS[s] || s;
 
 // Allowed application transitions (from → [to]).
 export const APP_TRANSITIONS = {
-  [APP.SOURCED]: [APP.MATCHED, APP.UNMATCHED, APP.SHORTLISTED, APP.REJECTED, APP.ON_HOLD],
+  // Owner rule (2026-10-15): Shortlisted sits between Sourcing and Screening and
+  // is the release point for stakeholders, so Sourced cannot skip it.
+  [APP.SOURCED]: [APP.SHORTLISTED, APP.REJECTED, APP.ON_HOLD],
   [APP.MATCHED]: [APP.SHORTLISTED, APP.INTERVIEWING, APP.UNMATCHED, APP.REJECTED, APP.ON_HOLD],
   [APP.SHORTLISTED]: [APP.INTERVIEWING, APP.MATCHED, APP.REJECTED, APP.ON_HOLD],
   [APP.UNMATCHED]: [APP.MATCHED, APP.SHORTLISTED, APP.REJECTED, APP.ON_HOLD],
