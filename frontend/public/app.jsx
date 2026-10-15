@@ -5406,9 +5406,9 @@ function RequestsControlPanel({ all, rstat, onPick, onAssign }) {
   const overdue = all.filter((r) => isOpenReq(r) && r.status !== 'pending_approval' && (r.health || {}).level === 'red');
   return (
     <section className="req-control" aria-label="Hiring process and recruiters">
-      <div className="req-process" role="list" aria-label="Hiring process">
+      <div className="req-process" role="group" aria-label="Hiring process — filter requests by stage">
         {REQ_FOCUS.map(([k, label], i) => (
-          <button key={k} type="button" role="listitem" className="req-step" onClick={() => onPick({ focus: k })}>
+          <button key={k} type="button" className="req-step" onClick={() => onPick({ focus: k })}>
             <span className="req-step-n">{count(k)}</span><span className="req-step-l">{label}</span>{i < REQ_FOCUS.length - 1 && <span className="req-step-arrow" aria-hidden="true">›</span>}
           </button>
         ))}
@@ -5583,7 +5583,13 @@ function RequestsPage({ user, initialFilters }) {
     filters.departmentId && ['departmentId', `Department: ${(meta.departments.find((x) => String(x.id) === String(filters.departmentId)) || {}).name || filters.departmentId}`, () => setFilters((f) => ({ ...f, departmentId: '' }))],
     filters.focus && ['focus', `Stage: ${(REQ_FOCUS.find(([k]) => k === filters.focus) || [])[1] || filters.focus}`, () => setFilters((f) => ({ ...f, focus: '' }))],
   ].filter(Boolean);
-  const pick = (patch) => setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+  // A chip/KPI/“Show” sets a filter on the list below the fold; bring the list
+  // into view so the click visibly does something (owner audit 2026-10-15).
+  const listTopRef = useRef(null);
+  const pick = (patch) => {
+    setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+    setTimeout(() => listTopRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 60);
+  };
   const unassign = async (r) => {
     if (!window.confirm(`Remove ${r.owner?.name || 'the recruiter'} from ${shortReqCode(r.ticketNo)}? The request stays open with no recruiter until someone is assigned.`)) return;
     try { await api.post(`/requests/${r.id}/unassign`, {}); toast(`Recruiter removed from ${shortReqCode(r.ticketNo)}`); load(); loadPanels(); }
@@ -5609,6 +5615,7 @@ function RequestsPage({ user, initialFilters }) {
         </div>
       )}
 
+      <div ref={listTopRef} className="scroll-anchor" aria-hidden="true" />
       <FilterToolbar activeCount={activeChips.length} search={<input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />}>
         <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
           <option value="">All statuses</option>{Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>

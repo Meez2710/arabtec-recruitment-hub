@@ -896,3 +896,4 @@ table.talent-pool-table.candidates-table .datecell { white-space: nowrap; }
 .talent-pool-table .pool-candidate-heading button { text-transform: inherit; letter-spacing: inherit; font-weight: inherit; }
 /* Pipeline card menu at page level (2026-10-15): never cropped by the board. */
 .pipeline-menu.pipeline-menu-floating { z-index: 1200; overflow-y: auto; overscroll-behavior: contain; }
+.scroll-anchor { scroll-margin-top: 72px; }
