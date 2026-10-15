@@ -187,7 +187,7 @@ function serialize(r, user, { withDetail = false } = {}) {
     out.hiringManager = hm ? { id: hm.id, name: hm.full_name } : null;
     out.seats = Seats.forRequest(r.id);
     out.approvals = Approvals.forRequest(r.id);
-    out.activity = RequestActivity.forRequest(r.id).filter(a => hasFullPipelineAccess(user) || a.type !== 'candidate_linked');
+    out.activity = RequestActivity.forRequest(r.id).filter(a => hasFullPipelineAccess(user) || !['candidate_linked', 'candidate_unlinked'].includes(a.type));
   }
   return out;
 }

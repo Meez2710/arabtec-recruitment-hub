@@ -395,9 +395,12 @@ check('unbounded .chip content is recoverable when it is cut', () => {
   // anything was lost. The `title` is therefore the only copy of the cut
   // characters, which is the unbounded half of section 15's tooltip policy.
   const titled = (app.match(/className="chip" title=\{/g) || []).length;
-  assert.ok(titled >= 5, `at least five .chip sites carry a title (found ${titled})`);
-  assert.ok(app.includes('c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>'),
-    'the Talent Pool id-cell tags carry theirs');
+  assert.ok(titled >= 4, `at least four .chip sites carry a title (found ${titled}); the Talent Pool tags left chips on 2026-10-15`);
+  // 2026-10-15 owner direction: Talent Pool table rows are level and quiet, so
+  // tags moved out of chips into the id line. The whole list stays recoverable
+  // in that line's title.
+  assert.ok(app.includes("title={[c.candidateNo, ...(c.tags || [])].join(' · ')}"),
+    'the Talent Pool id line carries every tag in its title');
 });
 
 check('the Users role chip is still the shared .chip, not a bespoke label', () => {

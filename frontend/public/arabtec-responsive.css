@@ -775,7 +775,7 @@ table.talent-pool-table > thead > tr > th {
 table.talent-pool-table > thead > tr > th,
 table.talent-pool-table > tbody > tr > td {
   box-sizing: border-box;
-  padding: 11px 9px;
+  padding: 12px 8px;
   text-align: left;
   vertical-align: middle;
   line-height: 1.4;
@@ -787,7 +787,7 @@ table.talent-pool-table > thead > tr > th { white-space: normal; }
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 .talent-pool-table .sort-th-inner .sort-label {
@@ -805,14 +805,14 @@ table.talent-pool-table > thead > tr > th { white-space: normal; }
   overflow-wrap: anywhere;
   line-height: 1.35;
 }
-.talent-pool-table .pool-candidate .pool-status { margin: 5px 0 3px; }
+.talent-pool-table .pool-candidate .pool-status { margin: 4px 0; }
 .talent-pool-table .pool-candidate .cell-sub { overflow-wrap: anywhere; }
 .talent-pool-table td[data-label="Apply Date"] .datecell { white-space: nowrap; }
 .talent-pool-table td[data-label="Request"] .pool-request-link {
   max-width: 100%;
   min-height: 30px;
-  gap: 2px;
-  padding: 5px 0;
+  gap: 4px;
+  padding: 4px 0;
   line-height: 1.35;
 }
 .talent-pool-table .pool-cv-actions .icon-btn { flex: 0 0 auto; }
@@ -829,3 +829,70 @@ table.talent-pool-table > thead > tr > th { white-space: normal; }
     width: 1080px;
   }
 }
+
+/* Talent Pool table — calm, level rows (2026-10-15, owner direction).
+   - No separate status badge: the candidate's NAME is the tinted pill; the
+     legend above the table explains each tint once.
+   - Every row is the same height: two fixed lines in the candidate and request
+     cells, one line everywhere else, overflow ends in "…" with the full text on
+     hover (title). Carbon's "tall" density: 64px for two-line rows. */
+table.talent-pool-table.candidates-table > tbody > tr > td {
+  height: 64px; padding-top: 0; padding-bottom: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal;
+}
+table.talent-pool-table.candidates-table > thead > tr > th {
+  height: 44px; padding-top: 0; padding-bottom: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+table.talent-pool-table.candidates-table .datecell { white-space: nowrap; }
+.talent-pool-table .pool-candidate { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.talent-pool-table .pool-id { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; flex: 1 1 auto; }
+.talent-pool-table .pool-id .cell-sub {
+  display: block; max-width: 100%; font-size: 12px; line-height: 16px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.talent-pool-table .pool-id-actions { flex: 0 0 auto; display: flex; }
+.talent-pool-table .pool-id-actions .pool-cv-actions { margin-top: 0; gap: 4px; }
+
+.pool-name {
+  display: inline-flex; align-items: center; max-width: 100%; height: 24px; padding: 0 12px;
+  border-radius: 999px; font-size: 13px; font-weight: 600; line-height: 24px; white-space: nowrap;
+}
+.pool-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-name-new         { color: var(--green-700); background: var(--green-50); }
+.pool-name-considered  { color: #92400E; background: var(--warning-tint); }
+.pool-name-shortlisted { color: #1D4ED8; background: #EFF6FF; }
+.pool-name-blacklisted { color: #B42318; background: #FEF3F2; }
+.pool-name-unknown     { color: var(--text-strong, #1F2937); background: #F2F4F7; }
+
+.talent-pool-table td[data-label="Request"] .pool-request-link {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-height: 0; padding: 0; max-width: 100%; white-space: nowrap;
+}
+.talent-pool-table .pool-req-code,
+.talent-pool-table .pool-req-title { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talent-pool-table .pool-req-code { font-weight: 600; line-height: 18px; }
+.talent-pool-table .pool-req-title { font-size: 12px; line-height: 16px; color: var(--muted); }
+
+/* Legend: same pills as the names, quieter. */
+.pool-status-guide { align-items: center; gap: 12px; margin: 4px 0 12px; }
+.pool-status-caption { font-size: 12px; color: var(--muted); }
+.pool-status-desktop { gap: 8px; }
+.pool-status-guide .pool-name { height: 22px; line-height: 22px; padding: 0 8px; font-size: 12px; font-weight: 500; }
+@media (max-width: 640px) { .pool-status-desktop-caption { display: none; } }
+
+/* Notification Settings: every event row two lines high (2026-10-15). */
+.notif-desc { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notif-desc .notif-ext { color: #92400E; font-weight: 600; }
+/* Assessment Settings: section and field rows share one height (2026-10-15). */
+.assess-pol-table tbody th, .assess-pol-table tbody td { height: 40px; box-sizing: border-box; }
+/* KPI cards: a label that wraps no longer pushes its hint below its
+   neighbours'. Two label lines are reserved on desktop (2026-10-15). */
+@media (min-width: 900px) {
+  .dash-kpi .dash-kpi-label { line-height: 1.3; min-height: 2.6em; }
+}
+/* The Candidate header is a button; buttons reset case and tracking. Match the
+   other column headers exactly (2026-10-15). */
+.talent-pool-table .pool-candidate-heading button { text-transform: inherit; letter-spacing: inherit; font-weight: inherit; }
+/* Pipeline card menu at page level (2026-10-15): never cropped by the board. */
+.pipeline-menu.pipeline-menu-floating { z-index: 1200; overflow-y: auto; overscroll-behavior: contain; }

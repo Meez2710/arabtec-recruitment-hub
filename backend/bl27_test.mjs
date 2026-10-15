@@ -1,3 +1,4 @@
+// 2026-10-15 owner rule: Sourced → Shortlisted → Screening (Shortlisted cannot be skipped).
 // BL-27 — one joined application per candidate, globally.
 //
 //   node --experimental-sqlite bl27_test.mjs
@@ -117,7 +118,7 @@ const indexPresent = () => !!get("SELECT name FROM sqlite_master WHERE type='ind
     method: 'POST', token: recruiter, body: { status, reason },
   });
   const toOfferSent = async (appId) => {
-    for (const st of ['matched', 'interviewing', 'issuing_offer', 'offer_sent']) await move(appId, st);
+    for (const st of ['shortlisted', 'matched', 'interviewing', 'issuing_offer', 'offer_sent']) await move(appId, st);
   };
   /** Full happy path: new candidate on a fresh requisition, joined. */
   const joinFresh = async (label, headcount = 1) => {
