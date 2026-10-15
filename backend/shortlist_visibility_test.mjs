@@ -47,6 +47,7 @@ try {
   const other = ins("INSERT INTO recruitment_request(ticket_no,title,status,headcount,requester_id,owner_id,created_by) VALUES ('SL-OTHER','Other request','open',20,?,?,?)", [recId,recId,recId]);
   const fixture = (name,status,requestId=rid,released=false) => {
     const cand = Candidates.create({ candidateNo:Candidates.nextNo(),fullName:'SL '+name,createdBy:recId });
+    db.run('INSERT INTO request_activity(request_id,type,note) VALUES (?,?,?)',[requestId,'candidate_linked','SL '+name+' linked']);
     const app = Applications.create({applicationNo:Applications.nextNo(),candidateId:cand.id,requestId,status,createdBy:recId});
     StageHistory.add(app.id,null,'sourced',{id:recId});
     if(released) StageHistory.add(app.id,'sourced','shortlisted',{id:recId});
@@ -78,12 +79,23 @@ try {
     c(who+' application list excludes sourcing',list.status===200 && !list.text.includes('PRIVATE'));
     const board=await api('/api/applications/request/'+rid,{token});
     c(who+' request board excludes sourcing',board.status===200 && !board.text.includes('PRIVATE') && !board.json.statuses?.includes('sourced'));
+    const requestDetail=await api('/api/requests/'+rid,{token});
+    c(who+' request activity excludes private linkage',[200,403,404].includes(requestDetail.status) && !requestDetail.text.includes('PRIVATE'));
     const thread=await api('/api/thread/request/'+rid,{token});
     c(who+' thread excludes unreleased candidates',thread.status===200 && !thread.text.includes('PRIVATE'));
     const detail=await api('/api/applications/'+shortlisted.app.id,{token});
     c(who+' history begins at shortlist',detail.status===200 && detail.json.history.length===1 && detail.json.history[0].to_status==='shortlisted' && detail.json.history[0].from_status===null);
   }
   c('Hiring manager cannot see another request shortlist',[403,404].includes((await api('/api/candidates/'+unrelated.cand.id,{token:tokens.hm})).status));
+  // Exercise the actual linking default, including deliberately enabled stakeholder notifications.
+  db.run("UPDATE notification_config SET enabled=1,in_app=1,email=0,recipients=? WHERE event_key='candidate.application_received'",[JSON.stringify(['requester','hiring_manager','panel','approvers'])]);
+  const noticesBefore=db.get('SELECT COUNT(*) AS n FROM notification').n;
+  const privateCand=Candidates.create({candidateNo:Candidates.nextNo(),fullName:'PRIVATE newly linked',createdBy:recId});
+  const linked=await api('/api/applications',{method:'POST',token:tokens.recruiter,body:{candidateId:privateCand.id,requestId:rid}});
+  c('Linking defaults to private Sourcing',linked.status===201 && linked.json.application.status==='sourced',linked.text);
+  c('Private linking sends no stakeholder notifications',db.get('SELECT COUNT(*) AS n FROM notification').n===noticesBefore);
+  c('Hiring manager cannot open newly linked candidate',[403,404].includes((await api('/api/candidates/'+privateCand.id,{token:tokens.hm})).status));
+  c('Actual linking is absent from stakeholder activity',!(await api('/api/requests/'+rid,{token:tokens.hm})).text.includes('PRIVATE'));
   for(const who of ['recruiter','director','manager']) {
     for(const f of allFixtures) c(who+' sees '+f.cand.full_name,(await api('/api/candidates/'+f.cand.id,{token:tokens[who]})).status===200);
   }

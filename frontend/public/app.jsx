@@ -3984,7 +3984,7 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
   const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
-    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(isSystemAdmin(user) && can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(isSystemAdmin(user) ? [['request-deletion', 'Delete request']] : []), ...(isSystemAdmin(user) && can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
@@ -4001,8 +4001,54 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
       {tab === 'fields' && <BuiltinFieldsPanel user={user} />}
       {tab === 'custom' && <CustomFieldsPanel user={user} />}
       {tab === 'knowledge' && <KnowledgeLinesPanel />}
+      {tab === 'request-deletion' && isSystemAdmin(user) && <RequestDeletionPanel user={user} />}
     </div>
   );
+}
+
+// Request-only deletion is deliberately kept in the System Admin control surface.
+function RequestDeletionPanel({ user }) {
+  const [rows, setRows] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [impact, setImpact] = useState(null);
+  const [reason, setReason] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const toast = useToast();
+  const load = useCallback(() => api.get('/requests').then(r => setRows(r.requests || [])).catch(e => setError(e.message)), []);
+  useEffect(() => { if (isSystemAdmin(user)) load(); }, [user, load]);
+  if (!isSystemAdmin(user)) return null;
+  async function review(row) {
+    setSelected(null); setImpact(null); setReason(''); setConfirmation(''); setError(''); setBusy(true);
+    try { const result = await api.get(`/requests/${row.id}/delete-impact`); setSelected(row); setImpact(result); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  async function removeRequest() {
+    if (!selected || !impact || !reason.trim() || confirmation !== selected.ticketNo) return;
+    setBusy(true); setError('');
+    try {
+      await api.call(`/requests/${selected.id}`, { method: 'DELETE', body: { reason: reason.trim() } });
+      setSelected(null); setImpact(null); toast('Request deleted. Linked records preserved.'); await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  return <div className="card card-pad">
+    <h3>Delete request permanently</h3>
+    <p>The request is permanently erased. Candidates, applications, interviews, offers, documents and history are preserved; their request link is removed.</p>
+    {error && <div role="alert" className="form-error">{error}</div>}
+    <div className="field"><label htmlFor="delete-request-choice">Request</label>
+      <select id="delete-request-choice" disabled={busy} value={selected?.id || ''} onChange={e => { const row = rows.find(r => r.id === Number(e.target.value)); if (row) review(row); else { setSelected(null); setImpact(null); } }}>
+        <option value="">Choose a request to review</option>
+        {rows.map(r => <option key={r.id} value={r.id}>{r.ticketNo} — {r.title} ({r.status})</option>)}
+      </select>
+    </div>
+    {selected && impact && <>
+      <p>{Object.entries(impact.detached || {}).map(([key,value]) => `${value} ${key}`).join(' · ')} will be preserved.</p>
+      <div className="field"><label htmlFor="delete-request-reason">Reason</label><textarea id="delete-request-reason" value={reason} onChange={e => setReason(e.target.value)} disabled={busy} /></div>
+      <div className="field"><label htmlFor="delete-request-confirm">Type {selected.ticketNo} to confirm permanent deletion</label><input id="delete-request-confirm" autoComplete="off" value={confirmation} onChange={e => setConfirmation(e.target.value)} disabled={busy} /></div>
+      <button className="btn btn-danger" disabled={busy || !reason.trim() || confirmation !== selected.ticketNo} onClick={removeRequest}>{busy ? 'Deleting…' : 'Permanently delete request only'}</button>
+    </>}
+  </div>;
 }
 
 // --- Knowledge lines panel ---

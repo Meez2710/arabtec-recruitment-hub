@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const Babel = require('../frontend/public/vendor/babel.min.js');
 const source = fs.readFileSync(new URL('../frontend/public/app.jsx', import.meta.url), 'utf8');
-const selected = new Set(['isSystemAdmin', 'can', 'CandidatePrivacyTab', 'BrandingLogoPanel', 'CustomFieldsPanel', 'ControlCenterPage']);
+const selected = new Set(['isSystemAdmin', 'can', 'CandidatePrivacyTab', 'BrandingLogoPanel', 'CustomFieldsPanel', 'ControlCenterPage', 'RequestDeletionPanel']);
 const ast = Babel.transform(source, { presets:['react'], ast:true, code:false }).ast;
 const functions = ast.program.body.filter(n => n.type === 'FunctionDeclaration' && selected.has(n.id.name));
 const code = Babel.transformFromAst({type:'File',program:{type:'Program',sourceType:'script',body:functions}}, null, {presets:['react']}).code;
@@ -49,4 +49,11 @@ for(const role of ['recruiter','recruitment_manager','hr_director','ceo','hr_man
   check(role+' chart delete visibility',flatten(drillTree).some(n=>n.type==='button'&&text(n)==='Delete')===admin);
   check(role+' chart editing retained',text(drillTree).includes('Edit'));
 }
+user={roles:['system_admin'],permissions:['request.delete','app.manage_ui']};
+for(const [label,reason,confirmation,busy,disabled] of [['empty','','',false,true],['missing confirmation','QA','',false,true],['wrong ticket','QA','wrong',false,true],['ready','QA','REQ-QA',false,false],['busy','QA','REQ-QA',true,true]]) {
+ const tree=render(box.RequestDeletionPanel,{user},{0:[{id:1,ticketNo:'REQ-QA',title:'QA'}],1:{id:1,ticketNo:'REQ-QA'},2:{detached:{applications:2}},3:reason,4:confirmation,5:busy});
+ const button=flatten(tree).find(n=>n.type==='button');check(label+' deletion confirmation',button.props.disabled===disabled);
+ check(label+' preserve copy',text(tree).includes('will be preserved'));
+}
+check('nonadmin panel hidden',render(box.RequestDeletionPanel,{user:{roles:['recruiter']}})===null);
 console.log(`RESULT ${passed} UI rendering assertions passed`);

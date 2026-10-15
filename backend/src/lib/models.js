@@ -381,15 +381,10 @@ export const Buttons = {
 };
 
 /* ---- Hard delete -----------------------------------------------------------
-   Both parent tables are referenced with ON DELETE CASCADE throughout, so the
-   database removes the dependent rows itself: for a request that is its seats,
-   approvals, activity, applications, interviews, offers and thread posts. That
-   is a great deal of history to destroy, which is why the routes above these
-   helpers require an explicit permission and a written reason, and why the
-   audit entry is written BEFORE the row disappears.
-
-   `counts` exists so a caller can tell the user what they are about to lose
-   rather than discovering it afterwards. */
+   Request deletion preserves child rows through ON DELETE SET NULL. Candidate
+   deletion still removes candidate-owned records. Both require System Admin
+   plus the resource permission and a written reason. Impact counts describe
+   preserved request links or removed candidate-owned records respectively. */
 export const HardDelete = {
   requestCounts(id) {
     const one = (sql) => { try { return get(sql, [id]).c; } catch { return 0; } };
@@ -399,6 +394,8 @@ export const HardDelete = {
       offers:       one('SELECT COUNT(*) c FROM offer WHERE request_id=?'),
       posts:        one('SELECT COUNT(*) c FROM ticket_post WHERE request_id=?'),
       seats:        one('SELECT COUNT(*) c FROM requisition_seat WHERE request_id=?'),
+      approvals:    one('SELECT COUNT(*) c FROM request_approval WHERE request_id=?'),
+      activity:     one('SELECT COUNT(*) c FROM request_activity WHERE request_id=?'),
     };
   },
   candidateCounts(id) {
@@ -1076,7 +1073,7 @@ export const Applications = {
    */
   _from() {
     return ' FROM application a'
-      + ' JOIN recruitment_request r ON r.id = a.request_id'
+      + ' LEFT JOIN recruitment_request r ON r.id = a.request_id'
       + ' LEFT JOIN candidate c ON c.id = a.candidate_id';
   },
   _where(f = {}) {
