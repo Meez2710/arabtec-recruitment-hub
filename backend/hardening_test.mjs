@@ -87,7 +87,8 @@ const login = async (e, p = 'Arabtec@123') => (await api('/api/auth/login', { me
   const mine2 = await api(`/api/thread/request/${rid}`, { method: 'POST', token: rec, body: { body: 'keep' } });
   const recMgrHasAudit = (await api('/api/auth/me', { token: recMgr })).json?.user?.permissions?.includes('audit.view');
   const delByMgr = (await api(`/api/thread/post/${mine2.json.post.id}`, { method: 'DELETE', token: recMgr })).status;
-  c('non-author without moderation rights blocked (403)', recMgrHasAudit ? delByMgr === 200 : delByMgr === 403, `got ${delByMgr}`);
+  // 2026-10-14 owner rule: deletion is System Admin only, whatever other rights a role holds.
+  c('non-admin cannot delete another user\'s post (403)', delByMgr === 403, `got ${delByMgr} (audit.view=${recMgrHasAudit})`);
 
   console.log('\n— System posts integrity —');
   const th = (await api(`/api/thread/request/${rid}`, { token: t })).json.posts;

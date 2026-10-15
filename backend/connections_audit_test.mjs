@@ -88,7 +88,8 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
   await api(`/api/applications/${cv.json.applicationId}/move`, { method: 'POST', token: recruiter, body: { status: 'shortlisted' } });
   c('→ application status reflects in pipeline', (await api(`/api/applications/request/${rid}`, { token: recruiter })).json.applications.find((a) => a.id === cv.json.applicationId).status === 'shortlisted');
   c('→ audited application.status_changed', (await auditActions()).has('application.status_changed'));
-  c('→ stage move auto-posted into thread', (await api(`/api/thread/request/${rid}`, { token: hrMgr })).json.posts.some((p) => p.type === 'system' && /moved/i.test(p.body || '')));
+  // Read as Recruitment: a move out of Sourcing is a private event for roles outside the full pipeline (2026-10-14 rule).
+  c('→ stage move auto-posted into thread', (await api(`/api/thread/request/${rid}`, { token: recruiter })).json.posts.some((p) => p.type === 'system' && /moved/i.test(p.body || '')));
 
   console.log('\n— ACTION: Interview assessment (unlocks at interview stage) → persists + shared —');
   await api(`/api/applications/${cv.json.applicationId}/move`, { method: 'POST', token: recruiter, body: { status: 'interviewing' } });
