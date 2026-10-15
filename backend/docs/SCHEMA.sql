@@ -488,3 +488,73 @@ CREATE TABLE ticket_post (
 );
 CREATE INDEX idx_ticketpost_req ON ticket_post(request_id);
 CREATE INDEX idx_ticketpost_parent ON ticket_post(parent_post_id);
+
+-- ============================ Organization Structure v2 ============================
+-- Plan: docs/org-chart/ORG_CHART_V2_PLAN.md section 3. current_version_id and employee_id
+-- carry no FK (circular / employee register arrives in Phase C).
+CREATE TABLE org_chart (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name TEXT NOT NULL,
+  project_id BIGINT REFERENCES project(id),
+  department_id BIGINT REFERENCES department(id),
+  scope TEXT NOT NULL DEFAULT 'project',        -- project | head_office | department
+  status TEXT NOT NULL DEFAULT 'active',        -- active | archived
+  current_version_id BIGINT,
+  legacy_root_node_id BIGINT,                   -- organization_node root this chart was migrated from
+  created_by BIGINT REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE org_chart_version (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  chart_id BIGINT NOT NULL REFERENCES org_chart(id) ON DELETE CASCADE,
+  label TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT 'draft',          -- draft | pending_approval | published | superseded
+  based_on_version_id BIGINT,
+  based_on_updated_at TEXT,                     -- published updated_at when the draft started (live-change check)
+  base_payload_json TEXT,                       -- published payload at that moment (for rebase)
+  payload_json TEXT NOT NULL,
+  created_by BIGINT REFERENCES users(id),
+  submitted_by BIGINT REFERENCES users(id),
+  approved_by BIGINT REFERENCES users(id),
+  published_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_orgver_chart ON org_chart_version(chart_id);
+CREATE TABLE org_position (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  chart_id BIGINT NOT NULL REFERENCES org_chart(id) ON DELETE CASCADE,
+  box_key TEXT NOT NULL,
+  slot_no INTEGER NOT NULL DEFAULT 1,
+  approval TEXT NOT NULL DEFAULT 'approved',    -- approved | proposed | frozen
+  requisition_seat_id BIGINT,
+  created_in_version_id BIGINT,
+  closed_in_version_id BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_orgpos_chart ON org_position(chart_id);
+CREATE INDEX idx_orgpos_chart_box ON org_position(chart_id, box_key);
+CREATE TABLE org_assignment (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  chart_id BIGINT NOT NULL REFERENCES org_chart(id) ON DELETE CASCADE,
+  box_key TEXT NOT NULL,
+  position_id BIGINT REFERENCES org_position(id),
+  person_name TEXT NOT NULL,
+  employee_id BIGINT,
+  user_id BIGINT REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'in_post',       -- in_post | joining | leaving
+  effective_date TEXT,
+  share DOUBLE PRECISION NOT NULL DEFAULT 1,
+  suffix TEXT,
+  application_id BIGINT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_orgasg_chart ON org_assignment(chart_id);
+CREATE INDEX idx_orgasg_chart_box ON org_assignment(chart_id, box_key);
+CREATE INDEX idx_orgasg_employee ON org_assignment(employee_id);
+CREATE UNIQUE INDEX idx_orgasg_position ON org_assignment(position_id) WHERE position_id IS NOT NULL;

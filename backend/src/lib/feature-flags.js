@@ -29,6 +29,7 @@ export const FEATURE_META = {
   email_notifications:       { label: 'Email notifications', description: 'Reserved. Email is governed by Email & Mailbox and per-event notification settings.', enforced: false },
   interview_self_schedule:   { label: 'Candidate self-scheduling', description: 'Reserved. Not built in this version.', enforced: false },
   interview_phone_call:      { label: 'Interview phone calls', description: 'Offer a Call button and call script when sending interview messages. Needs a phone set-up on recruiters\' devices (Teams or a phone link); off until that service is ready.', enforced: true },
+  org_chart_v2:              { label: 'Organization Structure v2', description: 'Versioned A3 org charts with drafts and HR Director approval. The existing structure is converted into charts on the next server start.', enforced: true },
 };
 export function allFlags() {
   const flags = all("SELECT key, value FROM system_setting WHERE key LIKE 'feature.%' ORDER BY key");
@@ -59,6 +60,7 @@ export const DEFAULT_FEATURE_FLAGS = [
   ['feature.email_notifications','disabled'],  // real SMTP email sending
   ['feature.interview_self_schedule','disabled'], // candidate self-booking
   ['feature.interview_phone_call','disabled'], // owner 12 Oct: phone calls are a later service (needs device set-up)
+  ['feature.org_chart_v2',      'disabled'],  // versioned org charts (/api/org/charts)
 ];
 
 // Idempotent: seed flags that don't exist yet.
