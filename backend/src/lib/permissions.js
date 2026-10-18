@@ -146,7 +146,7 @@ export const ROLE_PERMISSIONS = {
     'cv_intake.view', 'cv_intake.preview', 'cv_intake.approve_batch', 'cv_intake.import', 'cv_intake.control',
     'request.submit', 'request.assign_recruiter', 'request.hold', 'request.cancel', 'request.close', 'request.reopen',
     'candidate.view', 'candidate.add',
-    'candidate.edit', 'candidate.link', 'candidate.move_stage', 'candidate.merge', 'candidate.note',
+    'candidate.edit', 'candidate.delete', 'candidate.link', 'candidate.move_stage', 'candidate.merge', 'candidate.note',
     'application.bulk_action',
     'interview.view_all', 'interview.schedule', 'interview.edit', 'interview.feedback',
     'salary.view', 'offer.view', 'offer.create', 'offer.edit', 'offer.send', 'offer.result_update',
