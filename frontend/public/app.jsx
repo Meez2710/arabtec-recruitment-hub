@@ -9362,7 +9362,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     <input type="checkbox" aria-label={`Select ${c.fullName}`}
                       checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
                   </label>
-                  <div><span className="cell-strong">{c.fullName}</span>
+                  <div><span className="cell-strong" title={c.fullName}>{c.fullName}</span>
                     <PoolStatusBadge status={c.poolStatus} />
                     <span className="cell-sub">{c.candidateNo}</span>
                     {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
@@ -9711,10 +9711,24 @@ async function fetchDocBlobUrl(path) {
     headers: api.token ? { Authorization: 'Bearer ' + api.token } : {},
   });
   if (!res.ok) {
-    throw new Error(res.status === 404
+    // Keep storage/provenance failures actionable without exposing 5xx details.
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('You do not have access to this CV.');
+    }
+    let reason = '';
+    if (res.status === 404 || res.status === 409) {
+      try {
+        const payload = await res.json();
+        if (typeof payload?.error === 'string' && payload.error.length <= 300) {
+          reason = payload.error;
+        }
+      } catch { /* use a safe generic fallback */ }
+    }
+    throw new Error(reason || (res.status === 404
       ? 'No CV is stored for this candidate yet.'
-      : res.status === 403 ? 'You do not have access to this CV.'
-      : 'Could not load the CV file.');
+      : res.status === 409 ? 'This CV needs administrator review before it can be opened.'
+      : res.status >= 500 ? 'The CV service is unavailable. Please retry or contact an administrator.'
+      : 'Could not load the CV file.'));
   }
   const blob = await res.blob();
   // Content-Type can carry a charset; CvFilePreview compares the bare type.

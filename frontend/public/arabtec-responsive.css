@@ -723,9 +723,13 @@ img, svg, video, canvas {
   .login-form-side > .login-card { width: 100%; }
   .login-phone-mark { display: block; }
 }
-/* Talent Pool keeps the same eight columns at every viewport. */
+/* Talent Pool: preserve a usable candidate-name column at normal browser zoom.
+   The eight columns need more than 1080px when status badges and CV actions
+   share the first cell. Scroll the wrapper horizontally rather than squeezing
+   names down to a few characters. This affects only this table. */
 .card.flush > .talent-table-wrap { overflow-x: auto; max-width: 100%; }
-.card.flush > .table-wrap > table.talent-pool-table.candidates-table { table-layout: fixed; min-width: 1080px; width: 100%; }
+.card.flush > .table-wrap > table.talent-pool-table.candidates-table { table-layout: fixed; min-width: 1340px; width: 100%; }
+.talent-pool-table .pool-candidate .cell-strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; word-break: normal; }
 .talent-pool-table > thead > tr > th[data-col="name"] { width: 22%; }
 .talent-pool-table > thead > tr > th[data-col="position"] { width: 14%; }
 .talent-pool-table > thead > tr > th[data-col="university"] { width: 14%; }
