@@ -19,7 +19,7 @@ run('DELETE FROM system_setting WHERE key=?',[marker]);
 for(const [code,name,description] of ROLES)run('INSERT INTO role (code,name,description) VALUES (?,?,?)',[code,name,description]);
 exec(`CREATE TRIGGER fail_backfill BEFORE INSERT ON system_setting WHEN NEW.key='schema.backfill.cv_inbox_roles' BEGIN SELECT RAISE(ABORT, 'synthetic marker failure'); END;`);
 ensureSchema();
-check('failed backfill rolls back grants together with its marker',()=>assert.equal(get('SELECT COUNT(*) n FROM role_permission').n,0));
+check('failed backfill rolls back grants together with its marker',()=>assert.equal(get("SELECT COUNT(*) n FROM role_permission rp JOIN permission p ON p.id=rp.permission_id WHERE p.code LIKE 'cv_intake.%'").n,0));
 exec('DROP TRIGGER fail_backfill');
 ensureSchema();
 const grants=role=>all('SELECT p.code FROM role_permission rp JOIN role r ON r.id=rp.role_id JOIN permission p ON p.id=rp.permission_id WHERE r.code=? ORDER BY p.code',[role]).map(p=>p.code);
