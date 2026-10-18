@@ -5884,6 +5884,12 @@ function RequestDetail({ id, user, btns, onBack }) {
   const [editing, setEditing] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [recruiters, setRecruiters] = useState([]);
+  // The backend already handles deletion; expose its impact preview in this UI.
+  const [deleteImpact, setDeleteImpact] = useState(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteCascade, setDeleteCascade] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const load = useCallback(async () => { setLoadError(null); try { setReq((await api.get('/requests/' + id)).request); } catch (e) { setLoadError(e.message); } }, [id]);
   useEffect(() => { load(); }, [id]);
@@ -5910,6 +5916,35 @@ function RequestDetail({ id, user, btns, onBack }) {
   }
   function reasonAction(path, title, okMsg, danger) {
     setAction({ title, danger, run: (reason) => { setAction(null); doAction(path, { reason }, okMsg); } });
+  }
+  async function openRequestDelete() {
+    if (deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError('');
+    try {
+      const impact = await api.get(`/requests/${id}/delete-impact`);
+      setDeleteReason('');
+      setDeleteCascade(false);
+      setDeleteImpact(impact);
+    } catch (e) {
+      toast(e.message || 'Unable to check deletion impact.', 'error');
+    } finally { setDeleteBusy(false); }
+  }
+  async function confirmRequestDelete() {
+    if (!deleteImpact || !deleteReason.trim() || deleteBusy || (deleteImpact.destructive && !deleteCascade)) return;
+    setDeleteBusy(true);
+    setDeleteError('');
+    try {
+      const result = await api.call(`/requests/${id}`, {
+        method: 'DELETE',
+        body: { reason: deleteReason.trim(), acknowledgeCascade: !!deleteCascade },
+      });
+      setDeleteImpact(null);
+      toast(`Request ${shortReqCode(result.ticketNo)} deleted`);
+      onBack();
+    } catch (e) {
+      setDeleteError(e.message || 'Could not delete request.');
+    } finally { setDeleteBusy(false); }
   }
 
   if (loadError) return <LoadError text={loadError} onRetry={load} />;
@@ -5965,6 +6000,11 @@ function RequestDetail({ id, user, btns, onBack }) {
             <button className="btn btn-secondary" onClick={() => doAction('resume', {}, 'Request resumed')}>Resume</button>
           )}
           {btns.edit_request?.visible && !['closed','cancelled','rejected','filled'].includes(s) && <button className="btn btn-secondary" onClick={() => { setEditing(true); }}>Edit</button>}
+           {((user.roles || []).includes('system_admin') || btns.delete_request?.visible) && (
+             <button type="button" className="btn btn-danger" disabled={deleteBusy} onClick={openRequestDelete}>
+               {deleteBusy && !deleteImpact ? 'Checking…' : 'Delete Request'}
+             </button>
+           )}
           {btns.close_request?.visible && !['closed','cancelled','rejected'].includes(s) && <button className="btn btn-secondary" onClick={() => reasonAction('close', 'Close Request', 'Request closed')}>Close</button>}
           {btns.reopen_request?.visible && ['closed','cancelled','filled'].includes(s) && <button className="btn btn-secondary" onClick={() => reasonAction('reopen', 'Reopen Request', 'Request reopened')}>Reopen</button>}
         </div>
@@ -5995,6 +6035,30 @@ function RequestDetail({ id, user, btns, onBack }) {
       {tab === 'timeline' && <TimelineTab req={req} />}
 
       {action && <Confirm title={action.title} message="Please provide a reason. This will be recorded in the audit trail." requireReason danger={action.danger} confirmLabel="Confirm" onConfirm={action.run} onClose={() => setAction(null)} />}
+       {deleteImpact && <Modal title={`Permanently delete ${shortReqCode(deleteImpact.ticketNo)}?`}
+         onClose={() => { if (!deleteBusy) setDeleteImpact(null); }}
+         footer={<>
+           <button type="button" className="btn btn-ghost" disabled={deleteBusy} onClick={() => setDeleteImpact(null)}>Cancel</button>
+           <button type="button" className="btn btn-danger" disabled={deleteBusy || !deleteReason.trim() || (deleteImpact.destructive && !deleteCascade)}
+             onClick={confirmRequestDelete}>{deleteBusy ? 'Deleting…' : 'Permanently Delete'}</button>
+         </>}>
+         <p style={{ marginTop: 0 }}>This permanently deletes <strong>{deleteImpact.ticketNo} — {deleteImpact.title}</strong>. This action cannot be undone.</p>
+         {Object.entries(deleteImpact.cascaded || {}).some(([, count]) => Number(count) > 0) && <>
+           <p style={{ marginBottom: 6 }}><strong>Linked records that may also be deleted:</strong></p>
+           <ul style={{ marginTop: 0 }}>{Object.entries(deleteImpact.cascaded || {}).filter(([, count]) => Number(count) > 0).map(([type, count]) => (
+             <li key={type}>{count} {type}</li>
+           ))}</ul>
+           <p className="muted">Candidate profiles are separate from request applications. Linked recruitment activity may be permanently lost.</p>
+         </>}
+         {deleteImpact.destructive && <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 14 }}>
+           <input type="checkbox" checked={deleteCascade} onChange={(e) => setDeleteCascade(e.target.checked)} />
+           <span>I understand that linked applications, interviews and offers belonging to this request may be deleted.</span>
+         </label>}
+         <div className="field"><label htmlFor="request-delete-reason">Reason for deletion (required)</label>
+           <textarea id="request-delete-reason" rows="3" value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)}
+             placeholder="Why was this Hiring Request created in error?" /></div>
+         {deleteError && <p role="alert" style={{ color: 'var(--critical)' }}>{deleteError}</p>}
+       </Modal>}
       {editing && <RequestForm user={user} request={req} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
       {assigning && (
         <AssignModal recruiters={recruiters} onClose={() => setAssigning(false)}
