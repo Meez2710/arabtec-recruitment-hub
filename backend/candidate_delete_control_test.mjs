@@ -102,7 +102,10 @@ try {
  assert.equal((await api('/api/candidates/'+another+'/delete-impact',{token:recruiter})).status,403,'other roles cannot preview even if granted');
  assert.equal((await api('/api/candidates/'+another,{token:recruiter,method:'DELETE',body:{reason:'test'}})).status,403,'other roles cannot delete even if granted');
  console.log('PASS: candidate deletion, restricted roles, explicit cascades and existing-db permission migration');
+} catch (err) {
+ console.error('FAIL: Candidate deletion test:', err);
+ process.exitCode = 1;
 } finally {
  try{fs.rmSync(tmp,{recursive:true,force:true})}catch{}
- process.exit(0);
+ process.exit(process.exitCode || 0);
 }
