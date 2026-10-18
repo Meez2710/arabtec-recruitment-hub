@@ -7,7 +7,7 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile, uploadPath, readBlob } from '../lib/upload.js';
 import { sendDocxPreview } from '../lib/cv-preview.js';
-import { run as dbRun, get as dbGet, all as dbAll } from '../lib/db.js';
+import { run as dbRun, get as dbGet, all as dbAll, tx as dbTx } from '../lib/db.js';
 import { sendMail } from '../lib/mailer.js';
 import { rejection as rejectionTpl } from '../lib/email_templates.js';
 // Resolved per request through the parsing registry, never imported directly.
@@ -1254,27 +1254,41 @@ router.get('/meta/form', requirePermission('candidate.view'), (req, res) => {
    reason is required, and the audit entry — including what is about to be
    destroyed — is written BEFORE the row goes, because afterwards there is
    nothing left to describe. */
-router.delete('/:id', requirePermission('candidate.delete'), (req, res) => {
+// A configurable permission alone is not sufficient for irreversible deletion:
+// the product owner explicitly limits this action to two managerial roles.
+const requireCandidateDeleteRole = (req, res, next) =>
+  (req.user?.roles || []).some((role) => role === 'system_admin' || role === 'recruitment_manager')
+    ? next()
+    : res.status(403).json({ error: 'Only System Administrator or Recruitment Manager may delete candidates.' });
+
+router.delete('/:id', requirePermission('candidate.delete'), requireCandidateDeleteRole, (req, res) => {
   const candidate = Candidates.byId(Number(req.params.id));
   if (!candidate) return res.status(404).json({ error: 'Candidate not found.' });
 
   const reason = String((req.body || {}).reason || '').trim();
   if (!reason) return res.status(400).json({ error: 'A reason is required to delete a candidate.' });
 
-  // Cascades take applications, interviews, offers and documents with it. Say so.
+  // Related recruitment records are deleted by FK cascade. Require explicit
+  // acknowledgement, and never report a deletion if its audit transaction fails.
   const counts = HardDelete.candidateCounts(candidate.id);
-  writeAudit(req, {
-    action: 'candidate.deleted', entityType: 'candidate', entityId: candidate.id,
-    oldValue: { name: candidate.full_name, candidateNo: candidate.candidate_no, email: candidate.email, cascaded: counts },
-    comments: reason,
+  const destructive = Object.values(counts).some((n) => Number(n) > 0);
+  if (destructive && req.body?.acknowledgeCascade !== true) {
+    return res.status(409).json({ error: 'Confirm the related records before permanently deleting this candidate.', cascaded: counts });
+  }
+  dbTx(() => {
+    writeAudit(req, {
+      action: 'candidate.deleted', entityType: 'candidate', entityId: candidate.id,
+      oldValue: { name: candidate.full_name, candidateNo: candidate.candidate_no, cascaded: counts },
+      comments: reason,
+    }, { strict: true });
+    HardDelete.candidate(candidate.id);
   });
-  HardDelete.candidate(candidate.id);
   res.json({ deleted: true, candidateNo: candidate.candidate_no, cascaded: counts });
 });
 
 /* What a delete would destroy. The UI asks first so a recruiter sees the blast
    radius before confirming, not after. */
-router.get('/:id/delete-impact', requirePermission('candidate.delete'), (req, res) => {
+router.get('/:id/delete-impact', requirePermission('candidate.delete'), requireCandidateDeleteRole, (req, res) => {
   const candidate = Candidates.byId(Number(req.params.id));
   if (!candidate) return res.status(404).json({ error: 'Candidate not found.' });
   res.json({ candidateNo: candidate.candidate_no, fullName: candidate.full_name, cascaded: HardDelete.candidateCounts(candidate.id) });
