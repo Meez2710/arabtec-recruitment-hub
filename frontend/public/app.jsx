@@ -5574,6 +5574,10 @@ function RequestsPage({ user, initialFilters }) {
   }, [filters]);
   useEffect(() => { load(); }, [load]);
 
+  // A chip/KPI/“Show” sets a filter on the list below the fold; bring the list
+  // into view so the click visibly does something (owner audit 2026-10-15).
+  // Declared before the early return: hooks must run in the same order on every render.
+  const listTopRef = useRef(null);
   if (selectedId) return <RequestDetail id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
 
   const canCreate = btns.create_request?.visible;
@@ -5604,9 +5608,6 @@ function RequestsPage({ user, initialFilters }) {
     filters.departmentId && ['departmentId', `Department: ${(meta.departments.find((x) => String(x.id) === String(filters.departmentId)) || {}).name || filters.departmentId}`, () => setFilters((f) => ({ ...f, departmentId: '' }))],
     filters.focus && ['focus', `Stage: ${(REQ_FOCUS.find(([k]) => k === filters.focus) || [])[1] || filters.focus}`, () => setFilters((f) => ({ ...f, focus: '' }))],
   ].filter(Boolean);
-  // A chip/KPI/“Show” sets a filter on the list below the fold; bring the list
-  // into view so the click visibly does something (owner audit 2026-10-15).
-  const listTopRef = useRef(null);
   const pick = (patch) => {
     setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
     setTimeout(() => listTopRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 60);

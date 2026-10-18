@@ -25,7 +25,7 @@ const get = expression => vm.runInContext(expression,ctx);
 const React = ctx.React;
 let nextId=0;
 function mount(Component, initialProps={}) {
-  let slots=[], cursor=0, effects=[], props=initialProps;
+  let slots=[], cursor=0, effects=[], props=initialProps, hookCount=null;
   const same=(a,b)=>a&&b&&a.length===b.length&&a.every((x,i)=>Object.is(x,b[i]));
   const memo=(fn,deps)=>{const i=cursor++;if(!slots[i]||!same(slots[i].deps,deps)) slots[i]={value:fn(),deps};return slots[i].value;};
   const dispatcher={
@@ -40,6 +40,8 @@ function mount(Component, initialProps={}) {
     render(next=props){props=next;cursor=0;effects=[];
       React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher.current=dispatcher;
       let tree;try{tree=Component(props);}finally{React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher.current=null;}
+      if(hookCount!==null) assert.equal(cursor,hookCount,`${Component.name}: hook count changed between renders`);
+      hookCount=cursor;
       effects.forEach(run=>run());return tree;},
     dispose(){slots.forEach(slot=>slot?.cleanup?.());},
   };
@@ -879,5 +881,34 @@ await check('record links: every record page keeps #<route>/<id> in the address 
   window.location.hash='#offers/7'; probe.dispose();
   assert.equal(calls.at(-1),'/','closing it clears the link');
   window.history=real;
+});
+await check('hiring requests open from the list and links, then return without changing hook order', async()=>{
+  const api=window.ARABTEC_API, realGet=api.get;
+  const pending=window.__atsPendingRequestId;
+  window.__atsPendingRequestId=null;
+  const request={id:42,ticketNo:'REQ-2026-00042',title:'Synthetic hiring request',status:'open',priority:'normal'};
+  api.get=async path=>{
+    if(path==='/settings/buttons/resolved')return {buttons:[]};
+    if(path==='/requests/meta/form')return {projects:[],departments:[],assignableRecruiters:[]};
+    if(path.startsWith('/requests?'))return {requests:[request],total:1};
+    throw new Error(`Unexpected test endpoint: ${path}`);
+  };
+  const page=mount(get('RequestsPage'),{user:{id:7,roles:['recruiter'],permissions:['request.view_all']}});
+  try {
+    page.render();await flush();
+    let tree=page.render();
+    const row=nodes(tree).find(n=>n.type==='tr'&&n.props.className==='row-link');
+    assert.ok(row,'the hiring request is visible in the list');
+    row.props.onClick();
+    tree=page.render();
+    assert.equal(tree.type,get('RequestDetail'));
+    assert.equal(tree.props.id,42);
+    tree.props.onBack();await flush();
+    tree=page.render();
+    assert.ok(nodes(tree).some(n=>n.type==='tr'&&n.props.className==='row-link'));
+    window.dispatchEvent(new CustomEvent('ats:open-request',{detail:{id:42}}));
+    tree=page.render();assert.equal(tree.type,get('RequestDetail'));assert.equal(tree.props.id,42);
+    tree.props.onBack();await flush();page.render();
+  } finally {page.dispose();api.get=realGet;window.__atsPendingRequestId=pending;}
 });
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);
