@@ -8648,7 +8648,70 @@ function RowMenu({ label = 'More', items, ariaLabel }) {
     </div>
   );
 }
-function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onScreen, onFit, onUnfit, onLinked, onRelinked, onOpen, toast }) {
+// Delete from the Talent Pool list without entering the candidate profile.
+// This consumes the existing server-side impact preview and DELETE endpoint;
+// it never guesses which linked recruiting records are safe to remove.
+function CandidateDeleteDialog({ candidate, onClose, onDeleted }) {
+  const [impact, setImpact] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [reason, setReason] = useState('');
+  const [typedNo, setTypedNo] = useState('');
+  const [acknowledge, setAcknowledge] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    api.get(`/candidates/${candidate.id}/delete-impact`)
+      .then((r) => { if (active) setImpact(r); })
+      .catch((e) => { if (active) setError(e.message || 'Could not check the deletion impact.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [candidate.id]);
+  const counts = Object.entries(impact?.cascaded || {}).filter(([, n]) => Number(n) > 0);
+  const destructive = counts.length > 0;
+  const confirmed = !loading && !!impact && reason.trim().length > 0
+    && typedNo.trim() === candidate.candidateNo && (!destructive || acknowledge);
+  async function remove() {
+    if (!confirmed || busy) return;
+    setBusy(true); setError('');
+    try {
+      await api.call(`/candidates/${candidate.id}`, {
+        method: 'DELETE', body: { reason: reason.trim(), acknowledgeCascade: destructive ? acknowledge : false },
+      });
+      onDeleted(candidate);
+    } catch (e) {
+      setError(e.message || 'Could not delete candidate. No changes were confirmed.');
+    } finally { setBusy(false); }
+  }
+  return <Modal title="Permanently delete candidate" onClose={() => { if (!busy) onClose(); }}
+    footer={<>
+      <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>Cancel</button>
+      <button type="button" className="btn btn-danger" disabled={!confirmed || busy} onClick={remove}>
+        {busy ? 'Deleting…' : 'Permanently Delete'}
+      </button>
+    </>}>
+    <p style={{ marginTop: 0 }}>This removes <strong>{candidate.fullName}</strong> ({candidate.candidateNo}) from the Talent Pool permanently. It cannot be undone.</p>
+    {loading ? <p className="muted">Checking linked recruitment records…</p> : impact && <>
+      {destructive ? <>
+        <p><strong>Related records also affected:</strong></p>
+        <ul>{counts.map(([label, n]) => <li key={label}>{n} {label}</li>)}</ul>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 14 }}>
+          <input type="checkbox" checked={acknowledge} onChange={(e) => setAcknowledge(e.target.checked)} />
+          <span>I understand these linked applications, interviews, offers or documents may also be permanently deleted.</span>
+        </label>
+      </> : <p className="muted">No linked applications, interviews, offers or CV documents were reported.</p>}
+      <div className="field"><label htmlFor="talent-delete-reason">Reason for deletion (required)</label>
+        <textarea id="talent-delete-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)}
+          placeholder="Explain why this candidate record should be deleted" /></div>
+      <div className="field"><label htmlFor="talent-delete-code">Type {candidate.candidateNo} to confirm</label>
+        <input id="talent-delete-code" value={typedNo} onChange={(e) => setTypedNo(e.target.value)} autoComplete="off" /></div>
+    </>}
+    {error && <p role="alert" style={{ color: 'var(--critical, #B42318)' }}>{error}</p>}
+  </Modal>;
+}
+
+function CandidateActionMenu({ candidate, canScreen, canLink, canDelete, sc, requests, onScreen, onFit, onUnfit, onLinked, onRelinked, onOpen, onDelete, toast }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState('menu');
   const [q, setQ] = useState('');
@@ -8720,6 +8783,7 @@ function CandidateActionMenu({ candidate, canScreen, canLink, sc, requests, onSc
                   {candidate.hasResume && <Item onClick={() => { setOpen(false); openCvReview(candidate.id, candidate); }}>Review CV</Item>}
                   {candidate.hasResume && <Item onClick={() => { setOpen(false); downloadResume(candidate, toast); }}>Download CV</Item>}
                   <Item onClick={() => { setOpen(false); onOpen(); }}>Open profile</Item>
+                  {canDelete && <Item onClick={() => { setOpen(false); onDelete(); }}>Delete candidate</Item>}
                 </div>
               </>
             )}
@@ -8940,6 +9004,9 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
   }, []);
   // F2: selection for bulk actions. A Set because membership is the only query.
   const [selected, setSelected] = useState(() => new Set());
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const canDelete = can(user, 'candidate.delete') && (user.roles || []).some((role) =>
+    role === 'system_admin' || role === 'recruitment_manager');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkUnfit, setBulkUnfit] = useState(false);
   const [unfitFor, setUnfitFor] = useState(null);
@@ -9366,11 +9433,16 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     <PoolStatusBadge status={c.poolStatus} />
                     <span className="cell-sub">{c.candidateNo}</span>
                     {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
-                    {c.hasResume && <div className="pool-cv-actions" onClick={(e) => e.stopPropagation()}>
-                      <button className="icon-btn" aria-label={`Review CV for ${c.fullName}`}
-                        onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
-                      <button className="icon-btn" aria-label={`Download ${c.resumeName || 'CV'}`}
-                        onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
+                    {(c.hasResume || canDelete) && <div className="pool-cv-actions" onClick={(e) => e.stopPropagation()}>
+                      {c.hasResume && <>
+                        <button className="icon-btn" aria-label={`Review CV for ${c.fullName}`}
+                          onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
+                        <button className="icon-btn" aria-label={`Download ${c.resumeName || 'CV'}`}
+                          onClick={() => downloadResume(c, toast)}><Icon name="download" size={16} /></button>
+                      </>}
+                      {canDelete && <button type="button" className="btn btn-danger btn-sm"
+                        aria-label={`Delete candidate ${c.fullName}`}
+                        onClick={() => setDeleteTarget(c)}>Delete</button>}
                     </div>}
                   </div>
                 </div></td>
@@ -9449,7 +9521,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   {c.graduationYear != null ? `Class of ${c.graduationYear}` : 'Graduation year not recorded'}
                 </span>
                 <CandidateActionMenu
-                  candidate={c} canScreen={canScreen} canLink={canLink} sc={scOf(c)}
+                  candidate={c} canScreen={canScreen} canLink={canLink} canDelete={canDelete} sc={scOf(c)}
                   requests={linkRequests}
                   onScreen={() => setScreening(c.id, 'screening')}
                   onFit={() => setScreening(c.id, 'fit')}
@@ -9457,6 +9529,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                   onLinked={linkOne}
                   onRelinked={() => load()}
                   onOpen={() => openProfile(c.id)}
+                  onDelete={() => setDeleteTarget(c)}
                   toast={toast} />
               </div>
             </div>
@@ -9467,6 +9540,14 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
         <Pager page={page} pageSize={pageSize} total={pageInfo.total}
           totalPages={pageInfo.totalPages} onPage={setPage} onPageSize={setPageSize} />
       )}
+      {deleteTarget && <CandidateDeleteDialog candidate={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={(deleted) => {
+          setDeleteTarget(null);
+          setSelected((ids) => { const next = new Set(ids); next.delete(deleted.id); return next; });
+          toast(`${deleted.candidateNo} deleted`);
+          if (shown.length === 1 && page > 1) setPage(page - 1); else load();
+        }} />}
       {unfitFor && (
         <ReasonModal title={`Mark ${unfitFor.fullName} unfit`}
           label="Reason this candidate is unfit"
