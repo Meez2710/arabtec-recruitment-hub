@@ -64,7 +64,8 @@ try {
  assert.equal((await api('/api/candidates/'+victim,{token:manager,method:'DELETE',body:{}})).status,400,'deletion requires reason');
  const noLinks=await api('/api/candidates/'+victim,{token:manager,method:'DELETE',body:{reason:'Synthetic test candidate'}});
  assert.equal(noLinks.status,200,'recruitment manager deletes unlinked candidate');
- assert.equal((await api('/api/candidates/'+victim,{token:admin})).status,404,'deleted candidate gone');
+ assert.equal(db.get('SELECT id FROM candidate WHERE id=?',[victim]),undefined,'deleted candidate row gone');
+ assert.equal((await api('/api/candidates/'+victim,{token:admin})).status,403,'scope guard does not expose removed candidate');
  assert.equal((await api('/api/candidates/'+survivor,{token:admin})).status,200,'unrelated candidate survives');
  const aud=db.get("SELECT action, comments FROM audit_log WHERE action='candidate.deleted' AND entity_id=?",[String(victim)]);
  assert.equal(aud?.comments,'Synthetic test candidate','deletion retains audit reason');
