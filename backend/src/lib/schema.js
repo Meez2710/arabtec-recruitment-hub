@@ -1220,6 +1220,7 @@ export function ensureSchema() {
   syncCatalogAdditions();
   backfillCvInboxGrants();
   applyRequestControlPolicy();
+  applyCandidateDeletePolicy();
   ensureOneJoinedPerCandidate();
 }
 
@@ -1291,6 +1292,46 @@ function applyRequestControlPolicy() {
     if (result) console.log(JSON.stringify({ level: 'info', msg: 'schema.request_control_policy', removed: result.removed, granted: result.granted }));
   } catch (e) {
     console.error('  ! Request control policy failed (continuing):', e.message);
+  }
+}
+
+// Product-owner policy, 18 Oct 2026: only the Recruitment Manager and the
+// System Administrator may permanently delete a candidate. Unlike
+// syncCatalogAdditions(), this is an EXISTING permission code and must be
+// backfilled once for databases that were seeded before the decision. A marker
+// prevents silently undoing subsequent changes in Roles & Permissions.
+const CANDIDATE_DELETE_POLICY_KEY = 'policy_candidate_delete_v1';
+const CANDIDATE_DELETE_ROLES = ['system_admin', 'recruitment_manager'];
+function applyCandidateDeletePolicy() {
+  try {
+    const result = tx(() => {
+      if (get('SELECT id FROM system_setting WHERE key=?', [CANDIDATE_DELETE_POLICY_KEY])) return null;
+      const perm = get('SELECT id FROM permission WHERE code=?', ['candidate.delete']);
+      const roles = all('SELECT id, code FROM role');
+      const eligible = roles.filter((r) => CANDIDATE_DELETE_ROLES.includes(r.code));
+      // Do not stamp a half-seeded database. Fresh installation calls
+      // ensureSchema again after seed populates permissions and roles.
+      if (!perm || eligible.length !== CANDIDATE_DELETE_ROLES.length) return null;
+      const keep = eligible.map((r) => r.id);
+      const removed = all(`SELECT r.code FROM role_permission rp JOIN role r ON r.id=rp.role_id
+        WHERE rp.permission_id=? AND rp.role_id NOT IN (${keep.map(() => '?').join(',')})`, [perm.id, ...keep]);
+      run(`DELETE FROM role_permission WHERE permission_id=? AND role_id NOT IN (${keep.map(() => '?').join(',')})`,
+        [perm.id, ...keep]);
+      let granted = 0;
+      for (const role of eligible) {
+        if (get('SELECT 1 AS x FROM role_permission WHERE role_id=? AND permission_id=?', [role.id, perm.id])) continue;
+        run('INSERT INTO role_permission (role_id,permission_id) VALUES (?,?) ON CONFLICT DO NOTHING RETURNING role_id',
+          [role.id, perm.id]);
+        granted++;
+      }
+      const stamp = new Date().toISOString();
+      run('INSERT INTO system_setting (key,value,updated_at) VALUES (?,?,?)',
+        [CANDIDATE_DELETE_POLICY_KEY, JSON.stringify({ appliedAt: stamp, granted, removed: removed.map((r) => r.code) }), stamp]);
+      return { granted, removed: removed.length };
+    });
+    if (result) console.log(JSON.stringify({ level: 'info', msg: 'schema.candidate_delete_policy', ...result }));
+  } catch (e) {
+    console.error('  ! Candidate delete policy failed:', e.message);
   }
 }
 
