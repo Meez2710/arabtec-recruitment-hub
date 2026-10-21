@@ -5085,6 +5085,10 @@ function SystemPage({ user }) {
     <div>
       <PageHead crumb="Configuration / System" title="System Settings" sub="Platform-wide defaults."
         actions={canManage && <button className="btn" onClick={save}>Save</button>} />
+      <section className="card card-pad" aria-labelledby="developer-credit-heading" style={{ marginBottom: 16 }}>
+        <h2 id="developer-credit-heading">About this system</h2>
+        <p>Developed by Moutaz Adly</p>
+      </section>
       <div className="card card-pad"><div className="form-grid">
         {Object.entries(s).map(([k, v]) => (
           <div className="field" key={k}><label>{k.replace(/_/g, ' ')}</label>
