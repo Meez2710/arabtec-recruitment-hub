@@ -1,5 +1,9 @@
 # Arabtec Recruitment Hub — Phases 1–3
 
+Development credit: **Developed by Moutaz Adly**.
+
+This credit records development attribution. Ownership and usage rights remain governed by applicable agreements and law.
+
 A real, runnable local application.
 - **Phase 1** — platform foundation: auth, RBAC, admin, branding, org, audit.
 - **Phase 2** — Recruitment Requests / Ticketing: controlled tickets, approval chain, budget validation, recruiter assignment, SLA/priority, reason-required lifecycle, audit.

@@ -1,5 +1,9 @@
 # Arabtec ATS — on-prem migration runbook
 
+Development credit: **Developed by Moutaz Adly**.
+
+This credit records development attribution. Ownership and usage rights remain governed by applicable agreements and law.
+
 Move the Recruitment Hub off Render onto the company server and **retire Render**.
 
 - **Target host:** `ats@10.20.0.9` (Ubuntu 24.04, existing PostgreSQL 16, Apache).
