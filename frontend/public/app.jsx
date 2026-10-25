@@ -1837,8 +1837,8 @@ function ChartLegend({ data, labeler = (s) => s }) {
   </div>;
 }
 function Funnel({ data }) {
-  const order = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
-  const map = Object.fromEntries(data.map((d) => [d.status, d.count]));
+  const order = FUNNEL_ORDER;
+  const map = foldLegacyScreening(Object.fromEntries(data.map((d) => [d.status, d.count])));
   const rows = order.filter((s) => map[s]).map((s) => ({ status: s, count: map[s] }));
   if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
   const max = Math.max(...rows.map((r) => r.count), 1);
@@ -1862,12 +1862,24 @@ const STAGE_COLORS = {
   waiting_feedback: '#E09600', issuing_offer: '#8A5A00', offer_sent: '#8A5A00', joined: '#00664F',
   unmatched: '#C7C4BF', on_hold: '#6F6A64', rejected: '#D01827', offer_declined: '#B01420',
 };
-const FUNNEL_ORDER = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+const FUNNEL_ORDER = ['sourced', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+// The Screening stage was removed from the hiring pipeline (recruitment team,
+// 25 Oct 2026): Shortlisted goes straight to Interview. Applications stored at
+// the old Screening statuses are legacy rows; every chart counts them under
+// Shortlisted so a historical candidate never disappears from a total.
+const LEGACY_SCREENING = ['matched', 'unmatched', 'screened', 'cv_screening', 'screening'];
+function foldLegacyScreening(counts) {
+  const out = { ...(counts || {}) };
+  let extra = 0;
+  for (const k of LEGACY_SCREENING) { if (out[k]) { extra += Number(out[k]) || 0; delete out[k]; } }
+  if (extra) out.shortlisted = (Number(out.shortlisted) || 0) + extra;
+  return out;
+}
 
 // Compact, Workable-style pipeline funnel rendered on each request card.
 // Shows total candidates + a proportional stacked bar across active stages.
 function FunnelMini({ pipeline }) {
-  const byStage = (pipeline && pipeline.byStage) || {};
+  const byStage = foldLegacyScreening((pipeline && pipeline.byStage) || {});
   const total = (pipeline && pipeline.total) || 0;
   const segs = FUNNEL_ORDER.map((s) => ({ s, c: byStage[s] || 0 })).filter((x) => x.c > 0);
   const segTotal = segs.reduce((a, b) => a + b.c, 0) || 1;
@@ -1903,7 +1915,7 @@ function FunnelMini({ pipeline }) {
 // Presentation only. Every number rendered here comes from the existing
 // GET /dashboard response; nothing is fabricated or extrapolated.
 const APP_STAGE_COLORS = {
-  sourced: '#8A867F', shortlisted: '#6B8F3D', screening: '#4E9C88', interview_hr: '#008064',
+  sourced: '#8A867F', shortlisted: '#6B8F3D', interview_hr: '#008064',
   interview_technical: '#00664F', offer: '#8A5A00', hired: '#00664F',
   rejected: '#D01827', offer_declined: '#B01420',
 };
@@ -1940,7 +1952,7 @@ function DashBars({ rows, empty, icon = EMOJI.chart }) {
 }
 
 function DashFunnel({ data }) {
-  const order = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
+  const order = ['sourced', 'shortlisted', 'interview_hr', 'offer', 'hired'];
   // /dashboard returns the API's canonical statuses (matched, interviewing,
   // issuing_offer, joined…). Fold them onto board columns via pipelineStage,
   // otherwise everything except Sourced reads 0.
@@ -2714,7 +2726,7 @@ function PlanTable({ rows, unit }) {
 // figures, the pipeline funnel and the plan, 3) detail on demand. Every figure
 // can be narrowed by project, department or recruiter (owner review, 4 Oct 2026).
 const DASH_FILTER_KEY = 'arabtec_dash_filter';
-const FUNNEL = [[1, 'Sourced'], [2, 'Screening'], [3, 'Interview'], [4, '2nd interview'], [5, 'Offer'], [6, 'Hired']];
+const FUNNEL = [[1, 'Sourced'], [2, 'Shortlisted'], [3, 'Interview'], [4, '2nd interview'], [5, 'Offer'], [6, 'Hired']];
 function readDashFilter() {
   try { const v = JSON.parse(localStorage.getItem(DASH_FILTER_KEY) || '{}'); return { projectId: v.projectId || '', departmentId: v.departmentId || '', ownerId: v.ownerId || '' }; }
   catch { return { projectId: '', departmentId: '', ownerId: '' }; }
@@ -3107,7 +3119,7 @@ function MetricBar({ rows, labeler = (s) => s, max }) {
 // A proportional, tapering hiring-funnel with stage-to-stage conversion %.
 function ReportFunnel({ data }) {
   const map = Object.fromEntries((data || []).map((d) => [d.status, d.count]));
-  const rows = FUNNEL_ORDER.filter((s) => map[s] != null).map((s) => ({ status: s, count: map[s] }));
+  const rows = FUNNEL_ORDER.filter((s) => foldLegacyScreening(map)[s] != null).map((s) => ({ status: s, count: foldLegacyScreening(map)[s] }));
   if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return <div>{rows.map((r, i) => {
@@ -6540,7 +6552,9 @@ function TimelineTab({ req }) {
 /* ============================ PHASE 3: Application statuses + pipeline ============================ */
 const APP_STATUS = {
   sourced:            { label: 'Sourced', variant: 'soft', column: 1 },
-  screening:          { label: 'Screening', variant: 'info', column: 2 },
+  // 'screening' is kept only so an old bookmark or filter value does not crash
+  // the board; nothing writes it any more (stage removed 25 Oct 2026).
+  screening:          { label: 'Shortlisted', variant: 'info', column: 2 },
   interview_hr:       { label: 'Interview', variant: 'info', column: 3 },
   interview_technical:{ label: '2nd Interview (Technical)', variant: 'info', column: 4 },
   offer:              { label: 'Offer', variant: 'warning', column: 5 },
@@ -6550,11 +6564,13 @@ const APP_STATUS = {
   on_hold:            { label: 'On Hold', variant: 'warning', column: 99 },
   new:         { label: 'Sourced', variant: 'soft', column: 1 },
   applied:     { label: 'Sourced', variant: 'soft', column: 1 },
-  matched:     { label: 'Screening', variant: 'info', column: 2 },
-  screened:    { label: 'Screening', variant: 'info', column: 2 },
-  cv_screening:{ label: 'Screening', variant: 'info', column: 2 },
-  unmatched:   { label: 'Screening', variant: 'info', column: 2 },
-  shortlisted: { label: 'Shortlisted', variant: 'info', column: 1.5 },
+  // Legacy Screening statuses (the API still stores them for historical rows):
+  // shown and counted under Shortlisted, the stage that replaced Screening.
+  matched:     { label: 'Shortlisted', variant: 'info', column: 2 },
+  screened:    { label: 'Shortlisted', variant: 'info', column: 2 },
+  cv_screening:{ label: 'Shortlisted', variant: 'info', column: 2 },
+  unmatched:   { label: 'Shortlisted', variant: 'info', column: 2 },
+  shortlisted: { label: 'Shortlisted', variant: 'info', column: 2 },
   interviewing:{ label: 'Interview', variant: 'info', column: 3 },
   interview_1: { label: 'Interview', variant: 'info', column: 3 },
   interview_2: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
@@ -6569,18 +6585,20 @@ const APP_STATUS = {
 // Board columns. `interview_technical` was removed: the API models a single
 // `interviewing` stage, so that column could never be reached and any move to it
 // was rejected with 400.
-const APP_ORDER = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
+// Screening removed (recruitment team, 25 Oct 2026): Sourced → Shortlisted →
+// Interview → Offer → Hired. Shortlisted is where hiring managers first see a
+// candidate, and from there the next hop is the interview.
+const APP_ORDER = ['sourced', 'shortlisted', 'interview_hr', 'offer', 'hired'];
 
 // WRITE-DIRECTION map: board column -> the status the API actually accepts.
 // APP_STATUS above is the read direction (API status -> display column); this is
 // its mirror. Without it the board posted display keys such as 'screening', which
 // the API rejects as Invalid status — five of six moves silently failed.
 // Targets verified against the API's own transition table:
-//   sourced -> matched -> interviewing -> issuing_offer -> offer_sent -> joined
+//   sourced -> shortlisted -> interviewing -> issuing_offer -> offer_sent -> joined
 const APP_WRITE = {
   sourced: 'sourced',
   shortlisted: 'shortlisted',
-  screening: 'matched',
   interview_hr: 'interviewing',
   offer: 'issuing_offer',
   hired: 'joined',
@@ -6655,8 +6673,7 @@ function pipelineStage(status) {
   if (!s) return 'sourced';
   if (DISQUALIFIED_STAGES.includes(status)) return status;
   if (s.column === 1) return 'sourced';
-  if (s.column === 1.5) return 'shortlisted';
-  if (s.column === 2) return 'screening';
+  if (s.column === 1.5 || s.column === 2) return 'shortlisted';
   // Columns 3 and 4 both fold into the single interview column: the API has one
   // `interviewing` stage, so a card must never land in a column that no longer
   // exists in APP_ORDER (it would vanish from the board).
@@ -6688,10 +6705,13 @@ function canPipelineMove(status, target) {
 }
 function pipelineResidualLabel(status) {
   const column = pipelineStage(status);
-  // The column already names the stage; its own default status ('matched'
-  // under Screening, 'interviewing' under Interview, 'issuing_offer' under
+  // The column already names the stage; its own default status ('interviewing'
+  // under Interview, 'issuing_offer' under
   // Offer) adds nothing, and printing it read as a second, competing stage.
   if (status === column || status === APP_WRITE[column]) return '';
+  // A legacy Screening row sits under Shortlisted and is Shortlisted; naming
+  // its stored status would resurrect the removed stage on the card.
+  if (LEGACY_SCREENING.includes(status)) return '';
   const label = APP_STATUS[status]?.label;
   return label && label !== APP_STATUS[column]?.label ? label : String(status).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
@@ -6977,7 +6997,7 @@ function RequestPipeline({ request, user, btns }) {
 }
 
 // Shows the candidate's real stage and offers only the moves the server accepts
-// (it used to show "Sourced" for a Screening candidate and offer every stage,
+// (it used to show "Sourced" for a Shortlisted candidate and offer every stage,
 // silently ignoring the ones that were not allowed).
 function StageSelect({ value, onChange, disabled }) {
   const current = pipelineStage(value);

@@ -89,6 +89,19 @@ await check('folded and unknown stages retain their specific status information'
   assert.equal(label('custom_stage'),'Custom stage');
   assert.equal(label('sourced'),'');
 });
+// 25 Oct 2026: the Screening stage is removed from the hiring pipeline. The
+// board goes Sourced → Shortlisted → Interview → Offer → Hired; rows the API
+// still stores at the old Screening statuses read and count as Shortlisted.
+await check('the Screening stage is gone from every board, menu and chart',()=>{
+  const order=get('APP_ORDER'), status=get('APP_STATUS'), stage=get('pipelineStage'), label=get('pipelineResidualLabel'), funnel=get('FUNNEL'), fold=get('foldLegacyScreening');
+  assert.equal(JSON.stringify(order),JSON.stringify(['sourced','shortlisted','interview_hr','offer','hired']));
+  assert.ok(!Object.values(status).some((s)=>/screening/i.test(s.label)),'no status is labelled Screening');
+  for(const legacy of ['matched','unmatched','screened','cv_screening'])assert.equal(stage(legacy),'shortlisted',legacy);
+  assert.equal(label('matched'),'','a legacy Screening row shows no second, competing stage');
+  assert.ok(!funnel.some(([,l])=>/screening/i.test(l)),'dashboard funnel has no Screening bar');
+  assert.equal(JSON.stringify(fold({sourced:2,shortlisted:1,matched:3,unmatched:1,interviewing:4})),JSON.stringify({sourced:2,shortlisted:5,interviewing:4}));
+  assert.equal(get('APP_WRITE').screening,undefined,'nothing can be written to Screening');
+});
 await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});
