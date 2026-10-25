@@ -1540,10 +1540,13 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   // stay, and a user without Control Center keeps their own entry (review C1).
   const IN_CONTROL_CENTER = ['branding', 'buttons', 'notifications'];
   const hasControl = can(user, 'app.manage_ui');
-  const visibleNav = NAV.filter((n) => n.section || (
+  const allowedNav = NAV.filter((n) => n.section || (
     !(hasControl && IN_CONTROL_CENTER.includes(n.key))
     && (!n.broadCandidates || hasBroadCandidateAccess(user))
     && (n.anyPerm ? n.anyPerm.some((p) => can(user, p)) : (!n.perm || can(user, n.perm)))));
+  // A section header with nothing under it (a hiring manager's "Administration")
+  // is dropped rather than drawn empty (walkthrough 25 Oct 2026).
+  const visibleNav = allowedNav.filter((n, i) => !n.section || (allowedNav[i + 1] && !allowedNav[i + 1].section));
   const navItems = visibleNav.filter((n) => !n.section);
   // Five-item bottom bar: the four most-used sections this role can reach, plus More.
   const primaryMobile = mobileNavItems(navItems, persona);
@@ -3297,7 +3300,8 @@ function SearchSelect({ value, onChange, options, placeholder = 'Type to searchâ
     if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); else setHi((h) => Math.min(h + 1, Math.max(shown.length - 1, 0))); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
     else if (e.key === 'Enter') { if (open) { e.preventDefault(); if (shown[hi]) pick(shown[hi].value); } }
-    else if (e.key === 'Escape') { if (open) { e.preventDefault(); setOpen(false); setQ(''); } }
+    // Escape closes the list only; the dialog around it stays open (walkthrough 25 Oct 2026).
+    else if (e.key === 'Escape') { if (open) { e.preventDefault(); e.stopPropagation(); setOpen(false); setQ(''); } }
     else if (e.key === 'Backspace' && !q && has) { onChange(''); }
   }
   return (
