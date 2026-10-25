@@ -20,12 +20,17 @@
 # Nothing here drops or migrates data; the app upgrades its own schema at
 # startup, additively.
 #
-#   bash 08-redeploy.sh                 # deploy origin/main
-#   ATS_REF=<sha|branch> bash 08-redeploy.sh
+#   ATS_REF=<full sha> bash 08-redeploy.sh
+#
+# A release is an exact SHA that Moutaz Adly approved in GitHub (Packet 2,
+# 25 Oct 2026; see RELEASE-GATE.md). Branch names and defaults are refused;
+# 10-verify-approval.sh checks the approval record before anything changes,
+# and a refusal leaves the running service exactly as it is.
 set -euo pipefail
 
 APP_ROOT=/opt/arabtec-ats
-REF="${ATS_REF:-origin/main}"
+REF="${ATS_REF:-}"
+[[ "$REF" =~ ^[0-9a-f]{40}$ ]] || { echo "REFUSING: ATS_REF must be the full 40-character SHA of a release approved in GitHub (environment onprem-10.20.0.9)." >&2; exit 1; }
 UNIT=arabtec-ats
 export PATH=/opt/node22/bin:$PATH
 
@@ -62,6 +67,11 @@ if [ -n "$DIRTY" ]; then
   exit 1
 fi
 
+# The approval check needs the commit locally (fetched just above) and runs
+# before anything is changed. No approval, no release.
+echo "==> verify approval for $REF"
+bash "$(dirname "$0")/10-verify-approval.sh" "$REF" || { echo "REFUSING: no valid GitHub approval for $REF — the running service is untouched." >&2; exit 1; }
+
 git -C "$APP_ROOT" reset --hard "$REF"
 
 echo "==> build"
@@ -97,6 +107,11 @@ if [ "$ready" != 1 ]; then
   exit 1
 fi
 
+# One approval, one release: mark the deployment consumed only now that the
+# new build is serving. A failed build above leaves it usable for a retry.
+bash "$(dirname "$0")/10-verify-approval.sh" --consume "$REF" >/dev/null || true
+echo "$(date -Is) RELEASE $REF (was $PREVIOUS_SHA) by ${SUDO_USER:-$USER} from ${SSH_CLIENT%% *}" >> "$HOME/releases.log"
+
 echo
 echo "Deployed $(cat "$APP_ROOT/DEPLOYED_SHA") (was $PREVIOUS_SHA)."
-echo "Roll back with: ATS_REF=$PREVIOUS_SHA bash $0"
+echo "Roll back: approve $PREVIOUS_SHA in GitHub (Actions → Release to on-prem), then ATS_REF=$PREVIOUS_SHA bash $0"
