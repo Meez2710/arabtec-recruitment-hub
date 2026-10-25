@@ -1,0 +1,7 @@
+# Every first-party file needs Moutaz Adly's review, including this file and the workflows.
+*                                     @Meez2710
+/.github/                             @Meez2710
+/.github/CODEOWNERS                   @Meez2710
+/deploy/                              @Meez2710
+/backend/src/lib/permissions.js       @Meez2710
+/backend/src/lib/security-headers.js  @Meez2710
