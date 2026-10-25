@@ -102,6 +102,32 @@ await check('the Screening stage is gone from every board, menu and chart',()=>{
   assert.equal(JSON.stringify(fold({sourced:2,shortlisted:1,matched:3,unmatched:1,interviewing:4})),JSON.stringify({sourced:2,shortlisted:5,interviewing:4}));
   assert.equal(get('APP_WRITE').screening,undefined,'nothing can be written to Screening');
 });
+// 25 Oct 2026: every long list is a dropdown you can type into.
+await check('SearchSelect narrows as you type, picks with Enter, clears, and shows the chosen label',()=>{
+  let value='';
+  const opts=[{value:'1',label:'Civil Works'},{value:'2',label:'Finance'},{value:'3',label:'Mechanical'}];
+  const base={options:opts,emptyLabel:'All departments',ariaLabel:'Department',onChange:(v)=>{value=v;}};
+  const sel=mount(get('SearchSelect'),{...base,value});
+  let tree=sel.render();
+  const input=()=>nodes(tree).find(n=>n.type==='input');
+  assert.equal(input().props.role,'combobox');
+  assert.equal(nodes(tree).some(n=>n.props?.role==='listbox'),false,'closed until focused');
+  input().props.onFocus();tree=sel.render();
+  assert.equal(nodes(tree).filter(n=>n.props?.role==='option').length,4,'empty row + three options');
+  input().props.onChange({target:{value:'fin'}});tree=sel.render();
+  const shown=nodes(tree).filter(n=>n.props?.role==='option');
+  assert.equal(shown.length,1);assert.equal(/Finance/.test(text(shown[0])),true);
+  input().props.onKeyDown({key:'Enter',preventDefault(){}});
+  assert.equal(value,'2','Enter picks the highlighted match');
+  tree=sel.render({...base,value});
+  assert.equal(input().props.value,'Finance','the chosen label shows in the box');
+  assert.equal(nodes(tree).some(n=>n.props?.role==='listbox'),false,'closed after picking');
+  nodes(tree).find(n=>n.props?.['aria-label']==='Clear').props.onClick();
+  assert.equal(value,'','the × clears the choice');
+  tree=sel.render({...base,value});input().props.onFocus();input().props.onChange({target:{value:'zzz'}});tree=sel.render({...base,value});
+  assert.equal(nodes(tree).filter(n=>n.props?.role==='option').length,0);
+  assert.equal(/No matches/.test(text(tree)),true,'says when nothing matches');
+});
 await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});

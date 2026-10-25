@@ -443,6 +443,7 @@ table.table tbody td, .table tbody td, table tbody td {
 .toolbar-search > input { width: 100%; min-width: 0; }
 .toolbar-secondary { display: flex; align-items: center; gap: 8px; flex: 2 1 540px; min-width: 0; flex-wrap: wrap; }
 .toolbar-secondary > input, .toolbar-secondary > select { flex: 1 1 88px; min-width: 0; width: auto; }
+.toolbar-secondary > .sselect { flex: 1 1 150px; min-width: 0; }
 .toolbar-secondary > .switch { flex: 0 0 auto; }
 .toolbar-count { flex: 0 0 auto; }
 .filter-toggle { display: none; }
@@ -534,6 +535,7 @@ button.pcard-name { padding-block: 4px; margin-block: -4px; }
   .toolbar-secondary { display: none; flex: 1 1 100%; order: 3; }
   .toolbar-secondary.expanded { display: flex; }
   .toolbar-secondary > input, .toolbar-secondary > select { flex-basis: 140px; }
+  .toolbar-secondary > .sselect { flex-basis: 100%; }
   .dash-kpi-row.kpi-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
@@ -2057,3 +2059,22 @@ button.cal-slot:focus-visible { outline: 0; }
 
 /* Document-only side panel (thread attachments): the file takes the full width. */
 .cvrev-body.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- SearchSelect: a dropdown you can type into (25 Oct 2026) ---- */
+.sselect { position: relative; min-width: 0; }
+.sselect > input { width: 100%; padding-inline-end: 44px; text-overflow: ellipsis; }
+.sselect > input::placeholder { color: var(--ink, #1A1A1A); opacity: 1; }
+.sselect:not(.has-value) > input::placeholder { color: var(--muted, #6F6A64); }
+.sselect.open > input::placeholder { color: var(--muted, #6F6A64); }
+.sselect-caret { position: absolute; inset-inline-end: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted, #6F6A64); font-size: 12px; }
+.sselect-clear { position: absolute; inset-inline-end: 26px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--muted, #6F6A64); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; border-radius: 4px; }
+.sselect-clear:hover { color: var(--ink, #1A1A1A); background: var(--canvas, #F4F5F7); }
+.sselect-list { position: absolute; z-index: 60; top: calc(100% + 4px); inset-inline-start: 0; min-width: 100%; max-width: min(420px, 92vw); max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface, #fff); border: 1px solid var(--line, var(--border, #E4E4E4)); border-radius: 10px; box-shadow: var(--shadow-pop, 0 10px 30px rgba(0, 0, 0, .14)); }
+.sselect-opt { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--ink, #1A1A1A); white-space: nowrap; }
+.sselect-opt > span { overflow: hidden; text-overflow: ellipsis; }
+.sselect-opt > small { color: var(--muted, #6F6A64); font-size: 11.5px; flex: 0 0 auto; }
+.sselect-opt.active { background: var(--canvas, #F4F5F7); }
+.sselect-opt.selected { font-weight: 600; }
+.sselect-empty { padding: 8px 10px; color: var(--muted, #6F6A64); font-size: 12.5px; }
+.field > .sselect > input { width: 100%; }
+.dash-filter .sselect { min-width: 170px; }
