@@ -2094,3 +2094,6 @@ button.cal-slot:focus-visible { outline: 0; }
 .cvfull-body > .parse-review-cv { flex: 1 1 auto; min-height: 0; }
 .cvfull-body .parse-review-cv-frame { min-height: 0; height: 100%; }
 .cvfull-state { flex: 1 1 auto; display: grid; place-items: center; padding: 24px; }
+
+/* ---- Recommended-candidate chip on a pipeline card (25 Oct 2026) ---- */
+.pcard-recommended { display: inline-flex; margin-top: 4px; }

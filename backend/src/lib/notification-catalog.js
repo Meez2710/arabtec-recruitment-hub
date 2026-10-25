@@ -212,6 +212,12 @@ export const NOTIFICATION_EVENTS = [
     defaults: { enabled: true, inApp: true, email: false, recipients: ['owner', 'recruitment_team'] },
   },
   {
+    key: 'stakeholder.recommendation', label: 'Hiring manager / interviewer recommended a candidate', category: 'Hiring manager & interviewer actions',
+    description: 'A hiring manager or interviewer added a candidate with a CV straight into the request\u2019s shortlist as their recommendation.',
+    template: null,
+    defaults: { enabled: true, inApp: true, email: true, recipients: ['owner', 'recruitment_team'] },
+  },
+  {
     key: 'stakeholder.feedback', label: 'Hiring manager / interviewer gave feedback', category: 'Hiring manager & interviewer actions',
     description: 'Interview feedback, an assessment or a final decision was submitted by a hiring manager or interviewer.',
     template: null,

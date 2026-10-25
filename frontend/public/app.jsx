@@ -7006,7 +7006,9 @@ function RequestPipeline({ request, user, btns }) {
   const [bulkTarget, setBulkTarget] = useState(''); // controlled destination; validated against the selection each render
   const [bulkConfirm, setBulkConfirm] = useState(null); // { go, sum } when hidden rows are part of the move
 
-  const load = useCallback(async () => { setLoadError(null); try { setApps((await api.get('/applications/request/' + request.id)).applications); } catch (e) { setLoadError(e.message); } }, [request.id]);
+  const [canRecommend, setCanRecommend] = useState(false);
+  const [recommendOpen, setRecommendOpen] = useState(false);
+  const load = useCallback(async () => { setLoadError(null); try { const r = await api.get('/applications/request/' + request.id); setApps(r.applications); setCanRecommend(!!r.canRecommend); } catch (e) { setLoadError(e.message); } }, [request.id]);
   const [askUnlink, unlinkModal] = useUnlinkFlow(user, load);
   useEffect(() => { load(); }, [load]);
 
@@ -7126,6 +7128,7 @@ function RequestPipeline({ request, user, btns }) {
           <option value="last">Sort: Last updated</option><option value="name">Name</option><option value="match">Match score</option></select>
         <div className="spacer" />
         <CountPill n={apps ? visibleApps.length : null} total={apps ? apps.length : null} noun="candidate" />
+        {canRecommend && <button className={'btn btn-sm' + (canLink ? ' btn-secondary' : '')} onClick={() => setRecommendOpen(true)} title="Add a candidate you recommend, with their CV, straight into Shortlisted">Recommend a candidate</button>}
         {canImport && <button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button>}
         {canLink && <button className="btn btn-sm" onClick={() => setLinkOpen(true)}>{btns.link_candidate.label === 'Link to Request' ? 'Add Candidate' : btns.link_candidate.label}</button>}
       </div>
@@ -7154,8 +7157,11 @@ function RequestPipeline({ request, user, btns }) {
         message={`${bulkConfirm.sum.chosen.length} candidates are selected and ${bulkConfirm.sum.hidden.length} of them are hidden by the current filters. ${bulkConfirm.sum.eligible.length} eligible will move to ${APP_STATUS[bulkConfirm.sum.target].label}; the rest stay where they are.`}
         onConfirm={() => { const c = bulkConfirm; setBulkConfirm(null); c.go(); }} onClose={() => setBulkConfirm(null)} />}
 
-      {apps.length === 0 ? <div className="card"><Empty art="none-yet" text="No candidates linked yet. Use 'Add Candidate' to add candidates." />
-          {canImport && <div style={{ textAlign: 'center', paddingBottom: 18 }}><button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button></div>}</div>
+      {apps.length === 0 ? <div className="card"><Empty art="none-yet" text={canLink ? "No candidates linked yet. Use 'Add Candidate' to add candidates." : canRecommend ? 'No shortlisted candidates yet. You can recommend one with their CV.' : 'No shortlisted candidates yet.'} />
+          {(canImport || canRecommend) && <div style={{ textAlign: 'center', paddingBottom: 18, display: 'flex', gap: 8, justifyContent: 'center' }}>
+            {canRecommend && <button className="btn btn-sm" onClick={() => setRecommendOpen(true)}>Recommend a candidate</button>}
+            {canImport && <button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button>}
+          </div>}</div>
         : visibleApps.length === 0 ? <div className="card"><Empty art="no-match" text="No candidates match the current filters." /></div>
         : view === 'kanban' ? (
           <div className="kanban">
@@ -7216,6 +7222,7 @@ function RequestPipeline({ request, user, btns }) {
       {unlinkModal}
       {linkOpen && <LinkCandidateModal requestId={request.id} user={user} onClose={() => setLinkOpen(false)} onLinked={() => { setLinkOpen(false); load(); }} />}
       {importOpen && <ImportCvsModal request={request} onClose={() => setImportOpen(false)} onDone={load} />}
+      {recommendOpen && <RecommendCandidateModal request={request} onClose={() => setRecommendOpen(false)} onDone={() => { setRecommendOpen(false); load(); }} />}
       {scheduleApp && <ScheduleInterviewModal application={scheduleApp} onClose={() => setScheduleApp(null)} onScheduled={() => { setScheduleApp(null); load(); }} />}
       {offerApp && <CreateOfferModal application={offerApp} onClose={() => setOfferApp(null)} onCreated={() => { setOfferApp(null); load(); }} />}
     </div>
@@ -7394,6 +7401,7 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
     {showRequest && (app.request?.ticketNo || app.ticketNo) && <span className="pcard-request" title={app.request?.ticketNo || app.ticketNo}>{shortReqCode(app.request?.ticketNo || app.ticketNo)}</span>}
     {wide && <span className="pcard-status"><AppStatusBadge status={app.status} /></span>}
     {residual && <span className="pcard-residual" title={`Underlying status: ${app.status}`}>{residual}</span>}
+    {app.recommendation && <span className="pcard-recommended" title={`Recommended by ${app.recommendation.byName || 'a stakeholder'}`}><Badge variant="success">Recommended{app.recommendation.byName ? ` by ${app.recommendation.byName}` : ''}</Badge></span>}
     {decisionButtons({ app, pending, onDecide })}
     <div className="pcard-footer"><span className="pcard-facts">{[cand.yearsExperience != null ? `${cand.yearsExperience}y exp` : null, cand.location, cand.noticePeriod].filter(Boolean).join(' · ') || 'Details not supplied'}</span>
       {app.matchScore != null && <span className="pcard-match" title="Match score">{app.matchScore}%</span>}
@@ -8542,6 +8550,58 @@ const UPLOAD_MAX_MB = 20;
 const UPLOAD_ACCEPT = '.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg';
 const UPLOAD_HINT = `Max ${UPLOAD_MAX_MB} MB per file · PDF, DOC, DOCX, TXT, PNG, JPG`;
 const IMPORT_CONCURRENCY = 5;
+
+/* Recommend a candidate (recruitment team, 25 Oct 2026): a hiring manager or
+   technical interviewer hands recruitment a CV of someone they recommend. One
+   short form and one file; the candidate lands in Shortlisted — the first stage
+   they can see — marked "Recommended by …", and recruitment is notified. */
+function RecommendCandidateModal({ request, onClose, onDone }) {
+  const toast = useToast();
+  const [f, setF] = useState({ fullName: '', email: '', phone: '', currentPosition: '', employer: '', yearsExperience: '', note: '' });
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const tooBig = file && file.size > UPLOAD_MAX_MB * 1024 * 1024;
+  const ready = f.fullName.trim() && file && !tooBig && !busy;
+  async function submit() {
+    if (!f.fullName.trim()) { setProblem('Type the candidate’s name.'); return; }
+    if (!file) { setProblem('Attach the CV (PDF or Word).'); return; }
+    if (tooBig) { setProblem(`The CV is larger than ${UPLOAD_MAX_MB} MB.`); return; }
+    setBusy(true); setProblem('');
+    try {
+      const r = await api.uploadTo('/applications/recommend', file, { requestId: request.id, ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, String(v || '').trim()])) });
+      toast(r.reusedCandidate
+        ? `${f.fullName.trim()} was already in the Talent Pool — added to Shortlisted as your recommendation.`
+        : `${f.fullName.trim()} added to Shortlisted as your recommendation. Recruitment has been notified.`);
+      onDone();
+    } catch (e) {
+      setProblem(e.message || 'Could not add the candidate.');
+    } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={`Recommend a candidate — ${shortReqCode(request.ticketNo)}`} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancel</button><button className="btn" onClick={submit} disabled={!ready}>{busy ? 'Adding…' : 'Add to Shortlisted'}</button></>}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Attach the CV and the name; the rest is optional. The candidate goes straight into <strong>Shortlisted</strong> for {request.title}, marked as your recommendation, and the recruitment team is notified to take it from there.
+      </p>
+      <div className="form-grid">
+        <div className="field full"><label>Candidate name *</label><input value={f.fullName} onChange={(e) => set('fullName', e.target.value)} placeholder="e.g. Ahmed Mostafa" autoFocus /></div>
+        <div className="field"><label>Email</label><input type="email" value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="name@example.com" /></div>
+        <div className="field"><label>Phone</label><input value={f.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+20 1x xxx xxxx" /></div>
+        <div className="field"><label>Current position</label><input value={f.currentPosition} onChange={(e) => set('currentPosition', e.target.value)} placeholder="e.g. Senior Site Engineer" /></div>
+        <div className="field"><label>Current employer</label><input value={f.employer} onChange={(e) => set('employer', e.target.value)} placeholder="Company" /></div>
+        <div className="field"><label>Years of experience</label><input type="number" min="0" max="60" value={f.yearsExperience} onChange={(e) => set('yearsExperience', e.target.value)} /></div>
+        <div className="field full"><label>CV (PDF or Word) *</label>
+          <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => { setFile(e.target.files?.[0] || null); setProblem(''); }} />
+          {file && <div className="muted" style={{ marginTop: 4 }}>{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB{tooBig ? ` — larger than ${UPLOAD_MAX_MB} MB` : ''}</div>}
+        </div>
+        <div className="field full"><label>Why you recommend them <span className="muted">(optional)</span></label><textarea rows="2" value={f.note} onChange={(e) => set('note', e.target.value)} placeholder="e.g. worked with me on Soul, strong on finishing works and site coordination." /></div>
+      </div>
+      {problem && <div className="form-error" role="alert" style={{ marginTop: 8 }}>{problem}</div>}
+    </Modal>
+  );
+}
 
 function ImportCvsModal({ request, onClose, onDone }) {
   // `request` is optional. From the Talent Pool there is no requisition to

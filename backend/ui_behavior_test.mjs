@@ -160,6 +160,13 @@ await check('CV full-page hashes round-trip and refuse anything that is not an A
   assert.equal(parse('#document?path=//evil.example/x'),null,'protocol-relative URLs are refused');
   assert.equal(parse('#requests/12'),null);assert.equal(parse(''),null);
 });
+await check('a recommended candidate\'s card says who recommended them',()=>{
+  const app={id:11,status:'shortlisted',candidate:{fullName:'Rec Candidate'},decisions:[],recommendation:{byId:4,byName:'Nadia Fouad'}};
+  const tree=mount(get('PipelineCard'),{app,canMove:true,onView(){},onMove(){}}).render();
+  assert.equal(/Recommended by Nadia Fouad/.test(text(tree)),true);
+  const plain=mount(get('PipelineCard'),{app:{...app,recommendation:null},canMove:true,onView(){},onMove(){}}).render();
+  assert.equal(/Recommended/.test(text(plain)),false);
+});
 await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});
