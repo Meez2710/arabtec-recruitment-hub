@@ -2803,12 +2803,16 @@ function DirectorDashboard({ user, data, onNavigate, notice, figures, intakes })
       {notice}
 
       <div className="dash-filter" role="group" aria-label="Narrow the dashboard">
-        <label><span>Project</span>
-          <select value={f.projectId} onChange={setFilter('projectId')}><option value="">All projects</option>{(meta?.projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <label><span>Location</span>
+          <SearchSelect value={f.projectId} ariaLabel="Location" placeholder="All locations" emptyLabel="All locations"
+            options={(meta?.projects || []).map((p) => ({ value: String(p.id), label: p.isHeadOffice ? 'Head Office' : p.name, hint: p.isHeadOffice ? '' : (p.area || '') }))}
+            onChange={(v) => setFilter('projectId')({ target: { value: v } })} /></label>
         <label><span>Department</span>
-          <select value={f.departmentId} onChange={setFilter('departmentId')}><option value="">All departments</option>{(meta?.departments || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <SearchSelect value={f.departmentId} ariaLabel="Department" placeholder="All departments" emptyLabel="All departments"
+            options={optsOf(meta?.departments)} onChange={(v) => setFilter('departmentId')({ target: { value: v } })} /></label>
         <label><span>Recruiter</span>
-          <select value={f.ownerId} onChange={setFilter('ownerId')}><option value="">All recruiters</option>{(meta?.recruiters || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <SearchSelect value={f.ownerId} ariaLabel="Recruiter" placeholder="All recruiters" emptyLabel="All recruiters"
+            options={optsOf(meta?.recruiters)} onChange={(v) => setFilter('ownerId')({ target: { value: v } })} /></label>
         <span className="dash-filter-scope">{isNarrowed ? <>Showing <strong>{scopeText}</strong></> : scopeText}</span>
         {isNarrowed && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF({ projectId: '', departmentId: '', ownerId: '' })}>Clear</button>}
       </div>
@@ -3261,6 +3265,74 @@ function FilterToolbar({ search, children, count, activeCount = 0 }) {
     <div className="toolbar-count">{count}</div>
   </div>;
 }
+
+/* A dropdown you can type into (recruitment team, 25 Oct 2026). Every filter
+   and form list that used to be a native <select> — departments, projects and
+   sites, recruiters, hiring managers, requests — is one of these: type a few
+   letters, the list narrows, Enter or a click picks, Escape closes, the × (or
+   Backspace on an empty box) clears. Native <select> stays only for lists of a
+   handful of fixed words (priority, Head Office / Projects).
+   `options`: [{ value, label, hint? }]. `value` is compared as a string. */
+function SearchSelect({ value, onChange, options, placeholder = 'Type to search…', emptyLabel = 'All', ariaLabel, disabled, title, style, className }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [hi, setHi] = useState(0);
+  const ref = useRef(null);
+  const listId = useId();
+  const has = value !== '' && value != null;
+  const current = (options || []).find((o) => String(o.value) === String(value));
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    const list = t ? (options || []).filter((o) => String(o.label).toLowerCase().includes(t) || String(o.hint || '').toLowerCase().includes(t)) : (options || []);
+    return list.slice(0, 200);
+  }, [options, q]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!ref.current?.contains(e.target)) { setOpen(false); setQ(''); } };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  function pick(v) { onChange(v); setOpen(false); setQ(''); }
+  function keys(e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); else setHi((h) => Math.min(h + 1, Math.max(shown.length - 1, 0))); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') { if (open) { e.preventDefault(); if (shown[hi]) pick(shown[hi].value); } }
+    else if (e.key === 'Escape') { if (open) { e.preventDefault(); setOpen(false); setQ(''); } }
+    else if (e.key === 'Backspace' && !q && has) { onChange(''); }
+  }
+  return (
+    <div ref={ref} className={'sselect' + (open ? ' open' : '') + (disabled ? ' disabled' : '') + (className ? ' ' + className : '')} style={style} title={title}>
+      <input type="text" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-label={ariaLabel}
+        autoComplete="off" spellCheck="false" disabled={disabled}
+        value={open ? q : (current ? current.label : '')}
+        placeholder={current ? current.label : placeholder}
+        onFocus={() => { setOpen(true); setHi(0); }}
+        onClick={() => { if (!open) { setOpen(true); setHi(0); } }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); setHi(0); }}
+        onKeyDown={keys} />
+      {has && !disabled && <button type="button" className="sselect-clear" aria-label="Clear" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(''); setQ(''); }}>×</button>}
+      <span className="sselect-caret" aria-hidden="true">▾</span>
+      {open && (
+        <ul id={listId} role="listbox" className="sselect-list">
+          {emptyLabel != null && !q && <li role="option" aria-selected={!has} className={'sselect-opt' + (!has ? ' selected' : '')} onMouseDown={(e) => { e.preventDefault(); pick(''); }}>{emptyLabel}</li>}
+          {shown.length === 0
+            ? <li className="sselect-empty">No matches{q ? ` for “${q}”` : ''}</li>
+            : shown.map((o, i) => (
+              <li key={String(o.value)} role="option" aria-selected={String(o.value) === String(value)}
+                className={'sselect-opt' + (i === hi ? ' active' : '') + (String(o.value) === String(value) ? ' selected' : '')}
+                onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); pick(o.value); }}>
+                <span>{o.label}</span>{o.hint ? <small>{o.hint}</small> : null}
+              </li>
+            ))}
+          {(options || []).length > 200 && shown.length === 200 && <li className="sselect-empty">Type to narrow the list…</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+// Shorthands for the two shapes every list in this app comes in.
+const optsOf = (list, label = (x) => x.name, value = (x) => x.id) => (list || []).map((x) => ({ value: String(value(x)), label: label(x) }));
+const pairOpts = (pairs) => (pairs || []).map(([id, name]) => ({ value: String(id), label: name }));
 
 // Segmented view switcher shared by the list pages (Cards / Table, Board / Table).
 function ViewToggle({ value, onChange, options }) {
@@ -5772,19 +5844,20 @@ function RequestsPage({ user, initialFilters }) {
 
       <div ref={listTopRef} className="scroll-anchor" aria-hidden="true" />
       <FilterToolbar activeCount={activeChips.length} search={<input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />}>
-        <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-          <option value="">All statuses</option>{Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-        <select value={filters.projectId} onChange={(e) => setFilters((f) => ({ ...f, projectId: e.target.value }))} aria-label="Project">
-          <option value="">All projects</option>{meta.projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-        <select value={filters.departmentId} onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value }))} aria-label="Department">
-          <option value="">All departments</option>{meta.departments.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+        <SearchSelect value={filters.status} ariaLabel="Status" placeholder="Status" emptyLabel="All statuses"
+          options={Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => ({ value: k, label: v.label }))}
+          onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
+        <SearchSelect value={filters.projectId} ariaLabel="Location" placeholder="Location / site" emptyLabel="All locations"
+          options={meta.projects.map((x) => ({ value: String(x.id), label: x.isHeadOffice ? 'Head Office' : x.name, hint: x.isHeadOffice ? '' : (x.area || '') }))}
+          onChange={(v) => setFilters((f) => ({ ...f, projectId: v }))} />
+        <SearchSelect value={filters.departmentId} ariaLabel="Department" placeholder="Department" emptyLabel="All departments"
+          options={optsOf(meta.departments)}
+          onChange={(v) => setFilters((f) => ({ ...f, departmentId: v }))} />
         <select value={filters.priority} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
           <option value="">All priorities</option>{Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-        <select value={filters.owner} onChange={(e) => setFilters((f) => ({ ...f, owner: e.target.value }))} aria-label="Owner">
-          <option value="">All owners</option>
-          <option value="unassigned">Unassigned</option>
-          {recruiters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
+        <SearchSelect value={filters.owner} ariaLabel="Owner" placeholder="Owner" emptyLabel="All owners"
+          options={[{ value: 'unassigned', label: 'Unassigned' }, ...optsOf(recruiters)]}
+          onChange={(v) => setFilters((f) => ({ ...f, owner: v }))} />
         <label className="switch" title="Requests past their health threshold or SLA">
           <input type="checkbox" checked={filters.attention} onChange={(e) => setFilters((f) => ({ ...f, attention: e.target.checked }))} />
           Needs action
@@ -5945,8 +6018,12 @@ function RequestForm({ user, request, onClose, onSaved }) {
       </p>
       <div className="form-grid">
         <div className="field full"><label>Position *</label><input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Site Engineer" /></div>
-        {!editing && <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>}
-        <div className="field"><label>Department *</label><select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}><option value="">— Select —</option>{meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+        {!editing && <div className="field"><label>Hiring Manager</label>
+          <SearchSelect value={f.hiringManagerId} ariaLabel="Hiring Manager" placeholder="Type a name…" emptyLabel="— None —"
+            options={optsOf(meta.hiringManagers)} onChange={(v) => set('hiringManagerId', v)} /></div>}
+        <div className="field"><label>Department *</label>
+          <SearchSelect value={f.departmentId} ariaLabel="Department" placeholder="Type to find a department…" emptyLabel="— Select —"
+            options={optsOf(meta.departments)} onChange={(v) => set('departmentId', v)} /></div>
         {/* Location → Site. The API still validates one field, projectId: the
             Head Office is a project row, every site is a project row, and the
             area printed beside a site comes from Administration → Locations. */}
@@ -5959,10 +6036,9 @@ function RequestForm({ user, request, onClose, onSaved }) {
         </div>
         {kind === 'projects' && (
           <div className="field"><label>Site *</label>
-            <select value={f.projectId} aria-label="Site" onChange={(e) => set('projectId', e.target.value)}>
-              <option value="">— Select a site —</option>
-              {siteOptions.map((p) => <option key={p.id} value={p.id}>{siteLabel(p)}</option>)}
-            </select>
+            <SearchSelect value={f.projectId} ariaLabel="Site" placeholder="Type to find a site…" emptyLabel="— Select a site —"
+              options={siteOptions.map((p) => ({ value: String(p.id), label: p.name, hint: p.area || '' }))}
+              onChange={(v) => set('projectId', v)} />
             {siteOptions.length === 0 && <small className="muted">No sites yet — the recruitment team adds them under Administration → Locations.</small>}
           </div>
         )}
@@ -7035,8 +7111,8 @@ function RequestPipeline({ request, user, btns }) {
         <input placeholder="Search name / employer…" value={pf.q} onChange={(e) => setPf((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 180 }} />
         <select value={pf.stage} onChange={(e) => setPf((f) => ({ ...f, stage: e.target.value }))}>
           <option value="">All stages</option>{cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
-        <select value={pf.recruiter} onChange={(e) => setPf((f) => ({ ...f, recruiter: e.target.value }))}>
-          <option value="">All recruiters</option>{recruiterOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
+        <SearchSelect value={pf.recruiter} ariaLabel="Recruiter" placeholder="Recruiter" emptyLabel="All recruiters" style={{ minWidth: 160 }}
+          options={pairOpts(recruiterOptions)} onChange={(v) => setPf((f) => ({ ...f, recruiter: v }))} />
         <select value={pf.sort} onChange={(e) => setPf((f) => ({ ...f, sort: e.target.value }))}>
           <option value="last">Sort: Last updated</option><option value="name">Name</option><option value="match">Match score</option></select>
         <div className="spacer" />
@@ -7390,24 +7466,18 @@ function TalentPipeline({
     <div>
       <div className="toolbar">
         <input placeholder="Search name / request…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 200 }} />
-        <select value={pipeFilters.stage} onChange={(e) => setPipeFilters((f) => ({ ...f, stage: e.target.value }))}>
-          <option value="">All stages</option>
-          {cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}
-        </select>
-        <select value={pipeFilters.recruiterId} onChange={(e) => setPipeFilters((f) => ({ ...f, recruiterId: e.target.value }))}>
-          <option value="">All recruiters</option>
-          {recruiterOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
-        <select value={pipeFilters.requestId} onChange={(e) => setPipeFilters((f) => ({ ...f, requestId: e.target.value }))}>
-          <option value="">All requests</option>
-          {(linkRequests || []).filter(isLinkable).map((r) => (
-            <option key={r.id} value={r.id}>{shortReqCode(r.ticketNo)} · {r.title}</option>
-          ))}
-        </select>
-        <select value={pipeFilters.projectId} onChange={(e) => setPipeFilters((f) => ({ ...f, projectId: e.target.value }))}>
-          <option value="">All projects</option>
-          {projectOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
+        <SearchSelect value={pipeFilters.stage} ariaLabel="Stage" placeholder="Stage" emptyLabel="All stages"
+          options={cols.map((s) => ({ value: s, label: APP_STATUS[s].label }))}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, stage: v }))} />
+        <SearchSelect value={pipeFilters.recruiterId} ariaLabel="Recruiter" placeholder="Recruiter" emptyLabel="All recruiters"
+          options={pairOpts(recruiterOptions)}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, recruiterId: v }))} />
+        <SearchSelect value={pipeFilters.requestId} ariaLabel="Request" placeholder="Request" emptyLabel="All requests"
+          options={(linkRequests || []).filter(isLinkable).map((r) => ({ value: String(r.id), label: `${shortReqCode(r.ticketNo)} · ${r.title}` }))}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, requestId: v }))} />
+        <SearchSelect value={pipeFilters.projectId} ariaLabel="Project" placeholder="Project" emptyLabel="All projects"
+          options={pairOpts(projectOptions)}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, projectId: v }))} />
         <div className="spacer" />
         <CountPill n={apps.length} total={total || null} noun="application" />
       </div>
@@ -9613,18 +9683,14 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
         {/* Data quality. Nothing is selected by default, so the Talent Pool
             shows every candidate — flagged people are members of the pool, not
             a queue parked outside it. */}
-        <select value={filters.qualityFlag || ''} title="Data quality"
-          onChange={(e) => setFilters((f) => ({ ...f, qualityFlag: e.target.value }))}>
-          <option value="">All candidates</option>
-          {QUALITY_FLAGS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-        </select>
-        <select value={filters.departmentId || ''} aria-label="Department"
-          title="Department of a linked hiring request; unlinked candidates remain in All departments"
-          disabled={departmentError}
-          onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value, disciplineClass: '' }))}>
-          <option value="">{departmentError ? 'Departments unavailable' : 'All departments'}</option>
-          {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
+        <SearchSelect value={filters.qualityFlag || ''} ariaLabel="Data quality" title="Data quality" emptyLabel="All candidates" placeholder="Data quality"
+          options={pairOpts(QUALITY_FLAGS)}
+          onChange={(v) => setFilters((f) => ({ ...f, qualityFlag: v }))} />
+        <SearchSelect value={filters.departmentId || ''} ariaLabel="Department" placeholder={departmentError ? 'Departments unavailable' : 'Department'}
+          title="Candidates linked to a hiring request in this department, or whose current position is one of its designations"
+          disabled={departmentError} emptyLabel="All departments"
+          options={optsOf(departments)}
+          onChange={(v) => setFilters((f) => ({ ...f, departmentId: v, disciplineClass: '' }))} />
         </FilterToolbar>
       )}
 
