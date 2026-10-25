@@ -10,6 +10,7 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
 import { hasOpenSeat } from '../lib/vacancy.js';
+import { stakeholderDecisions } from '../lib/stakeholders.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
 import {
@@ -87,6 +88,11 @@ function appOut(a, user) {
     nextAction: a.next_action, nextActionDate: a.next_action_date, interviewOutcome: a.interview_outcome,
     rejectionReason: a.rejection_reason, onHoldReason: a.on_hold_reason, withdrawnReason: a.withdrawn_reason,
     recruiter: rec ? { id: rec.id, name: rec.full_name } : null,
+    // The stage keys THIS reader may move the application to without
+    // candidate.move_stage (hiring manager / panel interviewer on a Shortlisted
+    // candidate: interviewing, on_hold, rejected). Empty for everyone else, and
+    // always empty for the recruitment team, which has the whole board.
+    decisions: stakeholderDecisions(user, a),
     candidate: cand ? {
       id: cand.id, candidateNo: cand.candidate_no, fullName: cand.full_name,
       currentPosition: cand.current_position, currentCompany: cand.current_company,
@@ -292,8 +298,8 @@ function maybeNotifyRelease(appId, toStatus, req) {
 function requestScope(user, col = 'id') {
   if (user.permissions.includes('request.view_all')) return { where: '1=1', params: [] };
   return {
-    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=?)`,
-    params: [user.id, user.id, user.id],
+    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=? OR hiring_manager_id=?)`,
+    params: [user.id, user.id, user.id, user.id],
   };
 }
 
@@ -307,7 +313,7 @@ function canScopeRequest(user, requestId) {
   if (user.permissions.includes('request.view_all')) return true;
   if (!requestId) return false;
   const r = Requests.byId(requestId);
-  return !!r && (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id);
+  return !!r && (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id || r.hiring_manager_id === user.id);
 }
 
 router.get('/', (req, res) => {
@@ -401,11 +407,21 @@ function joinBlocker(appRow) {
 }
 
 /* ---------------- MOVE STAGE ---------------- */
-router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) => {
+// Who may move: the recruitment team (candidate.move_stage) anywhere the
+// transition table allows; a request's hiring manager or panel interviewer
+// ONLY from Shortlisted to Interview / On Hold / Disqualified (lib/stakeholders.js).
+router.post('/:id/move', (req, res) => {
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
-  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
   const toStatus = appNorm((req.body || {}).status);
+  // Permission before scope, as requirePermission used to answer: a reader with
+  // no right to move anything is told so (403), not told the row is missing.
+  if (!req.user.permissions.includes('candidate.move_stage')) {
+    const allowed = stakeholderDecisions(req.user, a);
+    if (!allowed.length) return res.status(403).json({ error: 'Only the recruitment team can move this candidate; as hiring manager or interviewer you decide on shortlisted candidates.' });
+    if (APP_STATUSES.includes(toStatus) && !allowed.includes(toStatus)) return res.status(403).json({ error: `As hiring manager or interviewer you can move a shortlisted candidate to Interview, put them On Hold or Disqualify them — not to ${APP_LABELS[toStatus] || toStatus}.` });
+  }
+  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
   if (!APP_STATUSES.includes(toStatus)) return res.status(400).json({ error: 'Invalid status.' });
   const fromStatus = appNorm(a.status);
   if (TERMINAL.includes(fromStatus)) return res.status(409).json({ error: `Application is terminal (${APP_LABELS[fromStatus] || fromStatus}) and cannot be moved.` });

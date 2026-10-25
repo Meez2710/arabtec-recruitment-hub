@@ -200,7 +200,7 @@ function serialize(r, user, { withDetail = false } = {}) {
 function canView(user, r) {
   if (user.permissions.includes('request.view_all') || user.permissions.includes('request.view_team')) return true;
   if (user.permissions.includes('request.view_own')) {
-    return r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id;
+    return r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id || r.hiring_manager_id === user.id;
   }
   return false;
 }

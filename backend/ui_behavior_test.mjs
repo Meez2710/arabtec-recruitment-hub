@@ -128,6 +128,25 @@ await check('SearchSelect narrows as you type, picks with Enter, clears, and sho
   assert.equal(nodes(tree).filter(n=>n.props?.role==='option').length,0);
   assert.equal(/No matches/.test(text(tree)),true,'says when nothing matches');
 });
+// 25 Oct 2026: a hiring manager / interviewer takes three decisions on a
+// Shortlisted candidate. The server names them in app.decisions; the card
+// shows exactly those buttons and nothing for readers without any.
+await check('shortlisted cards show the three stakeholder decisions only when the server grants them',()=>{
+  let decided=null;
+  const app={id:9,status:'shortlisted',candidate:{fullName:'HM Candidate'},decisions:['interviewing','on_hold','rejected']};
+  const card=mount(get('PipelineCard'),{app,canMove:false,onView(){},onMove(){},onDecide:s=>{decided=s;}});
+  let tree=card.render();
+  assert.equal(button(tree,'Move to Interview')!==undefined,true);
+  assert.equal(button(tree,'On Hold')!==undefined,true);
+  assert.equal(button(tree,'Disqualify')!==undefined,true);
+  button(tree,'Move to Interview').props.onClick();assert.equal(decided,'interview_hr','board key for the interview column');
+  button(tree,'Disqualify').props.onClick();assert.equal(decided,'rejected');
+  button(tree,'On Hold').props.onClick();assert.equal(decided,'on_hold');
+  const plain=mount(get('PipelineCard'),{app:{...app,decisions:[]},canMove:false,onView(){},onMove(){},onDecide(){}}).render();
+  assert.equal(button(plain,'Move to Interview'),undefined,'no decisions, no buttons');
+  const recruiter=mount(get('PipelineCard'),{app:{...app,decisions:[]},canMove:true,onView(){},onMove(){},onDecide(){}}).render();
+  assert.equal(button(recruiter,'Move to Interview'),undefined,'the recruitment team keeps its menu instead');
+});
 await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});

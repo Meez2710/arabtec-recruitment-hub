@@ -15,8 +15,8 @@ function requestScope(user, col = 'id') {
   if (user.permissions.includes('request.view_all')) return { where: '1=1', params: [] };
   // own scope
   return {
-    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=?)`,
-    params: [user.id, user.id, user.id],
+    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=? OR hiring_manager_id=?)`,
+    params: [user.id, user.id, user.id, user.id],
   };
 }
 
@@ -118,7 +118,7 @@ router.get('/', (req, res) => {
   }
 
   // ---- My work (always scoped to the user) ----
-  const myOpenRequests = get(`SELECT COUNT(*) c FROM recruitment_request WHERE (owner_id=? OR requester_id=?) AND status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')})`, [user.id, user.id, ...NON_TERMINAL_REQ]).c;
+  const myOpenRequests = get(`SELECT COUNT(*) c FROM recruitment_request WHERE (owner_id=? OR requester_id=? OR hiring_manager_id=?) AND status IN (${NON_TERMINAL_REQ.map(() => '?').join(',')})`, [user.id, user.id, user.id, ...NON_TERMINAL_REQ]).c;
   const myInterviews = get(`SELECT COUNT(DISTINCT i.id) c FROM interview i LEFT JOIN interview_panel p ON p.interview_id=i.id WHERE (i.organizer_id=? OR p.interviewer_id=?) AND i.status='scheduled' AND i.scheduled_at > ?`, [user.id, user.id, new Date().toISOString()]).c;
   const myPendingOfferApprovals = user.permissions.includes('offer.approve')
     ? get(`SELECT COUNT(*) c FROM offer WHERE status='pending_approval'`).c : null;
