@@ -134,6 +134,8 @@ router.get('/post/:postId/file', (req, res) => {
   const r = Requests.byId(post.request_id);
   if (!r || !canView(req.user, r)) return res.status(403).json({ error: 'Not allowed.' });
   if (!post.file_path) return res.status(404).json({ error: 'No file on this post.' });
+  // A CV posted in the thread is a candidate's CV: the same right as /candidates/:id/resume (audit F5).
+  if (post.post_type === 'cv' && !req.user.permissions.includes('candidate.cv_view')) return res.status(403).json({ error: 'You can read this request but not open candidate CV files.' });
   // `?as=html`: a Word file rendered for the in-app side panel (same check as above).
   if (req.query.as === 'html') return sendDocxPreview(post.file_path, post.file_name, res);
   streamFile(post.file_path, res, post.file_name || 'file');

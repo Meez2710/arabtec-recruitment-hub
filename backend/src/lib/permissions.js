@@ -23,6 +23,10 @@ export const PERMISSIONS = [
   ['request.reopen', 'request', 'reopen', 'Reopen request'],
   // Candidates (Phase 2)
   ['candidate.view', 'candidate', 'view', 'View candidates'],
+  // Audit F5 (25 Oct 2026): the CV FILE is the most sensitive thing on a
+  // candidate. Reading a profile and opening the document are now two rights;
+  // read-only reporting roles (viewer, CEO) keep the first and not the second.
+  ['candidate.cv_view', 'candidate', 'cv_view', 'Open or download candidate CV files'],
   ['candidate.add', 'candidate', 'add', 'Add candidate'],
   ['candidate.edit', 'candidate', 'edit', 'Edit candidate'],
   ['candidate.delete', 'candidate', 'delete', 'Delete candidate'],
@@ -131,6 +135,7 @@ export const ROLE_PERMISSIONS = {
     'interview.view_all', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
     'notification.manage',
     'location.manage',
+    'candidate.cv_view',
   ],
   hr_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
@@ -145,6 +150,7 @@ export const ROLE_PERMISSIONS = {
     'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
     'notification.manage',
     'location.manage',
+    'candidate.cv_view',
   ],
   recruitment_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
@@ -158,6 +164,7 @@ export const ROLE_PERMISSIONS = {
     'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view',
     'notification.manage',
     'location.manage',
+    'candidate.cv_view',
   ],
   recruiter: [
     'dashboard.view', 'request.view_own', 'request.view_team', 'request.create', 'request.edit', 'request.submit',
@@ -169,19 +176,23 @@ export const ROLE_PERMISSIONS = {
     'offer.salary_view', 'offer.salary_edit',
     'notification.manage',
     'location.manage',
+    'candidate.cv_view',
   ],
   hiring_manager: [
     'dashboard.view', 'request.view_own', 'request.create', 'request.edit', 'request.submit',
     'request.approve', 'candidate.view', 'candidate.note',
     'interview.view_assigned', 'interview.feedback',
     'offer.view', // can view offer status but NOT salary (no offer.salary_view)
+    'candidate.cv_view',
   ],
   project_manager: [
     'dashboard.view', 'request.view_own', 'request.create', 'request.submit', 'request.approve',
     'request.budget_approve', 'candidate.view',
+    'candidate.cv_view',
   ],
   interviewer: [
     'dashboard.view', 'candidate.view', 'interview.view_assigned', 'interview.feedback',
+    'candidate.cv_view',
   ],
   viewer: [
     'dashboard.view', 'request.view_all', 'candidate.view',

@@ -1,7 +1,10 @@
 import { get } from './db.js';
 import { appNorm } from './stages.js';
 
-const FULL_PIPELINE_ROLES = new Set(['system_admin', 'ceo', 'hr_director', 'recruitment_manager', 'recruiter']);
+// hr_manager added 25 Oct 2026 (audit F4): the role links and moves candidates,
+// so it must also see them before Shortlisted — it could not, and its moves on
+// sourced candidates 404'd.
+const FULL_PIPELINE_ROLES = new Set(['system_admin', 'ceo', 'hr_director', 'hr_manager', 'recruitment_manager', 'recruiter']);
 export const hasFullPipelineAccess = (user) => (user?.roles || []).some((role) => FULL_PIPELINE_ROLES.has(role));
 const RELEASED = ['shortlisted', 'matched', 'unmatched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
 const LEGACY_RELEASED = ['screened', 'cv_screening', 'interview_1', 'interview_2', 'final_interview', 'phone_interview', 'technical_interview', 'client_interview', 'reference_check', 'offer_preparation', 'offer_accepted'];

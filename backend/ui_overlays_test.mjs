@@ -522,8 +522,9 @@ check('every named entry point opens the panel', () => {
   // The pipeline card only offers the item when the caller supplied a handler,
   // and the helper that supplies it is permission-gated.
   const opener = entries['request pipeline candidate card'];
-  assert.ok(/can\(\s*user\s*,\s*'candidate\.view'\s*\)/.test(opener),
-    'the pipeline opener is not gated on candidate.view');
+  // Since 25 Oct 2026 (audit F5) the file right is candidate.cv_view, stricter than candidate.view.
+  assert.ok(/can\(\s*user\s*,\s*'candidate\.(cv_)?view'\s*\)/.test(opener),
+    'the pipeline opener is not gated on a candidate permission');
   const card = slice('function PipelineCard', 'function TalentPipeline');
   assert.ok(/\{onReviewCv && <button/.test(card),
     'the pipeline card renders its Review CV item unconditionally');

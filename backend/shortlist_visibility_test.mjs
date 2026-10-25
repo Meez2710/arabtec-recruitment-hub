@@ -62,10 +62,13 @@ try {
   const allFixtures=[sourced,shortlisted,screened,rejectedEarly,rejectedLater,unrelated];
   c('Shortlisted ordered between sourced and matched',APP_PIPELINE.indexOf('shortlisted')===APP_PIPELINE.indexOf('sourced')+1 && APP_PIPELINE.indexOf('matched')===APP_PIPELINE.indexOf('shortlisted')+1);
   for(const role of ['recruiter','recruitment_manager','hr_director','ceo','system_admin']) c(role+' full pipeline',hasFullPipelineAccess({roles:[role]}));
-  for(const role of ['hiring_manager','technical_interviewer','viewer','hr_manager']) c(role+' restricted pipeline',!hasFullPipelineAccess({roles:[role],permissions:['request.view_all']}));
+  for(const role of ['hiring_manager','technical_interviewer','viewer']) c(role+' restricted pipeline',!hasFullPipelineAccess({roles:[role],permissions:['request.view_all']}));
+  c('hr_manager has the full pipeline (it links and moves candidates — audit F4, 25 Oct 2026)',hasFullPipelineAccess({roles:['hr_manager'],permissions:['request.view_all']}));
   const tokens={};
   for(const [key,email] of Object.entries({recruiter:'recruiter@arabtec.com',director:'hr.director@arabtec.com',manager:'rec.manager@arabtec.com',hm:'hiring.manager@arabtec.com',interviewer:'interviewer@arabtec.com',viewer:'viewer@arabtec.com',hr:'hr.manager@arabtec.com'})) tokens[key]=await login(email);
-  for(const who of ['hm','interviewer','viewer','hr']) {
+  // hr_manager left this list on 25 Oct 2026 (audit F4): it links and moves
+  // candidates, so it is a full-pipeline role and may open sourced ones.
+  for(const who of ['hm','interviewer','viewer']) {
     const token=tokens[who];
     for(const f of [sourced,rejectedEarly]) {
       const detail=await api('/api/candidates/'+f.cand.id,{token});
