@@ -39,6 +39,7 @@ const SUITES = [
   'locations_test.mjs',       // 25 Oct 2026: Head Office / sites / areas; recruitment edits them; requests take their location from the site
   'talent_pool_department_test.mjs', // 25 Oct 2026: department search matches pool candidates by designation title, scoped readers keep the request rule
   'stakeholder_decisions_test.mjs', // 25 Oct 2026: HM / panel interviewer: Interview, On Hold, Disqualify on Shortlisted; named HM is in request scope
+  'stakeholder_notify_test.mjs',    // 25 Oct 2026: recruitment is told about every HM / interviewer decision, reply and feedback
   'shortlist_visibility_test.mjs', // shortlist release boundary for restricted roles
   'release_unlink_test.mjs',    // Shortlisted release notification + Unlink (2026-10-15)
   'request_detachment_test.mjs', // request-only deletion keeps linked records (2026-10-15)

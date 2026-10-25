@@ -11,6 +11,7 @@ import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
 import { hasOpenSeat } from '../lib/vacancy.js';
 import { stakeholderDecisions } from '../lib/stakeholders.js';
+import { notifyRecruitment } from '../lib/stakeholder-notify.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
 import {
@@ -451,6 +452,10 @@ router.post('/:id/move', (req, res) => {
   }
   performMove(a, toStatus, req, reasonField ? reason : null);
   maybeNotifyRelease(a.id, toStatus, req);
+  // A hiring manager's / interviewer's decision is news to recruitment (25 Oct 2026).
+  const decidedWord = { [APP.INTERVIEWING]: 'moved %s to Interview', [APP.ON_HOLD]: 'put %s On Hold', [APP.REJECTED]: 'disqualified %s' }[toStatus] || `moved %s to ${APP_LABELS[toStatus] || toStatus}`;
+  const candName = (() => { try { return Candidates.byId(a.candidate_id)?.full_name || 'a candidate'; } catch { return 'a candidate'; } })();
+  notifyRecruitment('decision', { req, requestId: a.request_id, candidateId: a.candidate_id, what: decidedWord.replace('%s', candName), detail: reasonField && reason ? `Reason: ${reason}` : null });
   const outcome = maybeNotifyRejection(a, toStatus, req);
   res.json({ application: appOut(Applications.byId(a.id), req.user), ...(outcome ? { rejectionEmail: outcome } : {}) });
 });
