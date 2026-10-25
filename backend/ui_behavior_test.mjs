@@ -147,6 +147,19 @@ await check('shortlisted cards show the three stakeholder decisions only when th
   const recruiter=mount(get('PipelineCard'),{app:{...app,decisions:[]},canMove:true,onView(){},onMove(){},onDecide(){}}).render();
   assert.equal(button(recruiter,'Move to Interview'),undefined,'the recruitment team keeps its menu instead');
 });
+// 25 Oct 2026: a CV opens alone in a new browser tab through an in-app hash,
+// never a download and never an outside URL.
+await check('CV full-page hashes round-trip and refuse anything that is not an API path',()=>{
+  const cvHash=get('cvFullPageHash'), docHash=get('documentFullPageHash'), parse=get('parseFullPageHash');
+  assert.equal(cvHash(12),'#cv/12');assert.equal(cvHash(12,{id:7,name:'old.pdf'}),'#cv/12/doc/7');
+  assert.equal(JSON.stringify(parse('#cv/12')),JSON.stringify({kind:'cv',candidateId:12,docId:null}));
+  assert.equal(JSON.stringify(parse('#cv/12/doc/7')),JSON.stringify({kind:'cv',candidateId:12,docId:7}));
+  const h=docHash('/thread/post/5/file','cv.pdf','Thread CV');
+  const d=parse(h);assert.equal(d.kind,'document');assert.equal(d.path,'/thread/post/5/file');assert.equal(d.fileName,'cv.pdf');assert.equal(d.title,'Thread CV');
+  assert.equal(parse('#document?path=https://evil.example/x'),null,'absolute URLs are refused');
+  assert.equal(parse('#document?path=//evil.example/x'),null,'protocol-relative URLs are refused');
+  assert.equal(parse('#requests/12'),null);assert.equal(parse(''),null);
+});
 await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});

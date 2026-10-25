@@ -10250,6 +10250,110 @@ function CvFileLink({ name, onOpen, fallback = 'Attached résumé' }) {
   return <button type="button" className="cv-file-link" onClick={onOpen} title="Open the CV in the side panel">{name || fallback}</button>;
 }
 
+/* The CV in a page of its own (recruitment team, 25 Oct 2026): a new browser
+   tab showing only the document, full height, through the same authenticated
+   fetch the side panel uses — nothing is downloaded, nothing leaves the app.
+   `#cv/<candidateId>` / `#cv/<candidateId>/doc/<docId>` for a candidate's CV
+   (current or a stored version); `#document?path=…&name=…` for a file posted
+   in a request thread. */
+function cvFullPageHash(candidateId, doc) {
+  if (!candidateId) return '';
+  return '#cv/' + Number(candidateId) + (doc && doc.id ? '/doc/' + Number(doc.id) : '');
+}
+function documentFullPageHash(path, fileName, title) {
+  if (!path) return '';
+  const q = new URLSearchParams({ path });
+  if (fileName) q.set('name', fileName);
+  if (title) q.set('title', title);
+  return '#document?' + q.toString();
+}
+function parseFullPageHash(hash) {
+  const raw = String(hash || '').replace(/^#/, '');
+  let m = raw.match(/^cv\/(\d+)(?:\/doc\/(\d+))?$/);
+  if (m) return { kind: 'cv', candidateId: Number(m[1]), docId: m[2] ? Number(m[2]) : null };
+  if (raw.startsWith('document?')) {
+    const q = new URLSearchParams(raw.slice('document?'.length));
+    const path = q.get('path') || '';
+    // Only this app's own API paths, never an absolute or protocol-relative URL.
+    if (!/^\/[a-z]/i.test(path) || path.startsWith('//')) return null;
+    return { kind: 'document', path, fileName: q.get('name') || null, title: q.get('title') || null };
+  }
+  return null;
+}
+function openFullPage(hash) {
+  if (!hash) return;
+  const url = window.location.pathname + window.location.search + hash;
+  const w = window.open(url, '_blank');
+  if (w) { try { w.opener = null; } catch { /* opener already detached */ } }
+}
+function useLocationHash() {
+  const [hash, setHash] = useState(() => window.location.hash);
+  useEffect(() => {
+    const on = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return hash;
+}
+/** The whole browser tab is the CV. Close returns to the Hub (or closes a tab we opened). */
+function CvFullPage({ user, target }) {
+  const toast = useToast();
+  const isCv = target.kind === 'cv';
+  const [cand, setCand] = useState(null);
+  const [candError, setCandError] = useState('');
+  useEffect(() => {
+    if (!isCv) return undefined;
+    let alive = true;
+    api.get(`/candidates/${target.candidateId}`)
+      .then((r) => { if (alive) setCand(r.candidate || null); })
+      .catch((e) => { if (alive) setCandError(e.message || 'Could not load this candidate.'); });
+    return () => { alive = false; };
+  }, [isCv, target.candidateId]);
+  const docName = isCv ? (target.docId ? (cand?.documents || []).find((d) => Number(d.id) === target.docId)?.name || null : cand?.resumeName || null) : target.fileName;
+  const path = isCv
+    ? (target.docId ? `/candidates/${target.candidateId}/documents/${target.docId}/file` : `/candidates/${target.candidateId}/resume`)
+    : target.path;
+  const { doc, error, busy } = useCvDocument(path, docName);
+  const title = isCv ? (cand?.fullName || 'Candidate CV') : (target.title || target.fileName || 'Document');
+  useEffect(() => { const prev = document.title; document.title = `${title} — CV`; return () => { document.title = prev; }; }, [title]);
+  function close() {
+    // A tab the Hub opened has no history to go back to: close it. One the
+    // reader navigated to by hand goes back to the Hub.
+    if (window.history.length <= 1) { window.close(); }
+    window.location.hash = '';
+  }
+  async function download() {
+    try {
+      if (isCv) await downloadResume({ id: target.candidateId, resumeName: cand?.resumeName, candidateNo: cand?.candidateNo, docId: target.docId, docName }, toast);
+      else await api.download(path, target.fileName || 'file');
+    } catch (e) { toast(e.message || 'Download failed', 'error'); }
+  }
+  const canDownload = isCv ? !!(cand?.hasResume || doc) : !!doc;
+  return (
+    <div className="cvfull" role="document">
+      <div className="cvfull-head">
+        <div className="cvfull-head-id">
+          <h1>{title}</h1>
+          <span>{[cand?.candidateNo, docName].filter(Boolean).join(' · ') || (isCv ? 'Curriculum vitae' : 'Request attachment')}</span>
+        </div>
+        <div className="cvfull-actions">
+          <button type="button" className="btn btn-secondary" disabled={!canDownload} onClick={download}>Download</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Close</button>
+        </div>
+      </div>
+      <div className="cvfull-body">
+        {candError
+          ? <div className="cvfull-state"><Empty art="failed" tone="error" text={candError} /></div>
+          : busy
+            ? <div className="cvfull-state"><Skeleton rows={6} /></div>
+            : error
+              ? <div className="cvfull-state"><Empty art="failed" tone="error" text={error} /></div>
+              : <CvFilePreview fileUrl={doc?.url} fileName={docName} mimeType={doc?.mimeType} html={doc?.html} />}
+      </div>
+    </div>
+  );
+}
+
 /** Open the CV review panel for a candidate from anywhere in the app. */
 function openCvReview(candidateId, seed, doc) {
   if (!candidateId) return;
@@ -10350,6 +10454,8 @@ function CvReviewPanel({ candidateId, seed, doc, user, onClose }) {
             <h3 id={titleId}>{name} — CV review</h3>
             <span className="cvrev-head-sub">{[c.candidateNo, doc ? doc.name : c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
           </div>
+          <button type="button" className="btn btn-secondary btn-sm" title="Open this CV alone in a new browser tab (no download)"
+            onClick={() => openFullPage(cvFullPageHash(candidateId, doc))}>Open full page</button>
           <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
 
@@ -10454,6 +10560,8 @@ function DocumentPanel({ path, fileName, title, onClose }) {
             <h3 id={titleId}>{title || fileName || 'Document'}</h3>
             {title && fileName && <span className="cvrev-head-sub">{fileName}</span>}
           </div>
+          <button type="button" className="btn btn-secondary btn-sm" title="Open this file alone in a new browser tab (no download)"
+            onClick={() => openFullPage(documentFullPageHash(path, fileName, title))}>Open full page</button>
           <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
         <div className="cvrev-body cvrev-body--doc">
@@ -13414,6 +13522,8 @@ function App() {
   const [booting, setBooting] = useState(true);
   const [user, setUser] = useState(null);
   const [branding, setBranding] = useState(null);
+  const locationHash = useLocationHash();
+  const fullPage = parseFullPageHash(locationHash);
 
   const loadBranding = useCallback(async () => {
     try { const { branding } = await api.get('/settings/branding'); const ver = branding.logo_uploaded_at ? new Date(branding.logo_uploaded_at).getTime() : Date.now(); setHasCustomLogo(!!branding.logo_stored_name, ver); setBranding(branding); applyBranding(branding); return branding; }
@@ -13436,6 +13546,9 @@ function App() {
 
   if (booting) return <div className="boot-loading">Loading Arabtec Recruitment Hub…</div>;
   if (!user) return <Login branding={branding} onLogin={onLogin} />;
+  // `#cv/<id>` / `#document?…`: the CV alone, in this tab, after the same
+  // sign-in and password gates as the rest of the app (25 Oct 2026).
+  if (fullPage && !user.mustChangePassword) return <ToastProvider><CvFullPage user={user} target={fullPage} /></ToastProvider>;
   // Forced rotation: the shell is not rendered at all, so no route, page or
   // background fetch can run. Mirrors the server-side gate in requireAuth.
   if (user.mustChangePassword) {
