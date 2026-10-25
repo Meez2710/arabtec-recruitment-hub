@@ -1796,7 +1796,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   /* 25 Oct 2026: the CV is the point of this panel — the panel takes the whole
      viewport and the details column is capped, so the document gets roughly
      twice the width it had at min(1040px, 50%). */
-  width: 100%;
+  width: min(1800px, 100%);
   height: 100%;
   min-height: 0;
   display: flex;
@@ -1816,10 +1816,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
   overflow: hidden;
 }
-.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }
 .cvrev-details { min-width: 0; min-height: 0; overflow-y: auto; padding: var(--cl-5) var(--cl-6); }
 .cvrev-col-title { margin: 0 0 var(--cl-3); }
 .cvrev-cv { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -2064,38 +2063,32 @@ button.cal-slot:focus-visible { outline: 0; }
 /* Document-only side panel (thread attachments): the file takes the full width. */
 .cvrev-body.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }
 
-/* ---- SearchSelect: a dropdown you can type into (25 Oct 2026) ---- */
+/* ---- SearchSelect (25 Oct 2026) — geometry only; colour and type live in
+   arabtec-design-system.css, like every other component here. ---- */
 .sselect { position: relative; min-width: 0; }
-.sselect > input { width: 100%; padding-inline-end: 44px; text-overflow: ellipsis; }
-.sselect > input::placeholder { color: var(--ink, #1A1A1A); opacity: 1; }
-.sselect:not(.has-value) > input::placeholder { color: var(--muted, #6F6A64); }
-.sselect.open > input::placeholder { color: var(--muted, #6F6A64); }
-.sselect-caret { position: absolute; inset-inline-end: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted, #6F6A64); font-size: 12px; }
-.sselect-clear { position: absolute; inset-inline-end: 26px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--muted, #6F6A64); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; border-radius: 4px; }
-.sselect-clear:hover { color: var(--ink, #1A1A1A); background: var(--canvas, #F4F5F7); }
-.sselect-list { position: absolute; z-index: 60; top: calc(100% + 4px); inset-inline-start: 0; min-width: 100%; max-width: min(420px, 92vw); max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface, #fff); border: 1px solid var(--line, var(--border, #E4E4E4)); border-radius: 10px; box-shadow: var(--shadow-pop, 0 10px 30px rgba(0, 0, 0, .14)); }
-.sselect-opt { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--ink, #1A1A1A); white-space: nowrap; }
+.sselect > input { width: 100%; padding-inline-end: var(--sp-6); text-overflow: ellipsis; }
+/* One affordance at the end of the box: the caret while empty, the × once a value is chosen. */
+.sselect-caret { position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.sselect.has-value .sselect-caret { display: none; }
+.sselect-clear { position: absolute; inset-inline-end: 8px; top: 50%; transform: translateY(-50%); border: 0; padding: 0 4px; cursor: pointer; }
+.sselect-list { position: absolute; z-index: 60; top: calc(100% + 4px); inset-inline-start: 0; min-width: 100%; max-width: min(420px, 92vw); max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; }
+.sselect-opt { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
 .sselect-opt > span { overflow: hidden; text-overflow: ellipsis; }
-.sselect-opt > small { color: var(--muted, #6F6A64); font-size: 11.5px; flex: 0 0 auto; }
-.sselect-opt.active { background: var(--canvas, #F4F5F7); }
-.sselect-opt.selected { font-weight: 600; }
-.sselect-empty { padding: 8px 10px; color: var(--muted, #6F6A64); font-size: 12.5px; }
+.sselect-opt > small { flex: 0 0 auto; }
+.sselect-empty { padding: 8px 12px; }
 .field > .sselect > input { width: 100%; }
 .dash-filter .sselect { min-width: 170px; }
 
 /* ---- Stakeholder decisions on a Shortlisted card (25 Oct 2026) ---- */
-.pcard-decide { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line, var(--border, #E4E4E4)); }
-.pcard-decide.compact { margin-top: 4px; padding-top: 0; border-top: 0; display: inline-flex; vertical-align: middle; }
+.pcard-decide { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 8px; }
+.pcard-decide.compact { margin-top: 4px; padding-top: 0; display: inline-flex; vertical-align: middle; }
 .pcard-decide .btn { min-height: 32px; }
-.btn-danger-text { color: var(--critical, #D01827); }
-.btn-danger-text:hover { background: rgba(208, 24, 39, .08); }
 
 /* ---- CV full page (25 Oct 2026): the CV alone, in its own browser tab ---- */
-.cvfull { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--canvas, #F4F5F7); }
-.cvfull-head { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface, #fff); border-bottom: 1px solid var(--line, #E4E4E4); border-top: 3px solid var(--brand, #D01827); }
-.cvfull-head-id { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
-.cvfull-head-id h1 { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink, #1A1A1A); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cvfull-head-id span { font-size: 12px; color: var(--muted, #6F6A64); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cvfull { position: fixed; inset: 0; display: flex; flex-direction: column; }
+.cvfull-head { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
+.cvfull-head-id { flex: 1 1 auto; min-width: 0; display: grid; gap: 4px; }
+.cvfull-head-id h1, .cvfull-head-id span { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cvfull-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .cvfull-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .cvfull-body > .parse-review-cv { flex: 1 1 auto; min-height: 0; }
