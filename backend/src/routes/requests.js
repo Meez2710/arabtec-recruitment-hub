@@ -9,6 +9,7 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { ensureHeadOffice, isHeadOffice, areaOf, areas as locationAreas, autoLocation, locationLabel, normaliseLegacyAreas } from '../lib/locations.js';
 import { all, tx } from '../lib/db.js';
 import { reconcileSeatsForHeadcount, ReconcileConflict } from '../lib/seat-reconciliation.js';
 import { multipart, streamFile } from '../lib/upload.js';
@@ -159,7 +160,10 @@ function serialize(r, user, { withDetail = false } = {}) {
   const ownerLite = r.owner_id ? Users.byId(r.owner_id) : null;
   out.department = deptLite ? { id: deptLite.id, name: deptLite.name } : null;
   out.site = siteLite ? { id: siteLite.id, name: siteLite.name } : null;
-  out.project = projLite ? { id: projLite.id, name: projLite.name } : null;
+  // `area` and `isHeadOffice` let the UI print the place one way everywhere
+  // ("Head Office" / "Soul · Cairo Area"); `place` is that string, pre-built.
+  out.project = projLite ? { id: projLite.id, name: projLite.name, code: projLite.code, area: areaOf(projLite), isHeadOffice: isHeadOffice(projLite) } : null;
+  out.place = locationLabel(projLite, r.location);
   // A recruiter workload row or an "Owner" table column needs a name, not just
   // the bare `ownerId` above — added to the list shape (not just withDetail)
   // for exactly that reason.
@@ -179,7 +183,7 @@ function serialize(r, user, { withDetail = false } = {}) {
     const requester = r.requester_id ? Users.byId(r.requester_id) : null;
     const owner = r.owner_id ? Users.byId(r.owner_id) : null;
     const hm = r.hiring_manager_id ? Users.byId(r.hiring_manager_id) : null;
-    out.project = proj ? { id: proj.id, name: proj.name, code: proj.code } : null;
+    out.project = proj ? { id: proj.id, name: proj.name, code: proj.code, area: areaOf(proj), isHeadOffice: isHeadOffice(proj) } : null;
     out.site = site ? { id: site.id, name: site.name } : null;
     out.department = dept ? { id: dept.id, name: dept.name } : null;
     out.requester = requester ? { id: requester.id, name: requester.full_name } : null;
@@ -323,7 +327,9 @@ router.post('/', requirePermission('request.create'), (req, res) => {
   Seats.createMany(created.id, headcount, d.siteId ? Number(d.siteId) : null);
   // Persist simplified intake extras.
   Requests.update(created.id, { ...created,
-    location: d.location ?? null, key_responsibilities: d.keyResponsibilities ?? null,
+    // Location (Head Office, or the site's area) follows the chosen project
+    // unless the caller typed one; the form no longer asks for free text.
+    location: (d.location && String(d.location).trim()) || autoLocation(project) || null, key_responsibilities: d.keyResponsibilities ?? null,
     key_requirements: d.keyRequirements ?? null, hiring_manager_notes: d.hiringManagerNotes ?? null,
     hiring_manager_id: d.hiringManagerId ? Number(d.hiringManagerId) : null,
   });
@@ -364,6 +370,10 @@ router.put('/:id', requirePermission('request.edit'), (req, res) => {
     required_skills: d.requiredSkills !== undefined ? (Array.isArray(d.requiredSkills) ? d.requiredSkills : String(d.requiredSkills).split(',').map((s) => s.trim()).filter(Boolean)) : (r.required_skills ? JSON.parse(r.required_skills) : []),
     target_join_date: d.targetJoinDate ?? r.target_join_date,
   };
+  // A request moved to another site (or to the Head Office) takes that place's
+  // location with it; an untouched project keeps whatever was recorded.
+  if (d.location !== undefined) patch.location = d.location ? String(d.location).trim() : null;
+  else if (d.projectId && Number(d.projectId) !== r.project_id) patch.location = autoLocation(Projects.byId(Number(d.projectId))) || null;
   if (canSalary) {
     patch.salary_band_min = d.salaryBandMin != null ? Number(d.salaryBandMin) : r.salary_band_min;
     patch.salary_band_max = d.salaryBandMax != null ? Number(d.salaryBandMax) : r.salary_band_max;
@@ -741,8 +751,15 @@ router.post('/:id/reopen', requirePermission('request.reopen'), (req, res) => {
 const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }) || (a.id - b.id);
 const peopleList = (rows) => rows.map((u) => ({ id: u.id, name: u.full_name })).sort(byName);
 router.get('/meta/form', (req, res) => {
+  normaliseLegacyAreas();
+  const headOffice = ensureHeadOffice();
   res.json({
-    projects: Projects.all().map((p) => ({ id: p.id, name: p.name, code: p.code, businessUnitId: p.business_unit_id })),
+    // Location first: Head Office or one of the sites. `headOfficeProjectId`
+    // tells the form which project row is the Head Office; `area` is what the
+    // Sites list shows beside each name; `status` lets it hide closed sites.
+    headOfficeProjectId: headOffice.id,
+    areas: locationAreas(),
+    projects: Projects.all().map((p) => ({ id: p.id, name: p.name, code: p.code, businessUnitId: p.business_unit_id, area: areaOf(p), status: p.status, isHeadOffice: isHeadOffice(p) })),
     sites: Sites.all().map((s) => ({ id: s.id, name: s.name, projectId: s.project_id })),
     departments: Departments.all().map((d) => ({ id: d.id, name: d.name })),
     designations: Designations.all({ activeOnly: true }).map((g) => ({

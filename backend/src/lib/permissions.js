@@ -88,6 +88,9 @@ export const PERMISSIONS = [
   ['app.manage_ui', 'app', 'manage_ui', 'Super-admin: control fields, custom fields, logo'],
   ['workflow.manage', 'workflow', 'manage', 'Manage workflow settings'],
   ['org.manage', 'org', 'manage', 'Manage projects/sites/departments'],
+  // Recruitment keeps the hiring-location list (Head Office / sites and the
+  // area each is in) current itself — no administrator needed (25 Oct 2026).
+  ['location.manage', 'location', 'manage', 'Manage hiring locations: sites and the area each one is in'],
   ['org_chart.manage', 'org_chart', 'manage', 'Manage organization structure'],
   ['system.manage', 'system', 'manage', 'Manage system settings'],
   // Separate from system.manage on purpose. Deciding that a rejection email
@@ -127,6 +130,7 @@ export const ROLE_PERMISSIONS = {
     'offer.view', 'offer.approve', 'offer.approve_director', 'offer.salary_view',
     'interview.view_all', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
     'notification.manage',
+    'location.manage',
   ],
   hr_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
@@ -140,6 +144,7 @@ export const ROLE_PERMISSIONS = {
     'offer.create', 'offer.edit', 'offer.approve', 'offer.send', 'offer.result_update',
     'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view', 'org.manage', 'org_chart.manage',
     'notification.manage',
+    'location.manage',
   ],
   recruitment_manager: [
     'dashboard.view', 'request.view_all', 'request.create', 'request.edit',
@@ -152,6 +157,7 @@ export const ROLE_PERMISSIONS = {
     'salary.view', 'offer.view', 'offer.create', 'offer.edit', 'offer.send', 'offer.result_update',
     'offer.salary_view', 'offer.salary_edit', 'report.export', 'audit.view',
     'notification.manage',
+    'location.manage',
   ],
   recruiter: [
     'dashboard.view', 'request.view_own', 'request.view_team', 'request.create', 'request.edit', 'request.submit',
@@ -162,6 +168,7 @@ export const ROLE_PERMISSIONS = {
     'offer.view', 'offer.create', 'offer.edit', 'offer.result_update',
     'offer.salary_view', 'offer.salary_edit',
     'notification.manage',
+    'location.manage',
   ],
   hiring_manager: [
     'dashboard.view', 'request.view_own', 'request.create', 'request.edit', 'request.submit',
