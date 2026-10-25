@@ -312,7 +312,11 @@ function expandReqCode(input) {
 // Duplicates are removed and empty parts skipped; returns '—' when nothing is set.
 function placeLabel(r) {
   if (!r) return '—';
-  const parts = [r.project?.name, r.site?.name, r.location]
+  // Location (25 Oct 2026): "Head Office", or "<site> · <area>". The API sends
+  // `place` pre-built; the parts below are the fallback for older payloads.
+  if (r.project?.isHeadOffice) return 'Head Office';
+  if (r.place) return r.place;
+  const parts = [r.project?.name, r.site?.name, r.location || r.project?.area]
     .map((p) => (typeof p === 'string' ? p.trim() : p))
     .filter(Boolean);
   const seen = new Set();
@@ -766,6 +770,7 @@ const NAV = [
   { key: 'orgStructure', label: 'Organization Structure', icon: 'building', perm: null },
   { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
   { section: 'Administration' },
+  { key: 'locations', label: 'Locations', icon: 'pin', perm: 'location.manage' },
   { key: 'projects', label: 'Projects', icon: 'hardhat', perm: 'org.manage' },
   { key: 'sites', label: 'Sites', icon: 'pin', perm: 'org.manage' },
   { key: 'departments', label: 'Departments', icon: 'building', perm: 'org.manage' },
@@ -1573,6 +1578,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? <UsersPage user={user} />
       : <Forbidden what="User Management" need="System Admin" />,
     roles: <RolesPage user={user} />,
+    locations: <LocationsPage user={user} />,
     projects: <ProjectsPage user={user} />,
     sites: <SitesPage user={user} />,
     departments: <DepartmentsPage user={user} />,
@@ -3886,6 +3892,117 @@ function ProjectsPage({ user }) {
   );
 }
 
+/* Hiring locations (recruitment team, 25 Oct 2026). Head Office + the sites a
+   request can be for, each with the area it is in; the area list itself is
+   editable. Sites are the same rows as Administration → Projects — this page
+   is the recruitment team's own, lighter door to them (location.manage). */
+function LocationsPage({ user }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const canManage = can(user, 'location.manage');
+  const load = useCallback(async () => { try { setData(await api.get('/org/locations')); setError(''); } catch (e) { setError(e.message || 'Could not load locations.'); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const [newArea, setNewArea] = useState('');
+  const [newSite, setNewSite] = useState({ name: '', area: '' });
+  const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState(null); // { id, name }
+  async function run(label, fn) {
+    if (busy) return;
+    setBusy(true);
+    try { setData(await fn()); if (label) toast(label); }
+    catch (e) { toast(e.message || 'Could not save.', 'error'); }
+    finally { setBusy(false); }
+  }
+  const saveAreas = (areas) => run('Areas saved', () => api.put('/org/locations/areas', { areas }));
+  const updateSite = (id, patch, label) => run(label, () => api.put('/org/locations/sites/' + id, patch));
+  async function addSite() {
+    const name = newSite.name.trim(), area = newSite.area || (data?.areas || [])[0] || '';
+    if (!name) { toast('Type the site name.', 'error'); return; }
+    await run(`Added ${name}`, () => api.post('/org/locations/sites', { name, area }));
+    setNewSite({ name: '', area: '' });
+  }
+  const areas = data?.areas || [];
+  const areaSelect = (value, onChange, label) => (
+    <select value={areas.includes(value) ? value : ''} aria-label={label} disabled={!canManage || busy} onChange={(e) => onChange(e.target.value)}>
+      {!areas.includes(value) && <option value="">{value ? `${value} (not in the area list)` : '— Area —'}</option>}
+      {areas.map((a) => <option key={a} value={a}>{a}</option>)}
+    </select>
+  );
+  return (
+    <div>
+      <PageHead crumb="Administration / Locations" title="Locations"
+        sub="Where a hiring request is for: the Head Office, or one of the company's sites and the area it is in. The hiring request form reads this list." />
+      {error ? <LoadError text={error} onRetry={load} /> : !data ? <Skeleton rows={6} /> : (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div className="card card-pad">
+            <div className="section-title" style={{ marginTop: 0 }}>Areas</div>
+            <p className="muted" style={{ marginTop: 0 }}>The area each site is in, shown beside its name in the request form.</p>
+            <div className="tag-row" style={{ marginBottom: 10 }}>
+              {areas.map((a) => (
+                <span key={a} className="tag-toggle on" title={a}>{a}
+                  {canManage && areas.length > 1 && <button type="button" className="icon-btn" aria-label={`Remove area ${a}`} disabled={busy} style={{ marginInlineStart: 4 }}
+                    onClick={() => saveAreas(areas.filter((x) => x !== a))}><Icon name="close" size={12} /></button>}
+                </span>
+              ))}
+            </div>
+            {canManage && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input placeholder="New area, e.g. Upper Egypt Area" value={newArea} onChange={(e) => setNewArea(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && newArea.trim()) { saveAreas([...areas, newArea.trim()]); setNewArea(''); } }} />
+                <button className="btn btn-secondary" disabled={busy || !newArea.trim()} onClick={() => { saveAreas([...areas, newArea.trim()]); setNewArea(''); }}>Add area</button>
+              </div>
+            )}
+          </div>
+          <div className="card card-pad">
+            <div className="section-title" style={{ marginTop: 0 }}>Head Office</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <strong>{data.headOffice.name}</strong>
+              {areaSelect(data.headOffice.area || '', (v) => updateSite(data.headOffice.id, { area: v }, 'Head Office area saved'), 'Head Office area')}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-head"><div><h3>Sites</h3></div><span className="dash-headnote">{data.sites.length} site{data.sites.length === 1 ? '' : 's'}</span></div>
+            {data.sites.length === 0 ? <Empty art="none-yet" text="No sites yet. Add the first one below." /> : (
+              <div className="table-wrap"><table className="responsive-table">
+                <thead><tr><th>Site</th><th>Area</th><th>Status</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
+                <tbody>{data.sites.map((p) => (
+                  <tr key={p.id}>
+                    <td data-label="Site">
+                      {renaming && renaming.id === p.id
+                        ? <input autoFocus value={renaming.name} aria-label={`Rename ${p.name}`} onChange={(e) => setRenaming({ id: p.id, name: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { updateSite(p.id, { name: renaming.name }, 'Site renamed'); setRenaming(null); } if (e.key === 'Escape') setRenaming(null); }}
+                            onBlur={() => { if (renaming.name.trim() && renaming.name.trim() !== p.name) updateSite(p.id, { name: renaming.name }, 'Site renamed'); setRenaming(null); }} />
+                        : <strong>{p.name}</strong>}
+                      <div className="muted" style={{ fontSize: 11.5 }}>{p.code}</div>
+                    </td>
+                    <td data-label="Area">{areaSelect(p.area || '', (v) => updateSite(p.id, { area: v }, `${p.name}: area saved`), `Area of ${p.name}`)}</td>
+                    <td data-label="Status">
+                      {canManage
+                        ? <select value={p.status} aria-label={`Status of ${p.name}`} disabled={busy} onChange={(e) => updateSite(p.id, { status: e.target.value }, `${p.name}: ${e.target.value.replace('_', ' ')}`)}>
+                            <option value="active">Active</option><option value="on_hold">On hold</option><option value="closed">Closed</option>
+                          </select>
+                        : <StatusBadge status={p.status} />}
+                    </td>
+                    {canManage && <td className="cell-actions"><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setRenaming({ id: p.id, name: p.name })}>Rename</button></td>}
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
+            {canManage && (
+              <div className="card-pad" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: '1px solid var(--border)' }}>
+                <input placeholder="New site name" value={newSite.name} onChange={(e) => setNewSite((x) => ({ ...x, name: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') addSite(); }} />
+                {areaSelect(newSite.area || areas[0] || '', (v) => setNewSite((x) => ({ ...x, area: v })), 'Area of the new site')}
+                <button className="btn" disabled={busy || !newSite.name.trim()} onClick={addSite}>Add site</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SitesPage({ user }) {
   const [rows, load] = useOrg('/org/sites', 'sites');
   const [projects, setProjects] = useState([]);
@@ -5341,7 +5458,7 @@ function RequestTicketCard({ r, onOpen }) {
 
         <dl className="rq-meta">
           <div><dt>Dept</dt><dd title={dept}>{dept}</dd></div>
-          <div><dt>Project / Site</dt><dd title={place}>{place}</dd></div>
+          <div><dt>Location</dt><dd title={place}>{place}</dd></div>
           {r.headcount != null && <div><dt>Headcount</dt><dd>{r.headcountFilled ?? 0} of {r.headcount}</dd></div>}
         </dl>
 
@@ -5704,12 +5821,12 @@ function RequestsPage({ user, initialFilters }) {
             : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
         <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap"><table className="table responsive-table">
-          <thead><tr><th>Request</th><th>Position</th><th data-priority="secondary">Project / Site</th><th>Owner</th><th data-priority="secondary">Pipeline</th><th>Priority</th><th>Status</th><th data-priority="secondary">Idle</th><th>SLA</th></tr></thead>
+          <thead><tr><th>Request</th><th>Position</th><th data-priority="secondary">Location</th><th>Owner</th><th data-priority="secondary">Pipeline</th><th>Priority</th><th>Status</th><th data-priority="secondary">Idle</th><th>SLA</th></tr></thead>
           <tbody>{shown.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
               <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
               <td data-label="Position"><span className="cell-strong clamp-2" title={r.title}>{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
-              <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">
+              <td data-priority="secondary" data-label="Location" className="cell-sub-only">
                 <span className="clamp-2" title={placeLabel(r)}>{placeLabel(r)}</span>
               </td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
@@ -5771,13 +5888,28 @@ function RequestForm({ user, request, onClose, onSaved }) {
   const customDefs = useCustomFields('request');
   const [customVals, setCustomVals] = useState(editing ? (request.customFields || {}) : {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  // UI-only: Site + Location are optional for the API, so they start collapsed to
-  // reduce form density. Their values are still sent unchanged in the payload.
-  const [moreLoc, setMoreLoc] = useState(false);
+  // Location (recruitment team, 25 Oct 2026): first "Head Office" or
+  // "Projects"; for Projects, the Site list names every site with the area it
+  // is in (kept current under Administration → Locations). Both map onto the
+  // one field the API requires, `projectId`: the Head Office is a project row.
+  const [locKind, setLocKind] = useState(null); // null = derive from projectId once meta loads
   useEffect(() => { api.get('/requests/meta/form').then(setMeta); }, []);
-  const sites = meta ? meta.sites.filter((s) => !f.projectId || s.projectId === Number(f.projectId)) : [];
+  const headOfficeId = meta ? meta.headOfficeProjectId : null;
+  const kind = locKind !== null ? locKind
+    : f.projectId === '' || f.projectId == null ? '' : Number(f.projectId) === headOfficeId ? 'head_office' : 'projects';
+  const siteOptions = meta ? meta.projects
+    .filter((p) => !p.isHeadOffice && (p.status === 'active' || Number(p.id) === Number(f.projectId)))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) : [];
+  const siteLabel = (p) => (p.area ? `${p.name} — ${p.area}` : p.name);
+  function chooseLocation(v) {
+    setLocKind(v);
+    if (v === 'head_office') set('projectId', headOfficeId == null ? '' : String(headOfficeId));
+    else set('projectId', '');            // Projects: the site is chosen next; blank until then
+  }
 
   async function save() {
+    if (!kind) { toast('Choose the location: Head Office or Projects.', 'error'); return; }
+    if (kind === 'projects' && !f.projectId) { toast('Choose the site this request is for.', 'error'); return; }
     setBusy(true);
     try {
       if (editing) {
@@ -5815,17 +5947,25 @@ function RequestForm({ user, request, onClose, onSaved }) {
         <div className="field full"><label>Position *</label><input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Site Engineer" /></div>
         {!editing && <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>}
         <div className="field"><label>Department *</label><select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}><option value="">— Select —</option>{meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
-        {/* Project stays the single required control (the API validates projectId).
-            Site + Location are optional, so they live under "More location details"
-            to keep the form calm. Internal state and payload are unchanged. */}
-        <div className="field"><label>Project / Site *</label>
-          <select value={f.projectId} onChange={(e) => set('projectId', e.target.value)}><option value="">— Select —</option>{meta.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-          <button type="button" className="linklike" style={{ marginTop: 6 }} onClick={() => setMoreLoc((v) => !v)}>
-            <Icon name={moreLoc ? 'chevronUp' : 'chevronDown'} size={16} />{moreLoc ? 'Hide location details' : 'More location details'}
-          </button>
+        {/* Location → Site. The API still validates one field, projectId: the
+            Head Office is a project row, every site is a project row, and the
+            area printed beside a site comes from Administration → Locations. */}
+        <div className="field"><label>Location *</label>
+          <select value={kind} aria-label="Location" onChange={(e) => chooseLocation(e.target.value)}>
+            <option value="">— Select —</option>
+            <option value="head_office">Head Office</option>
+            <option value="projects">Projects</option>
+          </select>
         </div>
-        {moreLoc && <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
-        {moreLoc && !editing && <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>}
+        {kind === 'projects' && (
+          <div className="field"><label>Site *</label>
+            <select value={f.projectId} aria-label="Site" onChange={(e) => set('projectId', e.target.value)}>
+              <option value="">— Select a site —</option>
+              {siteOptions.map((p) => <option key={p.id} value={p.id}>{siteLabel(p)}</option>)}
+            </select>
+            {siteOptions.length === 0 && <small className="muted">No sites yet — the recruitment team adds them under Administration → Locations.</small>}
+          </div>
+        )}
         <div className="field"><label>Priority</label><select value={f.priority} onChange={(e) => set('priority', e.target.value)}>{Object.keys(PRIORITY).map((p) => <option key={p}>{p}</option>)}</select></div>
         {!editing && <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>}
         {!editing && <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>}
@@ -6431,7 +6571,7 @@ function TicketHeader({ req, children, onBack }) {
       <ReqStatusBadge status={req.status} displayStatus={req.displayStatus} />
       {req.priority && <PriorityBadge p={req.priority} />}{req.health && <ReqHealth health={req.health} status={req.status} />}</span>
       <span className="th-sub"><span><em>Department</em>{req.department?.name || '—'}</span>
-      <span><em>Project / Site</em>{placeLabel(req)}</span>
+      <span><em>Location</em>{placeLabel(req)}</span>
       {req.headcount != null && <span><em>Headcount</em>{req.headcountFilled ?? 0} of {req.headcount}</span>}</span></>} />
   </div>;
 }
@@ -6500,7 +6640,7 @@ function OverviewTab({ req, onReload, btns, embedded }) {
           <FieldChip label="Req ID"><span title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span></FieldChip>
           <FieldChip label="Position">{req.title}</FieldChip>
           <FieldChip label="Department">{req.department?.name}</FieldChip>
-          <FieldChip label="Project / Site">{placeLabel(req)}</FieldChip>
+          <FieldChip label="Location">{placeLabel(req)}</FieldChip>
           <FieldChip label="Hiring Manager">{req.hiringManager?.name || '—'}</FieldChip>
           <FieldChip label="Priority"><span style={{ textTransform: 'capitalize' }}>{req.priority || '—'}</span></FieldChip>
           <FieldChip label="Recruiter">{req.owner?.name || 'Unassigned'}</FieldChip>

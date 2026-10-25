@@ -4,6 +4,7 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { locationsPayload, setAreas, createSite, updateSite } from '../lib/locations.js';
 import { registerOrgChartRoutes } from './org-chart-routes.js';
 import { registerOrgChartV2Routes } from './org-chart-v2-routes.js';
 
@@ -57,6 +58,35 @@ router.put('/projects/:id', requirePermission('org.manage'), (req, res) => {
   });
   writeAudit(req, { action: 'project.updated', entityType: 'project', entityId: id, oldValue: before, newValue: updated });
   res.json({ project: updated });
+});
+
+// ---------------- Hiring locations (25 Oct 2026) ----------------
+// Head Office + sites (= projects) + the areas they are in. Readable by anyone
+// signed in (the request form needs it); edited under location.manage, which
+// the recruitment roles hold by default.
+const fail = (res, e) => res.status(e.status || 500).json({ error: e.status ? e.message : 'Could not save the location.' });
+router.get('/locations', (req, res) => res.json(locationsPayload()));
+router.put('/locations/areas', requirePermission('location.manage'), (req, res) => {
+  try {
+    const areas = setAreas((req.body || {}).areas);
+    writeAudit(req, { action: 'location.areas_updated', entityType: 'system_setting', entityId: 0, newValue: { areas } });
+    res.json(locationsPayload());
+  } catch (e) { fail(res, e); }
+});
+router.post('/locations/sites', requirePermission('location.manage'), (req, res) => {
+  try {
+    const site = createSite(req.body || {});
+    writeAudit(req, { action: 'location.site_created', entityType: 'project', entityId: site.id, newValue: site });
+    res.status(201).json({ site, ...locationsPayload() });
+  } catch (e) { fail(res, e); }
+});
+router.put('/locations/sites/:id', requirePermission('location.manage'), (req, res) => {
+  try {
+    const before = Projects.byId(Number(req.params.id));
+    const site = updateSite(req.params.id, req.body || {});
+    writeAudit(req, { action: 'location.site_updated', entityType: 'project', entityId: site.id, oldValue: before, newValue: site });
+    res.json({ site, ...locationsPayload() });
+  } catch (e) { fail(res, e); }
 });
 
 // ---------------- Sites ----------------
