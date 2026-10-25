@@ -308,7 +308,9 @@ validateConfigOrThrow();
 // Bind the port FIRST so the platform's health check sees an open port immediately
 // (Render fails a deploy if no port opens within ~60s). Schema + seed run in the
 // background; APP_READY flips true when done, opening the API gate.
-app.listen(PORT, () => {
+// HOST lets the on-prem box bind to 127.0.0.1 behind a TLS proxy
+// (deploy/on-prem/TLS-REVERSE-PROXY.md); unset, it listens everywhere as before.
+app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   console.log(`\n🏗️  Arabtec Recruitment Hub listening on ${PORT} (initialising…)`);
   console.log(JSON.stringify({ level: 'info', msg: 'security.headers', ...securityConfigSummary() }));
   (async () => {

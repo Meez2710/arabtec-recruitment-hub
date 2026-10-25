@@ -197,6 +197,16 @@ function serialize(r, user, { withDetail = false } = {}) {
 }
 
 /* ---------------- Scope helper: can this user view this request? ---------------- */
+// Mutations by roles that only see their OWN requests (request.view_own: hiring
+// managers, project managers, recruiters without view_team) must be limited to
+// those requests too. Audit F1 (25 Oct 2026): PUT /:id, POST /:id/submit and
+// POST /:id/attachment checked the permission but not the ownership, so a
+// hiring manager could edit any request by id.
+const refuseOutsideScope = (req, res, r) => {
+  if (canView(req.user, r)) return false;
+  res.status(403).json({ error: 'You can only change requests you raised, own or are named on.' });
+  return true;
+};
 function canView(user, r) {
   if (user.permissions.includes('request.view_all') || user.permissions.includes('request.view_team')) return true;
   if (user.permissions.includes('request.view_own')) {
@@ -343,6 +353,7 @@ router.post('/', requirePermission('request.create'), (req, res) => {
 router.put('/:id', requirePermission('request.edit'), (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
+  if (refuseOutsideScope(req, res, r)) return;
   if (![STATUS.DRAFT, STATUS.PENDING, STATUS.APPROVED, STATUS.REOPENED].includes(r.status)) {
     return res.status(409).json({ error: `Cannot edit a request in '${r.status}' state.` });
   }
@@ -444,6 +455,7 @@ router.put('/:id', requirePermission('request.edit'), (req, res) => {
 router.post('/:id/submit', requirePermission('request.submit'), (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
+  if (refuseOutsideScope(req, res, r)) return;
   if (r.status !== STATUS.DRAFT && r.status !== STATUS.REOPENED) {
     return res.status(409).json({ error: 'Only draft requests can be submitted.' });
   }
@@ -791,6 +803,7 @@ router.get('/meta/form', (req, res) => {
 router.post('/:id/attachment', requirePermission('request.edit'), multipart, (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
+  if (refuseOutsideScope(req, res, r)) return;
   if (!req.uploadedFile) return res.status(400).json({ error: 'No file uploaded.' });
   Requests.update(r.id, { ...r, attachment_path: req.uploadedFile.storedName, attachment_name: req.uploadedFile.originalName });
   RequestActivity.add(r.id, req.user, 'attachment_uploaded', { note: req.uploadedFile.originalName });

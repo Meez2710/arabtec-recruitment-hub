@@ -57,3 +57,5 @@ Arabtec_ATS_User_Manual_Internal_Handover*
 deploy/on-prem/ats.env
 deploy/on-prem/scan.env
 deploy/on-prem/mailbox.env
+docs/audits/**/raw/host-check.txt
+docs/audits/2026-10-25-onprem-audit/
