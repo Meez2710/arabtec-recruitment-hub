@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureSchema } from './lib/schema.js';
 import { ensureOrganizationChartSchema, seedOrganizationChartIfEmpty } from './lib/org-chart-seed.js';
 import { migrateOrganizationNodesToCharts } from './lib/org-chart-v2-migrate.js';
+import { ensureHeadOffice, normaliseLegacyAreas } from './lib/locations.js';
 import { withOrgStructurePage } from './lib/org-structure-app-patch.js';
 import { compiledFrontend, warmFrontend } from './lib/frontend-build.js';
 import { ensureFeatureFlags, isEnabled } from './lib/feature-flags.js';
@@ -327,6 +328,10 @@ app.listen(PORT, () => {
         await bootSeedIfEmpty();   // seed admin/reference data if empty
         seedOrganizationChartIfEmpty();
         if (isEnabled('org_chart_v2')) migrateOrganizationNodesToCharts(); // v2 charts from organization_node (idempotent)
+        // Hiring locations (25 Oct 2026): the Head Office row exists and legacy
+        // project areas are normalised from the first start, not the first form load.
+        try { ensureHeadOffice(); const n = normaliseLegacyAreas(); if (n) console.log(`  • Locations: normalised ${n} legacy project area(s).`); }
+        catch (e) { console.error('  ! Locations bootstrap failed (continuing):', e.message); }
         APP_READY = true;
         console.log(`   ✓ Ready. API health: http://localhost:${PORT}/api/health\n`);
         // Compile the app on a worker thread once the database is ready, so the
