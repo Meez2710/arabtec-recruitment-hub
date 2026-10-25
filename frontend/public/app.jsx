@@ -3301,7 +3301,7 @@ function SearchSelect({ value, onChange, options, placeholder = 'Type to searchâ
     else if (e.key === 'Backspace' && !q && has) { onChange(''); }
   }
   return (
-    <div ref={ref} className={'sselect' + (open ? ' open' : '') + (disabled ? ' disabled' : '') + (className ? ' ' + className : '')} style={style} title={title}>
+    <div ref={ref} className={'sselect' + (open ? ' open' : '') + (has ? ' has-value' : '') + (disabled ? ' disabled' : '') + (className ? ' ' + className : '')} style={style} title={title}>
       <input type="text" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-label={ariaLabel}
         autoComplete="off" spellCheck="false" disabled={disabled}
         value={open ? q : (current ? current.label : '')}
