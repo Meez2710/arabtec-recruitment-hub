@@ -958,9 +958,18 @@ export const Candidates = {
     // simply not in any bucket, never excluded from an unfiltered search.
     if (f.disciplineClass) { sql += ' AND discipline_class=?'; p.push(f.disciplineClass); }
     if (f.departmentId != null) {
-      // Actual request department only. EXISTS keeps filtering/counting paged
-      // without expanding a large department into thousands of placeholders.
-      sql += ` AND EXISTS (SELECT 1 FROM application a
+      // Two ways into a department (recruitment team, 25 Oct 2026). Until now
+      // only a candidate LINKED to a request in the department matched, so the
+      // filter found nobody in a Talent Pool full of imported CVs. A candidate
+      // now also matches when their current position is one of the department's
+      // designations (either contains the other, case-insensitively): a "Senior
+      // Site Engineer" is found under Civil without ever having been linked.
+      // The designation match is for full-pool readers only; a scoped reader
+      // (hiring manager, interviewer) keeps the request-based rule, which is the
+      // only connection they have to a candidate in the first place.
+      // EXISTS keeps filtering/counting paged without expanding a large
+      // department into thousands of placeholders.
+      sql += ` AND (EXISTS (SELECT 1 FROM application a
         JOIN recruitment_request r ON r.id=a.request_id
         JOIN department d ON d.id=r.department_id
         WHERE a.candidate_id=candidate.id AND d.id=? AND d.status='active'`;
@@ -976,6 +985,14 @@ export const Candidates = {
           p.push(userId, userId);
         }
         sql += ')';
+      }
+      sql += ')';
+      if (!f.departmentScope) {
+        sql += ` OR EXISTS (SELECT 1 FROM designation g WHERE g.department_id=? AND g.is_active=1
+          AND candidate.current_position IS NOT NULL AND TRIM(candidate.current_position) <> ''
+          AND (LOWER(candidate.current_position) LIKE '%' || LOWER(g.title) || '%'
+            OR LOWER(g.title) LIKE '%' || LOWER(candidate.current_position) || '%'))`;
+        p.push(f.departmentId);
       }
       sql += ')';
     }
