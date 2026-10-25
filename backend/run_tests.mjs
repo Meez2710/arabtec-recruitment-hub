@@ -35,7 +35,15 @@ const SUITES = [
   'assessment_review_fixes_test.mjs', // AR-02/03/04/07: submit state, parent/child policy, print parity, document CSP
   'assessment_team_edit_test.mjs', // audit 2026-10-05: recruitment team edits both sections; reopen/edit with reason; history
   'talent_pool_test.mjs', // exact values and scoped department filtering
+  'form_meta_order_test.mjs', // 25 Oct 2026: hiring managers / recruiters / interviewers lists are alphabetical
+  'locations_test.mjs',       // 25 Oct 2026: Head Office / sites / areas; recruitment edits them; requests take their location from the site
+  'talent_pool_department_test.mjs', // 25 Oct 2026: department search matches pool candidates by designation title, scoped readers keep the request rule
+  'stakeholder_decisions_test.mjs', // 25 Oct 2026: HM / panel interviewer: Interview, On Hold, Disqualify on Shortlisted; named HM is in request scope
+  'stakeholder_notify_test.mjs',    // 25 Oct 2026: recruitment is told about every HM / interviewer decision, reply and feedback
+  'recommend_candidate_test.mjs',   // 25 Oct 2026: HM / panel interviewer recommends a candidate (CV) straight into Shortlisted
   'shortlist_visibility_test.mjs', // shortlist release boundary for restricted roles
+  'release_unlink_test.mjs',    // Shortlisted release notification + Unlink (2026-10-15)
+  'request_detachment_test.mjs', // request-only deletion keeps linked records (2026-10-15)
   'candidate_scope_test.mjs', // AR-01: candidate visibility follows assignment scope (API, nested data, ids, assistant tools)
   'ui_assessment_test.mjs',   // assessment UI: PDF document, policy-driven views, draft/submit/edit, settings
   'hardening_test.mjs',       // security hardening gate items

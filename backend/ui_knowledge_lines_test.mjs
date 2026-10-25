@@ -24,9 +24,12 @@ check('the script is loaded before the app, so the list exists when the footer f
   const list = html.indexOf('src="/knowledge-lines.js'), app = html.indexOf('src="/build/app.js');
   assert.ok(list !== -1 && app !== -1 && list < app, `script order: list at ${list}, app at ${app}`);
 });
-check('the footer is rendered in both page shells and re-drawn per route', () => {
+check('the footer is rendered in the one page shell (phone and desktop share it) and re-drawn per route', () => {
   const jsx = fs.readFileSync(pub + 'app.jsx', 'utf8');
-  assert.equal((jsx.match(/<KnowledgeLine key=\{route\} \/>/g) || []).length, 2);
+  // 2026-10-15: phone and desktop chrome now wrap ONE <main>, so the page (and
+  // its footer) is not remounted when the window crosses the phone breakpoint.
+  assert.equal((jsx.match(/<KnowledgeLine key=\{route\} \/>/g) || []).length, 1);
+  assert.match(jsx, /<main id="main-content" className=\{'content ' \+ \(isPhone \? 'content-phone' : 'has-dock'\)/, 'both presentations use the same <main>');
   assert.match(jsx, /if \(!Array\.isArray\(lines\) \|\| !lines\.length\) return null;/, 'a missing list renders nothing rather than throwing');
 });
 const { parseKnowledgeLines } = await import('./src/lib/knowledge-lines.js');

@@ -3,13 +3,18 @@ import {
   Applications, Candidates, Requests, Seats, StageHistory, CandidateActivity, RequestActivity,
   Users, Projects, SystemSettings, RejectReasons, Posts,
 } from '../lib/models.js';
-import { tx } from '../lib/db.js';
+import { tx, get as dbGet, all as dbAll2, run as dbRun } from '../lib/db.js';
 import { applicationScopeClause, applicationScopeFilter } from '../lib/candidate-scope.js';
-import { hasFullPipelineAccess, visibleStageHistory } from '../lib/pipeline-visibility.js';
+import { hasFullPipelineAccess, visibleStageHistory, isReleasedStatus, isFirstRelease } from '../lib/pipeline-visibility.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { notifyEvent } from '../lib/notify.js';
 import { hasOpenSeat } from '../lib/vacancy.js';
+import { stakeholderDecisions, canRecommendCandidate } from '../lib/stakeholders.js';
+import { notifyRecruitment } from '../lib/stakeholder-notify.js';
+import { multipart, uploadPath } from '../lib/upload.js';
+import { fileHash } from '../lib/cv-mapper.js';
+import { CandidateDocuments } from '../lib/models.js';
 import { joinApplication, blockingJoinedApplication, JoinConflict, JOIN_CONFLICT, ALREADY_JOINED_MESSAGE } from '../lib/join.js';
 import { deliveryPlan, candidateEmailReporter } from '../lib/candidate-email.js';
 import {
@@ -87,6 +92,14 @@ function appOut(a, user) {
     nextAction: a.next_action, nextActionDate: a.next_action_date, interviewOutcome: a.interview_outcome,
     rejectionReason: a.rejection_reason, onHoldReason: a.on_hold_reason, withdrawnReason: a.withdrawn_reason,
     recruiter: rec ? { id: rec.id, name: rec.full_name } : null,
+    // The stage keys THIS reader may move the application to without
+    // candidate.move_stage (hiring manager / panel interviewer on a Shortlisted
+    // candidate: interviewing, on_hold, rejected). Empty for everyone else, and
+    // always empty for the recruitment team, which has the whole board.
+    decisions: stakeholderDecisions(user, a),
+    // A candidate a hiring manager / interviewer recommended (POST /recommend):
+    // the card says so, with the recommender's name.
+    recommendation: a.source === 'recommendation' ? (() => { const u = a.created_by ? Users.byId(a.created_by) : null; return { byId: a.created_by || null, byName: u ? u.full_name : null }; })() : null,
     candidate: cand ? {
       id: cand.id, candidateNo: cand.candidate_no, fullName: cand.full_name,
       currentPosition: cand.current_position, currentCompany: cand.current_company,
@@ -97,6 +110,64 @@ function appOut(a, user) {
       graduationYear: cand.graduation_year, university: cand.university, major: cand.major,
     } : null,
   };
+}
+
+/**
+ * The ONE write path that puts a candidate on a request. F-01: creating an
+ * application is EIGHT writes, not one — counter, row, history, two lifecycle
+ * stamps, candidate timeline, request timeline, strict audit — and they run
+ * in one transaction so a failure part-way leaves nothing behind (the counter
+ * included). Used by POST / (link) and POST /recommend.
+ */
+function createLinkedApplication({ req, request, candidate, initialStatus, positionApplied, matchScore, recruiterId, source }) {
+  const requestId = request.id, candidateId = candidate.id;
+  const created = tx(() => {
+    const appNo = Applications.nextNo();                            // 1. counter
+    boundary(1);
+    const app = Applications.create({                               // 2. application
+      applicationNo: appNo, candidateId, requestId,
+      positionApplied: positionApplied || request.title,
+      status: initialStatus, matchScore: matchScore != null && matchScore !== '' ? Number(matchScore) : null,
+      recruiterId: recruiterId || request.owner_id || req.user.id,
+      source: source || candidate.source, createdBy: req.user.id,
+    });
+    boundary(2);
+    StageHistory.add(app.id, null, initialStatus, req.user, 'Application created'); // 3. history
+    boundary(3);
+    Requests.stampLifecycle(requestId, 'first_candidate_at');        // 4. lifecycle
+    boundary(4);
+    if (initialStatus === APP.SHORTLISTED) {
+      Requests.stampLifecycle(requestId, 'first_shortlist_at');      // 5. conditional lifecycle
+    }
+    boundary(5);
+    CandidateActivity.add({                                         // 6. candidate timeline
+      candidateId, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName,
+      type: 'application_created', note: `${appNo} → ${request.ticket_no}`,
+    });
+    boundary(6);
+    RequestActivity.add(requestId, req.user, 'candidate_linked', {   // 7. request timeline
+      note: `${candidate.full_name} linked (${appNo})`,
+    });
+    boundary(7);
+    writeAudit(req, {                                               // 8. audit
+      action: 'application.created', entityType: 'application', entityId: app.id,
+      newValue: { applicationNo: appNo, candidateId, requestId, status: initialStatus },
+    }, { strict: true });
+    boundary(8);
+    return app;
+  });
+  return created;
+}
+
+/** The open application that blocks a fresh link elsewhere, or null (one live link per candidate). */
+function activeLinkElsewhere(candidateId, requestId) {
+  if (SystemSettings.all().allow_duplicate_application === 'true') return null;
+  return Applications.forCandidate(candidateId).find((a) => {
+    if (a.request_id === requestId) return false;
+    if (APP_TERMINAL.includes(appNorm(a.status))) return false;
+    const lr = a.request_id ? Requests.byId(a.request_id) : null;
+    return lr && !REQ_TERMINAL.includes(reqNorm(lr.status));
+  }) || null;
 }
 
 /* ---------------- LINK candidate to request (create application) ---------------- */
@@ -208,40 +279,10 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
   // The audit write is STRICT here (see the BL-34 note in lib/audit.js): inside
   // a transaction a swallowed audit failure would commit the operation without
   // its audit record.
-  const created = tx(() => {
-    const appNo = Applications.nextNo();                            // 1. counter
-    boundary(1);
-    const app = Applications.create({                               // 2. application
-      applicationNo: appNo, candidateId, requestId,
-      positionApplied: d.positionApplied || request.title,
-      status: initialStatus, matchScore: d.matchScore != null ? Number(d.matchScore) : null,
-      recruiterId: d.recruiterId ? Number(d.recruiterId) : (request.owner_id || req.user.id),
-      source: d.source || candidate.source, createdBy: req.user.id,
-    });
-    boundary(2);
-    StageHistory.add(app.id, null, initialStatus, req.user, 'Application created'); // 3. history
-    boundary(3);
-    Requests.stampLifecycle(requestId, 'first_candidate_at');        // 4. lifecycle
-    boundary(4);
-    if (initialStatus === APP.SHORTLISTED) {
-      Requests.stampLifecycle(requestId, 'first_shortlist_at');      // 5. conditional lifecycle
-    }
-    boundary(5);
-    CandidateActivity.add({                                         // 6. candidate timeline
-      candidateId, applicationId: app.id, actorId: req.user.id, actorName: req.user.fullName,
-      type: 'application_created', note: `${appNo} → ${request.ticket_no}`,
-    });
-    boundary(6);
-    RequestActivity.add(requestId, req.user, 'candidate_linked', {   // 7. request timeline
-      note: `${candidate.full_name} linked (${appNo})`,
-    });
-    boundary(7);
-    writeAudit(req, {                                               // 8. audit
-      action: 'application.created', entityType: 'application', entityId: app.id,
-      newValue: { applicationNo: appNo, candidateId, requestId, status: initialStatus },
-    }, { strict: true });
-    boundary(8);
-    return app;
+  const created = createLinkedApplication({
+    req, request, candidate, initialStatus,
+    positionApplied: d.positionApplied, matchScore: d.matchScore,
+    recruiterId: d.recruiterId ? Number(d.recruiterId) : null, source: d.source,
   });
   // Acknowledgement to the candidate. Fired outside the transaction — an email
   // must never be able to roll back a link — and off by default, because a
@@ -252,7 +293,108 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
     vars: { candidateName: candidate.full_name, position: (() => { try { return Requests.byId(requestId)?.title; } catch { return null; } })() },
     title: 'Application received',
   });
+  maybeNotifyRelease(created.id, created.status, req);   // linked directly as Shortlisted
   res.status(201).json({ application: appOut(created, req.user) });
+});
+
+/**
+ * Owner rule (2026-10-15): Shortlisted is the release point. Linking and every
+ * Sourcing move are private to Recruitment; the request's stakeholders hear
+ * about a candidate exactly once — the first time the application reaches a
+ * stage they may see. Call AFTER the history row is written and outside any
+ * transaction (a notification must never roll back a move).
+ */
+function maybeNotifyRelease(appId, toStatus, req) {
+  try {
+    if (!isReleasedStatus(toStatus) || !isFirstRelease(appId)) return null;
+    const a = Applications.byId(appId); if (!a || !a.request_id) return null;
+    const r = Requests.byId(a.request_id); const candidate = Candidates.byId(a.candidate_id);
+    if (!r || !candidate) return null;
+    const panel = dbAll2(`SELECT DISTINCT u.* FROM interview_panel p JOIN interview i ON i.id=p.interview_id
+      JOIN users u ON u.id=p.interviewer_id WHERE i.application_id=?`, [a.id]);
+    return notifyEvent('candidate.shortlisted', {
+      actor: req.user,
+      requester: r.requester_id ? Users.byId(r.requester_id) : null,
+      owner: r.owner_id ? Users.byId(r.owner_id) : null,
+      hiringManager: r.hiring_manager_id ? Users.byId(r.hiring_manager_id) : null,
+      panel,
+      linkType: 'request', linkId: r.id,
+      vars: { candidateName: candidate.full_name, ticketNo: r.ticket_no, position: r.title },
+      title: `Candidate shortlisted — ${r.ticket_no}`,
+      body: `${candidate.full_name} has been shortlisted for ${r.title} (${r.ticket_no}).`,
+    });
+  } catch (e) { console.error('release notification failed:', e.message); return null; }
+}
+
+/* ---------------- RECOMMEND a candidate (CV) into the shortlist ----------------
+   Recruitment team request (25 Oct 2026): a hiring manager or technical
+   interviewer hands recruitment a CV of someone they recommend. One form, one
+   file: the candidate is created (or an existing one with the same email /
+   phone is reused), the CV stored as their résumé, and the application opens
+   straight at Shortlisted — the first stage the recommender can see — marked
+   as their recommendation. Recruitment is notified; the request thread shows
+   it. Multipart: file + fullName (+ email, phone, currentPosition, employer,
+   yearsExperience, note). */
+const RECOMMENDATION_SOURCE = 'recommendation';
+router.post('/recommend', multipart, (req, res) => {
+  const f = req.fields || {};
+  const request = Requests.byId(Number(f.requestId));
+  if (!request) return res.status(404).json({ error: 'Recruitment request not found.' });
+  if (!canRecommendCandidate(req.user, request)) {
+    return res.status(403).json({ error: 'Only the hiring manager named on this request, its interview panel or the recruitment team can recommend a candidate here.' });
+  }
+  if (REQ_TERMINAL.includes(reqNorm(request.status))) return res.status(409).json({ error: `Cannot add candidates to a ${request.status} request.` });
+  if (!req.uploadedFile) return res.status(400).json({ error: 'Attach the candidate\u2019s CV.' });
+  const fullName = String(f.fullName || '').replace(/\s+/g, ' ').trim();
+  if (!fullName) return res.status(400).json({ error: 'The candidate\u2019s name is required.' });
+  const email = String(f.email || '').trim() || null, phone = String(f.phone || '').trim() || null;
+  const note = String(f.note || '').trim() || null;
+
+  // Same person already in the pool? Reuse them rather than create a twin.
+  let candidate = null, reused = false;
+  const dups = (email || phone) ? Candidates.findDuplicates({ email, phone }) : [];
+  if (dups.length) {
+    candidate = Candidates.byId(dups[0].id); reused = true;
+    const existing = Applications.existing(candidate.id, request.id);
+    if (existing) return res.status(409).json({ error: `${candidate.full_name} is already on this request.`, applicationId: existing.id });
+    const open = activeLinkElsewhere(candidate.id, request.id);
+    if (open) {
+      const br = Requests.byId(open.request_id) || {};
+      return res.status(409).json({ error: `${candidate.full_name} is already being considered for ${br.ticket_no || 'another request'} (${br.title || 'untitled'}). Ask the recruitment team to move them.`, blockingRequest: { id: br.id ?? null, ticketNo: br.ticket_no ?? null, title: br.title ?? null } });
+    }
+  } else {
+    const candNo = Candidates.nextNo();
+    candidate = Candidates.create({
+      candidateNo: candNo, fullName, email, phone,
+      currentPosition: String(f.currentPosition || '').trim() || null,
+      currentCompany: String(f.employer || '').trim() || null, employer: String(f.employer || '').trim() || null,
+      yearsExperience: f.yearsExperience !== undefined && f.yearsExperience !== '' && !Number.isNaN(Number(f.yearsExperience)) ? Number(f.yearsExperience) : null,
+      source: RECOMMENDATION_SOURCE, ownerRecruiterId: request.owner_id || null, createdBy: req.user.id,
+    });
+    CandidateActivity.add({ candidateId: candidate.id, actorId: req.user.id, actorName: req.user.fullName, type: 'candidate_created', note: `${candNo} — recommended for ${request.ticket_no}` });
+    writeAudit(req, { action: 'candidate.created', entityType: 'candidate', entityId: candidate.id, newValue: { candidateNo: candNo, source: RECOMMENDATION_SOURCE } });
+  }
+
+  // The CV: the résumé when they have none yet; always a stored document version.
+  const stored = req.uploadedFile.storedName, original = req.uploadedFile.originalName;
+  if (!candidate.resume_path) {
+    dbRun('UPDATE candidate SET resume_path=?, resume_name=?, updated_at=? WHERE id=?', [stored, original, new Date().toISOString(), candidate.id]);
+  }
+  let hash = null; try { hash = fileHash(uploadPath(stored)); } catch { hash = null; }
+  try { CandidateDocuments.add({ candidateId: candidate.id, docType: 'cv', fileName: original, fileHash: hash, note: `Recommended by ${req.user.fullName}${note ? ' — ' + note : ''}`, uploadedBy: req.user.id }); } catch { /* the file is stored; the row is a convenience */ }
+  CandidateActivity.add({ candidateId: candidate.id, actorId: req.user.id, actorName: req.user.fullName, type: 'resume_uploaded', note: original });
+
+  const created = createLinkedApplication({ req, request, candidate, initialStatus: APP.SHORTLISTED, source: RECOMMENDATION_SOURCE });
+  // The conversation shows the recommendation with its CV, like a posted CV.
+  Posts.create({
+    requestId: request.id, postType: 'cv', authorId: req.user.id, authorName: req.user.fullName, authorRole: (req.user.roles && req.user.roles[0]) || null,
+    body: note, filePath: stored, fileName: original, candidateId: candidate.id, applicationId: created.id,
+    payload: { recommendation: true, candidateName: candidate.full_name, currentPosition: candidate.current_position || null, employer: candidate.employer || null, reused },
+  });
+  writeAudit(req, { action: 'application.recommended', entityType: 'application', entityId: created.id, newValue: { candidateId: candidate.id, requestId: request.id, reusedCandidate: reused, fileName: original } });
+  maybeNotifyRelease(created.id, created.status, req);              // stakeholders hear once (the recommender is the actor)
+  notifyRecruitment('recommendation', { req, request, candidateId: candidate.id, what: `recommended ${candidate.full_name} (CV attached)`, detail: note ? `“${note.slice(0, 240)}”` : null });
+  res.status(201).json({ application: appOut(Applications.byId(created.id), req.user), candidateId: candidate.id, reusedCandidate: reused });
 });
 
 /* ---------------- GLOBAL application listing (Phase 2 Talent Pool) ----------------
@@ -262,8 +404,8 @@ router.post('/', requirePermission('candidate.link'), (req, res) => {
 function requestScope(user, col = 'id') {
   if (user.permissions.includes('request.view_all')) return { where: '1=1', params: [] };
   return {
-    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=?)`,
-    params: [user.id, user.id, user.id],
+    where: `${col} IN (SELECT id FROM recruitment_request WHERE owner_id=? OR requester_id=? OR created_by=? OR hiring_manager_id=?)`,
+    params: [user.id, user.id, user.id, user.id],
   };
 }
 
@@ -277,7 +419,7 @@ function canScopeRequest(user, requestId) {
   if (user.permissions.includes('request.view_all')) return true;
   if (!requestId) return false;
   const r = Requests.byId(requestId);
-  return !!r && (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id);
+  return !!r && (r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id || r.hiring_manager_id === user.id);
 }
 
 router.get('/', (req, res) => {
@@ -322,7 +464,12 @@ router.get('/request/:requestId', (req, res) => {
   const visible = Applications.forRequest(request.id).filter(applicationScopeFilter(req.user));
   if (!canScopeRequest(req.user, request.id) && !visible.length) return res.status(404).json({ error: 'Request not found.' });
   const apps = visible.map((a) => appOut(a, req.user));
-  res.json({ applications: apps, statuses: APP_STATUSES.filter((s) => hasFullPipelineAccess(req.user) || s !== 'sourced') });
+  res.json({
+    applications: apps,
+    statuses: APP_STATUSES.filter((s) => hasFullPipelineAccess(req.user) || s !== 'sourced'),
+    // May this reader add a candidate (CV) to this request's shortlist as a recommendation?
+    canRecommend: canRecommendCandidate(req.user, request) && !REQ_TERMINAL.includes(reqNorm(request.status)),
+  });
 });
 
 /* ---------------- APPLICATION detail ---------------- */
@@ -371,11 +518,21 @@ function joinBlocker(appRow) {
 }
 
 /* ---------------- MOVE STAGE ---------------- */
-router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) => {
+// Who may move: the recruitment team (candidate.move_stage) anywhere the
+// transition table allows; a request's hiring manager or panel interviewer
+// ONLY from Shortlisted to Interview / On Hold / Disqualified (lib/stakeholders.js).
+router.post('/:id/move', (req, res) => {
   const a = Applications.byId(Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Application not found.' });
-  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
   const toStatus = appNorm((req.body || {}).status);
+  // Permission before scope, as requirePermission used to answer: a reader with
+  // no right to move anything is told so (403), not told the row is missing.
+  if (!req.user.permissions.includes('candidate.move_stage')) {
+    const allowed = stakeholderDecisions(req.user, a);
+    if (!allowed.length) return res.status(403).json({ error: 'Only the recruitment team can move this candidate; as hiring manager or interviewer you decide on shortlisted candidates.' });
+    if (APP_STATUSES.includes(toStatus) && !allowed.includes(toStatus)) return res.status(403).json({ error: `As hiring manager or interviewer you can move a shortlisted candidate to Interview, put them On Hold or Disqualify them — not to ${APP_LABELS[toStatus] || toStatus}.` });
+  }
+  if (!applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
   if (!APP_STATUSES.includes(toStatus)) return res.status(400).json({ error: 'Invalid status.' });
   const fromStatus = appNorm(a.status);
   if (TERMINAL.includes(fromStatus)) return res.status(409).json({ error: `Application is terminal (${APP_LABELS[fromStatus] || fromStatus}) and cannot be moved.` });
@@ -404,8 +561,55 @@ router.post('/:id/move', requirePermission('candidate.move_stage'), (req, res) =
     return res.json({ application: appOut(Applications.byId(a.id), req.user) });
   }
   performMove(a, toStatus, req, reasonField ? reason : null);
+  maybeNotifyRelease(a.id, toStatus, req);
+  // A hiring manager's / interviewer's decision is news to recruitment (25 Oct 2026).
+  const decidedWord = { [APP.INTERVIEWING]: 'moved %s to Interview', [APP.ON_HOLD]: 'put %s On Hold', [APP.REJECTED]: 'disqualified %s' }[toStatus] || `moved %s to ${APP_LABELS[toStatus] || toStatus}`;
+  const candName = (() => { try { return Candidates.byId(a.candidate_id)?.full_name || 'a candidate'; } catch { return 'a candidate'; } })();
+  notifyRecruitment('decision', { req, requestId: a.request_id, candidateId: a.candidate_id, what: decidedWord.replace('%s', candName), detail: reasonField && reason ? `Reason: ${reason}` : null });
   const outcome = maybeNotifyRejection(a, toStatus, req);
   res.json({ application: appOut(Applications.byId(a.id), req.user), ...(outcome ? { rejectionEmail: outcome } : {}) });
+});
+
+/* ---------------- UNLINK (undo a link) ----------------
+   Owner request (2026-10-15). Removes the candidate from this request and
+   returns them to the Talent Pool WITHOUT recording a rejection: no candidate
+   email, no "rejected" outcome on their history. Recruitment only, and only
+   before the hiring trail starts — once an interview, offer, assessment or
+   final decision exists, Disqualify (which keeps that record) is the action.
+   The audit entry keeps a full snapshot of what was removed. */
+const UNLINKABLE = [APP.SOURCED, APP.SHORTLISTED, APP.MATCHED, APP.UNMATCHED, APP.ON_HOLD];
+router.post('/:id/unlink', requirePermission('candidate.link'), (req, res) => {
+  if (!hasFullPipelineAccess(req.user)) return res.status(403).json({ error: 'Only the recruitment team can unlink candidates.' });
+  const a = Applications.byId(Number(req.params.id));
+  if (!a || !applicationScopeFilter(req.user)(a)) return res.status(404).json({ error: 'Application not found.' });
+  const status = appNorm(a.status);
+  if (!UNLINKABLE.includes(status)) {
+    return res.status(409).json({ error: `A candidate at ${APP_LABELS[status] || status} cannot be unlinked. Use Disqualify so the record is kept.`, code: 'NOT_UNLINKABLE' });
+  }
+  const count = (sql) => Number(dbGet(sql, [a.id])?.n || 0);
+  const trail = {
+    interviews: count('SELECT COUNT(*) AS n FROM interview WHERE application_id=?'),
+    offers: count('SELECT COUNT(*) AS n FROM offer WHERE application_id=?'),
+    assessments: count('SELECT COUNT(*) AS n FROM application_assessment WHERE application_id=?'),
+    decisions: count('SELECT COUNT(*) AS n FROM application_final_decision WHERE application_id=?'),
+  };
+  if (trail.interviews || trail.offers || trail.assessments || trail.decisions) {
+    return res.status(409).json({ error: 'This candidate already has interviews, offers or assessments on this request. Use Disqualify so the record is kept.', code: 'HAS_HIRING_TRAIL', trail });
+  }
+  const candidate = Candidates.byId(a.candidate_id);
+  const request = Requests.byId(a.request_id);
+  const reason = String((req.body || {}).reason || '').trim() || null;
+  tx(() => {
+    writeAudit(req, {
+      action: 'application.unlinked', entityType: 'application', entityId: a.id,
+      oldValue: { applicationNo: a.application_no, candidateId: a.candidate_id, requestId: a.request_id, status, history: StageHistory.forApplication(a.id) },
+      comments: reason,
+    }, { strict: true });
+    dbRun('DELETE FROM application WHERE id=?', [a.id]);   // history/activity rows for it cascade; notes/posts are kept (SET NULL)
+    if (request) RequestActivity.add(request.id, req.user, 'candidate_unlinked', { note: `${candidate ? candidate.full_name : 'Candidate'} unlinked (${a.application_no})${reason ? ` — ${reason}` : ''}` });
+    if (candidate) CandidateActivity.add({ candidateId: candidate.id, applicationId: null, actorId: req.user.id, actorName: req.user.fullName, type: 'application_unlinked', note: `Unlinked from ${request ? request.ticket_no : 'request'}${reason ? ` — ${reason}` : ''}` });
+  });
+  res.json({ unlinked: true, candidateId: a.candidate_id, requestId: a.request_id });
 });
 
 /* ---------------- SET next action (recruiter workspace) ---------------- */
@@ -472,6 +676,7 @@ router.post('/bulk', requirePermission('application.bulk_action'), (req, res) =>
         continue;
       }
       performMove(a, status, req, reasonField ? reason : null); affected++;
+      maybeNotifyRelease(a.id, status, req);
     } else if (action === 'assign' && recruiterId) {
       Applications.setRecruiter(a.id, Number(recruiterId)); affected++;
     } else { skipped.push({ id, reason: 'unknown_action' }); }

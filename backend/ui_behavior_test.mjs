@@ -25,7 +25,7 @@ const get = expression => vm.runInContext(expression,ctx);
 const React = ctx.React;
 let nextId=0;
 function mount(Component, initialProps={}) {
-  let slots=[], cursor=0, effects=[], props=initialProps;
+  let slots=[], cursor=0, effects=[], props=initialProps, hookCount=null;
   const same=(a,b)=>a&&b&&a.length===b.length&&a.every((x,i)=>Object.is(x,b[i]));
   const memo=(fn,deps)=>{const i=cursor++;if(!slots[i]||!same(slots[i].deps,deps)) slots[i]={value:fn(),deps};return slots[i].value;};
   const dispatcher={
@@ -40,6 +40,8 @@ function mount(Component, initialProps={}) {
     render(next=props){props=next;cursor=0;effects=[];
       React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher.current=dispatcher;
       let tree;try{tree=Component(props);}finally{React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentDispatcher.current=null;}
+      if(hookCount!==null) assert.equal(cursor,hookCount,`${Component.name}: hook count changed between renders`);
+      hookCount=cursor;
       effects.forEach(run=>run());return tree;},
     dispose(){slots.forEach(slot=>slot?.cleanup?.());},
   };
@@ -61,11 +63,20 @@ const unwrap = (tree) => tree && tree.type === 'div' && /\bdash-root\b/.test(tre
 let passed=0;
 async function check(name,run){await run();passed++;console.log(`  ✓ ${name}`);}
 
-await check('all board transitions are forward-only; hired, joined and disqualified cards are locked',()=>{
-  const order=get('APP_ORDER'), canMove=get('canPipelineMove');
-  for(let i=0;i<order.length;i++)for(let j=0;j<order.length;j++)assert.equal(canMove(order[i],order[j]),j>i);
-  for(const status of ['hired','joined','rejected','offer_declined','on_hold','unrecognized'])
+// 2026-10-15: the board used to allow any forward jump while the server allowed
+// only specific hops, so menu moves were offered and then refused. The board's
+// rule must now equal the server's rule for every pair of stages.
+const { appCanMove } = await import('./src/lib/stages.js');
+await check('board moves match the server transition table exactly; finished cards are locked',()=>{
+  const order=get('APP_ORDER'), canMove=get('canPipelineMove'), write=get('APP_WRITE');
+  const api=(s)=>write[s]||s;
+  const live=['sourced','shortlisted','matched','unmatched','interviewing','waiting_feedback','issuing_offer','offer_sent','on_hold'];
+  for(const from of live)for(const target of [...order,'rejected','on_hold','offer_declined'])
+    assert.equal(canMove(from,target),appCanMove(from,api(target)),`${from} -> ${target}`);
+  for(const status of ['hired','joined','rejected','offer_declined','unrecognized'])
     for(const target of [...order,'rejected','on_hold'])assert.equal(canMove(status,target),false);
+  assert.equal(canMove('sourced','screening'),false,'Shortlisted cannot be skipped');
+  assert.equal(canMove('sourced','shortlisted'),true);
   assert.equal(canMove('waiting_feedback','offer'),true);
   assert.equal(canMove('interview_technical','screening'),false);
 });
@@ -78,21 +89,101 @@ await check('folded and unknown stages retain their specific status information'
   assert.equal(label('custom_stage'),'Custom stage');
   assert.equal(label('sourced'),'');
 });
-await check('card menu is a keyboard/touch alternative with only forward targets',()=>{
+// 25 Oct 2026: the Screening stage is removed from the hiring pipeline. The
+// board goes Sourced → Shortlisted → Interview → Offer → Hired; rows the API
+// still stores at the old Screening statuses read and count as Shortlisted.
+await check('the Screening stage is gone from every board, menu and chart',()=>{
+  const order=get('APP_ORDER'), status=get('APP_STATUS'), stage=get('pipelineStage'), label=get('pipelineResidualLabel'), funnel=get('FUNNEL'), fold=get('foldLegacyScreening');
+  assert.equal(JSON.stringify(order),JSON.stringify(['sourced','shortlisted','interview_hr','offer','hired']));
+  assert.ok(!Object.values(status).some((s)=>/screening/i.test(s.label)),'no status is labelled Screening');
+  for(const legacy of ['matched','unmatched','screened','cv_screening'])assert.equal(stage(legacy),'shortlisted',legacy);
+  assert.equal(label('matched'),'','a legacy Screening row shows no second, competing stage');
+  assert.ok(!funnel.some(([,l])=>/screening/i.test(l)),'dashboard funnel has no Screening bar');
+  assert.equal(JSON.stringify(fold({sourced:2,shortlisted:1,matched:3,unmatched:1,interviewing:4})),JSON.stringify({sourced:2,shortlisted:5,interviewing:4}));
+  assert.equal(get('APP_WRITE').screening,undefined,'nothing can be written to Screening');
+});
+// 25 Oct 2026: every long list is a dropdown you can type into.
+await check('SearchSelect narrows as you type, picks with Enter, clears, and shows the chosen label',()=>{
+  let value='';
+  const opts=[{value:'1',label:'Civil Works'},{value:'2',label:'Finance'},{value:'3',label:'Mechanical'}];
+  const base={options:opts,emptyLabel:'All departments',ariaLabel:'Department',onChange:(v)=>{value=v;}};
+  const sel=mount(get('SearchSelect'),{...base,value});
+  let tree=sel.render();
+  const input=()=>nodes(tree).find(n=>n.type==='input');
+  assert.equal(input().props.role,'combobox');
+  assert.equal(nodes(tree).some(n=>n.props?.role==='listbox'),false,'closed until focused');
+  input().props.onFocus();tree=sel.render();
+  assert.equal(nodes(tree).filter(n=>n.props?.role==='option').length,4,'empty row + three options');
+  input().props.onChange({target:{value:'fin'}});tree=sel.render();
+  const shown=nodes(tree).filter(n=>n.props?.role==='option');
+  assert.equal(shown.length,1);assert.equal(/Finance/.test(text(shown[0])),true);
+  input().props.onKeyDown({key:'Enter',preventDefault(){}});
+  assert.equal(value,'2','Enter picks the highlighted match');
+  tree=sel.render({...base,value});
+  assert.equal(input().props.value,'Finance','the chosen label shows in the box');
+  assert.equal(nodes(tree).some(n=>n.props?.role==='listbox'),false,'closed after picking');
+  nodes(tree).find(n=>n.props?.['aria-label']==='Clear').props.onClick();
+  assert.equal(value,'','the × clears the choice');
+  tree=sel.render({...base,value});input().props.onFocus();input().props.onChange({target:{value:'zzz'}});tree=sel.render({...base,value});
+  assert.equal(nodes(tree).filter(n=>n.props?.role==='option').length,0);
+  assert.equal(/No matches/.test(text(tree)),true,'says when nothing matches');
+});
+// 25 Oct 2026: a hiring manager / interviewer takes three decisions on a
+// Shortlisted candidate. The server names them in app.decisions; the card
+// shows exactly those buttons and nothing for readers without any.
+await check('shortlisted cards show the three stakeholder decisions only when the server grants them',()=>{
+  let decided=null;
+  const app={id:9,status:'shortlisted',candidate:{fullName:'HM Candidate'},decisions:['interviewing','on_hold','rejected']};
+  const card=mount(get('PipelineCard'),{app,canMove:false,onView(){},onMove(){},onDecide:s=>{decided=s;}});
+  let tree=card.render();
+  assert.equal(button(tree,'Move to Interview')!==undefined,true);
+  assert.equal(button(tree,'On Hold')!==undefined,true);
+  assert.equal(button(tree,'Disqualify')!==undefined,true);
+  button(tree,'Move to Interview').props.onClick();assert.equal(decided,'interview_hr','board key for the interview column');
+  button(tree,'Disqualify').props.onClick();assert.equal(decided,'rejected');
+  button(tree,'On Hold').props.onClick();assert.equal(decided,'on_hold');
+  const plain=mount(get('PipelineCard'),{app:{...app,decisions:[]},canMove:false,onView(){},onMove(){},onDecide(){}}).render();
+  assert.equal(button(plain,'Move to Interview'),undefined,'no decisions, no buttons');
+  const recruiter=mount(get('PipelineCard'),{app:{...app,decisions:[]},canMove:true,onView(){},onMove(){},onDecide(){}}).render();
+  assert.equal(button(recruiter,'Move to Interview'),undefined,'the recruitment team keeps its menu instead');
+});
+// 25 Oct 2026: a CV opens alone in a new browser tab through an in-app hash,
+// never a download and never an outside URL.
+await check('CV full-page hashes round-trip and refuse anything that is not an API path',()=>{
+  const cvHash=get('cvFullPageHash'), docHash=get('documentFullPageHash'), parse=get('parseFullPageHash');
+  assert.equal(cvHash(12),'#cv/12');assert.equal(cvHash(12,{id:7,name:'old.pdf'}),'#cv/12/doc/7');
+  assert.equal(JSON.stringify(parse('#cv/12')),JSON.stringify({kind:'cv',candidateId:12,docId:null}));
+  assert.equal(JSON.stringify(parse('#cv/12/doc/7')),JSON.stringify({kind:'cv',candidateId:12,docId:7}));
+  const h=docHash('/thread/post/5/file','cv.pdf','Thread CV');
+  const d=parse(h);assert.equal(d.kind,'document');assert.equal(d.path,'/thread/post/5/file');assert.equal(d.fileName,'cv.pdf');assert.equal(d.title,'Thread CV');
+  assert.equal(parse('#document?path=https://evil.example/x'),null,'absolute URLs are refused');
+  assert.equal(parse('#document?path=//evil.example/x'),null,'protocol-relative URLs are refused');
+  assert.equal(parse('#requests/12'),null);assert.equal(parse(''),null);
+});
+await check('a recommended candidate\'s card says who recommended them',()=>{
+  const app={id:11,status:'shortlisted',candidate:{fullName:'Rec Candidate'},decisions:[],recommendation:{byId:4,byName:'Nadia Fouad'}};
+  const tree=mount(get('PipelineCard'),{app,canMove:true,onView(){},onMove(){}}).render();
+  assert.equal(/Recommended by Nadia Fouad/.test(text(tree)),true);
+  const plain=mount(get('PipelineCard'),{app:{...app,recommendation:null},canMove:true,onView(){},onMove(){}}).render();
+  assert.equal(/Recommended/.test(text(plain)),false);
+});
+await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});
   let tree=card.render();assert.equal(tree.props.draggable,true);
   nodes(tree).find(n=>n.props?.['aria-haspopup']==='menu').props.onClick();tree=card.render();
   assert.equal(button(tree,'Move to Sourced'),undefined);
   assert.equal(button(tree,'Move to Screening'),undefined);
-  assert.ok(button(tree,'Move to Offer'));
+  // Screening → Offer is refused by the server (2026-10-15 parity fix); Interview is the next hop.
+  assert.equal(button(tree,'Move to Offer'),undefined);
+  assert.ok(button(tree,'Move to Interview'));
   const menu=nodes(tree).find(n=>n.props?.role==='menu');
   let focused=-1;const targets=[0,1,2].map(i=>({focus(){focused=i;document.activeElement=this;}}));
   menu.ref.current={querySelectorAll:()=>targets,contains:()=>false};document.activeElement=targets[0];
   menu.props.onKeyDown({key:'ArrowDown',preventDefault(){}});assert.equal(focused,1);
   menu.props.onKeyDown({key:'End',preventDefault(){}});assert.equal(focused,2);
   menu.props.onKeyDown({key:'Home',preventDefault(){}});assert.equal(focused,0);
-  button(tree,'Move to Offer').props.onClick();assert.equal(moved,'offer');
+  button(tree,'Move to Interview').props.onClick();assert.equal(moved,'interview_hr');
   assert.equal(nodes(card.render()).some(n=>n.props?.role==='menu'),false);card.dispose();
   for(const status of ['hired','joined','rejected']){
     const locked=mount(get('PipelineCard'),{app:{id:1,status},canMove:true,onView(){}});
@@ -110,10 +201,11 @@ await check('list cards show a stage without requiring a board column header',()
 await check('drop handlers reject backward, hired, pending, foreign, and unauthorized drops',()=>{
   let calls=[];
   const apps=[{id:1,status:'matched'},{id:2,status:'joined'}];
-  const props={stage:'offer',apps,pending:new Set(),canMove:true,onMove:(...args)=>calls.push(args)};
+  // Screening → Interview is the valid next hop (Screening → Offer is refused by the server).
+  const props={stage:'interview_hr',apps,pending:new Set(),canMove:true,onMove:(...args)=>calls.push(args)};
   const col=mount(get('PipelineColumn'),props);
   const drop=id=>({preventDefault(){},dataTransfer:{getData:()=>String(id)}});
-  col.render().props.onDrop(drop(1));assert.deepEqual(calls,[[1,'offer']]);
+  col.render().props.onDrop(drop(1));assert.deepEqual(calls,[[1,'interview_hr']]);
   for(const [changes,id] of [[{stage:'sourced'},1],[{},2],[{pending:new Set([1])},1],[{},999],[{canMove:false},1]])col.render({...props,...changes}).props.onDrop(drop(id));
   assert.equal(calls.length,1);col.dispose();
 });
@@ -125,8 +217,9 @@ await check('guarded writes map API stages and roll back only the failed card',a
   const updatePending=value=>{pending=typeof value==='function'?value(pending):value;};
   const move=get('moveApplication');
   await move({appId:1,status:'sourced',list,setList:updateList,pending,setPending:updatePending,toast(){}});assert.equal(calls.length,0);
-  const result=move({appId:1,status:'offer',list,setList:updateList,pending,setPending:updatePending,toast(){}});
-  assert.equal(calls[0].body.status,'issuing_offer');assert.equal(list[0].status,'issuing_offer');assert.ok(pending.has(1));
+  // Screening → Interview (the valid hop; Screening → Offer is refused by the server).
+  const result=move({appId:1,status:'interview_hr',list,setList:updateList,pending,setPending:updatePending,toast(){}});
+  assert.equal(calls[0].body.status,'interviewing');assert.equal(list[0].status,'interviewing');assert.ok(pending.has(1));
   list=list.map(a=>a.id===2?{...a,status:'matched'}:a);
   reject(new Error('Server refused move'));await result;
   assert.equal(list[0].status,'matched');assert.equal(list[1].status,'matched');assert.equal(pending.size,0);
@@ -866,5 +959,34 @@ await check('record links: every record page keeps #<route>/<id> in the address 
   window.location.hash='#offers/7'; probe.dispose();
   assert.equal(calls.at(-1),'/','closing it clears the link');
   window.history=real;
+});
+await check('hiring requests open from the list and links, then return without changing hook order', async()=>{
+  const api=window.ARABTEC_API, realGet=api.get;
+  const pending=window.__atsPendingRequestId;
+  window.__atsPendingRequestId=null;
+  const request={id:42,ticketNo:'REQ-2026-00042',title:'Synthetic hiring request',status:'open',priority:'normal'};
+  api.get=async path=>{
+    if(path==='/settings/buttons/resolved')return {buttons:[]};
+    if(path==='/requests/meta/form')return {projects:[],departments:[],assignableRecruiters:[]};
+    if(path.startsWith('/requests?'))return {requests:[request],total:1};
+    throw new Error(`Unexpected test endpoint: ${path}`);
+  };
+  const page=mount(get('RequestsPage'),{user:{id:7,roles:['recruiter'],permissions:['request.view_all']}});
+  try {
+    page.render();await flush();
+    let tree=page.render();
+    const row=nodes(tree).find(n=>n.type==='tr'&&n.props.className==='row-link');
+    assert.ok(row,'the hiring request is visible in the list');
+    row.props.onClick();
+    tree=page.render();
+    assert.equal(tree.type,get('RequestDetail'));
+    assert.equal(tree.props.id,42);
+    tree.props.onBack();await flush();
+    tree=page.render();
+    assert.ok(nodes(tree).some(n=>n.type==='tr'&&n.props.className==='row-link'));
+    window.dispatchEvent(new CustomEvent('ats:open-request',{detail:{id:42}}));
+    tree=page.render();assert.equal(tree.type,get('RequestDetail'));assert.equal(tree.props.id,42);
+    tree.props.onBack();await flush();page.render();
+  } finally {page.dispose();api.get=realGet;window.__atsPendingRequestId=pending;}
 });
 console.log(`\n=== UI BEHAVIOR: ${passed} passed ===\n`);

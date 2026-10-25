@@ -1,9 +1,7 @@
 import { canSeeApplicationStage, hasFullPipelineAccess } from '../lib/pipeline-visibility.js';
 import { Router } from 'express';
-import {
-  Interviews, InterviewPanel, InterviewFeedback, InterviewActivity,
-  Applications, Candidates, Requests, Users, CandidateActivity,
-} from '../lib/models.js';
+import { Interviews, InterviewPanel, InterviewFeedback, InterviewActivity, Applications, Candidates, Requests, Users, CandidateActivity } from '../lib/models.js';
+import { notifyRecruitment } from '../lib/stakeholder-notify.js';
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
@@ -69,7 +67,10 @@ function ownsRequest(user, requestId) {
   return !!r && (r.requester_id === user.id || r.owner_id === user.id || r.created_by === user.id);
 }
 function canViewInterview(user, iv) {
-  if (!hasFullPipelineAccess(user) && !canSeeApplicationStage(user, { id: iv.application_id })) return false;
+  // The Shortlisted release rule is about an APPLICATION's stage. A standalone
+  // interview has no application, so it must not be refused here — the panel /
+  // organizer / request-owner checks below decide (panelists were getting 403).
+  if (iv.application_id && !hasFullPipelineAccess(user) && !canSeeApplicationStage(user, { id: iv.application_id })) return false;
   if (canViewAll(user)) return true;
   if (!user.permissions.includes('interview.view_assigned')) return false;
   if (iv.organizer_id === user.id) return true;
@@ -781,13 +782,21 @@ router.post('/:id/feedback', requirePermission('interview.feedback'), (req, res)
   InterviewActivity.add(iv.id, req.user, alreadyHad ? 'feedback_updated' : 'feedback_submitted', d.recommendation || null);
   CandidateActivity.add({ candidateId: iv.candidate_id, applicationId: iv.application_id, actorId: req.user.id, actorName: req.user.fullName, type: 'interview_feedback', note: d.recommendation || null });
   writeAudit(req, { action: fbAction, entityType: 'interview', entityId: iv.id, newValue: { interviewer: req.user.id, recommendation: d.recommendation, overallScore: d.overallScore } });
+  notifyRecruitment('feedback', {
+    req, requestId: iv.request_id || (iv.application_id ? Applications.byId(iv.application_id)?.request_id : null), candidateId: iv.candidate_id,
+    what: `${alreadyHad ? 'updated' : 'submitted'} interview feedback for ${(() => { try { return Candidates.byId(iv.candidate_id)?.full_name || 'the candidate'; } catch { return 'the candidate'; } })()}`,
+    detail: d.recommendation ? `Recommendation: ${String(d.recommendation).replace(/_/g, ' ')}.` : null,
+    linkType: 'interview', linkId: iv.id,
+  });
   res.status(201).json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
 });
 
 /* ---------------- meta for scheduling form ---------------- */
 router.get('/meta/form', (req, res) => {
   res.json({
-    interviewers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name, jobTitle: u.job_title })),
+    // Alphabetical, like every people list in the request form (25 Oct 2026).
+    interviewers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name, jobTitle: u.job_title }))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }) || (a.id - b.id)),
     types: IV_TYPES, modes: IV_MODES, recommendations: RECS,
     places: interviewPlaces(),
   });

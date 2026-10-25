@@ -36,11 +36,23 @@ export function requireAuth(req, res, next) {
         code: 'PASSWORD_CHANGE_REQUIRED',
       });
     }
+    // Deletion is a role boundary, not a configurable permission grant. Keep
+    // this in authentication so every authenticated DELETE route is covered.
+    if (deletionRestricted(req) && !ctx.roles.includes('system_admin')) {
+      return res.status(403).json({ error: 'Only System Admin can delete records.', code: 'SYSTEM_ADMIN_REQUIRED' });
+    }
     next();
   } catch (e) {
     console.error('Auth error:', e);
     res.status(500).json({ error: 'Authentication failure.' });
   }
+}
+
+function deletionRestricted(req) {
+  const path = String(req.originalUrl || '').split('?')[0].replace(/\/+$/, '');
+  return req.method === 'DELETE'
+    || (req.method === 'POST' && /\/candidates\/[^/]+\/erase$/i.test(path))
+    || (req.method === 'GET' && /\/(?:candidates|requests)\/[^/]+\/delete-impact$/i.test(path));
 }
 
 // While a user carries must_change_password only these absolute routes stay

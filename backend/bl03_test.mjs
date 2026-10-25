@@ -167,10 +167,15 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
 
   console.log('\n— legitimate progression is unaffected —');
   const moved = await create('sourced');
-  const mv = await api(`/api/applications/${moved.json.application.id}/move`, {
+  // 2026-10-15 owner rule: Shortlisted sits between Sourcing and Screening.
+  const skip = await api(`/api/applications/${moved.json.application.id}/move`, {
     method: 'POST', token: recruiter, body: { status: 'matched' },
   });
-  c('sourced -> matched still allowed', mv.status === 200, `got ${mv.status}`);
+  c('sourced -> matched (skipping Shortlisted) is refused', skip.status === 409, `got ${skip.status}`);
+  const mv = await api(`/api/applications/${moved.json.application.id}/move`, {
+    method: 'POST', token: recruiter, body: { status: 'shortlisted' },
+  });
+  c('sourced -> shortlisted allowed', mv.status === 200, `got ${mv.status}`);
   const bad = await api(`/api/applications/${moved.json.application.id}/move`, {
     method: 'POST', token: recruiter, body: { status: 'joined' },
   });

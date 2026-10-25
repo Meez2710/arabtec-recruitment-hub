@@ -271,7 +271,11 @@ function colorWithAlpha(hex, alpha) {
 const AppCtx = createContext(null);
 const useApp = () => useContext(AppCtx);
 
-function can(user, perm) { return user?.permissions?.includes(perm); }
+function isSystemAdmin(user) { return !!user?.roles?.includes('system_admin'); }
+function can(user, perm) {
+  if (perm?.endsWith('.delete') && !isSystemAdmin(user)) return false;
+  return user?.permissions?.includes(perm);
+}
 
 /* ----------------------------- Display formatters -----------------------------
    DISPLAY ONLY. These never touch stored values, API payloads, search params or
@@ -308,7 +312,11 @@ function expandReqCode(input) {
 // Duplicates are removed and empty parts skipped; returns '—' when nothing is set.
 function placeLabel(r) {
   if (!r) return '—';
-  const parts = [r.project?.name, r.site?.name, r.location]
+  // Location (25 Oct 2026): "Head Office", or "<site> · <area>". The API sends
+  // `place` pre-built; the parts below are the fallback for older payloads.
+  if (r.project?.isHeadOffice) return 'Head Office';
+  if (r.place) return r.place;
+  const parts = [r.project?.name, r.site?.name, r.location || r.project?.area]
     .map((p) => (typeof p === 'string' ? p.trim() : p))
     .filter(Boolean);
   const seen = new Set();
@@ -399,6 +407,30 @@ function ReasonModal({ title, label, confirmLabel, placeholder, onClose, onConfi
   );
 }
 
+/* ONE overlay host for every dialog and drawer (2026-10-15).
+   Dialogs used to render inside <main>, whose `isolation: isolate` traps any
+   z-index — so the phone app bar (z 72, outside <main>) painted over a
+   dialog's title and close button. Every overlay now portals into this single
+   element. Its identity never changes (so React never remounts an open
+   dialog), and <OverlaySlot/> moves it inside `.shell` once the shell is
+   mounted, so `.shell-phone …` control sizing still reaches dialog content.
+   Before sign-in it lives on <body>. */
+const OVERLAY_HOST = (typeof document !== 'undefined' && document.body)
+  ? (() => { const n = document.createElement('div'); n.className = 'overlay-host'; document.body.appendChild(n); return n; })()
+  : null;
+function toPageLevel(node) {
+  return OVERLAY_HOST && typeof ReactDOM !== 'undefined' && ReactDOM.createPortal
+    ? ReactDOM.createPortal(node, OVERLAY_HOST) : node;
+}
+function OverlaySlot() {
+  const ref = useCallback((slot) => {
+    if (!OVERLAY_HOST) return;
+    if (slot) slot.appendChild(OVERLAY_HOST);
+    else if (OVERLAY_HOST.parentNode !== document.body) document.body.appendChild(OVERLAY_HOST);
+  }, []);
+  return <div className="overlay-slot" ref={ref} />;
+}
+
 const DIALOG_FOCUS_SELECTOR = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 function dialogFocusables(dialog) {
   return dialog ? [...dialog.querySelectorAll(DIALOG_FOCUS_SELECTOR)].filter((node) => node.getClientRects().length > 0) : [];
@@ -429,7 +461,7 @@ function useDialogFocus(onClose) {
 function Modal({ title, children, onClose, footer, wide }) {
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   const titleId = useId();
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="modal" style={wide ? { maxWidth: 760 } : null}
         role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex="-1" onKeyDown={onDialogKeyDown}>
@@ -738,6 +770,7 @@ const NAV = [
   { key: 'orgStructure', label: 'Organization Structure', icon: 'building', perm: null },
   { key: 'reports', label: 'Reports', icon: 'scroll', perm: 'dashboard.view' },
   { section: 'Administration' },
+  { key: 'locations', label: 'Locations', icon: 'pin', perm: 'location.manage' },
   { key: 'projects', label: 'Projects', icon: 'hardhat', perm: 'org.manage' },
   { key: 'sites', label: 'Sites', icon: 'pin', perm: 'org.manage' },
   { key: 'departments', label: 'Departments', icon: 'building', perm: 'org.manage' },
@@ -1519,7 +1552,15 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
   const CandidateReviewPage = window.ArabtecCandidateIntakeReviewPage;
   const EmailSettingsPage = window.ArabtecEmailSettingsPage;
   const CvIntakePage = window.ArabtecCvIntakePage;
-  const Page = {
+  // One guard for every route, using the same rule as the menu. Typed or
+  // bookmarked links (#control, #audit, #roles…) must not render a page the
+  // menu hides; the server already refuses the data, this stops the empty
+  // shell and its 403 errors.
+  const routeDef = NAV.find((n) => n.key === route);
+  const routeAllowed = !routeDef || (
+    (!routeDef.broadCandidates || hasBroadCandidateAccess(user))
+    && (routeDef.anyPerm ? routeDef.anyPerm.some((p) => can(user, p)) : (!routeDef.perm || can(user, routeDef.perm))));
+  const RoutePage = {
     dashboard: <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />,
     reports: <ReportsPage user={user} />,
     requests: <RequestsPage user={user} initialFilters={route === 'requests' ? routeParams : null} />,
@@ -1537,6 +1578,7 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       ? <UsersPage user={user} />
       : <Forbidden what="User Management" need="System Admin" />,
     roles: <RolesPage user={user} />,
+    locations: <LocationsPage user={user} />,
     projects: <ProjectsPage user={user} />,
     sites: <SitesPage user={user} />,
     departments: <DepartmentsPage user={user} />,
@@ -1562,6 +1604,8 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
       : <Forbidden what="Assessment Settings" need="System Admin" />,
     audit: <AuditPage user={user} />,
   }[route] || <Dashboard user={user} onNavigate={go} dash={counts.dash} intakes={counts.intakes} />;
+  // Pages that already guard themselves keep their more specific message.
+  const Page = routeAllowed || RoutePage?.type === Forbidden ? RoutePage : <Forbidden what={routeDef.label} />;
 
   // What anyhelp is looking at. Kept deliberately small: the dock never claims
   // more context than the page actually has. RequestDetail publishes the open
@@ -1629,145 +1673,142 @@ function Shell({ user, branding, onLogout, refreshBranding }) {
      the same work counts, the same user. Nothing here fetches: the phone chrome
      reads what the shell already has, so it adds no request of its own.
 
-     Measured caveat, stated rather than assumed: the two chromes are different
-     element trees, so React cannot reconcile the <main> subtree across them.
-     Crossing the breakpoint on a LIVE window therefore keeps the shell (route,
-     work counts, session) but remounts the page, which reloads its own list —
-     seven requests on Hiring Requests, none of them the shell's. A phone never
-     crosses 900px; only a desktop window being dragged does, and a fresh load
-     of the page you are already on is the right outcome there. */
-  if (isPhone) {
-    return (
-      <div className="shell shell-phone">
-        <MobileAppBar
-          title={(NAV.find((n) => n.key === route) || {}).label || 'Arabtec'}
-          onMenu={() => setMobileNavOpen(true)}
-          onSearch={() => setPaletteOpen(true)}
-          onGo={go}
-        />
-
-        <MobileDrawer
-          open={mobileNavOpen}
-          onClose={() => setMobileNavOpen(false)}
-          nav={visibleNav}
-          route={route}
-          counts={counts}
-          onGo={(key) => { setMobileNavOpen(false); go(key); }}
-          user={user}
-          roleCode={roleCode}
-          branding={branding}
-          onLogout={() => { if (confirmPageExit()) onLogout(); }}
-          onChangePassword={() => { setMobileNavOpen(false); setPwdOpen(true); }}
-        />
-
-        <main id="main-content" className={'content content-phone density-' + density} tabIndex="-1">
-          <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
-          <KnowledgeLine key={route} />
-        </main>
-
-        <MobileTabBar
-          items={primaryMobile}
-          route={route}
-          counts={counts}
-          onGo={go}
-          onMore={() => setMobileNavOpen(true)}
-          moreOpen={mobileNavOpen}
-        />
-
-        {overlays}
-      </div>
-    );
-  }
-
+     The page itself is never remounted by a presentation change; see the
+     single tree below. */
+  /* ONE tree for both presentations (2026-10-15). The phone and desktop
+     chrome used to be two different element trees, so crossing 900px
+     remounted <main> and the page inside it: an open dialog, a typed draft,
+     filters, selection and focus were all lost when a window was resized or
+     a tablet rotated. Now <main> always sits at shell > .main > main, and
+     each chrome slot keeps its position (null when not shown), so React keeps
+     the page mounted and only swaps the chrome around it. */
   return (
-    <div className="shell" style={{ '--sidebar-w': collapsed ? '68px' : '264px' }}>
-      <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
-        <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
-          <span className="side-mark"><Logo size={30} /></span>
-          {!collapsed && (
-            <span className="side-txt">
-              <strong>{branding?.app_name || 'Arabtec'}</strong>
-              <span>Recruitment Hub</span>
-            </span>
-          )}
-        </div>
-        <nav className="nav" aria-label="Main navigation">
-          {visibleNav.map((n, i) => {
-            if (n.section) return !collapsed && <div key={'s' + i} className="nav-section">{n.section}</div>;
-            const c = navCount(n.key, counts);
-            return (
-              <button key={n.key} className={'nav-item' + (route === n.key ? ' active' : '')}
-                onClick={() => go(n.key)} title={n.label} aria-current={route === n.key ? 'page' : undefined}>
-                <span className="nav-icon"><Icon name={n.icon} size={17} /></span>
-                {!collapsed && <span>{n.label}</span>}
-                {!collapsed && c ? <span className="nav-count">{c}</span> : null}
-              </button>
-            );
-          })}
-        </nav>
-        {!collapsed && (
-          <div className="scope-card">
-            <strong>{ROLE_NAMES[roleCode] || roleCode} scope</strong>
-            <p>{ROLE_SCOPE[roleCode] || 'Access follows your role'}. Access is enforced by your role, not by this menu.</p>
-          </div>
-        )}
-      </aside>
-
-      <div className="main">
-        <header className="topbar">
-          <button className="icon-btn menu-btn" onClick={() => setMobileNavOpen(true)} title="Open menu" aria-label="Open menu">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
-          </button>
-          <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
-            <Icon name="sidebar" size={18} />
-          </button>
-          {collapsed && <div className="tb-brand">
-            <span className="bn">
-              <strong>Recruitment Hub</strong>
-              <span>{branding?.company_name || 'Arabtec Construction'}</span>
-            </span>
-          </div>}
-          {/* Global search. Opens the Ctrl+K palette — no longer a dead placeholder. */}
-          <button type="button" className="gsearch" onClick={() => setPaletteOpen(true)}
-            title="Search candidates (Ctrl K)">
-            <Icon name="search" size={14} />
-            <span className="gsearch-label">Search candidates</span>
-            <span className="kbd">Ctrl K</span>
-          </button>
-          <div className="spacer" />
-          <NotificationBell onNavigate={go} />
-          <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
-            <div className="avatar">{initials(user.fullName)}</div>
-            <div>
-              <div className="profile-name">{user.fullName}</div>
-              <div className="profile-role">{ROLE_NAMES[roleCode] || roleCode}</div>
-            </div>
-            {menuOpen && (
-              <div className="menu" onClick={(e) => e.stopPropagation()}>
-                <div className="menu-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  <strong>{user.fullName}</strong><span className="muted">{user.email}</span>
-                </div>
-                <div style={{ borderTop: '1px solid var(--border)' }} />
-                <div className="menu-item" onClick={() => { setMenuOpen(false); setPwdOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Icon name="shield" size={15} /> Change Password
-                </div>
-                <div style={{ borderTop: '1px solid var(--border)' }} />
-                <div className="menu-item" onClick={() => { if (confirmPageExit()) onLogout(); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
-                  Logout
-                </div>
-              </div>
+    <div className={'shell' + (isPhone ? ' shell-phone' : '')}
+      style={isPhone ? undefined : { '--sidebar-w': collapsed ? '68px' : '264px' }}>
+      {isPhone ? (
+            <MobileAppBar
+              title={(NAV.find((n) => n.key === route) || {}).label || 'Arabtec'}
+              onMenu={() => setMobileNavOpen(true)}
+              onSearch={() => setPaletteOpen(true)}
+              onGo={go}
+            />
+      ) : null}
+      {isPhone ? (
+            <MobileDrawer
+              open={mobileNavOpen}
+              onClose={() => setMobileNavOpen(false)}
+              nav={visibleNav}
+              route={route}
+              counts={counts}
+              onGo={(key) => { setMobileNavOpen(false); go(key); }}
+              user={user}
+              roleCode={roleCode}
+              branding={branding}
+              onLogout={() => { if (confirmPageExit()) onLogout(); }}
+              onChangePassword={() => { setMobileNavOpen(false); setPwdOpen(true); }}
+            />
+      ) : (
+        <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
+          <div className="sidebar-head" style={collapsed ? { justifyContent: 'center' } : null}>
+            <span className="side-mark"><Logo size={30} /></span>
+            {!collapsed && (
+              <span className="side-txt">
+                <strong>{branding?.app_name || 'Arabtec'}</strong>
+                <span>Recruitment Hub</span>
+              </span>
             )}
           </div>
-        </header>
-        <main id="main-content" className={'content has-dock density-' + density} tabIndex="-1">
+          <nav className="nav" aria-label="Main navigation">
+            {visibleNav.map((n, i) => {
+              if (n.section) return !collapsed && <div key={'s' + i} className="nav-section">{n.section}</div>;
+              const c = navCount(n.key, counts);
+              return (
+                <button key={n.key} className={'nav-item' + (route === n.key ? ' active' : '')}
+                  onClick={() => go(n.key)} title={n.label} aria-current={route === n.key ? 'page' : undefined}>
+                  <span className="nav-icon"><Icon name={n.icon} size={17} /></span>
+                  {!collapsed && <span>{n.label}</span>}
+                  {!collapsed && c ? <span className="nav-count">{c}</span> : null}
+                </button>
+              );
+            })}
+          </nav>
+          {!collapsed && (
+            <div className="scope-card">
+              <strong>{ROLE_NAMES[roleCode] || roleCode} scope</strong>
+              <p>{ROLE_SCOPE[roleCode] || 'Access follows your role'}. Access is enforced by your role, not by this menu.</p>
+            </div>
+          )}
+        </aside>
+      )}
+
+      <div className="main">
+        {isPhone ? null : (
+          <header className="topbar">
+            <button className="icon-btn menu-btn" onClick={() => setMobileNavOpen(true)} title="Open menu" aria-label="Open menu">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+            </button>
+            <button className="icon-btn collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar" aria-label="Toggle sidebar">
+              <Icon name="sidebar" size={18} />
+            </button>
+            {collapsed && <div className="tb-brand">
+              <span className="bn">
+                <strong>Recruitment Hub</strong>
+                <span>{branding?.company_name || 'Arabtec Construction'}</span>
+              </span>
+            </div>}
+            {/* Global search. Opens the Ctrl+K palette — no longer a dead placeholder. */}
+            <button type="button" className="gsearch" onClick={() => setPaletteOpen(true)}
+              title="Search candidates (Ctrl K)">
+              <Icon name="search" size={14} />
+              <span className="gsearch-label">Search candidates</span>
+              <span className="kbd">Ctrl K</span>
+            </button>
+            <div className="spacer" />
+            <NotificationBell onNavigate={go} />
+            <div className="profile" onClick={() => setMenuOpen((o) => !o)}>
+              <div className="avatar">{initials(user.fullName)}</div>
+              <div>
+                <div className="profile-name">{user.fullName}</div>
+                <div className="profile-role">{ROLE_NAMES[roleCode] || roleCode}</div>
+              </div>
+              {menuOpen && (
+                <div className="menu" onClick={(e) => e.stopPropagation()}>
+                  <div className="menu-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                    <strong>{user.fullName}</strong><span className="muted">{user.email}</span>
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  <div className="menu-item" onClick={() => { setMenuOpen(false); setPwdOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Icon name="shield" size={15} /> Change Password
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  <div className="menu-item" onClick={() => { if (confirmPageExit()) onLogout(); }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+                    Logout
+                  </div>
+                </div>
+              )}
+            </div>
+          </header>
+        )}
+        <main id="main-content" className={'content ' + (isPhone ? 'content-phone' : 'has-dock') + ' density-' + density} tabIndex="-1">
           <ErrorBoundary page resetKey={route}>{Page}</ErrorBoundary>
           <KnowledgeLine key={route} />
         </main>
-
       </div>
 
+      {isPhone ? (
+            <MobileTabBar
+              items={primaryMobile}
+              route={route}
+              counts={counts}
+              onGo={go}
+              onMore={() => setMobileNavOpen(true)}
+              moreOpen={mobileNavOpen}
+            />
+      ) : null}
+
       {overlays}
+      <OverlaySlot />
     </div>
   );
 }
@@ -1802,8 +1843,8 @@ function ChartLegend({ data, labeler = (s) => s }) {
   </div>;
 }
 function Funnel({ data }) {
-  const order = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
-  const map = Object.fromEntries(data.map((d) => [d.status, d.count]));
+  const order = FUNNEL_ORDER;
+  const map = foldLegacyScreening(Object.fromEntries(data.map((d) => [d.status, d.count])));
   const rows = order.filter((s) => map[s]).map((s) => ({ status: s, count: map[s] }));
   if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
   const max = Math.max(...rows.map((r) => r.count), 1);
@@ -1827,12 +1868,24 @@ const STAGE_COLORS = {
   waiting_feedback: '#E09600', issuing_offer: '#8A5A00', offer_sent: '#8A5A00', joined: '#00664F',
   unmatched: '#C7C4BF', on_hold: '#6F6A64', rejected: '#D01827', offer_declined: '#B01420',
 };
-const FUNNEL_ORDER = ['sourced', 'shortlisted', 'matched', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+const FUNNEL_ORDER = ['sourced', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'offer_sent', 'joined'];
+// The Screening stage was removed from the hiring pipeline (recruitment team,
+// 25 Oct 2026): Shortlisted goes straight to Interview. Applications stored at
+// the old Screening statuses are legacy rows; every chart counts them under
+// Shortlisted so a historical candidate never disappears from a total.
+const LEGACY_SCREENING = ['matched', 'unmatched', 'screened', 'cv_screening', 'screening'];
+function foldLegacyScreening(counts) {
+  const out = { ...(counts || {}) };
+  let extra = 0;
+  for (const k of LEGACY_SCREENING) { if (out[k]) { extra += Number(out[k]) || 0; delete out[k]; } }
+  if (extra) out.shortlisted = (Number(out.shortlisted) || 0) + extra;
+  return out;
+}
 
 // Compact, Workable-style pipeline funnel rendered on each request card.
 // Shows total candidates + a proportional stacked bar across active stages.
 function FunnelMini({ pipeline }) {
-  const byStage = (pipeline && pipeline.byStage) || {};
+  const byStage = foldLegacyScreening((pipeline && pipeline.byStage) || {});
   const total = (pipeline && pipeline.total) || 0;
   const segs = FUNNEL_ORDER.map((s) => ({ s, c: byStage[s] || 0 })).filter((x) => x.c > 0);
   const segTotal = segs.reduce((a, b) => a + b.c, 0) || 1;
@@ -1868,7 +1921,7 @@ function FunnelMini({ pipeline }) {
 // Presentation only. Every number rendered here comes from the existing
 // GET /dashboard response; nothing is fabricated or extrapolated.
 const APP_STAGE_COLORS = {
-  sourced: '#8A867F', shortlisted: '#6B8F3D', screening: '#4E9C88', interview_hr: '#008064',
+  sourced: '#8A867F', shortlisted: '#6B8F3D', interview_hr: '#008064',
   interview_technical: '#00664F', offer: '#8A5A00', hired: '#00664F',
   rejected: '#D01827', offer_declined: '#B01420',
 };
@@ -1905,7 +1958,7 @@ function DashBars({ rows, empty, icon = EMOJI.chart }) {
 }
 
 function DashFunnel({ data }) {
-  const order = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
+  const order = ['sourced', 'shortlisted', 'interview_hr', 'offer', 'hired'];
   // /dashboard returns the API's canonical statuses (matched, interviewing,
   // issuing_offer, joined…). Fold them onto board columns via pipelineStage,
   // otherwise everything except Sourced reads 0.
@@ -2679,7 +2732,7 @@ function PlanTable({ rows, unit }) {
 // figures, the pipeline funnel and the plan, 3) detail on demand. Every figure
 // can be narrowed by project, department or recruiter (owner review, 4 Oct 2026).
 const DASH_FILTER_KEY = 'arabtec_dash_filter';
-const FUNNEL = [[1, 'Sourced'], [2, 'Screening'], [3, 'Interview'], [4, '2nd interview'], [5, 'Offer'], [6, 'Hired']];
+const FUNNEL = [[1, 'Sourced'], [2, 'Shortlisted'], [3, 'Interview'], [4, '2nd interview'], [5, 'Offer'], [6, 'Hired']];
 function readDashFilter() {
   try { const v = JSON.parse(localStorage.getItem(DASH_FILTER_KEY) || '{}'); return { projectId: v.projectId || '', departmentId: v.departmentId || '', ownerId: v.ownerId || '' }; }
   catch { return { projectId: '', departmentId: '', ownerId: '' }; }
@@ -2750,12 +2803,16 @@ function DirectorDashboard({ user, data, onNavigate, notice, figures, intakes })
       {notice}
 
       <div className="dash-filter" role="group" aria-label="Narrow the dashboard">
-        <label><span>Project</span>
-          <select value={f.projectId} onChange={setFilter('projectId')}><option value="">All projects</option>{(meta?.projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <label><span>Location</span>
+          <SearchSelect value={f.projectId} ariaLabel="Location" placeholder="All locations" emptyLabel="All locations"
+            options={(meta?.projects || []).map((p) => ({ value: String(p.id), label: p.isHeadOffice ? 'Head Office' : p.name, hint: p.isHeadOffice ? '' : (p.area || '') }))}
+            onChange={(v) => setFilter('projectId')({ target: { value: v } })} /></label>
         <label><span>Department</span>
-          <select value={f.departmentId} onChange={setFilter('departmentId')}><option value="">All departments</option>{(meta?.departments || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <SearchSelect value={f.departmentId} ariaLabel="Department" placeholder="All departments" emptyLabel="All departments"
+            options={optsOf(meta?.departments)} onChange={(v) => setFilter('departmentId')({ target: { value: v } })} /></label>
         <label><span>Recruiter</span>
-          <select value={f.ownerId} onChange={setFilter('ownerId')}><option value="">All recruiters</option>{(meta?.recruiters || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <SearchSelect value={f.ownerId} ariaLabel="Recruiter" placeholder="All recruiters" emptyLabel="All recruiters"
+            options={optsOf(meta?.recruiters)} onChange={(v) => setFilter('ownerId')({ target: { value: v } })} /></label>
         <span className="dash-filter-scope">{isNarrowed ? <>Showing <strong>{scopeText}</strong></> : scopeText}</span>
         {isNarrowed && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF({ projectId: '', departmentId: '', ownerId: '' })}>Clear</button>}
       </div>
@@ -3072,7 +3129,7 @@ function MetricBar({ rows, labeler = (s) => s, max }) {
 // A proportional, tapering hiring-funnel with stage-to-stage conversion %.
 function ReportFunnel({ data }) {
   const map = Object.fromEntries((data || []).map((d) => [d.status, d.count]));
-  const rows = FUNNEL_ORDER.filter((s) => map[s] != null).map((s) => ({ status: s, count: map[s] }));
+  const rows = FUNNEL_ORDER.filter((s) => foldLegacyScreening(map)[s] != null).map((s) => ({ status: s, count: foldLegacyScreening(map)[s] }));
   if (!rows.length) return <Empty art="none-yet" text="No applications yet." />;
   const max = Math.max(...rows.map((r) => r.count), 1);
   return <div>{rows.map((r, i) => {
@@ -3208,6 +3265,74 @@ function FilterToolbar({ search, children, count, activeCount = 0 }) {
     <div className="toolbar-count">{count}</div>
   </div>;
 }
+
+/* A dropdown you can type into (recruitment team, 25 Oct 2026). Every filter
+   and form list that used to be a native <select> — departments, projects and
+   sites, recruiters, hiring managers, requests — is one of these: type a few
+   letters, the list narrows, Enter or a click picks, Escape closes, the × (or
+   Backspace on an empty box) clears. Native <select> stays only for lists of a
+   handful of fixed words (priority, Head Office / Projects).
+   `options`: [{ value, label, hint? }]. `value` is compared as a string. */
+function SearchSelect({ value, onChange, options, placeholder = 'Type to search…', emptyLabel = 'All', ariaLabel, disabled, title, style, className }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [hi, setHi] = useState(0);
+  const ref = useRef(null);
+  const listId = useId();
+  const has = value !== '' && value != null;
+  const current = (options || []).find((o) => String(o.value) === String(value));
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    const list = t ? (options || []).filter((o) => String(o.label).toLowerCase().includes(t) || String(o.hint || '').toLowerCase().includes(t)) : (options || []);
+    return list.slice(0, 200);
+  }, [options, q]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!ref.current?.contains(e.target)) { setOpen(false); setQ(''); } };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  function pick(v) { onChange(v); setOpen(false); setQ(''); }
+  function keys(e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); else setHi((h) => Math.min(h + 1, Math.max(shown.length - 1, 0))); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') { if (open) { e.preventDefault(); if (shown[hi]) pick(shown[hi].value); } }
+    else if (e.key === 'Escape') { if (open) { e.preventDefault(); setOpen(false); setQ(''); } }
+    else if (e.key === 'Backspace' && !q && has) { onChange(''); }
+  }
+  return (
+    <div ref={ref} className={'sselect' + (open ? ' open' : '') + (has ? ' has-value' : '') + (disabled ? ' disabled' : '') + (className ? ' ' + className : '')} style={style} title={title}>
+      <input type="text" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-label={ariaLabel}
+        autoComplete="off" spellCheck="false" disabled={disabled}
+        value={open ? q : (current ? current.label : '')}
+        placeholder={current ? current.label : placeholder}
+        onFocus={() => { setOpen(true); setHi(0); }}
+        onClick={() => { if (!open) { setOpen(true); setHi(0); } }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); setHi(0); }}
+        onKeyDown={keys} />
+      {has && !disabled && <button type="button" className="sselect-clear" aria-label="Clear" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(''); setQ(''); }}>×</button>}
+      <span className="sselect-caret" aria-hidden="true">▾</span>
+      {open && (
+        <ul id={listId} role="listbox" className="sselect-list">
+          {emptyLabel != null && !q && <li role="option" aria-selected={!has} className={'sselect-opt' + (!has ? ' selected' : '')} onMouseDown={(e) => { e.preventDefault(); pick(''); }}>{emptyLabel}</li>}
+          {shown.length === 0
+            ? <li className="sselect-empty">No matches{q ? ` for “${q}”` : ''}</li>
+            : shown.map((o, i) => (
+              <li key={String(o.value)} role="option" aria-selected={String(o.value) === String(value)}
+                className={'sselect-opt' + (i === hi ? ' active' : '') + (String(o.value) === String(value) ? ' selected' : '')}
+                onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); pick(o.value); }}>
+                <span>{o.label}</span>{o.hint ? <small>{o.hint}</small> : null}
+              </li>
+            ))}
+          {(options || []).length > 200 && shown.length === 200 && <li className="sselect-empty">Type to narrow the list…</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+// Shorthands for the two shapes every list in this app comes in.
+const optsOf = (list, label = (x) => x.name, value = (x) => x.id) => (list || []).map((x) => ({ value: String(value(x)), label: label(x) }));
+const pairOpts = (pairs) => (pairs || []).map(([id, name]) => ({ value: String(id), label: name }));
 
 // Segmented view switcher shared by the list pages (Cards / Table, Board / Table).
 function ViewToggle({ value, onChange, options }) {
@@ -3442,7 +3567,7 @@ function UsersPage({ user }) {
           action={<button className="btn" onClick={load}>Retry</button>} />
           : !users ? <Skeleton /> : users.length === 0 ? <Empty text="No users found." /> : (
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Job Title</th><th>Role(s)</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Job Title</th><th>Role(s)</th><th>Status</th><th>Last Login</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
@@ -3825,7 +3950,7 @@ function ProjectsPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Project</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No projects yet." /> : (
-          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Sites</th><th>PM</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Client</th><th>Location</th><th>Status</th><th>Sites</th><th>PM</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>{rows.map((p) => (
               <tr key={p.id}><td data-label="Code"><strong>{p.code}</strong></td><td data-label="Name">{p.name}</td><td data-label="Client">{p.clientName || '—'}</td><td data-label="Location">{p.location || '—'}</td>
                 <td data-label="Status"><StatusBadge status={p.status} /></td><td data-label="Sites">{p.siteCount}</td><td data-label="PM">{p.projectManager?.name || '—'}</td>
@@ -3835,6 +3960,117 @@ function ProjectsPage({ user }) {
       </div>
       {editing && <OrgModal kind="project" record={editing} bus={bus} users={users}
         onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+    </div>
+  );
+}
+
+/* Hiring locations (recruitment team, 25 Oct 2026). Head Office + the sites a
+   request can be for, each with the area it is in; the area list itself is
+   editable. Sites are the same rows as Administration → Projects — this page
+   is the recruitment team's own, lighter door to them (location.manage). */
+function LocationsPage({ user }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const canManage = can(user, 'location.manage');
+  const load = useCallback(async () => { try { setData(await api.get('/org/locations')); setError(''); } catch (e) { setError(e.message || 'Could not load locations.'); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const [newArea, setNewArea] = useState('');
+  const [newSite, setNewSite] = useState({ name: '', area: '' });
+  const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState(null); // { id, name }
+  async function run(label, fn) {
+    if (busy) return;
+    setBusy(true);
+    try { setData(await fn()); if (label) toast(label); }
+    catch (e) { toast(e.message || 'Could not save.', 'error'); }
+    finally { setBusy(false); }
+  }
+  const saveAreas = (areas) => run('Areas saved', () => api.put('/org/locations/areas', { areas }));
+  const updateSite = (id, patch, label) => run(label, () => api.put('/org/locations/sites/' + id, patch));
+  async function addSite() {
+    const name = newSite.name.trim(), area = newSite.area || (data?.areas || [])[0] || '';
+    if (!name) { toast('Type the site name.', 'error'); return; }
+    await run(`Added ${name}`, () => api.post('/org/locations/sites', { name, area }));
+    setNewSite({ name: '', area: '' });
+  }
+  const areas = data?.areas || [];
+  const areaSelect = (value, onChange, label) => (
+    <select value={areas.includes(value) ? value : ''} aria-label={label} disabled={!canManage || busy} onChange={(e) => onChange(e.target.value)}>
+      {!areas.includes(value) && <option value="">{value ? `${value} (not in the area list)` : '— Area —'}</option>}
+      {areas.map((a) => <option key={a} value={a}>{a}</option>)}
+    </select>
+  );
+  return (
+    <div>
+      <PageHead crumb="Administration / Locations" title="Locations"
+        sub="Where a hiring request is for: the Head Office, or one of the company's sites and the area it is in. The hiring request form reads this list." />
+      {error ? <LoadError text={error} onRetry={load} /> : !data ? <Skeleton rows={6} /> : (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div className="card card-pad">
+            <div className="section-title" style={{ marginTop: 0 }}>Areas</div>
+            <p className="muted" style={{ marginTop: 0 }}>The area each site is in, shown beside its name in the request form.</p>
+            <div className="tag-row" style={{ marginBottom: 10 }}>
+              {areas.map((a) => (
+                <span key={a} className="tag-toggle on" title={a}>{a}
+                  {canManage && areas.length > 1 && <button type="button" className="icon-btn" aria-label={`Remove area ${a}`} disabled={busy} style={{ marginInlineStart: 4 }}
+                    onClick={() => saveAreas(areas.filter((x) => x !== a))}><Icon name="close" size={12} /></button>}
+                </span>
+              ))}
+            </div>
+            {canManage && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input placeholder="New area, e.g. Upper Egypt Area" value={newArea} onChange={(e) => setNewArea(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && newArea.trim()) { saveAreas([...areas, newArea.trim()]); setNewArea(''); } }} />
+                <button className="btn btn-secondary" disabled={busy || !newArea.trim()} onClick={() => { saveAreas([...areas, newArea.trim()]); setNewArea(''); }}>Add area</button>
+              </div>
+            )}
+          </div>
+          <div className="card card-pad">
+            <div className="section-title" style={{ marginTop: 0 }}>Head Office</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <strong>{data.headOffice.name}</strong>
+              {areaSelect(data.headOffice.area || '', (v) => updateSite(data.headOffice.id, { area: v }, 'Head Office area saved'), 'Head Office area')}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-head"><div><h3>Sites</h3></div><span className="dash-headnote">{data.sites.length} site{data.sites.length === 1 ? '' : 's'}</span></div>
+            {data.sites.length === 0 ? <Empty art="none-yet" text="No sites yet. Add the first one below." /> : (
+              <div className="table-wrap"><table className="responsive-table">
+                <thead><tr><th>Site</th><th>Area</th><th>Status</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
+                <tbody>{data.sites.map((p) => (
+                  <tr key={p.id}>
+                    <td data-label="Site">
+                      {renaming && renaming.id === p.id
+                        ? <input autoFocus value={renaming.name} aria-label={`Rename ${p.name}`} onChange={(e) => setRenaming({ id: p.id, name: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { updateSite(p.id, { name: renaming.name }, 'Site renamed'); setRenaming(null); } if (e.key === 'Escape') setRenaming(null); }}
+                            onBlur={() => { if (renaming.name.trim() && renaming.name.trim() !== p.name) updateSite(p.id, { name: renaming.name }, 'Site renamed'); setRenaming(null); }} />
+                        : <strong>{p.name}</strong>}
+                      <div className="muted" style={{ fontSize: 11.5 }}>{p.code}</div>
+                    </td>
+                    <td data-label="Area">{areaSelect(p.area || '', (v) => updateSite(p.id, { area: v }, `${p.name}: area saved`), `Area of ${p.name}`)}</td>
+                    <td data-label="Status">
+                      {canManage
+                        ? <select value={p.status} aria-label={`Status of ${p.name}`} disabled={busy} onChange={(e) => updateSite(p.id, { status: e.target.value }, `${p.name}: ${e.target.value.replace('_', ' ')}`)}>
+                            <option value="active">Active</option><option value="on_hold">On hold</option><option value="closed">Closed</option>
+                          </select>
+                        : <StatusBadge status={p.status} />}
+                    </td>
+                    {canManage && <td className="cell-actions"><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setRenaming({ id: p.id, name: p.name })}>Rename</button></td>}
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
+            {canManage && (
+              <div className="card-pad" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: '1px solid var(--border)' }}>
+                <input placeholder="New site name" value={newSite.name} onChange={(e) => setNewSite((x) => ({ ...x, name: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') addSite(); }} />
+                {areaSelect(newSite.area || areas[0] || '', (v) => setNewSite((x) => ({ ...x, area: v })), 'Area of the new site')}
+                <button className="btn" disabled={busy || !newSite.name.trim()} onClick={addSite}>Add site</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3852,7 +4088,7 @@ function SitesPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Site</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No sites yet." /> : (
-          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Project</th><th>Location</th><th>Status</th><th>Site Manager</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Project</th><th>Location</th><th>Status</th><th>Site Manager</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>{rows.map((s) => (
               <tr key={s.id}><td data-label="Code"><strong>{s.code}</strong></td><td data-label="Name">{s.name}</td><td data-label="Project">{s.project?.name || '—'}</td><td data-label="Location">{s.location || '—'}</td>
                 <td data-label="Status"><StatusBadge status={s.status} /></td><td data-label="Site Manager">{s.siteManager?.name || '—'}</td>
@@ -3879,7 +4115,7 @@ function DepartmentsPage({ user }) {
         actions={canManage && <button className="btn" onClick={() => setEditing({})}>+ New Department</button>} />
       <div className="card">
         {!rows ? <Skeleton /> : rows.length === 0 ? <Empty art="none-yet" text="No departments yet." /> : (
-          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Head</th><th>Status</th>{canManage && <th></th>}</tr></thead>
+          <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Code</th><th>Name</th><th>Head</th><th>Status</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>{rows.map((d) => (
               <tr key={d.id}><td data-label="Code"><strong>{d.code}</strong></td><td data-label="Name">{d.name}</td><td data-label="Head">{d.head?.name || '—'}</td>
                 <td data-label="Status"><StatusBadge status={d.status} /></td>
@@ -3980,14 +4216,14 @@ function CustomFieldsInputs({ defs, values, onChange }) {
 function ControlCenterPage({ user, branding, refreshBranding }) {
   const [tab, setTab] = useState('buttons');
   const TABS = [['buttons', 'Buttons'], ['notifications', 'Notifications'], ['features', 'Features'], ['branding', 'Branding & Logo'],
-    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
+    ['fields', 'Built-in Fields'], ['custom', 'Custom Fields'], ...(isSystemAdmin(user) ? [['request-deletion', 'Delete request']] : []), ...(isSystemAdmin(user) && can(user, 'system.manage') ? [['knowledge', 'Footer quotes']] : [])];
   return (
     <div>
       <PageHead crumb="Configuration / Control Center" title="Control Center"
         sub="Super-admin control of the whole app: turn buttons on/off, choose which notifications and emails go out and to whom, upload the logo, show or hide any built-in field, and add your own custom fields." />
-      <div className="control-tabs">
+      <div className="control-tabs" role="tablist" aria-label="Control Center sections">
         {TABS.map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} className={'control-tab' + (tab === k ? ' active' : '')}>{label}</button>
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={'control-tab' + (tab === k ? ' active' : '')}>{label}</button>
         ))}
       </div>
       {tab === 'buttons' && <ButtonsPanel user={user} />}
@@ -3997,8 +4233,56 @@ function ControlCenterPage({ user, branding, refreshBranding }) {
       {tab === 'fields' && <BuiltinFieldsPanel user={user} />}
       {tab === 'custom' && <CustomFieldsPanel user={user} />}
       {tab === 'knowledge' && <KnowledgeLinesPanel />}
+      {tab === 'request-deletion' && isSystemAdmin(user) && <RequestDeletionPanel user={user} />}
     </div>
   );
+}
+
+// Request-only deletion is deliberately kept in the System Admin control surface.
+function RequestDeletionPanel({ user }) {
+  const [rows, setRows] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [impact, setImpact] = useState(null);
+  const [reason, setReason] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const toast = useToast();
+  const load = useCallback(() => api.get('/requests').then(r => setRows(r.requests || [])).catch(e => setError(e.message)), []);
+  useEffect(() => { if (isSystemAdmin(user)) load(); }, [user, load]);
+  if (!isSystemAdmin(user)) return null;
+  async function review(row) {
+    setSelected(null); setImpact(null); setReason(''); setConfirmation(''); setError(''); setBusy(true);
+    try { const result = await api.get(`/requests/${row.id}/delete-impact`); setSelected(row); setImpact(result); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  async function removeRequest() {
+    if (!selected || !impact || !reason.trim() || confirmation !== selected.ticketNo) return;
+    setBusy(true); setError('');
+    try {
+      await api.call(`/requests/${selected.id}`, { method: 'DELETE', body: { reason: reason.trim() } });
+      setSelected(null); setImpact(null); toast('Request deleted. Linked records preserved.'); await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  return <div className="card card-pad">
+    <h3>Delete request permanently</h3>
+    <p>The request is permanently erased. Candidates, applications, interviews, offers, documents and history are preserved; their request link is removed.</p>
+    {error && <div role="alert" className="form-error">{error}</div>}
+    <div className="field"><label htmlFor="delete-request-choice">Request</label>
+      <select id="delete-request-choice" disabled={busy} value={selected?.id || ''} onChange={e => { const row = rows.find(r => r.id === Number(e.target.value)); if (row) review(row); else { setSelected(null); setImpact(null); } }}>
+        <option value="">Choose a request to review</option>
+        {rows.map(r => <option key={r.id} value={r.id}>{r.ticketNo} — {r.title} ({r.status})</option>)}
+      </select>
+    </div>
+    {selected && impact && <>
+      {/* Only what is actually linked; zero counts are noise. */}
+      <p>{(() => { const kept = Object.entries(impact.detached || {}).filter(([, v]) => v > 0);
+        return kept.length ? `${kept.map(([k, v]) => `${v} ${k}`).join(' · ')} will be preserved.` : 'No linked records. Only the request itself will be erased.'; })()}</p>
+      <div className="field"><label htmlFor="delete-request-reason">Reason</label><textarea id="delete-request-reason" value={reason} onChange={e => setReason(e.target.value)} disabled={busy} /></div>
+      <div className="field"><label htmlFor="delete-request-confirm">Type {selected.ticketNo} to confirm permanent deletion</label><input id="delete-request-confirm" autoComplete="off" value={confirmation} onChange={e => setConfirmation(e.target.value)} disabled={busy} /></div>
+      <button className="btn btn-danger" disabled={busy || !reason.trim() || confirmation !== selected.ticketNo} onClick={removeRequest}>{busy ? 'Deleting…' : 'Permanently delete request only'}</button>
+    </>}
+  </div>;
 }
 
 // --- Knowledge lines panel ---
@@ -4367,11 +4651,13 @@ function NotificationsPanel({ user }) {
                   return (
                     <tr key={n.eventKey} style={busy ? { opacity: .55 } : null}>
                       <td data-label="Event">
+                        {/* Two fixed lines: label, then one clamped line (full text on hover).
+                            The candidate-facing warning stays visible as words, inline. */}
                         <span className="cell-strong">{n.label}</span>
-                        <span className="cell-sub">{n.description}</span>
-                        {n.externalRecipients.length > 0 && n.enabled && n.email && (
-                          <span className="badge badge-warning" style={{ marginTop: 6 }}>Reaches candidates</span>
-                        )}
+                        <span className="cell-sub notif-desc" title={n.description}>
+                          {n.externalRecipients.length > 0 && n.enabled && n.email && <span className="notif-ext">Reaches candidates · </span>}
+                          {n.description}
+                        </span>
                       </td>
                       <td data-label="On" className="notif-tick">
                         <input type="checkbox" checked={n.enabled} disabled={!canEdit || busy}
@@ -4448,7 +4734,7 @@ function BrandingLogoPanel({ user, branding, refreshBranding }) {
           <div>
             <label className="btn btn-sm" style={{ cursor: 'pointer' }}>{busy ? 'Uploading…' : (hasLogo ? 'Replace Logo' : '+ Upload Logo')}
               <input type="file" style={{ display: 'none' }} accept=".png,.jpg,.jpeg,.svg" onChange={uploadLogo} disabled={busy} /></label>
-            {hasLogo && <button className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={removeLogo} disabled={busy}>Remove</button>}
+            {hasLogo && isSystemAdmin(user) && <button className="btn btn-sm btn-ghost" style={{ marginLeft: 8 }} onClick={removeLogo} disabled={busy}>Remove</button>}
             <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>PNG, JPG or SVG. Shown app-wide and on the login screen.</div>
           </div>
         </div>
@@ -4574,7 +4860,7 @@ function CustomFieldsPanel({ user }) {
         </div>
       )}
       {!fields ? <Skeleton rows={4} /> : fields.length === 0 ? <Empty art="none-yet" text="No custom fields yet. Add one above." /> : (
-        <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Visible</th><th></th></tr></thead>
+        <table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Visible</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{fields.map((cf) => (
             <tr key={cf.fieldKey}>
               <td><strong>{cf.label}</strong></td>
@@ -4582,7 +4868,7 @@ function CustomFieldsPanel({ user }) {
               <td><span className="chip">{cf.fieldType}</span></td>
               <td><input type="checkbox" checked={cf.required} onChange={(e) => toggle(cf.fieldKey, { required: e.target.checked })} /></td>
               <td><input type="checkbox" checked={cf.visible} onChange={(e) => toggle(cf.fieldKey, { visible: e.target.checked })} /></td>
-              <td><button className="btn btn-sm btn-ghost" onClick={() => remove(cf.fieldKey)}>Delete</button></td>
+              <td>{isSystemAdmin(user) && <button className="btn btn-sm btn-ghost" onClick={() => remove(cf.fieldKey)}>Delete</button>}</td>
             </tr>
           ))}</tbody></table>
       )}
@@ -5085,6 +5371,10 @@ function SystemPage({ user }) {
     <div>
       <PageHead crumb="Configuration / System" title="System Settings" sub="Platform-wide defaults."
         actions={canManage && <button className="btn" onClick={save}>Save</button>} />
+      <section className="card card-pad" aria-labelledby="developer-credit-heading" style={{ marginBottom: 16 }}>
+        <h2 id="developer-credit-heading">About this system</h2>
+        <p>Developed by Moutaz Adly</p>
+      </section>
       <div className="card card-pad"><div className="form-grid">
         {Object.entries(s).map(([k, v]) => (
           <div className="field" key={k}><label>{k.replace(/_/g, ' ')}</label>
@@ -5125,7 +5415,7 @@ function AuditPage({ user }) {
       </div>
       <div className="card">
         {!data ? <Skeleton /> : data.logs.length === 0 ? <Empty art="none-yet" text="No audit entries match." /> : (
-          <table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Comments</th><th></th></tr></thead>
+          <table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Comments</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{data.logs.map((l) => (
               <tr key={l.id}><td className="muted">{fmtDate(l.occurredAt)}</td><td>{l.actorName || '—'}<div className="muted">{l.actorRole || ''}</div></td>
                 <td><span className="chip">{l.action}</span></td><td>{l.entityType}{l.entityId ? ' #' + l.entityId : ''}</td>
@@ -5240,7 +5530,7 @@ function RequestTicketCard({ r, onOpen }) {
 
         <dl className="rq-meta">
           <div><dt>Dept</dt><dd title={dept}>{dept}</dd></div>
-          <div><dt>Project / Site</dt><dd title={place}>{place}</dd></div>
+          <div><dt>Location</dt><dd title={place}>{place}</dd></div>
           {r.headcount != null && <div><dt>Headcount</dt><dd>{r.headcountFilled ?? 0} of {r.headcount}</dd></div>}
         </dl>
 
@@ -5342,9 +5632,9 @@ function RequestsControlPanel({ all, rstat, onPick, onAssign }) {
   const overdue = all.filter((r) => isOpenReq(r) && r.status !== 'pending_approval' && (r.health || {}).level === 'red');
   return (
     <section className="req-control" aria-label="Hiring process and recruiters">
-      <div className="req-process" role="list" aria-label="Hiring process">
+      <div className="req-process" role="group" aria-label="Hiring process — filter requests by stage">
         {REQ_FOCUS.map(([k, label], i) => (
-          <button key={k} type="button" role="listitem" className="req-step" onClick={() => onPick({ focus: k })}>
+          <button key={k} type="button" className="req-step" onClick={() => onPick({ focus: k })}>
             <span className="req-step-n">{count(k)}</span><span className="req-step-l">{label}</span>{i < REQ_FOCUS.length - 1 && <span className="req-step-arrow" aria-hidden="true">›</span>}
           </button>
         ))}
@@ -5489,6 +5779,10 @@ function RequestsPage({ user, initialFilters }) {
   }, [filters]);
   useEffect(() => { load(); }, [load]);
 
+  // A chip/KPI/“Show” sets a filter on the list below the fold; bring the list
+  // into view so the click visibly does something (owner audit 2026-10-15).
+  // Declared before the early return: hooks must run in the same order on every render.
+  const listTopRef = useRef(null);
   if (selectedId) return <RequestDetail id={selectedId} user={user} btns={btns} onBack={() => { setSelectedId(null); load(); }} />;
 
   const canCreate = btns.create_request?.visible;
@@ -5519,7 +5813,10 @@ function RequestsPage({ user, initialFilters }) {
     filters.departmentId && ['departmentId', `Department: ${(meta.departments.find((x) => String(x.id) === String(filters.departmentId)) || {}).name || filters.departmentId}`, () => setFilters((f) => ({ ...f, departmentId: '' }))],
     filters.focus && ['focus', `Stage: ${(REQ_FOCUS.find(([k]) => k === filters.focus) || [])[1] || filters.focus}`, () => setFilters((f) => ({ ...f, focus: '' }))],
   ].filter(Boolean);
-  const pick = (patch) => setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+  const pick = (patch) => {
+    setFilters((f) => ({ ...f, status: '', owner: '', focus: '', projectId: '', departmentId: '', attention: false, ...patch }));
+    setTimeout(() => listTopRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 60);
+  };
   const unassign = async (r) => {
     if (!window.confirm(`Remove ${r.owner?.name || 'the recruiter'} from ${shortReqCode(r.ticketNo)}? The request stays open with no recruiter until someone is assigned.`)) return;
     try { await api.post(`/requests/${r.id}/unassign`, {}); toast(`Recruiter removed from ${shortReqCode(r.ticketNo)}`); load(); loadPanels(); }
@@ -5545,20 +5842,22 @@ function RequestsPage({ user, initialFilters }) {
         </div>
       )}
 
+      <div ref={listTopRef} className="scroll-anchor" aria-hidden="true" />
       <FilterToolbar activeCount={activeChips.length} search={<input placeholder="Search title / ticket / discipline…" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />} count={<CountPill n={data ? shown.length : null} total={data ? data.requests.length : null} noun="request" />}>
-        <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-          <option value="">All statuses</option>{Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-        <select value={filters.projectId} onChange={(e) => setFilters((f) => ({ ...f, projectId: e.target.value }))} aria-label="Project">
-          <option value="">All projects</option>{meta.projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-        <select value={filters.departmentId} onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value }))} aria-label="Department">
-          <option value="">All departments</option>{meta.departments.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+        <SearchSelect value={filters.status} ariaLabel="Status" placeholder="Status" emptyLabel="All statuses"
+          options={Object.entries(REQ_STATUS).filter(([, v], i, arr) => arr.findIndex(([, w]) => w.label === v.label) === i).map(([k, v]) => ({ value: k, label: v.label }))}
+          onChange={(v) => setFilters((f) => ({ ...f, status: v }))} />
+        <SearchSelect value={filters.projectId} ariaLabel="Location" placeholder="Location / site" emptyLabel="All locations"
+          options={meta.projects.map((x) => ({ value: String(x.id), label: x.isHeadOffice ? 'Head Office' : x.name, hint: x.isHeadOffice ? '' : (x.area || '') }))}
+          onChange={(v) => setFilters((f) => ({ ...f, projectId: v }))} />
+        <SearchSelect value={filters.departmentId} ariaLabel="Department" placeholder="Department" emptyLabel="All departments"
+          options={optsOf(meta.departments)}
+          onChange={(v) => setFilters((f) => ({ ...f, departmentId: v }))} />
         <select value={filters.priority} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
           <option value="">All priorities</option>{Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-        <select value={filters.owner} onChange={(e) => setFilters((f) => ({ ...f, owner: e.target.value }))} aria-label="Owner">
-          <option value="">All owners</option>
-          <option value="unassigned">Unassigned</option>
-          {recruiters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
+        <SearchSelect value={filters.owner} ariaLabel="Owner" placeholder="Owner" emptyLabel="All owners"
+          options={[{ value: 'unassigned', label: 'Unassigned' }, ...optsOf(recruiters)]}
+          onChange={(v) => setFilters((f) => ({ ...f, owner: v }))} />
         <label className="switch" title="Requests past their health threshold or SLA">
           <input type="checkbox" checked={filters.attention} onChange={(e) => setFilters((f) => ({ ...f, attention: e.target.checked }))} />
           Needs action
@@ -5595,12 +5894,12 @@ function RequestsPage({ user, initialFilters }) {
             : 'Raise the first hiring request to start tracking approvals, candidates and SLA.'} /></div>
       ) : view === 'table' ? (
         <div className={'card flush' + (busy ? ' table-busy' : '')} aria-busy={busy}><div className="table-wrap"><table className="table responsive-table">
-          <thead><tr><th>Request</th><th>Position</th><th data-priority="secondary">Project / Site</th><th>Owner</th><th data-priority="secondary">Pipeline</th><th>Priority</th><th>Status</th><th data-priority="secondary">Idle</th><th>SLA</th></tr></thead>
+          <thead><tr><th>Request</th><th>Position</th><th data-priority="secondary">Location</th><th>Owner</th><th data-priority="secondary">Pipeline</th><th>Priority</th><th>Status</th><th data-priority="secondary">Idle</th><th>SLA</th></tr></thead>
           <tbody>{shown.map((r) => (
             <tr key={r.id} className="row-link" onClick={() => setSelectedId(r.id)}>
               <td data-label="Request"><span className="code-pill" title={r.ticketNo}>{shortReqCode(r.ticketNo)}</span></td>
               <td data-label="Position"><span className="cell-strong clamp-2" title={r.title}>{r.title}</span><div className="cell-sub">{r.department?.name || '—'}</div></td>
-              <td data-priority="secondary" data-label="Project / Site" className="cell-sub-only">
+              <td data-priority="secondary" data-label="Location" className="cell-sub-only">
                 <span className="clamp-2" title={placeLabel(r)}>{placeLabel(r)}</span>
               </td>
               <td data-label="Owner" onClick={(e) => e.stopPropagation()}>
@@ -5662,13 +5961,28 @@ function RequestForm({ user, request, onClose, onSaved }) {
   const customDefs = useCustomFields('request');
   const [customVals, setCustomVals] = useState(editing ? (request.customFields || {}) : {});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  // UI-only: Site + Location are optional for the API, so they start collapsed to
-  // reduce form density. Their values are still sent unchanged in the payload.
-  const [moreLoc, setMoreLoc] = useState(false);
+  // Location (recruitment team, 25 Oct 2026): first "Head Office" or
+  // "Projects"; for Projects, the Site list names every site with the area it
+  // is in (kept current under Administration → Locations). Both map onto the
+  // one field the API requires, `projectId`: the Head Office is a project row.
+  const [locKind, setLocKind] = useState(null); // null = derive from projectId once meta loads
   useEffect(() => { api.get('/requests/meta/form').then(setMeta); }, []);
-  const sites = meta ? meta.sites.filter((s) => !f.projectId || s.projectId === Number(f.projectId)) : [];
+  const headOfficeId = meta ? meta.headOfficeProjectId : null;
+  const kind = locKind !== null ? locKind
+    : f.projectId === '' || f.projectId == null ? '' : Number(f.projectId) === headOfficeId ? 'head_office' : 'projects';
+  const siteOptions = meta ? meta.projects
+    .filter((p) => !p.isHeadOffice && (p.status === 'active' || Number(p.id) === Number(f.projectId)))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) : [];
+  const siteLabel = (p) => (p.area ? `${p.name} — ${p.area}` : p.name);
+  function chooseLocation(v) {
+    setLocKind(v);
+    if (v === 'head_office') set('projectId', headOfficeId == null ? '' : String(headOfficeId));
+    else set('projectId', '');            // Projects: the site is chosen next; blank until then
+  }
 
   async function save() {
+    if (!kind) { toast('Choose the location: Head Office or Projects.', 'error'); return; }
+    if (kind === 'projects' && !f.projectId) { toast('Choose the site this request is for.', 'error'); return; }
     setBusy(true);
     try {
       if (editing) {
@@ -5704,19 +6018,30 @@ function RequestForm({ user, request, onClose, onSaved }) {
       </p>
       <div className="form-grid">
         <div className="field full"><label>Position *</label><input value={f.title} onChange={(e) => set('title', e.target.value)} placeholder="e.g. Site Engineer" /></div>
-        {!editing && <div className="field"><label>Hiring Manager</label><select value={f.hiringManagerId} onChange={(e) => set('hiringManagerId', e.target.value)}><option value="">— None —</option>{meta.hiringManagers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>}
-        <div className="field"><label>Department *</label><select value={f.departmentId} onChange={(e) => set('departmentId', e.target.value)}><option value="">— Select —</option>{meta.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
-        {/* Project stays the single required control (the API validates projectId).
-            Site + Location are optional, so they live under "More location details"
-            to keep the form calm. Internal state and payload are unchanged. */}
-        <div className="field"><label>Project / Site *</label>
-          <select value={f.projectId} onChange={(e) => set('projectId', e.target.value)}><option value="">— Select —</option>{meta.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-          <button type="button" className="linklike" style={{ marginTop: 6 }} onClick={() => setMoreLoc((v) => !v)}>
-            <Icon name={moreLoc ? 'chevronUp' : 'chevronDown'} size={16} />{moreLoc ? 'Hide location details' : 'More location details'}
-          </button>
+        {!editing && <div className="field"><label>Hiring Manager</label>
+          <SearchSelect value={f.hiringManagerId} ariaLabel="Hiring Manager" placeholder="Type a name…" emptyLabel="— None —"
+            options={optsOf(meta.hiringManagers)} onChange={(v) => set('hiringManagerId', v)} /></div>}
+        <div className="field"><label>Department *</label>
+          <SearchSelect value={f.departmentId} ariaLabel="Department" placeholder="Type to find a department…" emptyLabel="— Select —"
+            options={optsOf(meta.departments)} onChange={(v) => set('departmentId', v)} /></div>
+        {/* Location → Site. The API still validates one field, projectId: the
+            Head Office is a project row, every site is a project row, and the
+            area printed beside a site comes from Administration → Locations. */}
+        <div className="field"><label>Location *</label>
+          <select value={kind} aria-label="Location" onChange={(e) => chooseLocation(e.target.value)}>
+            <option value="">— Select —</option>
+            <option value="head_office">Head Office</option>
+            <option value="projects">Projects</option>
+          </select>
         </div>
-        {moreLoc && <div className="field"><label>Site</label><select value={f.siteId} onChange={(e) => set('siteId', e.target.value)}><option value="">— None —</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>}
-        {moreLoc && !editing && <div className="field"><label>Location</label><input value={f.location} onChange={(e) => set('location', e.target.value)} placeholder="e.g. New Cairo" /></div>}
+        {kind === 'projects' && (
+          <div className="field"><label>Site *</label>
+            <SearchSelect value={f.projectId} ariaLabel="Site" placeholder="Type to find a site…" emptyLabel="— Select a site —"
+              options={siteOptions.map((p) => ({ value: String(p.id), label: p.name, hint: p.area || '' }))}
+              onChange={(v) => set('projectId', v)} />
+            {siteOptions.length === 0 && <small className="muted">No sites yet — the recruitment team adds them under Administration → Locations.</small>}
+          </div>
+        )}
         <div className="field"><label>Priority</label><select value={f.priority} onChange={(e) => set('priority', e.target.value)}>{Object.keys(PRIORITY).map((p) => <option key={p}>{p}</option>)}</select></div>
         {!editing && <div className="field full"><label>Key Responsibilities</label><textarea rows="3" value={f.keyResponsibilities} onChange={(e) => set('keyResponsibilities', e.target.value)} placeholder="Main duties for this role…" /></div>}
         {!editing && <div className="field full"><label>Key Requirements</label><textarea rows="3" value={f.keyRequirements} onChange={(e) => set('keyRequirements', e.target.value)} placeholder="Required experience, qualifications, skills…" /></div>}
@@ -5831,7 +6156,7 @@ function AiShortlistTab({ request, user }) {
               <th>Candidate</th>
               <th>Why</th>
               <th>Not evidenced</th>
-              <th style={{ width: 96 }}></th>
+              <th style={{ width: 96 }}><span className="sr-only">Actions</span></th>
             </tr></thead>
             <tbody>
               {list.map((s) => (
@@ -6322,7 +6647,7 @@ function TicketHeader({ req, children, onBack }) {
       <ReqStatusBadge status={req.status} displayStatus={req.displayStatus} />
       {req.priority && <PriorityBadge p={req.priority} />}{req.health && <ReqHealth health={req.health} status={req.status} />}</span>
       <span className="th-sub"><span><em>Department</em>{req.department?.name || '—'}</span>
-      <span><em>Project / Site</em>{placeLabel(req)}</span>
+      <span><em>Location</em>{placeLabel(req)}</span>
       {req.headcount != null && <span><em>Headcount</em>{req.headcountFilled ?? 0} of {req.headcount}</span>}</span></>} />
   </div>;
 }
@@ -6391,7 +6716,7 @@ function OverviewTab({ req, onReload, btns, embedded }) {
           <FieldChip label="Req ID"><span title={req.ticketNo}>{shortReqCode(req.ticketNo)}</span></FieldChip>
           <FieldChip label="Position">{req.title}</FieldChip>
           <FieldChip label="Department">{req.department?.name}</FieldChip>
-          <FieldChip label="Project / Site">{placeLabel(req)}</FieldChip>
+          <FieldChip label="Location">{placeLabel(req)}</FieldChip>
           <FieldChip label="Hiring Manager">{req.hiringManager?.name || '—'}</FieldChip>
           <FieldChip label="Priority"><span style={{ textTransform: 'capitalize' }}>{req.priority || '—'}</span></FieldChip>
           <FieldChip label="Recruiter">{req.owner?.name || 'Unassigned'}</FieldChip>
@@ -6443,7 +6768,9 @@ function TimelineTab({ req }) {
 /* ============================ PHASE 3: Application statuses + pipeline ============================ */
 const APP_STATUS = {
   sourced:            { label: 'Sourced', variant: 'soft', column: 1 },
-  screening:          { label: 'Screening', variant: 'info', column: 2 },
+  // 'screening' is kept only so an old bookmark or filter value does not crash
+  // the board; nothing writes it any more (stage removed 25 Oct 2026).
+  screening:          { label: 'Shortlisted', variant: 'info', column: 2 },
   interview_hr:       { label: 'Interview', variant: 'info', column: 3 },
   interview_technical:{ label: '2nd Interview (Technical)', variant: 'info', column: 4 },
   offer:              { label: 'Offer', variant: 'warning', column: 5 },
@@ -6453,11 +6780,13 @@ const APP_STATUS = {
   on_hold:            { label: 'On Hold', variant: 'warning', column: 99 },
   new:         { label: 'Sourced', variant: 'soft', column: 1 },
   applied:     { label: 'Sourced', variant: 'soft', column: 1 },
-  matched:     { label: 'Screening', variant: 'info', column: 2 },
-  screened:    { label: 'Screening', variant: 'info', column: 2 },
-  cv_screening:{ label: 'Screening', variant: 'info', column: 2 },
-  unmatched:   { label: 'Screening', variant: 'info', column: 2 },
-  shortlisted: { label: 'Shortlisted', variant: 'info', column: 1.5 },
+  // Legacy Screening statuses (the API still stores them for historical rows):
+  // shown and counted under Shortlisted, the stage that replaced Screening.
+  matched:     { label: 'Shortlisted', variant: 'info', column: 2 },
+  screened:    { label: 'Shortlisted', variant: 'info', column: 2 },
+  cv_screening:{ label: 'Shortlisted', variant: 'info', column: 2 },
+  unmatched:   { label: 'Shortlisted', variant: 'info', column: 2 },
+  shortlisted: { label: 'Shortlisted', variant: 'info', column: 2 },
   interviewing:{ label: 'Interview', variant: 'info', column: 3 },
   interview_1: { label: 'Interview', variant: 'info', column: 3 },
   interview_2: { label: '2nd Interview (Technical)', variant: 'info', column: 4 },
@@ -6472,18 +6801,20 @@ const APP_STATUS = {
 // Board columns. `interview_technical` was removed: the API models a single
 // `interviewing` stage, so that column could never be reached and any move to it
 // was rejected with 400.
-const APP_ORDER = ['sourced', 'shortlisted', 'screening', 'interview_hr', 'offer', 'hired'];
+// Screening removed (recruitment team, 25 Oct 2026): Sourced → Shortlisted →
+// Interview → Offer → Hired. Shortlisted is where hiring managers first see a
+// candidate, and from there the next hop is the interview.
+const APP_ORDER = ['sourced', 'shortlisted', 'interview_hr', 'offer', 'hired'];
 
 // WRITE-DIRECTION map: board column -> the status the API actually accepts.
 // APP_STATUS above is the read direction (API status -> display column); this is
 // its mirror. Without it the board posted display keys such as 'screening', which
 // the API rejects as Invalid status — five of six moves silently failed.
 // Targets verified against the API's own transition table:
-//   sourced -> matched -> interviewing -> issuing_offer -> offer_sent -> joined
+//   sourced -> shortlisted -> interviewing -> issuing_offer -> offer_sent -> joined
 const APP_WRITE = {
   sourced: 'sourced',
   shortlisted: 'shortlisted',
-  screening: 'matched',
   interview_hr: 'interviewing',
   offer: 'issuing_offer',
   hired: 'joined',
@@ -6558,8 +6889,7 @@ function pipelineStage(status) {
   if (!s) return 'sourced';
   if (DISQUALIFIED_STAGES.includes(status)) return status;
   if (s.column === 1) return 'sourced';
-  if (s.column === 1.5) return 'shortlisted';
-  if (s.column === 2) return 'screening';
+  if (s.column === 1.5 || s.column === 2) return 'shortlisted';
   // Columns 3 and 4 both fold into the single interview column: the API has one
   // `interviewing` stage, so a card must never land in a column that no longer
   // exists in APP_ORDER (it would vanish from the board).
@@ -6568,19 +6898,36 @@ function pipelineStage(status) {
   if (s.column === 6) return 'hired';
   return status;
 }
+// Mirror of backend/src/lib/stages.js APP_TRANSITIONS. The board used to offer
+// any forward jump (Sourced → Offer / Hired) and the server refused most of
+// them, so menu actions "did nothing". Keep the two tables identical.
+const APP_TRANSITIONS_API = {
+  sourced: ['shortlisted', 'rejected', 'on_hold'],
+  matched: ['shortlisted', 'interviewing', 'unmatched', 'rejected', 'on_hold'],
+  shortlisted: ['interviewing', 'matched', 'rejected', 'on_hold'],
+  unmatched: ['matched', 'shortlisted', 'rejected', 'on_hold'],
+  interviewing: ['waiting_feedback', 'issuing_offer', 'rejected', 'on_hold', 'shortlisted'],
+  waiting_feedback: ['issuing_offer', 'interviewing', 'rejected', 'on_hold', 'shortlisted'],
+  issuing_offer: ['offer_sent', 'rejected', 'offer_declined', 'on_hold'],
+  offer_sent: ['joined', 'offer_declined', 'rejected', 'on_hold'],
+  on_hold: ['sourced', 'matched', 'shortlisted', 'interviewing', 'waiting_feedback', 'issuing_offer', 'rejected'],
+};
+const LINK_ENTRY_STAGES = ['sourced', 'shortlisted'];
 function canPipelineMove(status, target) {
-  if (!APP_STATUS[status] || TERMINAL_APP.includes(status) || isDisqualified(status)) return false;
-  if (REASON_STATUSES.includes(target)) return true;
-  const from = APP_ORDER.indexOf(pipelineStage(status));
-  const to = APP_ORDER.indexOf(target);
-  return from >= 0 && to > from;
+  if (!APP_STATUS[status] || TERMINAL_APP.includes(status)) return false;
+  const from = APP_TRANSITIONS_API[status] ? status : toApiStatus(pipelineStage(status));
+  const to = toApiStatus(target);
+  return from !== to && (APP_TRANSITIONS_API[from] || []).includes(to);
 }
 function pipelineResidualLabel(status) {
   const column = pipelineStage(status);
-  // The column already names the stage; its own default status ('matched'
-  // under Screening, 'interviewing' under Interview, 'issuing_offer' under
+  // The column already names the stage; its own default status ('interviewing'
+  // under Interview, 'issuing_offer' under
   // Offer) adds nothing, and printing it read as a second, competing stage.
   if (status === column || status === APP_WRITE[column]) return '';
+  // A legacy Screening row sits under Shortlisted and is Shortlisted; naming
+  // its stored status would resurrect the removed stage on the card.
+  if (LEGACY_SCREENING.includes(status)) return '';
   const label = APP_STATUS[status]?.label;
   return label && label !== APP_STATUS[column]?.label ? label : String(status).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
@@ -6659,7 +7006,10 @@ function RequestPipeline({ request, user, btns }) {
   const [bulkTarget, setBulkTarget] = useState(''); // controlled destination; validated against the selection each render
   const [bulkConfirm, setBulkConfirm] = useState(null); // { go, sum } when hidden rows are part of the move
 
-  const load = useCallback(async () => { setLoadError(null); try { setApps((await api.get('/applications/request/' + request.id)).applications); } catch (e) { setLoadError(e.message); } }, [request.id]);
+  const [canRecommend, setCanRecommend] = useState(false);
+  const [recommendOpen, setRecommendOpen] = useState(false);
+  const load = useCallback(async () => { setLoadError(null); try { const r = await api.get('/applications/request/' + request.id); setApps(r.applications); setCanRecommend(!!r.canRecommend); } catch (e) { setLoadError(e.message); } }, [request.id]);
+  const [askUnlink, unlinkModal] = useUnlinkFlow(user, load);
   useEffect(() => { load(); }, [load]);
 
   // Apply candidate search/filter/sort to the loaded applications.
@@ -6701,9 +7051,23 @@ function RequestPipeline({ request, user, btns }) {
       list: apps, setList: setApps, pending, setPending, toast,
     });
   }
+  // A hiring manager's / interviewer's decision on a Shortlisted candidate:
+  // the server listed what this reader may do in `app.decisions`, so no
+  // move_stage button is needed; reasons are still collected the same way.
+  function decide(appId, status) {
+    const app = (apps || []).find(a => a.id === appId);
+    if (!app || pending.has(appId) || !(app.decisions || []).includes(toApiStatus(status))) return;
+    if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
+    else move(appId, status);
+  }
   function requestMove(appId, status) {
     const app = (apps || []).find(a => a.id === appId);
-    if (!canMove || pending.has(appId) || !app || !canPipelineMove(app.status, status)) return;
+    if (!canMove || pending.has(appId) || !app) return;
+    if (!canPipelineMove(app.status, status)) {   // say why instead of silently snapping back
+      const from = (APP_STATUS[pipelineStage(app.status)] || {}).label || app.status, to = (APP_STATUS[status] || {}).label || status;
+      toast(`${from} → ${to} is not an allowed move.${pipelineStage(app.status) === 'sourced' ? ' Shortlist the candidate first.' : ''}`, 'error');
+      return;
+    }
     if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
     else move(appId, status);
   }
@@ -6758,12 +7122,13 @@ function RequestPipeline({ request, user, btns }) {
         <input placeholder="Search name / employer…" value={pf.q} onChange={(e) => setPf((f) => ({ ...f, q: e.target.value }))} style={{ minWidth: 180 }} />
         <select value={pf.stage} onChange={(e) => setPf((f) => ({ ...f, stage: e.target.value }))}>
           <option value="">All stages</option>{cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>
-        <select value={pf.recruiter} onChange={(e) => setPf((f) => ({ ...f, recruiter: e.target.value }))}>
-          <option value="">All recruiters</option>{recruiterOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
+        <SearchSelect value={pf.recruiter} ariaLabel="Recruiter" placeholder="Recruiter" emptyLabel="All recruiters" style={{ minWidth: 160 }}
+          options={pairOpts(recruiterOptions)} onChange={(v) => setPf((f) => ({ ...f, recruiter: v }))} />
         <select value={pf.sort} onChange={(e) => setPf((f) => ({ ...f, sort: e.target.value }))}>
           <option value="last">Sort: Last updated</option><option value="name">Name</option><option value="match">Match score</option></select>
         <div className="spacer" />
         <CountPill n={apps ? visibleApps.length : null} total={apps ? apps.length : null} noun="candidate" />
+        {canRecommend && <button className={'btn btn-sm' + (canLink ? ' btn-secondary' : '')} onClick={() => setRecommendOpen(true)} title="Add a candidate you recommend, with their CV, straight into Shortlisted">Recommend a candidate</button>}
         {canImport && <button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button>}
         {canLink && <button className="btn btn-sm" onClick={() => setLinkOpen(true)}>{btns.link_candidate.label === 'Link to Request' ? 'Add Candidate' : btns.link_candidate.label}</button>}
       </div>
@@ -6792,8 +7157,11 @@ function RequestPipeline({ request, user, btns }) {
         message={`${bulkConfirm.sum.chosen.length} candidates are selected and ${bulkConfirm.sum.hidden.length} of them are hidden by the current filters. ${bulkConfirm.sum.eligible.length} eligible will move to ${APP_STATUS[bulkConfirm.sum.target].label}; the rest stay where they are.`}
         onConfirm={() => { const c = bulkConfirm; setBulkConfirm(null); c.go(); }} onClose={() => setBulkConfirm(null)} />}
 
-      {apps.length === 0 ? <div className="card"><Empty art="none-yet" text="No candidates linked yet. Use 'Add Candidate' to add candidates." />
-          {canImport && <div style={{ textAlign: 'center', paddingBottom: 18 }}><button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button></div>}</div>
+      {apps.length === 0 ? <div className="card"><Empty art="none-yet" text={canLink ? "No candidates linked yet. Use 'Add Candidate' to add candidates." : canRecommend ? 'No shortlisted candidates yet. You can recommend one with their CV.' : 'No shortlisted candidates yet.'} />
+          {(canImport || canRecommend) && <div style={{ textAlign: 'center', paddingBottom: 18, display: 'flex', gap: 8, justifyContent: 'center' }}>
+            {canRecommend && <button className="btn btn-sm" onClick={() => setRecommendOpen(true)}>Recommend a candidate</button>}
+            {canImport && <button className="btn btn-secondary btn-sm" onClick={() => setImportOpen(true)}>Import CVs</button>}
+          </div>}</div>
         : visibleApps.length === 0 ? <div className="card"><Empty art="no-match" text="No candidates match the current filters." /></div>
         : view === 'kanban' ? (
           <div className="kanban">
@@ -6812,7 +7180,7 @@ function RequestPipeline({ request, user, btns }) {
                   <div className="kan-body">
                     {items.length === 0
                       ? <div className="kan-empty">No candidates at this stage</div>
-                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
+                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onDecide={(s) => decide(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
                   </div>
                 </PipelineColumn>
               );
@@ -6820,11 +7188,11 @@ function RequestPipeline({ request, user, btns }) {
           </div>
         ) : view === 'list' ? (
           <div className="pipe-list">
-            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} btns={btns} />)}
+            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onDecide={(s) => decide(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
           </div>
         ) : (
           <div className="card" style={{ overflowX: 'auto' }}><table>
-            <thead><tr>{canBulk && <th></th>}<th>Candidate</th><th>Employer / Project</th><th>Exp</th><th>Education</th><th>Match</th><th>Stage</th><th>Recruiter</th><th>Next Action</th><th>Last Update</th><th></th></tr></thead>
+            <thead><tr>{canBulk && <th><span className="sr-only">Select</span></th>}<th>Candidate</th><th>Employer / Project</th><th>Exp</th><th>Education</th><th>Match</th><th>Stage</th><th>Recruiter</th><th>Next Action</th><th>Last Update</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{visibleApps.map((a) => (
               <tr key={a.id} className={pending.has(a.id) ? 'row-pending' : ''} aria-busy={pending.has(a.id)}>
                 {canBulk && <td><input type="checkbox" checked={selected.has(a.id)} disabled={pending.has(a.id)} onChange={() => toggleSel(a.id)} /></td>}
@@ -6840,6 +7208,7 @@ function RequestPipeline({ request, user, btns }) {
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {canMove && !TERMINAL_APP.includes(a.status) && <StageSelect value={a.status} disabled={pending.has(a.id)} onChange={(s) => requestMove(a.id, s)} />}
                   {canMove && <button className="btn btn-ghost btn-sm" disabled={pending.has(a.id)} title="Set next action" aria-label="Set next action" onClick={() => setNoteApp(a)}>Note</button>}
+                  {decisionButtons({ app: a, pending: pending.has(a.id), onDecide: (s) => decide(a.id, s), compact: true })}
                 </td>
               </tr>
             ))}</tbody>
@@ -6850,18 +7219,26 @@ function RequestPipeline({ request, user, btns }) {
       {noteApp && <NextActionModal app={noteApp} onClose={() => setNoteApp(null)} onSaved={() => { setNoteApp(null); load(); }} />}
       {moveModal && <Confirm title="Provide a reason" message={`Set status to "${APP_STATUS[moveModal.toStatus].label}". This is recorded in the audit trail.`} requireReason danger
         onConfirm={(reason) => { const m = moveModal; setMoveModal(null); m.bulk ? bulkMove(m.toStatus, reason) : move(m.appIds[0], m.toStatus, reason); }} onClose={() => setMoveModal(null)} />}
+      {unlinkModal}
       {linkOpen && <LinkCandidateModal requestId={request.id} user={user} onClose={() => setLinkOpen(false)} onLinked={() => { setLinkOpen(false); load(); }} />}
       {importOpen && <ImportCvsModal request={request} onClose={() => setImportOpen(false)} onDone={load} />}
+      {recommendOpen && <RecommendCandidateModal request={request} onClose={() => setRecommendOpen(false)} onDone={() => { setRecommendOpen(false); load(); }} />}
       {scheduleApp && <ScheduleInterviewModal application={scheduleApp} onClose={() => setScheduleApp(null)} onScheduled={() => { setScheduleApp(null); load(); }} />}
       {offerApp && <CreateOfferModal application={offerApp} onClose={() => setOfferApp(null)} onCreated={() => { setOfferApp(null); load(); }} />}
     </div>
   );
 }
 
+// Shows the candidate's real stage and offers only the moves the server accepts
+// (it used to show "Sourced" for a Shortlisted candidate and offer every stage,
+// silently ignoring the ones that were not allowed).
 function StageSelect({ value, onChange, disabled }) {
-  return <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
+  const current = pipelineStage(value);
+  const options = [current, ...APP_ORDER.filter((s) => s !== current && canPipelineMove(value, s))];
+  return <select value={current} disabled={disabled || options.length < 2} aria-label="Move to stage"
+    onChange={(e) => { if (e.target.value !== current) onChange(e.target.value); }}
     style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}>
-    {APP_ORDER.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select>;
+    {options.map((s) => <option key={s} value={s}>{(APP_STATUS[s] || {}).label || s}</option>)}</select>;
 }
 
 function NextActionModal({ app, onClose, onSaved }) {
@@ -6894,7 +7271,46 @@ function cvReviewOpener(user, app) {
   if (!id || !can(user, 'candidate.view')) return null;
   return () => openCvReview(id, app.candidate || null);
 }
-function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, onReviewCv, btns = {}, showRequest }) {
+// Unlink = undo a link (owner request 2026-10-15). Recruitment only; the server
+// refuses once interviews/offers exist and says to use Disqualify instead.
+function useUnlinkFlow(user, reload) {
+  const toast = useToast();
+  const [target, setTarget] = useState(null);
+  const allowed = hasFullPipelineAccess(user) && can(user, 'candidate.link');
+  const ask = allowed ? (app) => setTarget(app) : null;
+  const modal = target && <Confirm title="Unlink from request"
+    message={`Remove ${target.candidate?.fullName || 'this candidate'} from ${shortReqCode(target.request?.ticketNo || target.ticketNo) || 'this request'}? They go back to the Talent Pool. No rejection is recorded and nothing is sent to the candidate.`}
+    confirmLabel="Unlink"
+    onConfirm={async (reason) => {
+      const a = target; setTarget(null);
+      try { await api.post(`/applications/${a.id}/unlink`, { reason }); toast('Unlinked — the candidate is back in the Talent Pool.'); await reload(); }
+      catch (e) { toast(moveErrorText(e), 'error'); }
+    }}
+    onClose={() => setTarget(null)} />;
+  return [ask, modal];
+}
+// The three decisions a hiring manager or panel interviewer takes on a
+// Shortlisted candidate (recruitment team, 25 Oct 2026). The server names them
+// per reader in `app.decisions`; a reader with the whole board gets none.
+const DECISION_BUTTONS = [
+  ['interviewing', 'Move to Interview', 'btn btn-sm', 'interview_hr'],
+  ['on_hold', 'On Hold', 'btn btn-secondary btn-sm', 'on_hold'],
+  ['rejected', 'Disqualify', 'btn btn-ghost btn-sm btn-danger-text', 'rejected'],
+];
+// A plain render helper (not a component) so the buttons sit in the card's own
+// element tree — the board's tests and the drag handler both read that tree.
+function decisionButtons({ app, pending, onDecide, compact }) {
+  const allowed = Array.isArray(app.decisions) ? app.decisions : [];
+  if (!allowed.length || !onDecide) return null;
+  return (
+    <div className={'pcard-decide' + (compact ? ' compact' : '')} role="group" aria-label={`Your decision on ${app.candidate?.fullName || 'this candidate'}`} onClick={(e) => e.stopPropagation()}>
+      {DECISION_BUTTONS.filter(([api]) => allowed.includes(api)).map(([api, label, cls, boardKey]) => (
+        <button key={api} type="button" className={cls} disabled={pending} onClick={() => onDecide(boardKey)}>{label}</button>
+      ))}
+    </div>
+  );
+}
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onDecide, onSchedule, onOffer, onNote, onReviewCv, onUnlink, btns = {}, showRequest }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null), triggerRef = useRef(null);
@@ -6905,11 +7321,44 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
   useEffect(() => { if (pending) setMenu(false); }, [pending]);
   useEffect(() => {
     if (!menu) return;
-    menuRef.current?.querySelector('button')?.focus();
     const close = e => { if (!menuRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target)) setMenu(false); };
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [menu]);
+  // The menu renders at page level (portal) so the scrolling board can never
+  // crop it (owner report 2026-10-15: Disqualify was cut off). It opens below
+  // the trigger, flips above when there is more room there, stays clear of the
+  // phone tab bar, and scrolls inside itself if it is still taller than the space.
+  const [menuPos, setMenuPos] = useState(null);
+  useEffect(() => {
+    if (!menu) { setMenuPos(null); return; }
+    const place = () => {
+      const t = triggerRef.current; if (!t) return;
+      const r = t.getBoundingClientRect();
+      const vh = window.innerHeight, vw = window.innerWidth, w = Math.min(220, vw - 16);
+      const bar = document.querySelector('.mtab')?.parentElement?.getBoundingClientRect();
+      const floor = bar && bar.top > vh / 2 ? bar.top - 8 : vh - 8;
+      const h = menuRef.current ? menuRef.current.scrollHeight : 0;
+      const below = floor - r.bottom - 6, above = r.top - 8 - 6;
+      let top, maxHeight;
+      if (h <= below) { top = r.bottom + 6; maxHeight = below; }            // fits below the trigger
+      else if (h <= above) { top = r.top - 6 - h; maxHeight = above; }      // fits above it
+      else {                                                                 // fits neither (phone): use the full height
+        maxHeight = floor - 16; top = Math.max(8, floor - 8 - Math.min(h, maxHeight));
+      }
+      setMenuPos({ left: Math.min(Math.max(8, r.right - w), vw - w - 8), top, width: w, maxHeight: Math.max(120, maxHeight) });
+    };
+    place();
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(place) : null;
+    window.addEventListener('resize', place); window.addEventListener('scroll', place, true);
+    return () => { if (raf != null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(raf); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [menu]);
+  // Focus moves into the menu once it is placed (it is invisible until then,
+  // and an invisible element cannot take focus — Escape would not reach it).
+  useEffect(() => {
+    if (menu && menuPos && menuRef.current && !menuRef.current.contains(document.activeElement)) menuRef.current.querySelector('button')?.focus();
+  }, [menu, menuPos]);
+  const unlinkable = !!onUnlink && ['sourced', 'shortlisted', 'matched', 'unmatched', 'on_hold'].includes(app.status);
   function action(run) { setMenu(false); triggerRef.current?.focus(); run(); }
   function menuKeys(e) {
     const items = [...menuRef.current.querySelectorAll('button')];
@@ -6932,8 +7381,10 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
         <span className="pcard-role" title={[cand.currentPosition, cand.currentCompany].filter(Boolean).join(' · ')}>{[cand.currentPosition, cand.currentCompany].filter(Boolean).join(' · ') || '—'}</span>
       </div>
       <div className="pcard-actions">
-        <button ref={triggerRef} className="icon-btn pcard-menu-trigger" disabled={pending} aria-label={`Actions for ${cand.fullName || 'candidate'}`} aria-expanded={menu} aria-controls={menuId} aria-haspopup="menu" onClick={() => setMenu(v => !v)}><Icon name="more" size={18} /></button>
-        {menu && <div ref={menuRef} id={menuId} className="menu pipeline-menu" role="menu" onKeyDown={menuKeys}
+        <button ref={triggerRef} className="icon-btn pcard-menu-trigger" disabled={pending} aria-label={`Actions for ${cand.fullName || 'candidate'}`} aria-expanded={menu} aria-controls={menuId} aria-haspopup="menu" onClick={() => setMenu(v => !v)} onKeyDown={e => { if (e.key === 'Escape' && menu) { e.preventDefault(); e.stopPropagation(); setMenu(false); } }}><Icon name="more" size={18} /></button>
+        {menu && toPageLevel(<div ref={menuRef} id={menuId} className="menu pipeline-menu pipeline-menu-floating" role="menu" onKeyDown={menuKeys}
+          style={menuPos ? { position: 'fixed', left: menuPos.left, top: menuPos.top, width: menuPos.width, maxHeight: menuPos.maxHeight, right: 'auto', marginTop: 0 } : { position: 'fixed', visibility: 'hidden', top: 0, left: 0 }}
+          onClick={e => e.stopPropagation()}
           onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget) && e.relatedTarget !== triggerRef.current) setMenu(false); }}>
           <button className="menu-item" role="menuitem" onClick={() => action(onView)}>View candidate</button>
           {onReviewCv && <button className="menu-item" role="menuitem" onClick={() => action(onReviewCv)}>Review CV</button>}
@@ -6942,13 +7393,16 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
           {movable && <button className="menu-item" role="menuitem" onClick={() => action(() => onMove('on_hold'))}>Put On Hold</button>}
           {movable && onSchedule && btns.schedule_interview?.visible && <button className="menu-item" role="menuitem" onClick={() => action(onSchedule)}>Schedule Interview</button>}
           {movable && onOffer && btns.generate_offer?.visible && <button className="menu-item" role="menuitem" onClick={() => action(onOffer)}>Generate Offer</button>}
+          {unlinkable && <button className="menu-item" role="menuitem" onClick={() => action(onUnlink)}>Unlink from request</button>}
           {movable && <button className="menu-item menu-danger" role="menuitem" onClick={() => action(() => onMove('rejected'))}>Disqualify</button>}
-        </div>}
+        </div>)}
       </div>
     </div>
     {showRequest && (app.request?.ticketNo || app.ticketNo) && <span className="pcard-request" title={app.request?.ticketNo || app.ticketNo}>{shortReqCode(app.request?.ticketNo || app.ticketNo)}</span>}
     {wide && <span className="pcard-status"><AppStatusBadge status={app.status} /></span>}
     {residual && <span className="pcard-residual" title={`Underlying status: ${app.status}`}>{residual}</span>}
+    {app.recommendation && <span className="pcard-recommended" title={`Recommended by ${app.recommendation.byName || 'a stakeholder'}`}><Badge variant="success">Recommended{app.recommendation.byName ? ` by ${app.recommendation.byName}` : ''}</Badge></span>}
+    {decisionButtons({ app, pending, onDecide })}
     <div className="pcard-footer"><span className="pcard-facts">{[cand.yearsExperience != null ? `${cand.yearsExperience}y exp` : null, cand.location, cand.noticePeriod].filter(Boolean).join(' · ') || 'Details not supplied'}</span>
       {app.matchScore != null && <span className="pcard-match" title="Match score">{app.matchScore}%</span>}
     </div>
@@ -6989,6 +7443,7 @@ function TalentPipeline({
   const [total, setTotal] = useState(0);
   const [capped, setCapped] = useState(false);
   const canMove = btns.move_stage?.visible;
+  const [askUnlink, unlinkModal] = useUnlinkFlow(user, () => load());
   const load = useCallback(async () => {
     setApps(null); setLoadError(null);
     try {
@@ -7015,9 +7470,23 @@ function TalentPipeline({
       list: apps, setList: setApps, pending, setPending, toast,
     });
   }
+  // A hiring manager's / interviewer's decision on a Shortlisted candidate:
+  // the server listed what this reader may do in `app.decisions`, so no
+  // move_stage button is needed; reasons are still collected the same way.
+  function decide(appId, status) {
+    const app = (apps || []).find(a => a.id === appId);
+    if (!app || pending.has(appId) || !(app.decisions || []).includes(toApiStatus(status))) return;
+    if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
+    else move(appId, status);
+  }
   function requestMove(appId, status) {
     const app = (apps || []).find(a => a.id === appId);
-    if (!canMove || pending.has(appId) || !app || !canPipelineMove(app.status, status)) return;
+    if (!canMove || pending.has(appId) || !app) return;
+    if (!canPipelineMove(app.status, status)) {   // say why instead of silently snapping back
+      const from = (APP_STATUS[pipelineStage(app.status)] || {}).label || app.status, to = (APP_STATUS[status] || {}).label || status;
+      toast(`${from} → ${to} is not an allowed move.${pipelineStage(app.status) === 'sourced' ? ' Shortlist the candidate first.' : ''}`, 'error');
+      return;
+    }
     if (REASON_STATUSES.includes(status)) setMoveModal({ appId, toStatus: status });
     else move(appId, status);
   }
@@ -7046,24 +7515,18 @@ function TalentPipeline({
     <div>
       <div className="toolbar">
         <input placeholder="Search name / request…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 200 }} />
-        <select value={pipeFilters.stage} onChange={(e) => setPipeFilters((f) => ({ ...f, stage: e.target.value }))}>
-          <option value="">All stages</option>
-          {cols.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}
-        </select>
-        <select value={pipeFilters.recruiterId} onChange={(e) => setPipeFilters((f) => ({ ...f, recruiterId: e.target.value }))}>
-          <option value="">All recruiters</option>
-          {recruiterOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
-        <select value={pipeFilters.requestId} onChange={(e) => setPipeFilters((f) => ({ ...f, requestId: e.target.value }))}>
-          <option value="">All requests</option>
-          {(linkRequests || []).filter(isLinkable).map((r) => (
-            <option key={r.id} value={r.id}>{shortReqCode(r.ticketNo)} · {r.title}</option>
-          ))}
-        </select>
-        <select value={pipeFilters.projectId} onChange={(e) => setPipeFilters((f) => ({ ...f, projectId: e.target.value }))}>
-          <option value="">All projects</option>
-          {projectOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
+        <SearchSelect value={pipeFilters.stage} ariaLabel="Stage" placeholder="Stage" emptyLabel="All stages"
+          options={cols.map((s) => ({ value: s, label: APP_STATUS[s].label }))}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, stage: v }))} />
+        <SearchSelect value={pipeFilters.recruiterId} ariaLabel="Recruiter" placeholder="Recruiter" emptyLabel="All recruiters"
+          options={pairOpts(recruiterOptions)}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, recruiterId: v }))} />
+        <SearchSelect value={pipeFilters.requestId} ariaLabel="Request" placeholder="Request" emptyLabel="All requests"
+          options={(linkRequests || []).filter(isLinkable).map((r) => ({ value: String(r.id), label: `${shortReqCode(r.ticketNo)} · ${r.title}` }))}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, requestId: v }))} />
+        <SearchSelect value={pipeFilters.projectId} ariaLabel="Project" placeholder="Project" emptyLabel="All projects"
+          options={pairOpts(projectOptions)}
+          onChange={(v) => setPipeFilters((f) => ({ ...f, projectId: v }))} />
         <div className="spacer" />
         <CountPill n={apps.length} total={total || null} noun="application" />
       </div>
@@ -7094,7 +7557,7 @@ function TalentPipeline({
                   <div className="pcard-top">
                     <span className="pcard-av">{initials(c.fullName)}</span>
                     <div className="pcard-id">
-                      <span className="pcard-name">{c.fullName}</span>
+                      <span className="pcard-name" title={c.fullName}>{shortName(c.fullName)}</span>
                       <span className="pcard-role">{c.currentPosition || '—'}</span>
                     </div>
                   </div>
@@ -7120,8 +7583,9 @@ function TalentPipeline({
                       canMove={canMove} canBulk={false} selected={false}
                       onSelect={() => {}}
                       onView={() => onOpenCandidate(a.candidate?.id || a.candidateId)}
-                      onMove={(s) => requestMove(a.id, s)}
+                      onMove={(s) => requestMove(a.id, s)} onDecide={(s) => decide(a.id, s)}
                       onReviewCv={cvReviewOpener(user, a)}
+                      onUnlink={askUnlink ? () => askUnlink(a) : null}
                       btns={btns} />
                   ))}
               </div>
@@ -7132,6 +7596,7 @@ function TalentPipeline({
       {moveModal && <Confirm title="Provide a reason" message={`Set status to "${APP_STATUS[moveModal.toStatus].label}". This is recorded in the audit trail.`} requireReason danger
         onConfirm={(reason) => { const m = moveModal; setMoveModal(null); move(m.appId, m.toStatus, reason); }}
         onClose={() => setMoveModal(null)} />}
+      {unlinkModal}
     </div>
   );
 }
@@ -7875,10 +8340,8 @@ function FinalDecisionBox({ bundle, meta, canFeedback, appId, onSaved, onDirtyCh
 
 // Opens the assessment from an interview the user is assigned to — the
 // Technical Interviewer's way in, without access to the hiring request.
-// Assessment drawers render at page level so no page container's stacking
-// context can put them under the phone top bar (AR-05).
-const toPageLevel = (node) => (typeof ReactDOM !== 'undefined' && ReactDOM.createPortal && typeof document !== 'undefined' && document.body
-  ? ReactDOM.createPortal(node, document.body) : node);
+// Assessment drawers render through toPageLevel (the shared overlay host) so
+// no page container's stacking context can put them under the phone top bar (AR-05).
 function InterviewAssessmentDrawer({ applicationId, title, user, onClose }) {
   const titleId = useId();
   const assessDirty = useRef(false);
@@ -8088,6 +8551,58 @@ const UPLOAD_ACCEPT = '.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg';
 const UPLOAD_HINT = `Max ${UPLOAD_MAX_MB} MB per file · PDF, DOC, DOCX, TXT, PNG, JPG`;
 const IMPORT_CONCURRENCY = 5;
 
+/* Recommend a candidate (recruitment team, 25 Oct 2026): a hiring manager or
+   technical interviewer hands recruitment a CV of someone they recommend. One
+   short form and one file; the candidate lands in Shortlisted — the first stage
+   they can see — marked "Recommended by …", and recruitment is notified. */
+function RecommendCandidateModal({ request, onClose, onDone }) {
+  const toast = useToast();
+  const [f, setF] = useState({ fullName: '', email: '', phone: '', currentPosition: '', employer: '', yearsExperience: '', note: '' });
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const tooBig = file && file.size > UPLOAD_MAX_MB * 1024 * 1024;
+  const ready = f.fullName.trim() && file && !tooBig && !busy;
+  async function submit() {
+    if (!f.fullName.trim()) { setProblem('Type the candidate’s name.'); return; }
+    if (!file) { setProblem('Attach the CV (PDF or Word).'); return; }
+    if (tooBig) { setProblem(`The CV is larger than ${UPLOAD_MAX_MB} MB.`); return; }
+    setBusy(true); setProblem('');
+    try {
+      const r = await api.uploadTo('/applications/recommend', file, { requestId: request.id, ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, String(v || '').trim()])) });
+      toast(r.reusedCandidate
+        ? `${f.fullName.trim()} was already in the Talent Pool — added to Shortlisted as your recommendation.`
+        : `${f.fullName.trim()} added to Shortlisted as your recommendation. Recruitment has been notified.`);
+      onDone();
+    } catch (e) {
+      setProblem(e.message || 'Could not add the candidate.');
+    } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={`Recommend a candidate — ${shortReqCode(request.ticketNo)}`} onClose={onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancel</button><button className="btn" onClick={submit} disabled={!ready}>{busy ? 'Adding…' : 'Add to Shortlisted'}</button></>}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Attach the CV and the name; the rest is optional. The candidate goes straight into <strong>Shortlisted</strong> for {request.title}, marked as your recommendation, and the recruitment team is notified to take it from there.
+      </p>
+      <div className="form-grid">
+        <div className="field full"><label>Candidate name *</label><input value={f.fullName} onChange={(e) => set('fullName', e.target.value)} placeholder="e.g. Ahmed Mostafa" autoFocus /></div>
+        <div className="field"><label>Email</label><input type="email" value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="name@example.com" /></div>
+        <div className="field"><label>Phone</label><input value={f.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+20 1x xxx xxxx" /></div>
+        <div className="field"><label>Current position</label><input value={f.currentPosition} onChange={(e) => set('currentPosition', e.target.value)} placeholder="e.g. Senior Site Engineer" /></div>
+        <div className="field"><label>Current employer</label><input value={f.employer} onChange={(e) => set('employer', e.target.value)} placeholder="Company" /></div>
+        <div className="field"><label>Years of experience</label><input type="number" min="0" max="60" value={f.yearsExperience} onChange={(e) => set('yearsExperience', e.target.value)} /></div>
+        <div className="field full"><label>CV (PDF or Word) *</label>
+          <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => { setFile(e.target.files?.[0] || null); setProblem(''); }} />
+          {file && <div className="muted" style={{ marginTop: 4 }}>{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB{tooBig ? ` — larger than ${UPLOAD_MAX_MB} MB` : ''}</div>}
+        </div>
+        <div className="field full"><label>Why you recommend them <span className="muted">(optional)</span></label><textarea rows="2" value={f.note} onChange={(e) => set('note', e.target.value)} placeholder="e.g. worked with me on Soul, strong on finishing works and site coordination." /></div>
+      </div>
+      {problem && <div className="form-error" role="alert" style={{ marginTop: 8 }}>{problem}</div>}
+    </Modal>
+  );
+}
+
 function ImportCvsModal({ request, onClose, onDone }) {
   // `request` is optional. From the Talent Pool there is no requisition to
   // record the CV against, and /parse-cv accepts that — requestId only notes
@@ -8247,7 +8762,7 @@ function LinkCandidateModal({ requestId, user, onClose, onLinked }) {
         </div>
       )}
       <div className="form-grid" style={{ marginTop: 12 }}>
-        <div className="field"><label>Initial Status</label><select value={sel.initialStatus} onChange={(e) => setSel((s) => ({ ...s, initialStatus: e.target.value }))}>{APP_ORDER.slice(0, 10).map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select></div>
+        <div className="field"><label>Initial Status</label><select value={sel.initialStatus} onChange={(e) => setSel((s) => ({ ...s, initialStatus: e.target.value }))}>{LINK_ENTRY_STAGES.map((s) => <option key={s} value={s}>{APP_STATUS[s].label}</option>)}</select></div>
         <div className="field"><label>Match Score (0–100)</label><input type="number" min="0" max="100" value={sel.matchScore} onChange={(e) => setSel((s) => ({ ...s, matchScore: e.target.value }))} /></div>
         <div className="field"><label>Source</label><input value={sel.source} onChange={(e) => setSel((s) => ({ ...s, source: e.target.value }))} placeholder="referral, agency…" /></div>
       </div>
@@ -8422,10 +8937,18 @@ function RequestPickList({ candidate, requests, q, setQ, picked, setPicked }) {
 // `rejected` (reason-required, terminal) is what frees the 409.
 async function relinkToRequest(candidateId, fromLink, dest) {
   if (fromLink && fromLink.applicationId) {
-    await api.post(`/applications/${fromLink.applicationId}/move`, {
-      status: 'rejected',
-      reason: `Moved to ${dest.ticketNo} (${dest.title})`,
-    });
+    // Prefer Unlink: moving someone between requests is not a rejection and must
+    // never email the candidate one. Once interviews/offers exist the old record
+    // is kept, closed as Rejected with the move as its reason.
+    try {
+      await api.post(`/applications/${fromLink.applicationId}/unlink`, { reason: `Moved to ${dest.ticketNo} (${dest.title})` });
+    } catch (e) {
+      if (!/Disqualify|interview|offer|unlink/i.test(String(e && e.message))) throw e;
+      await api.post(`/applications/${fromLink.applicationId}/move`, {
+        status: 'rejected',
+        reason: `Moved to ${dest.ticketNo} (${dest.title})`,
+      });
+    }
   }
   return api.post('/applications', { candidateId, requestId: dest.id });
 }
@@ -8765,15 +9288,30 @@ const POOL_STATUS = {
   new: 'New', considered: 'Previously Considered', shortlisted: 'Previously Shortlisted',
   blacklisted: 'Blacklisted', unknown: 'Unknown',
 };
+const poolKey = (status) => (Object.hasOwn(POOL_STATUS, status) ? status : 'unknown');
+// List display rule: first two words of the name, capped in length, so a
+// five-part name never breaks the layout. Full name stays in the tooltip, for
+// screen readers, and on the profile itself.
+const NAME_MAX = 22;
+function shortName(full) {
+  const two = String(full || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+  if (!two) return '—';
+  return two.length > NAME_MAX ? two.slice(0, NAME_MAX - 1).trimEnd() + '…' : two;
+}
+// The candidate's name carries the status as its tint (rendered inline in the
+// Talent Pool table). Colour is never the only signal: hover shows it, and the
+// full name plus status are read by screen readers.
+// Legend swatches are drawn exactly like the names they explain.
 function PoolStatusBadge({ status }) {
-  const key = Object.hasOwn(POOL_STATUS, status) ? status : 'unknown';
-  return <span className={'pool-status pool-status-' + key}>{POOL_STATUS[key]}</span>;
+  const key = poolKey(status);
+  return <span className={'pool-name pool-name-' + key}><span className="pool-name-text">{POOL_STATUS[key]}</span></span>;
 }
 function PoolStatusGuide() {
   const badges = Object.keys(POOL_STATUS).map((key) => <PoolStatusBadge key={key} status={key} />);
   return <div className="pool-status-guide">
+    <span className="pool-status-caption pool-status-desktop-caption">Name colour</span>
     <div className="pool-status-desktop" aria-label="Candidate status legend">{badges}</div>
-    <details className="pool-status-mobile"><summary>Status Guide</summary><div>{badges}</div></details>
+    <details className="pool-status-mobile"><summary>Name colour</summary><div>{badges}</div></details>
   </div>;
 }
 
@@ -9246,18 +9784,14 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
         {/* Data quality. Nothing is selected by default, so the Talent Pool
             shows every candidate — flagged people are members of the pool, not
             a queue parked outside it. */}
-        <select value={filters.qualityFlag || ''} title="Data quality"
-          onChange={(e) => setFilters((f) => ({ ...f, qualityFlag: e.target.value }))}>
-          <option value="">All candidates</option>
-          {QUALITY_FLAGS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-        </select>
-        <select value={filters.departmentId || ''} aria-label="Department"
-          title="Department of a linked hiring request; unlinked candidates remain in All departments"
-          disabled={departmentError}
-          onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value, disciplineClass: '' }))}>
-          <option value="">{departmentError ? 'Departments unavailable' : 'All departments'}</option>
-          {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
+        <SearchSelect value={filters.qualityFlag || ''} ariaLabel="Data quality" title="Data quality" emptyLabel="All candidates" placeholder="Data quality"
+          options={pairOpts(QUALITY_FLAGS)}
+          onChange={(v) => setFilters((f) => ({ ...f, qualityFlag: v }))} />
+        <SearchSelect value={filters.departmentId || ''} ariaLabel="Department" placeholder={departmentError ? 'Departments unavailable' : 'Department'}
+          title="Candidates linked to a hiring request in this department, or whose current position is one of its designations"
+          disabled={departmentError} emptyLabel="All departments"
+          options={optsOf(departments)}
+          onChange={(v) => setFilters((f) => ({ ...f, departmentId: v, disciplineClass: '' }))} />
         </FilterToolbar>
       )}
 
@@ -9362,10 +9896,18 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     <input type="checkbox" aria-label={`Select ${c.fullName}`}
                       checked={selected.has(c.id)} onChange={() => toggleSel(c.id)} />
                   </label>
-                  <div><span className="cell-strong">{c.fullName}</span>
-                    <PoolStatusBadge status={c.poolStatus} />
-                    <span className="cell-sub">{c.candidateNo}</span>
-                    {c.tags?.length ? <div className="idcell-tags">{c.tags.slice(0, 3).map((t) => <span key={t} className="chip" title={t}>{t}</span>)}</div> : null}
+                  {/* The name IS the status: one tinted pill, explained once by the
+                      legend above. Two fixed lines (name, id) keep every row level. */}
+                  <div className="pool-id">
+                    <span className={'pool-name pool-name-' + poolKey(c.poolStatus)} title={`${c.fullName} — ${POOL_STATUS[poolKey(c.poolStatus)]}`}>
+                      <span className="pool-name-text" aria-hidden="true">{shortName(c.fullName)}</span>
+                      <span className="sr-only"><span>{c.fullName}</span>, {POOL_STATUS[poolKey(c.poolStatus)]}</span>
+                    </span>
+                    <span className="cell-sub" title={[c.candidateNo, ...(c.tags || [])].join(' · ')}>
+                      {[c.candidateNo, ...(c.tags || []).slice(0, 2)].join(' · ')}
+                    </span>
+                  </div>
+                  <div className="pool-id-actions">
                     {c.hasResume && <div className="pool-cv-actions" onClick={(e) => e.stopPropagation()}>
                       <button className="icon-btn" aria-label={`Review CV for ${c.fullName}`}
                         onClick={() => openCvReview(c.id, c)}><Icon name="eye" size={16} /></button>
@@ -9374,22 +9916,27 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     </div>}
                   </div>
                 </div></td>
-                <td data-label="Position">{c.currentPosition || '—'}</td>
-                <td data-label="University">{c.university || '—'}</td>
+                <td data-label="Position" title={c.currentPosition || ''}>{c.currentPosition || '—'}</td>
+                <td data-label="University" title={c.university || ''}>{c.university || '—'}</td>
                 <td data-label="Year">{c.graduationYear ?? '—'}</td>
-                <td data-label="Location">{c.location || '—'}</td>
+                <td data-label="Location" title={c.location || ''}>{c.location || '—'}</td>
                 <td data-label="Apply Date" title={c.applyDateSource === 'application_email' ? 'Original application email received' : 'Candidate creation date'}>
                   <DateCell value={c.applyDate} dateOnly />
                 </td>
                 <td data-label="Ranking (10)"><span className="muted">Not scored</span></td>
                 <td data-label="Request" onClick={(e) => e.stopPropagation()}>
-                  {(c.links || []).filter((l) => l.requestId && l.requestTitle).length
-                    ? c.links.filter((l) => l.requestId && l.requestTitle).map((l) =>
-                      <button key={l.applicationId} className="pool-request-link"
-                        onClick={() => openRequest(l.requestId, onNavigate)}>
-                        <span>{shortReqCode(l.ticketNo)}</span><span>{l.requestTitle}</span>
-                      </button>)
-                    : <span className="muted">—</span>}
+                  {(() => {
+                    // One request per row (two fixed lines); any further links are counted, not stacked.
+                    const reqLinks = (c.links || []).filter((l) => l.requestId && l.requestTitle);
+                    if (!reqLinks.length) return <span className="muted">—</span>;
+                    const [l, ...more] = reqLinks;
+                    const all = reqLinks.map((x) => `${shortReqCode(x.ticketNo)} — ${x.requestTitle}`).join('\n');
+                    return <button className="pool-request-link" title={all}
+                      onClick={() => openRequest(l.requestId, onNavigate)}>
+                      <span className="pool-req-code">{shortReqCode(l.ticketNo)}{more.length ? ` +${more.length}` : ''}</span>
+                      <span className="pool-req-title">{l.requestTitle}</span>
+                    </button>;
+                  })()}
                 </td>
               </tr>
             ))}</tbody>
@@ -9415,8 +9962,8 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
               <div className="cc-face">
                 <div className="cc-avatar">{initials(c.fullName)}</div>
                 <div className="cc-id">
-                  <div className="cc-name">
-                    {c.fullName}
+                  <div className="cc-name" title={c.fullName}>
+                    {shortName(c.fullName)}
                     <HistoryBadge history={c.history} onOpen={() => openProfile(c.id, { tab: 'activity', focusPrior: true })} />
                   </div>
                   <div className="cc-headline">{c.currentPosition || '—'}</div>
@@ -9441,7 +9988,7 @@ function CandidatesPage({ user, onNavigate, initialFilters }) {
                     grid keeps the dashes, which hold card heights level. */}
                 <div className={'cc-uni' + (!c.university && !c.major ? ' is-empty' : '')}>
                   <div className="cc-uni-name" title={c.university || ''}>{c.university || '—'}</div>
-                  <div className="cc-uni-major" title={c.major || ''}>{c.major || '—'}</div>
+                  <div className={'cc-uni-major' + (!c.major ? ' is-empty' : '')} title={c.major || ''}>{c.major || '—'}</div>
                 </div>
               </div>
               <div className="cc-foot">
@@ -9763,6 +10310,110 @@ function CvFileLink({ name, onOpen, fallback = 'Attached résumé' }) {
   return <button type="button" className="cv-file-link" onClick={onOpen} title="Open the CV in the side panel">{name || fallback}</button>;
 }
 
+/* The CV in a page of its own (recruitment team, 25 Oct 2026): a new browser
+   tab showing only the document, full height, through the same authenticated
+   fetch the side panel uses — nothing is downloaded, nothing leaves the app.
+   `#cv/<candidateId>` / `#cv/<candidateId>/doc/<docId>` for a candidate's CV
+   (current or a stored version); `#document?path=…&name=…` for a file posted
+   in a request thread. */
+function cvFullPageHash(candidateId, doc) {
+  if (!candidateId) return '';
+  return '#cv/' + Number(candidateId) + (doc && doc.id ? '/doc/' + Number(doc.id) : '');
+}
+function documentFullPageHash(path, fileName, title) {
+  if (!path) return '';
+  const q = new URLSearchParams({ path });
+  if (fileName) q.set('name', fileName);
+  if (title) q.set('title', title);
+  return '#document?' + q.toString();
+}
+function parseFullPageHash(hash) {
+  const raw = String(hash || '').replace(/^#/, '');
+  let m = raw.match(/^cv\/(\d+)(?:\/doc\/(\d+))?$/);
+  if (m) return { kind: 'cv', candidateId: Number(m[1]), docId: m[2] ? Number(m[2]) : null };
+  if (raw.startsWith('document?')) {
+    const q = new URLSearchParams(raw.slice('document?'.length));
+    const path = q.get('path') || '';
+    // Only this app's own API paths, never an absolute or protocol-relative URL.
+    if (!/^\/[a-z]/i.test(path) || path.startsWith('//')) return null;
+    return { kind: 'document', path, fileName: q.get('name') || null, title: q.get('title') || null };
+  }
+  return null;
+}
+function openFullPage(hash) {
+  if (!hash) return;
+  const url = window.location.pathname + window.location.search + hash;
+  const w = window.open(url, '_blank');
+  if (w) { try { w.opener = null; } catch { /* opener already detached */ } }
+}
+function useLocationHash() {
+  const [hash, setHash] = useState(() => window.location.hash);
+  useEffect(() => {
+    const on = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return hash;
+}
+/** The whole browser tab is the CV. Close returns to the Hub (or closes a tab we opened). */
+function CvFullPage({ user, target }) {
+  const toast = useToast();
+  const isCv = target.kind === 'cv';
+  const [cand, setCand] = useState(null);
+  const [candError, setCandError] = useState('');
+  useEffect(() => {
+    if (!isCv) return undefined;
+    let alive = true;
+    api.get(`/candidates/${target.candidateId}`)
+      .then((r) => { if (alive) setCand(r.candidate || null); })
+      .catch((e) => { if (alive) setCandError(e.message || 'Could not load this candidate.'); });
+    return () => { alive = false; };
+  }, [isCv, target.candidateId]);
+  const docName = isCv ? (target.docId ? (cand?.documents || []).find((d) => Number(d.id) === target.docId)?.name || null : cand?.resumeName || null) : target.fileName;
+  const path = isCv
+    ? (target.docId ? `/candidates/${target.candidateId}/documents/${target.docId}/file` : `/candidates/${target.candidateId}/resume`)
+    : target.path;
+  const { doc, error, busy } = useCvDocument(path, docName);
+  const title = isCv ? (cand?.fullName || 'Candidate CV') : (target.title || target.fileName || 'Document');
+  useEffect(() => { const prev = document.title; document.title = `${title} — CV`; return () => { document.title = prev; }; }, [title]);
+  function close() {
+    // A tab the Hub opened has no history to go back to: close it. One the
+    // reader navigated to by hand goes back to the Hub.
+    if (window.history.length <= 1) { window.close(); }
+    window.location.hash = '';
+  }
+  async function download() {
+    try {
+      if (isCv) await downloadResume({ id: target.candidateId, resumeName: cand?.resumeName, candidateNo: cand?.candidateNo, docId: target.docId, docName }, toast);
+      else await api.download(path, target.fileName || 'file');
+    } catch (e) { toast(e.message || 'Download failed', 'error'); }
+  }
+  const canDownload = isCv ? !!(cand?.hasResume || doc) : !!doc;
+  return (
+    <div className="cvfull" role="document">
+      <div className="cvfull-head">
+        <div className="cvfull-head-id">
+          <h1>{title}</h1>
+          <span>{[cand?.candidateNo, docName].filter(Boolean).join(' · ') || (isCv ? 'Curriculum vitae' : 'Request attachment')}</span>
+        </div>
+        <div className="cvfull-actions">
+          <button type="button" className="btn btn-secondary" disabled={!canDownload} onClick={download}>Download</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Close</button>
+        </div>
+      </div>
+      <div className="cvfull-body">
+        {candError
+          ? <div className="cvfull-state"><Empty art="failed" tone="error" text={candError} /></div>
+          : busy
+            ? <div className="cvfull-state"><Skeleton rows={6} /></div>
+            : error
+              ? <div className="cvfull-state"><Empty art="failed" tone="error" text={error} /></div>
+              : <CvFilePreview fileUrl={doc?.url} fileName={docName} mimeType={doc?.mimeType} html={doc?.html} />}
+      </div>
+    </div>
+  );
+}
+
 /** Open the CV review panel for a candidate from anywhere in the app. */
 function openCvReview(candidateId, seed, doc) {
   if (!candidateId) return;
@@ -9854,7 +10505,7 @@ function CvReviewPanel({ candidateId, seed, doc, user, onClose }) {
   const sections = cvReviewDetailSections(c).map(([s, rows]) => [s, rows.filter(([, v]) => v != null && v !== '')]);
   const filled = sections.filter(([, rows]) => rows.length > 0);
 
-  return (
+  return toPageLevel(
     <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
         tabIndex="-1" onKeyDown={onDialogKeyDown}>
@@ -9863,6 +10514,8 @@ function CvReviewPanel({ candidateId, seed, doc, user, onClose }) {
             <h3 id={titleId}>{name} — CV review</h3>
             <span className="cvrev-head-sub">{[c.candidateNo, doc ? doc.name : c.resumeName].filter(Boolean).join(' · ') || 'Checking the record against the document'}</span>
           </div>
+          <button type="button" className="btn btn-secondary btn-sm" title="Open this CV alone in a new browser tab (no download)"
+            onClick={() => openFullPage(cvFullPageHash(candidateId, doc))}>Open full page</button>
           <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
 
@@ -9958,7 +10611,7 @@ function DocumentPanel({ path, fileName, title, onClose }) {
   async function download() {
     try { await api.download(path, fileName || 'file'); } catch (e) { toast(e.message || 'Download failed', 'error'); }
   }
-  return (
+  return toPageLevel(
     <div className="modal-overlay cvrev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="cvrev-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}
         tabIndex="-1" onKeyDown={onDialogKeyDown}>
@@ -9967,6 +10620,8 @@ function DocumentPanel({ path, fileName, title, onClose }) {
             <h3 id={titleId}>{title || fileName || 'Document'}</h3>
             {title && fileName && <span className="cvrev-head-sub">{fileName}</span>}
           </div>
+          <button type="button" className="btn btn-secondary btn-sm" title="Open this file alone in a new browser tab (no download)"
+            onClick={() => openFullPage(documentFullPageHash(path, fileName, title))}>Open full page</button>
           <button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
         <div className="cvrev-body cvrev-body--doc">
@@ -10074,7 +10729,7 @@ function CvParseReviewOverlay({ rows, intake, fileUrl, fileName, mimeType, onSav
     }
   }
 
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <div className="parse-review-panel">
         <div className="parse-review-head">
@@ -10773,6 +11428,7 @@ function CandidateProfile({ id, user, btns, onBack, onNavigate, initialTab, focu
 }
 // GDPR/PDPL controls on the candidate profile — consent, data export, erasure.
 function CandidatePrivacyTab({ c, onChanged }) {
+  const { user } = useApp();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const erased = c.candidateState === 'erased';
@@ -10810,7 +11466,7 @@ function CandidatePrivacyTab({ c, onChanged }) {
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('given')}>Mark consent given</button>
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConsent('withdrawn')}>Mark consent withdrawn</button>
           <button className="btn btn-secondary" onClick={exportData}>Export data (JSON)</button>
-          <button className="btn btn-danger" disabled={busy} onClick={erase}>Erase personal data…</button>
+          {isSystemAdmin(user) && <button className="btn btn-danger" disabled={busy} onClick={erase}>Erase personal data…</button>}
         </div>
       )}
       {erased && <div style={{ marginTop: 20 }}><button className="btn btn-secondary" onClick={exportData}>Export retained record</button></div>}
@@ -10963,7 +11619,7 @@ async function ensureApplication(candidateId, requestId) {
   const r = await api.get(`/candidates/${candidateId}`);
   const live = (r.candidate?.applications || []).find((a) => Number(a.requestId) === Number(requestId) && !APP_CLOSED.includes(a.status));
   if (live) return live.id;
-  const created = await api.post('/applications', { candidateId, requestId, initialStatus: 'matched' });
+  const created = await api.post('/applications', { candidateId, requestId, initialStatus: 'shortlisted' });   // an interview involves stakeholders: release at Shortlisted
   return created.application.id;
 }
 
@@ -12582,7 +13238,7 @@ function OfferFormModal({ application, offer, user, onClose, onSaved }) {
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   const createBlocked = !offer && !application && (!standaloneLinkReady(link) || (!link.requestId && !f.positionTitle.trim()));
   const title = offer ? `Edit offer — ${offer.offerNo}` : application ? `Create offer — ${application.candidate?.fullName || ''}` : 'Create offer';
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="modal offer-compose" role="dialog" aria-modal="true" aria-label={title} tabIndex="-1" onKeyDown={onDialogKeyDown}>
         <div className="modal-head"><h3>{title}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
@@ -12647,7 +13303,7 @@ function OfferLetterModal({ offer, onClose }) {
   const frameHost = useRef(null);
   const { dialogRef, onDialogKeyDown } = useDialogFocus(onClose);
   function print() { const fr = frameHost.current?.querySelector('iframe'); try { fr?.contentWindow?.print(); } catch { /* the browser's own print still works */ } }
-  return (
+  return toPageLevel(
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={dialogRef} className="modal offer-letter-modal" role="dialog" aria-modal="true" aria-label={'Offer letter ' + offer.offerNo} tabIndex="-1" onKeyDown={onDialogKeyDown}>
         <div className="modal-head"><h3>Offer letter — {offer.offerNo}</h3><button type="button" className="icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="close" size={16} /></button></div>
@@ -12926,6 +13582,8 @@ function App() {
   const [booting, setBooting] = useState(true);
   const [user, setUser] = useState(null);
   const [branding, setBranding] = useState(null);
+  const locationHash = useLocationHash();
+  const fullPage = parseFullPageHash(locationHash);
 
   const loadBranding = useCallback(async () => {
     try { const { branding } = await api.get('/settings/branding'); const ver = branding.logo_uploaded_at ? new Date(branding.logo_uploaded_at).getTime() : Date.now(); setHasCustomLogo(!!branding.logo_stored_name, ver); setBranding(branding); applyBranding(branding); return branding; }
@@ -12948,6 +13606,9 @@ function App() {
 
   if (booting) return <div className="boot-loading">Loading Arabtec Recruitment Hub…</div>;
   if (!user) return <Login branding={branding} onLogin={onLogin} />;
+  // `#cv/<id>` / `#document?…`: the CV alone, in this tab, after the same
+  // sign-in and password gates as the rest of the app (25 Oct 2026).
+  if (fullPage && !user.mustChangePassword) return <ToastProvider><CvFullPage user={user} target={fullPage} /></ToastProvider>;
   // Forced rotation: the shell is not rendered at all, so no route, page or
   // background fetch can run. Mirrors the server-side gate in requireAuth.
   if (user.mustChangePassword) {

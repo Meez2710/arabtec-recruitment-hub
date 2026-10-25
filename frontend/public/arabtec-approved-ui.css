@@ -35,7 +35,6 @@ body{font-size:13px;line-height:1.42;background:var(--app-bg)}
 .gsearch{height:38px;max-width:440px;background:#fafbfb;border-color:var(--border);font-size:11.5px}
 .avatar{width:36px;height:36px;background:#238356}.profile-name{font-size:12px}.profile-role{font-size:10px}
 .content{position:relative;isolation:isolate;padding:22px 28px 38px;overflow:hidden;min-height:calc(100vh - 72px)}
-.content:before{content:"";position:fixed;right:34px;bottom:18px;width:min(46vw,560px);height:380px;z-index:-1;background:url('/arabtec-watermark.webp') no-repeat right bottom/contain;opacity:.043;pointer-events:none}
 .content>*{position:relative;z-index:1}
 .page-head{margin-bottom:18px}.page-head .page-title,.dash-head .page-title{font-size:23px;line-height:30px;font-weight:700}.page-sub{font-size:12px}.breadcrumb,.page-head .breadcrumb{font-size:10.5px}
 .card,.toolbar,.ticket-header-card{background:#fff;border:1px solid var(--border);box-shadow:var(--shadow-card)}

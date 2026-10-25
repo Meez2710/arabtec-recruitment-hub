@@ -1,3 +1,4 @@
+// 2026-10-15 owner rule: Sourced → Shortlisted → Screening (Shortlisted cannot be skipped).
 process.env.DATABASE_URL = 'file:/tmp/arabtec_p3.db';
 process.env.PORT = '4130';
 import fs from 'node:fs';
@@ -110,7 +111,7 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
   // link a fresh candidate to bulk-move
   const c2 = await api('/api/candidates', { method: 'POST', token: recruiter, body: { fullName: 'Sara Nabil', phone: '+20 122 333 4444', currentPosition: 'Civil Engineer' } });
   const a2 = await api('/api/applications', { method: 'POST', token: recruiter, body: { candidateId: c2.json.candidate.id, requestId: reqId } });
-  const bulk = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: [a2.json.application.id], action: 'move', status: 'matched' } });
+  const bulk = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: [a2.json.application.id], action: 'move', status: 'shortlisted' } });
   c('bulk move (200, affected 1)', bulk.status === 200 && bulk.json.affected === 1, JSON.stringify(bulk.json));
   const bulkRejNoReason = await api('/api/applications/bulk', { method: 'POST', token: recruiter, body: { ids: [a2.json.application.id], action: 'move', status: 'rejected' } });
   c('bulk reject without reason blocked (400)', bulkRejNoReason.status === 400, `got ${bulkRejNoReason.status}`);

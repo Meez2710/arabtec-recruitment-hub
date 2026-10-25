@@ -3,6 +3,7 @@
 // INTEGER booleans→BOOLEAN). See docs/SCHEMA.sql for the Postgres variant.
 import { exec, all, run, get, tx, driverKind } from './db.js';
 import { PERMISSIONS, ROLE_PERMISSIONS } from './permissions.js';
+import { migrateRequestDetachment } from './request-detachment.js';
 import { NOTIFICATION_EVENTS } from './notification-catalog.js';
 import {
   duplicateJoinedCandidates, formatDuplicateJoined, JOINED_UNIQUE_INDEX_SQL,
@@ -1214,6 +1215,8 @@ export function ensureSchema() {
   addColumnIfMissing('org_chart', 'legacy_root_node_id', 'INTEGER');
   ensureOrgSeatUniqueIndex();
   relaxStandaloneLinks();
+  // Fail closed if linked records cannot be preserved. Never continue with cascade deletion.
+  migrateRequestDetachment();
 
   migrateWorkflowStages();
   migrateLegacyActionColor();

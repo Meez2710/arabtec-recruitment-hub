@@ -116,6 +116,15 @@ export const Users = {
       JOIN permission p ON p.id = rp.permission_id
       WHERE p.code = ? AND u.status = 'active'`, [code]);
   },
+  // Active users holding any of the given roles (e.g. the recruitment team).
+  withRoles(codes) {
+    const list = Array.isArray(codes) ? codes.filter(Boolean) : [];
+    if (!list.length) return [];
+    return all(`SELECT DISTINCT u.* FROM users u
+      JOIN user_role ur ON ur.user_id = u.id
+      JOIN role r ON r.id = ur.role_id
+      WHERE r.code IN (${list.map(() => '?').join(',')}) AND u.status = 'active'`, list);
+  },
 };
 
 // ---------------- Notifications (C2.3) ----------------
@@ -381,15 +390,10 @@ export const Buttons = {
 };
 
 /* ---- Hard delete -----------------------------------------------------------
-   Both parent tables are referenced with ON DELETE CASCADE throughout, so the
-   database removes the dependent rows itself: for a request that is its seats,
-   approvals, activity, applications, interviews, offers and thread posts. That
-   is a great deal of history to destroy, which is why the routes above these
-   helpers require an explicit permission and a written reason, and why the
-   audit entry is written BEFORE the row disappears.
-
-   `counts` exists so a caller can tell the user what they are about to lose
-   rather than discovering it afterwards. */
+   Request deletion preserves child rows through ON DELETE SET NULL. Candidate
+   deletion still removes candidate-owned records. Both require System Admin
+   plus the resource permission and a written reason. Impact counts describe
+   preserved request links or removed candidate-owned records respectively. */
 export const HardDelete = {
   requestCounts(id) {
     const one = (sql) => { try { return get(sql, [id]).c; } catch { return 0; } };
@@ -399,6 +403,8 @@ export const HardDelete = {
       offers:       one('SELECT COUNT(*) c FROM offer WHERE request_id=?'),
       posts:        one('SELECT COUNT(*) c FROM ticket_post WHERE request_id=?'),
       seats:        one('SELECT COUNT(*) c FROM requisition_seat WHERE request_id=?'),
+      approvals:    one('SELECT COUNT(*) c FROM request_approval WHERE request_id=?'),
+      activity:     one('SELECT COUNT(*) c FROM request_activity WHERE request_id=?'),
     };
   },
   candidateCounts(id) {
@@ -655,7 +661,7 @@ export const Requests = {
     else if (filters.ownerId) { sql += ' AND owner_id=?'; p.push(Number(filters.ownerId)); }
     if (filters.requesterId) { sql += ' AND requester_id=?'; p.push(Number(filters.requesterId)); }
     if (filters.q) { sql += ' AND (title LIKE ? OR ticket_no LIKE ? OR discipline LIKE ?)'; const l = `%${filters.q}%`; p.push(l, l, l); }
-    if (filters.ownedOnly && filters.userId) { sql += ' AND (owner_id=? OR requester_id=? OR created_by=?)'; p.push(filters.userId, filters.userId, filters.userId); }
+    if (filters.ownedOnly && filters.userId) { sql += ' AND (owner_id=? OR requester_id=? OR created_by=? OR hiring_manager_id=?)'; p.push(filters.userId, filters.userId, filters.userId, filters.userId); }
     const sortCol = ({ created: 'created_at', priority: 'priority', title: 'title', status: 'status', target: 'target_join_date', ticket: 'ticket_no' })[filters.sort] || 'created_at';
     const dir = (filters.dir || 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
     sql += ` ORDER BY ${sortCol} ${dir}`;
@@ -961,17 +967,26 @@ export const Candidates = {
     // simply not in any bucket, never excluded from an unfiltered search.
     if (f.disciplineClass) { sql += ' AND discipline_class=?'; p.push(f.disciplineClass); }
     if (f.departmentId != null) {
-      // Actual request department only. EXISTS keeps filtering/counting paged
-      // without expanding a large department into thousands of placeholders.
-      sql += ` AND EXISTS (SELECT 1 FROM application a
+      // Two ways into a department (recruitment team, 25 Oct 2026). Until now
+      // only a candidate LINKED to a request in the department matched, so the
+      // filter found nobody in a Talent Pool full of imported CVs. A candidate
+      // now also matches when their current position is one of the department's
+      // designations (either contains the other, case-insensitively): a "Senior
+      // Site Engineer" is found under Civil without ever having been linked.
+      // The designation match is for full-pool readers only; a scoped reader
+      // (hiring manager, interviewer) keeps the request-based rule, which is the
+      // only connection they have to a candidate in the first place.
+      // EXISTS keeps filtering/counting paged without expanding a large
+      // department into thousands of placeholders.
+      sql += ` AND (EXISTS (SELECT 1 FROM application a
         JOIN recruitment_request r ON r.id=a.request_id
         JOIN department d ON d.id=r.department_id
         WHERE a.candidate_id=candidate.id AND d.id=? AND d.status='active'`;
       p.push(f.departmentId);
       if (f.departmentScope) {
         const { userId, assigned } = f.departmentScope;
-        sql += ' AND (r.requester_id=? OR r.owner_id=? OR r.created_by=?';
-        p.push(userId, userId, userId);
+        sql += ' AND (r.requester_id=? OR r.owner_id=? OR r.created_by=? OR r.hiring_manager_id=?';
+        p.push(userId, userId, userId, userId);
         if (assigned) {
           sql += ` OR EXISTS (SELECT 1 FROM interview i WHERE i.application_id=a.id
             AND (i.organizer_id=? OR EXISTS (SELECT 1 FROM interview_panel ip
@@ -979,6 +994,14 @@ export const Candidates = {
           p.push(userId, userId);
         }
         sql += ')';
+      }
+      sql += ')';
+      if (!f.departmentScope) {
+        sql += ` OR EXISTS (SELECT 1 FROM designation g WHERE g.department_id=? AND g.is_active=1
+          AND candidate.current_position IS NOT NULL AND TRIM(candidate.current_position) <> ''
+          AND (LOWER(candidate.current_position) LIKE '%' || LOWER(g.title) || '%'
+            OR LOWER(g.title) LIKE '%' || LOWER(candidate.current_position) || '%'))`;
+        p.push(f.departmentId);
       }
       sql += ')';
     }
@@ -1076,7 +1099,7 @@ export const Applications = {
    */
   _from() {
     return ' FROM application a'
-      + ' JOIN recruitment_request r ON r.id = a.request_id'
+      + ' LEFT JOIN recruitment_request r ON r.id = a.request_id'
       + ' LEFT JOIN candidate c ON c.id = a.candidate_id';
   },
   _where(f = {}) {

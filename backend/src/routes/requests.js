@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { hasFullPipelineAccess } from '../lib/pipeline-visibility.js';
 import { visibleCandidateIds } from '../lib/candidate-scope.js';
 import { applicationVisibilitySql } from '../lib/pipeline-visibility.js';
 import {
@@ -8,6 +9,7 @@ import {
 } from '../lib/models.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { ensureHeadOffice, isHeadOffice, areaOf, areas as locationAreas, autoLocation, locationLabel, normaliseLegacyAreas } from '../lib/locations.js';
 import { all, tx } from '../lib/db.js';
 import { reconcileSeatsForHeadcount, ReconcileConflict } from '../lib/seat-reconciliation.js';
 import { multipart, streamFile } from '../lib/upload.js';
@@ -158,7 +160,10 @@ function serialize(r, user, { withDetail = false } = {}) {
   const ownerLite = r.owner_id ? Users.byId(r.owner_id) : null;
   out.department = deptLite ? { id: deptLite.id, name: deptLite.name } : null;
   out.site = siteLite ? { id: siteLite.id, name: siteLite.name } : null;
-  out.project = projLite ? { id: projLite.id, name: projLite.name } : null;
+  // `area` and `isHeadOffice` let the UI print the place one way everywhere
+  // ("Head Office" / "Soul · Cairo Area"); `place` is that string, pre-built.
+  out.project = projLite ? { id: projLite.id, name: projLite.name, code: projLite.code, area: areaOf(projLite), isHeadOffice: isHeadOffice(projLite) } : null;
+  out.place = locationLabel(projLite, r.location);
   // A recruiter workload row or an "Owner" table column needs a name, not just
   // the bare `ownerId` above — added to the list shape (not just withDetail)
   // for exactly that reason.
@@ -178,7 +183,7 @@ function serialize(r, user, { withDetail = false } = {}) {
     const requester = r.requester_id ? Users.byId(r.requester_id) : null;
     const owner = r.owner_id ? Users.byId(r.owner_id) : null;
     const hm = r.hiring_manager_id ? Users.byId(r.hiring_manager_id) : null;
-    out.project = proj ? { id: proj.id, name: proj.name, code: proj.code } : null;
+    out.project = proj ? { id: proj.id, name: proj.name, code: proj.code, area: areaOf(proj), isHeadOffice: isHeadOffice(proj) } : null;
     out.site = site ? { id: site.id, name: site.name } : null;
     out.department = dept ? { id: dept.id, name: dept.name } : null;
     out.requester = requester ? { id: requester.id, name: requester.full_name } : null;
@@ -186,7 +191,7 @@ function serialize(r, user, { withDetail = false } = {}) {
     out.hiringManager = hm ? { id: hm.id, name: hm.full_name } : null;
     out.seats = Seats.forRequest(r.id);
     out.approvals = Approvals.forRequest(r.id);
-    out.activity = RequestActivity.forRequest(r.id);
+    out.activity = RequestActivity.forRequest(r.id).filter(a => hasFullPipelineAccess(user) || !['candidate_linked', 'candidate_unlinked'].includes(a.type));
   }
   return out;
 }
@@ -195,7 +200,7 @@ function serialize(r, user, { withDetail = false } = {}) {
 function canView(user, r) {
   if (user.permissions.includes('request.view_all') || user.permissions.includes('request.view_team')) return true;
   if (user.permissions.includes('request.view_own')) {
-    return r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id;
+    return r.owner_id === user.id || r.requester_id === user.id || r.created_by === user.id || r.hiring_manager_id === user.id;
   }
   return false;
 }
@@ -322,7 +327,9 @@ router.post('/', requirePermission('request.create'), (req, res) => {
   Seats.createMany(created.id, headcount, d.siteId ? Number(d.siteId) : null);
   // Persist simplified intake extras.
   Requests.update(created.id, { ...created,
-    location: d.location ?? null, key_responsibilities: d.keyResponsibilities ?? null,
+    // Location (Head Office, or the site's area) follows the chosen project
+    // unless the caller typed one; the form no longer asks for free text.
+    location: (d.location && String(d.location).trim()) || autoLocation(project) || null, key_responsibilities: d.keyResponsibilities ?? null,
     key_requirements: d.keyRequirements ?? null, hiring_manager_notes: d.hiringManagerNotes ?? null,
     hiring_manager_id: d.hiringManagerId ? Number(d.hiringManagerId) : null,
   });
@@ -363,6 +370,10 @@ router.put('/:id', requirePermission('request.edit'), (req, res) => {
     required_skills: d.requiredSkills !== undefined ? (Array.isArray(d.requiredSkills) ? d.requiredSkills : String(d.requiredSkills).split(',').map((s) => s.trim()).filter(Boolean)) : (r.required_skills ? JSON.parse(r.required_skills) : []),
     target_join_date: d.targetJoinDate ?? r.target_join_date,
   };
+  // A request moved to another site (or to the Head Office) takes that place's
+  // location with it; an untouched project keeps whatever was recorded.
+  if (d.location !== undefined) patch.location = d.location ? String(d.location).trim() : null;
+  else if (d.projectId && Number(d.projectId) !== r.project_id) patch.location = autoLocation(Projects.byId(Number(d.projectId))) || null;
   if (canSalary) {
     patch.salary_band_min = d.salaryBandMin != null ? Number(d.salaryBandMin) : r.salary_band_min;
     patch.salary_band_max = d.salaryBandMax != null ? Number(d.salaryBandMax) : r.salary_band_max;
@@ -734,9 +745,21 @@ router.post('/:id/reopen', requirePermission('request.reopen'), (req, res) => {
 });
 
 /* ===================== Form metadata (selectors) ===================== */
+// People lists are alphabetical (recruitment team request, 25 Oct 2026): a
+// 50-name select in creation order is unusable. Locale-aware so Arabic and
+// Latin names sort the way a reader expects; ties broken by id for stability.
+const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }) || (a.id - b.id);
+const peopleList = (rows) => rows.map((u) => ({ id: u.id, name: u.full_name })).sort(byName);
 router.get('/meta/form', (req, res) => {
+  normaliseLegacyAreas();
+  const headOffice = ensureHeadOffice();
   res.json({
-    projects: Projects.all().map((p) => ({ id: p.id, name: p.name, code: p.code, businessUnitId: p.business_unit_id })),
+    // Location first: Head Office or one of the sites. `headOfficeProjectId`
+    // tells the form which project row is the Head Office; `area` is what the
+    // Sites list shows beside each name; `status` lets it hide closed sites.
+    headOfficeProjectId: headOffice.id,
+    areas: locationAreas(),
+    projects: Projects.all().map((p) => ({ id: p.id, name: p.name, code: p.code, businessUnitId: p.business_unit_id, area: areaOf(p), status: p.status, isHeadOffice: isHeadOffice(p) })),
     sites: Sites.all().map((s) => ({ id: s.id, name: s.name, projectId: s.project_id })),
     departments: Departments.all().map((d) => ({ id: d.id, name: d.name })),
     designations: Designations.all({ activeOnly: true }).map((g) => ({
@@ -745,15 +768,15 @@ router.get('/meta/form', (req, res) => {
     businessUnits: BusinessUnits.all().map((b) => ({ id: b.id, name: b.name })),
     // Unfiltered — kept exactly as before; other callers (including existing
     // tests) already rely on this being every active user, not just recruiters.
-    recruiters: Users.list({}).map((u) => ({ id: u.id, name: u.full_name })),
+    recruiters: peopleList(Users.list({})),
     // Who Assign/Reassign should actually offer: anyone who can work a
     // pipeline (move a candidate through its stages) — a permission check,
     // not a hardcoded role list, so it stays correct as roles are edited in
     // Control Center. A new field, not a change to `recruiters` above, so
     // nothing already reading the unfiltered list is affected.
     // The System Administrator is never offered as a request owner (owner review, 4 Oct 2026).
-    assignableRecruiters: (() => { const admins = new Set(Users.withPermission('system.manage').map((u) => u.id)); return Users.withPermission('candidate.move_stage').filter((u) => !admins.has(u.id)).map((u) => ({ id: u.id, name: u.full_name })); })(),
-    hiringManagers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name })),
+    assignableRecruiters: (() => { const admins = new Set(Users.withPermission('system.manage').map((u) => u.id)); return peopleList(Users.withPermission('candidate.move_stage').filter((u) => !admins.has(u.id))); })(),
+    hiringManagers: peopleList(Users.list({})),
     justifications: [
       { value: 'replacement', label: 'Replacement' },
       { value: 'hiring_plan', label: 'Hiring Plan' },
@@ -885,54 +908,33 @@ router.post('/:id/suggest-candidates', requirePermission('candidate.view'), asyn
 });
 
 
-/* ===================== DELETE =====================
-   The `request.delete` permission and its button have existed since the first
-   release; the endpoint never did, so the button had nothing to call. This is
-   it.
-
-   Deliberately heavy. Every table that references a request cascades, so this
-   destroys the applications, interviews, offers, seats, approvals, activity and
-   the whole ticket conversation along with it. Closing or cancelling is almost
-   always what someone actually wants — deletion is for records raised in error.
-   Hence: an explicit permission, a written reason, an acknowledgement of the
-   blast radius when there is one, and an audit entry written first. */
+/* Request-only permanent erasure. Linked rows are retained by ON DELETE SET NULL.
+   The global auth boundary restricts deletion and impact previews to System Admin. */
 router.get('/:id/delete-impact', requirePermission('request.delete'), (req, res) => {
   const r = Requests.byId(Number(req.params.id));
   if (!r) return res.status(404).json({ error: 'Request not found.' });
-  const cascaded = HardDelete.requestCounts(r.id);
-  res.json({
-    ticketNo: r.ticket_no, title: r.title, status: r.status, cascaded,
-    // A request nobody has worked yet is the safe case. Anything else is not.
-    destructive: cascaded.applications > 0 || cascaded.interviews > 0 || cascaded.offers > 0,
-  });
+  res.json({ ticketNo: r.ticket_no, title: r.title, status: r.status,
+    detached: HardDelete.requestCounts(r.id), destructive: false, mode: 'request_only' });
 });
 
 router.delete('/:id', requirePermission('request.delete'), (req, res) => {
-  const r = Requests.byId(Number(req.params.id));
-  if (!r) return res.status(404).json({ error: 'Request not found.' });
-
-  const body = req.body || {};
-  const reason = String(body.reason || '').trim();
+  if (!Requests.byId(Number(req.params.id))) return res.status(404).json({ error: 'Request not found.' });
+  const reason = String(req.body?.reason || '').trim();
   if (!reason) return res.status(400).json({ error: 'A reason is required to delete a request.' });
-
-  const cascaded = HardDelete.requestCounts(r.id);
-  const destructive = cascaded.applications > 0 || cascaded.interviews > 0 || cascaded.offers > 0;
-  // Refuse to quietly destroy real work. The caller must say it understands what
-  // goes with it — a confirm dialog the API enforces rather than trusts the UI for.
-  if (destructive && body.acknowledgeCascade !== true) {
-    return res.status(409).json({
-      error: 'This request has linked records. Confirm the cascade to delete it.',
-      code: 'CASCADE_NOT_ACKNOWLEDGED', cascaded,
-    });
-  }
-
-  writeAudit(req, {
-    action: 'request.deleted', entityType: 'recruitment_request', entityId: r.id,
-    oldValue: { ticketNo: r.ticket_no, title: r.title, status: r.status, headcount: r.headcount, cascaded },
-    comments: reason,
+  const result = tx(() => {
+    const r = Requests.byId(Number(req.params.id));
+    if (!r) return null;
+    const detached = HardDelete.requestCounts(r.id);
+    writeAudit(req, {
+      action: 'request.deleted', entityType: 'recruitment_request', entityId: r.id,
+      oldValue: { ticketNo: r.ticket_no, title: r.title, status: r.status, detached },
+      comments: reason,
+    }, { strict: true });
+    HardDelete.request(r.id);
+    return { deleted: true, ticketNo: r.ticket_no, detached, mode: 'request_only' };
   });
-  HardDelete.request(r.id);
-  res.json({ deleted: true, ticketNo: r.ticket_no, cascaded });
+  if (!result) return res.status(404).json({ error: 'Request not found.' });
+  res.json(result);
 });
 
 export default router;

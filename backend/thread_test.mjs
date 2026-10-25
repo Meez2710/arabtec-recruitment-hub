@@ -109,8 +109,11 @@ const hrDir = await login('hr.director@arabtec.com'); // requests: only the HR D
   c('non-author cannot edit (403)', cantEdit.status === 403, `got ${cantEdit.status}`);
   const cantSystem = await api(`/api/thread/request/${reqId}`, { method: 'POST', token: viewer, body: { body: 'viewer note' } });
   c('viewer without request view scope blocked (403/404)', [403, 404].includes(cantSystem.status), `got ${cantSystem.status}`);
-  const del = await api(`/api/thread/post/${filePost.json.post.id}`, { method: 'DELETE', token: recruiter });
-  c('author deletes own post', del.status === 200);
+  // 2026-10-14 owner rule: every deletion is System Admin only — authors included.
+  const authorDel = await api(`/api/thread/post/${filePost.json.post.id}`, { method: 'DELETE', token: recruiter });
+  c('author cannot delete (System Admin only)', authorDel.status === 403, `got ${authorDel.status}`);
+  const del = await api(`/api/thread/post/${filePost.json.post.id}`, { method: 'DELETE', token: admin });
+  c('System Admin deletes the post', del.status === 200, `got ${del.status}`);
 
   console.log('\n— Audit —');
   const audit = await api('/api/audit?pageSize=400', { token: admin });

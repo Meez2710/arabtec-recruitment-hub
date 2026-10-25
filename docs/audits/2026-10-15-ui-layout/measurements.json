@@ -1,0 +1,2053 @@
+[
+  {
+    "engine": "webkit",
+    "profile": "320",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Parse CV",
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Parse CV",
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 5,
+      "poolMaxClipPx": 10,
+      "poolActionXs": [
+        155,
+        144,
+        156
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": false,
+      "closeTappable": false,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        21
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 4,
+      "headerActionsHidden": [
+        "Scheduling Setup",
+        "Schedule interview"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "320",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "talentPoolTable": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        138
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "390",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 5,
+      "poolMaxClipPx": 10,
+      "poolActionXs": [
+        155,
+        144,
+        156
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": false,
+      "closeTappable": false,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        21
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 4,
+      "headerActionsHidden": [
+        "Scheduling Setup",
+        "Schedule interview"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "390",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "talentPoolTable": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        138
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "640",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Scan CV Inbox"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Scan CV Inbox"
+      ],
+      "poolRows": 5,
+      "poolMaxClipPx": 10,
+      "poolActionXs": [
+        155,
+        144,
+        156
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": false,
+      "closeTappable": false,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        21
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "640",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "talentPoolTable": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        138
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "1024",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select21"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        152,
+        137,
+        153
+      ],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        21
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "1024",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        146
+      ],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        40
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "1440",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select21"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "talentPoolTable": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        158,
+        142,
+        159
+      ],
+      "toolbarControlHeights": [
+        "input40",
+        "select21"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        21
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select21"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select21"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "1440",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "talentPoolTable": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        156
+      ],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        40
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "320",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Parse CV",
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Parse CV",
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 5,
+      "poolMaxClipPx": 10,
+      "poolActionXs": [
+        155,
+        144,
+        156
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": false,
+      "closeTappable": false,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 320,
+      "mainScrollWidth": 384,
+      "mainOverflowX": "hidden",
+      "headerActions": 4,
+      "headerActionsHidden": [
+        "Scheduling Setup",
+        "Schedule interview"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "320",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "talentPoolTable": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        138
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 320,
+      "mainScrollWidth": 320,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "390",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 5,
+      "poolMaxClipPx": 10,
+      "poolActionXs": [
+        155,
+        144,
+        156
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": false,
+      "closeTappable": false,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 4,
+      "headerActionsHidden": [
+        "Scheduling Setup",
+        "Schedule interview"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "390",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "talentPoolTable": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        138
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "640",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Scan CV Inbox"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Scan CV Inbox"
+      ],
+      "poolRows": 5,
+      "poolMaxClipPx": 10,
+      "poolActionXs": [
+        155,
+        144,
+        156
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": false,
+      "closeTappable": false,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 640,
+      "mainScrollWidth": 768,
+      "mainOverflowX": "hidden",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "640",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "talentPoolTable": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        138
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 640,
+      "mainScrollWidth": 640,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "1024",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 1,
+      "poolActionXs": [
+        153,
+        139,
+        154
+      ],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        40
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1024,
+      "mainScrollWidth": 775,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "1024",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        146
+      ],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        40
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1024,
+      "mainScrollWidth": 760,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "1440",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "talentPoolTable": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        159,
+        144,
+        160
+      ],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        40
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1440,
+      "mainScrollWidth": 1200,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "chromium",
+    "profile": "1440",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "talentPoolTable": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        156
+      ],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        40
+      ],
+      "selectHeights": [
+        40
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 1
+    },
+    "interviews": {
+      "viewport": 1440,
+      "mainScrollWidth": 1176,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input40",
+        "select40"
+      ],
+      "headerActionHeights": [
+        40
+      ],
+      "headerActionTops": 2
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "iphone13",
+    "phase": "before",
+    "talentPoolHeader": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "talentPoolTable": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 5,
+      "headerActionsHidden": [
+        "Add manually",
+        "Bulk Upload CVs",
+        "Scan CV Inbox"
+      ],
+      "poolRows": 5,
+      "poolMaxClipPx": 10,
+      "poolActionXs": [
+        155,
+        144,
+        156
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": false,
+      "closeTappable": false,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        21
+      ],
+      "host": "DIV"
+    },
+    "requests": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 390,
+      "mainScrollWidth": 468,
+      "mainOverflowX": "hidden",
+      "headerActions": 4,
+      "headerActionsHidden": [
+        "Scheduling Setup",
+        "Schedule interview"
+      ],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44,
+        40
+      ],
+      "headerActionTops": 3
+    }
+  },
+  {
+    "engine": "webkit",
+    "profile": "iphone13",
+    "phase": "after",
+    "talentPoolHeader": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "talentPoolTable": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 5,
+      "headerActionsHidden": [],
+      "poolRows": 5,
+      "poolMaxClipPx": 0,
+      "poolActionXs": [
+        138
+      ],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    },
+    "dialog": {
+      "open": true,
+      "titleVisible": true,
+      "closeTappable": true,
+      "inputHeights": [
+        44
+      ],
+      "selectHeights": [
+        44
+      ],
+      "host": "overlay-host"
+    },
+    "requests": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 2,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 2
+    },
+    "interviews": {
+      "viewport": 390,
+      "mainScrollWidth": 390,
+      "mainOverflowX": "clip",
+      "headerActions": 4,
+      "headerActionsHidden": [],
+      "poolRows": 0,
+      "poolMaxClipPx": null,
+      "poolActionXs": [],
+      "toolbarControlHeights": [
+        "input44"
+      ],
+      "headerActionHeights": [
+        44
+      ],
+      "headerActionTops": 3
+    }
+  }
+]

@@ -206,7 +206,10 @@
   }
 
   function Modal({ title, children, onClose, footer, wide }) {
-    return (
+    // Same overlay host as the app's dialogs (see OVERLAY_HOST in app.jsx), so the
+    // dialog is never trapped under the phone app bar by <main>'s stacking context.
+    const host = document.querySelector('.overlay-host') || document.body;
+    return ReactDOM.createPortal(
       <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="modal" style={wide ? { maxWidth: 640 } : null} role="dialog" aria-modal="true">
           <div className="modal-head"><h3>{title}</h3>
@@ -214,7 +217,8 @@
           <div className="modal-body">{children}</div>
           {footer && <div className="modal-foot">{footer}</div>}
         </div>
-      </div>
+      </div>,
+      host
     );
   }
 
@@ -361,7 +365,7 @@
   // Only reached if app.jsx failed to load, in which case nothing renders anyway.
   function useNoPhone() { return false; }
 
-  function OrgDrill({ nodes, kids, roots, matches, searching, focusId, onFocus, manage, onAdd, onEdit, onDelete }) {
+  function OrgDrill({ nodes, kids, roots, matches, searching, focusId, onFocus, manage, canDelete, onAdd, onEdit, onDelete }) {
     const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
     // A chart with one top position (the company) opens on it, not on a list of one.
     const current = focusId != null && byId.has(focusId) ? byId.get(focusId)
@@ -414,7 +418,7 @@
               <div className="org-focus-actions">
                 <button className="btn" type="button" onClick={() => onAdd(current.id)}>Add report</button>
                 <button className="btn btn-secondary" type="button" onClick={() => onEdit(current)}>Edit</button>
-                <button className="btn btn-danger" type="button" onClick={() => onDelete(current)}>Delete</button>
+                {canDelete && <button className="btn btn-danger" type="button" onClick={() => onDelete(current)}>Delete</button>}
               </div>
             )}
           </div>
@@ -437,6 +441,7 @@
   function OrgStructurePage({ user }) {
     injectStyles();
     const manage = canManageChart(user);
+    const canDelete = manage && !!user?.roles?.includes('system_admin');
     const [nodes, setNodes] = useState(null);
     const [err, setErr] = useState(null);
     const [q, setQ] = useState('');
@@ -772,6 +777,7 @@
             focusId={focusId}
             onFocus={(id) => { setFocusId(id); setQ(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             manage={manage}
+            canDelete={canDelete}
             onAdd={(parentId) => setForm({ node: null, parentId })}
             onEdit={(node) => setForm({ node })}
             onDelete={(node) => setConfirmDel({ node, reassignTo: '' })}
@@ -810,7 +816,7 @@
               {manage && <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-sm" type="button" onClick={() => setForm({ node: null, parentId: selectedNode.id })}>Add report</button>
                 <button className="btn btn-sm btn-secondary" type="button" onClick={() => setForm({ node: selectedNode })}>Edit</button>
-                <button className="btn btn-sm btn-danger" type="button" onClick={() => setConfirmDel({ node: selectedNode, reassignTo: '' })}>Delete</button>
+                {canDelete && <button className="btn btn-sm btn-danger" type="button" onClick={() => setConfirmDel({ node: selectedNode, reassignTo: '' })}>Delete</button>}
               </div>}
             </div>
             {selectedNode.notes && <p style={{ marginBottom: 0 }}>{selectedNode.notes}</p>}
@@ -819,7 +825,7 @@
 
         {form && <NodeForm node={form.node} nodes={nodes || []} parentId={form.parentId} onClose={() => setForm(null)} onSave={saveNode} />}
 
-        {confirmDel && (
+        {canDelete && confirmDel && (
           <Modal title="Remove position" onClose={() => setConfirmDel(null)}
             footer={<><button className="btn btn-ghost" type="button" onClick={() => setConfirmDel(null)}>Cancel</button>
               <button className="btn btn-secondary" type="button" onClick={() => deleteNode('node')}>Remove this position</button>

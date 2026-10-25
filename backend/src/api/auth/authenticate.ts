@@ -105,6 +105,12 @@ export const authenticate = (opts: AuthenticateOptions): RequestHandler =>
         );
       }
 
+      const path = req.path.replace(/\/+$/, '');
+      const deletion = req.method === 'DELETE'
+        || (req.method === 'POST' && /\/candidates\/[^/]+\/state$/i.test(path) && req.body?.state === 'ERASED');
+      if (deletion && !principal.roles?.includes('system_admin')) {
+        throw new HttpError(403, 'SYSTEM_ADMIN_REQUIRED', 'Only System Admin can delete records.');
+      }
       (req as AuthedRequest).auth = toAuthContext(principal);
       next();
     })().catch(next);

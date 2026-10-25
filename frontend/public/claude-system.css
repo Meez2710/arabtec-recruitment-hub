@@ -168,7 +168,6 @@
 /* Reserve the launcher corner only on shells that actually render the dock. */
 .content { padding: var(--sp-page-y) var(--sp-page-x); }
 .content.has-dock { padding-bottom: 104px; }
-.content::before { position: absolute; bottom: 0; }
 
 /* -------------------------------------------------------- 3. navigation */
 .nav-item {
@@ -321,6 +320,25 @@ input:not([type]), .gsearch input, .cmdk input {
   border-radius: var(--cl-r-md);
   padding: var(--cl-4); min-height: 96px; line-height: 1.55; font-size: 14px;
 }
+/* Single-value selects draw their own box (2026-10-15). WebKit — Safari and
+   every iOS browser — ignores min-height and padding on a select painted with
+   the native menulist appearance and sizes it from its font: 21px next to the
+   40/44px inputs it sits beside. With the native appearance off, the select
+   obeys the same control height as every other field in every engine; the
+   chevron replaces the native arrow and the right padding keeps text off it.
+   Multi-row selects (`multiple` / `size`) keep their native list box. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2352606D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right var(--sp-2) center; background-size: 16px 16px;
+  padding-right: var(--sp-6);
+}
+.bulk-bar select:not([multiple]):not([size]) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23FFFFFF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+/* High-contrast / forced-colours mode may drop the chevron image; give the
+   select its native arrow back there so it still reads as a dropdown. */
+@media (forced-colors: active) {
+  select:not([multiple]):not([size]) { -webkit-appearance: menulist; appearance: auto; background-image: none; padding-right: var(--cl-4); }
+}
 .field { gap: var(--cl-2); }
 .field label, .field > span {
   font-size: 13px; font-weight: 500; letter-spacing: normal; text-transform: none;
@@ -425,6 +443,7 @@ table.table tbody td, .table tbody td, table tbody td {
 .toolbar-search > input { width: 100%; min-width: 0; }
 .toolbar-secondary { display: flex; align-items: center; gap: 8px; flex: 2 1 540px; min-width: 0; flex-wrap: wrap; }
 .toolbar-secondary > input, .toolbar-secondary > select { flex: 1 1 88px; min-width: 0; width: auto; }
+.toolbar-secondary > .sselect { flex: 1 1 150px; min-width: 0; }
 .toolbar-secondary > .switch { flex: 0 0 auto; }
 .toolbar-count { flex: 0 0 auto; }
 .filter-toggle { display: none; }
@@ -516,6 +535,7 @@ button.pcard-name { padding-block: 4px; margin-block: -4px; }
   .toolbar-secondary { display: none; flex: 1 1 100%; order: 3; }
   .toolbar-secondary.expanded { display: flex; }
   .toolbar-secondary > input, .toolbar-secondary > select { flex-basis: 140px; }
+  .toolbar-secondary > .sselect { flex-basis: 100%; }
   .dash-kpi-row.kpi-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
@@ -1336,7 +1356,10 @@ section.card:has(> .cvi-status) > .cvi-status { padding: 0 0 var(--sp-3); gap: v
 }
 
 /* R-e — candidate cards: wider columns, one stacked text column. */
-.cand-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); }
+/* min(320px, 100%): a card column never asks for more than the space it has.
+   A bare 320px minimum loads after the phone rules and overrode them, pushing
+   every card 16px past a 320px screen (2026-10-15). */
+.cand-grid { grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: var(--sp-3); }
 .cand-card { padding: var(--sp-4); gap: var(--sp-3); }
 .cand-card .cc-face { grid-template-columns: 40px minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); }
 .cand-card .cc-avatar { grid-row: auto; width: 40px; height: 40px; }
@@ -1770,7 +1793,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 .cvrev-panel {
   margin-inline-start: auto;
-  width: min(1040px, 100%);
+  /* 25 Oct 2026: the CV is the point of this panel — the panel takes the whole
+     viewport and the details column is capped, so the document gets roughly
+     twice the width it had at min(1040px, 50%). */
+  width: min(1800px, 100%);
   height: 100%;
   min-height: 0;
   display: flex;
@@ -1790,7 +1816,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
   overflow: hidden;
 }
 .cvrev-details { min-width: 0; min-height: 0; overflow-y: auto; padding: var(--cl-5) var(--cl-6); }
@@ -2036,3 +2062,38 @@ button.cal-slot:focus-visible { outline: 0; }
 
 /* Document-only side panel (thread attachments): the file takes the full width. */
 .cvrev-body.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- SearchSelect (25 Oct 2026) — geometry only; colour and type live in
+   arabtec-design-system.css, like every other component here. ---- */
+.sselect { position: relative; min-width: 0; }
+.sselect > input { width: 100%; padding-inline-end: var(--sp-6); text-overflow: ellipsis; }
+/* One affordance at the end of the box: the caret while empty, the × once a value is chosen. */
+.sselect-caret { position: absolute; inset-inline-end: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.sselect.has-value .sselect-caret { display: none; }
+.sselect-clear { position: absolute; inset-inline-end: 8px; top: 50%; transform: translateY(-50%); border: 0; padding: 0 4px; cursor: pointer; }
+.sselect-list { position: absolute; z-index: 60; top: calc(100% + 4px); inset-inline-start: 0; min-width: 100%; max-width: min(420px, 92vw); max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; }
+.sselect-opt { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
+.sselect-opt > span { overflow: hidden; text-overflow: ellipsis; }
+.sselect-opt > small { flex: 0 0 auto; }
+.sselect-empty { padding: 8px 12px; }
+.field > .sselect > input { width: 100%; }
+.dash-filter .sselect { min-width: 170px; }
+
+/* ---- Stakeholder decisions on a Shortlisted card (25 Oct 2026) ---- */
+.pcard-decide { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 8px; }
+.pcard-decide.compact { margin-top: 4px; padding-top: 0; display: inline-flex; vertical-align: middle; }
+.pcard-decide .btn { min-height: 32px; }
+
+/* ---- CV full page (25 Oct 2026): the CV alone, in its own browser tab ---- */
+.cvfull { position: fixed; inset: 0; display: flex; flex-direction: column; }
+.cvfull-head { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
+.cvfull-head-id { flex: 1 1 auto; min-width: 0; display: grid; gap: 4px; }
+.cvfull-head-id h1, .cvfull-head-id span { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cvfull-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.cvfull-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.cvfull-body > .parse-review-cv { flex: 1 1 auto; min-height: 0; }
+.cvfull-body .parse-review-cv-frame { min-height: 0; height: 100%; }
+.cvfull-state { flex: 1 1 auto; display: grid; place-items: center; padding: 24px; }
+
+/* ---- Recommended-candidate chip on a pipeline card (25 Oct 2026) ---- */
+.pcard-recommended { display: inline-flex; margin-top: 4px; }

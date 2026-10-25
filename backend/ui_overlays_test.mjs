@@ -443,7 +443,7 @@ check('META: the guards fail when the fix is undone, however it is undone', () =
     'keeping the pane scroller did NOT fail the guard');
 
   // (c) the panel width made absolute — the phone-overflow route.
-  const fixedWidth = loadRules({ 'claude-system.css': cs.replace('width: min(1040px, 100%);', 'width: 1040px;') });
+  const fixedWidth = loadRules({ 'claude-system.css': cs.replace('width: min(1800px, 100%);', 'width: 1800px;') });
   assert.ok(guardFailsOn(fixedWidth, (R) => {
     const v = resolve(R, '.cvrev-panel', 'width', 360);
     assert.ok(/^min\(\s*[^,]+,\s*100%\s*\)$/.test(v), v);
@@ -451,7 +451,7 @@ check('META: the guards fail when the fix is undone, however it is undone', () =
 
   // (d) the panel width kept as min() but re-floored by a min-width, which is
   //     the sneaky version of (c) and is why the guard checks min-width too.
-  const refloored = loadRules({ 'claude-system.css': cs.replace('width: min(1040px, 100%);', 'width: min(1040px, 100%); min-width: 900px;') });
+  const refloored = loadRules({ 'claude-system.css': cs.replace('width: min(1800px, 100%);', 'width: min(1800px, 100%); min-width: 900px;') });
   assert.ok(guardFailsOn(refloored, (R) => assert.equal(resolve(R, '.cvrev-panel', 'min-width', 360), null)),
     'a min-width floor beating the width cap did NOT fail the guard');
 

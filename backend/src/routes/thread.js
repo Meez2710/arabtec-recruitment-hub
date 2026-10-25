@@ -10,6 +10,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { multipart, streamFile } from '../lib/upload.js';
 import { sendDocxPreview } from '../lib/cv-preview.js';
+import { notifyRecruitment } from '../lib/stakeholder-notify.js';
 import { run as dbRun, get as dbGet } from '../lib/db.js';
 import fs from 'node:fs';
 
@@ -107,6 +108,7 @@ router.post('/request/:requestId', (req, res) => {
     authorId: req.user.id, authorName: req.user.fullName, authorRole: PRIMARY_ROLE(req.user), body: body.trim(),
   });
   writeAudit(req, { action: 'ticket.post_created', entityType: 'recruitment_request', entityId: r.id, newValue: { postType: 'message', parent: parentPostId || null } });
+  notifyRecruitment('reply', { req, request: r, what: parentPostId ? 'replied in the conversation' : 'wrote in the conversation', detail: `“${body.trim().slice(0, 240)}”` });
   res.status(201).json({ post: out(post) });
 });
 
@@ -121,6 +123,7 @@ router.post('/request/:requestId/file', multipart, (req, res) => {
     body: body || null, filePath: req.uploadedFile.storedName, fileName: req.uploadedFile.originalName,
   });
   writeAudit(req, { action: 'ticket.file_attached', entityType: 'recruitment_request', entityId: r.id, newValue: { fileName: req.uploadedFile.originalName } });
+  notifyRecruitment('reply', { req, request: r, what: 'attached a file in the conversation', detail: req.uploadedFile.originalName });
   res.status(201).json({ post: out(post) });
 });
 
@@ -170,6 +173,7 @@ router.post('/request/:requestId/cv', multipart, (req, res) => {
     payload: { candidateName: fullName, currentPosition: f.currentPosition || null, employer: f.employer || null },
   });
   writeAudit(req, { action: 'ticket.cv_posted', entityType: 'recruitment_request', entityId: r.id, newValue: { candidate: fullName } });
+  notifyRecruitment('reply', { req, request: r, candidateId: cand.id, what: `posted the CV of ${fullName}`, detail: req.uploadedFile.originalName });
   res.status(201).json({ post: out(post), candidateId: cand.id, applicationId: application ? application.id : null });
 });
 
@@ -189,6 +193,7 @@ router.post('/request/:requestId/feedback', (req, res) => {
     payload: { recommendation: recommendation || null, rating: rating != null ? Number(rating) : null },
   });
   writeAudit(req, { action: 'ticket.feedback_posted', entityType: 'recruitment_request', entityId: r.id, newValue: { recommendation: recommendation || null } });
+  notifyRecruitment('feedback', { req, request: r, candidateId: candidateId ? Number(candidateId) : null, what: 'posted feedback in the conversation', detail: [recommendation ? `Recommendation: ${recommendation}.` : null, body ? `“${String(body).slice(0, 240)}”` : null].filter(Boolean).join(' ') });
   res.status(201).json({ post: out(post) });
 });
 

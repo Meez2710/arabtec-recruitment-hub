@@ -93,6 +93,7 @@ export class LegacyPrincipalResolver implements PrincipalResolver {
 
     return {
       userId: id,
+      roles,
       userName: typeof raw.fullName === 'string' ? raw.fullName : `User ${id}`,
       // Fails CLOSED: an unreadable permission list becomes no permissions,
       // never all of them.
