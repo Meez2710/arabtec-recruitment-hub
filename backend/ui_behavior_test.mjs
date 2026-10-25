@@ -167,6 +167,15 @@ await check('a recommended candidate\'s card says who recommended them',()=>{
   const plain=mount(get('PipelineCard'),{app:{...app,recommendation:null},canMove:true,onView(){},onMove(){}}).render();
   assert.equal(/Recommended/.test(text(plain)),false);
 });
+await check('Escape inside a typeable dropdown closes the list, not the dialog around it',()=>{
+  let value='';
+  const sel=mount(get('SearchSelect'),{value,options:[{value:'1',label:'A'}],onChange:(v)=>{value=v;}});
+  let tree=sel.render();const input=()=>nodes(tree).find(n=>n.type==='input');
+  input().props.onFocus();tree=sel.render();
+  let stopped=false;input().props.onKeyDown({key:'Escape',preventDefault(){},stopPropagation(){stopped=true;}});
+  assert.equal(stopped,true);tree=sel.render();
+  assert.equal(nodes(tree).some(n=>n.props?.role==='listbox'),false);
+});
 await check('card menu is a keyboard/touch alternative offering only moves the server accepts',()=>{
   let moved=null;
   const card=mount(get('PipelineCard'),{app:{id:1,status:'matched',candidate:{fullName:'Test Candidate'}},canMove:true,onView(){},onMove:s=>{moved=s;}});
@@ -525,8 +534,10 @@ await check('organization empty and failed loads show actionable content without
     const tree = shell.render();
     const drawer = nodes(tree).find((n) => n.type === MobileDrawer);
     const broad = ['request.view_all', 'interview.view_all', 'candidate.add'].some((p) => PERMS.includes(p));
-    const expected = get('NAV').filter((n) => n.section
+    const allowed = get('NAV').filter((n) => n.section
       || ((!n.broadCandidates || broad) && (n.anyPerm ? n.anyPerm.some((p) => PERMS.includes(p)) : (!n.perm || PERMS.includes(n.perm)))));
+    // A section header with nothing under it is not drawn (25 Oct 2026).
+    const expected = allowed.filter((n, i) => !n.section || (allowed[i + 1] && !allowed[i + 1].section));
     assert.deepEqual(drawer.props.nav.map((n) => n.key || n.section), expected.map((n) => n.key || n.section),
       'the drawer must show the same list the desktop sidebar computes — not its own');
     assert.ok(!drawer.props.nav.some((n) => n.perm && !PERMS.includes(n.perm)),
