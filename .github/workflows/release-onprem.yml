@@ -1,0 +1,59 @@
+# Release to on-prem (Packet 2, 25 Oct 2026).
+#
+# Starting this workflow does NOT deploy anything. It pauses on the
+# `onprem-10.20.0.9` environment until Moutaz Adly approves in GitHub, then
+# records an approved Deployment for the exact SHA. The server's
+# deploy/on-prem/08-redeploy.sh verifies that record (read-only) before it
+# touches the running service. A GitHub-hosted runner never reaches the LAN.
+name: Release to on-prem
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character commit SHA on main to release"
+        required: true
+        type: string
+permissions:
+  contents: read
+  deployments: write
+concurrency:
+  group: release-onprem
+  cancel-in-progress: false
+jobs:
+  approve-and-record:
+    name: Approve and record the release
+    runs-on: ubuntu-latest
+    environment: onprem-10.20.0.9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The SHA must be a full id that is on main
+        run: |
+          set -euo pipefail
+          SHA='${{ inputs.sha }}'
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::not a full 40-character SHA"; exit 1; }
+          git cat-file -e "$SHA^{commit}" || { echo "::error::unknown commit"; exit 1; }
+          git merge-base --is-ancestor "$SHA" origin/main || { echo "::error::$SHA is not on main"; exit 1; }
+      - name: Record the approved release (what the server verifies)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          PROC=$(git show "$SHA:deploy/on-prem/08-redeploy.sh" | sha256sum | cut -d' ' -f1)
+          VERIFIER=$(git show "$SHA:deploy/on-prem/10-verify-approval.sh" | sha256sum | cut -d' ' -f1)
+          python3 - "$SHA" "$PROC" "$VERIFIER" > body.json <<'PY'
+          import json, os, sys
+          sha, proc, verifier = sys.argv[1:4]
+          print(json.dumps({
+            "ref": sha, "environment": "onprem-10.20.0.9", "auto_merge": False, "required_contexts": [],
+            "description": f"Approved release of {sha} (run {os.environ['GITHUB_RUN_ID']})",
+            "payload": {"sha": sha, "environment": "onprem-10.20.0.9", "procedure_sha256": proc,
+                        "verifier_sha256": verifier, "run_id": int(os.environ["GITHUB_RUN_ID"]),
+                        "requested_by": os.environ["GITHUB_ACTOR"]},
+          }))
+          PY
+          ID=$(gh api "repos/${{ github.repository }}/deployments" --input body.json -q .id)
+          gh api "repos/${{ github.repository }}/deployments/$ID/statuses" -f state=queued -f description="Approved; waiting for the server-side release" >/dev/null
+          echo "Recorded deployment $ID for $SHA. On the server: ATS_REF=$SHA bash deploy/on-prem/08-redeploy.sh"
