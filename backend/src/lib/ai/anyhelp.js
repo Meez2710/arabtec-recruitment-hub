@@ -33,7 +33,7 @@ export function capabilitiesFor(user) {
 export function createAnyhelpTools({ user, all }) {
   const caps = capabilitiesFor(user);
   const scope = has(user, 'request.view_all') ? ['1=1', []]
-    : ['(owner_id=? OR requester_id=? OR created_by=?)', [user.id, user.id, user.id]];
+    : ['(owner_id=? OR requester_id=? OR created_by=? OR hiring_manager_id=?)', [user.id, user.id, user.id, user.id]];
   const requestColumns = `id, substr(ticket_no,1,80) AS ticket_no, substr(title,1,200) AS title,
     status, priority, headcount, headcount_filled, target_join_date,
     substr(job_description,1,1500) AS job_description, substr(key_requirements,1,1000) AS key_requirements`;
