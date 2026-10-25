@@ -2078,3 +2078,10 @@ button.cal-slot:focus-visible { outline: 0; }
 .sselect-empty { padding: 8px 10px; color: var(--muted, #6F6A64); font-size: 12.5px; }
 .field > .sselect > input { width: 100%; }
 .dash-filter .sselect { min-width: 170px; }
+
+/* ---- Stakeholder decisions on a Shortlisted card (25 Oct 2026) ---- */
+.pcard-decide { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line, var(--border, #E4E4E4)); }
+.pcard-decide.compact { margin-top: 4px; padding-top: 0; border-top: 0; display: inline-flex; vertical-align: middle; }
+.pcard-decide .btn { min-height: 32px; }
+.btn-danger-text { color: var(--critical, #D01827); }
+.btn-danger-text:hover { background: rgba(208, 24, 39, .08); }

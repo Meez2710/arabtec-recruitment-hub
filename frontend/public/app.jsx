@@ -7049,6 +7049,15 @@ function RequestPipeline({ request, user, btns }) {
       list: apps, setList: setApps, pending, setPending, toast,
     });
   }
+  // A hiring manager's / interviewer's decision on a Shortlisted candidate:
+  // the server listed what this reader may do in `app.decisions`, so no
+  // move_stage button is needed; reasons are still collected the same way.
+  function decide(appId, status) {
+    const app = (apps || []).find(a => a.id === appId);
+    if (!app || pending.has(appId) || !(app.decisions || []).includes(toApiStatus(status))) return;
+    if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
+    else move(appId, status);
+  }
   function requestMove(appId, status) {
     const app = (apps || []).find(a => a.id === appId);
     if (!canMove || pending.has(appId) || !app) return;
@@ -7165,7 +7174,7 @@ function RequestPipeline({ request, user, btns }) {
                   <div className="kan-body">
                     {items.length === 0
                       ? <div className="kan-empty">No candidates at this stage</div>
-                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
+                      : items.map((a) => <PipelineCard key={a.id} app={a} pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onDecide={(s) => decide(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
                   </div>
                 </PipelineColumn>
               );
@@ -7173,7 +7182,7 @@ function RequestPipeline({ request, user, btns }) {
           </div>
         ) : view === 'list' ? (
           <div className="pipe-list">
-            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
+            {visibleApps.map((a) => <PipelineCard key={a.id} app={a} wide pending={pending.has(a.id)} canMove={canMove} canBulk={canBulk} selected={selected.has(a.id)} onSelect={() => toggleSel(a.id)} onView={() => setQuickView(a)} onMove={(s) => requestMove(a.id, s)} onDecide={(s) => decide(a.id, s)} onSchedule={() => setScheduleApp(a)} onOffer={() => setOfferApp(a)} onNote={() => setNoteApp(a)} onReviewCv={cvReviewOpener(user, a)} onUnlink={askUnlink ? () => askUnlink(a) : null} btns={btns} />)}
           </div>
         ) : (
           <div className="card" style={{ overflowX: 'auto' }}><table>
@@ -7193,6 +7202,7 @@ function RequestPipeline({ request, user, btns }) {
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {canMove && !TERMINAL_APP.includes(a.status) && <StageSelect value={a.status} disabled={pending.has(a.id)} onChange={(s) => requestMove(a.id, s)} />}
                   {canMove && <button className="btn btn-ghost btn-sm" disabled={pending.has(a.id)} title="Set next action" aria-label="Set next action" onClick={() => setNoteApp(a)}>Note</button>}
+                  {decisionButtons({ app: a, pending: pending.has(a.id), onDecide: (s) => decide(a.id, s), compact: true })}
                 </td>
               </tr>
             ))}</tbody>
@@ -7272,7 +7282,28 @@ function useUnlinkFlow(user, reload) {
     onClose={() => setTarget(null)} />;
   return [ask, modal];
 }
-function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onSchedule, onOffer, onNote, onReviewCv, onUnlink, btns = {}, showRequest }) {
+// The three decisions a hiring manager or panel interviewer takes on a
+// Shortlisted candidate (recruitment team, 25 Oct 2026). The server names them
+// per reader in `app.decisions`; a reader with the whole board gets none.
+const DECISION_BUTTONS = [
+  ['interviewing', 'Move to Interview', 'btn btn-sm', 'interview_hr'],
+  ['on_hold', 'On Hold', 'btn btn-secondary btn-sm', 'on_hold'],
+  ['rejected', 'Disqualify', 'btn btn-ghost btn-sm btn-danger-text', 'rejected'],
+];
+// A plain render helper (not a component) so the buttons sit in the card's own
+// element tree — the board's tests and the drag handler both read that tree.
+function decisionButtons({ app, pending, onDecide, compact }) {
+  const allowed = Array.isArray(app.decisions) ? app.decisions : [];
+  if (!allowed.length || !onDecide) return null;
+  return (
+    <div className={'pcard-decide' + (compact ? ' compact' : '')} role="group" aria-label={`Your decision on ${app.candidate?.fullName || 'this candidate'}`} onClick={(e) => e.stopPropagation()}>
+      {DECISION_BUTTONS.filter(([api]) => allowed.includes(api)).map(([api, label, cls, boardKey]) => (
+        <button key={api} type="button" className={cls} disabled={pending} onClick={() => onDecide(boardKey)}>{label}</button>
+      ))}
+    </div>
+  );
+}
+function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect, onView, onMove, onDecide, onSchedule, onOffer, onNote, onReviewCv, onUnlink, btns = {}, showRequest }) {
   const cand = app.candidate || {};
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null), triggerRef = useRef(null);
@@ -7363,6 +7394,7 @@ function PipelineCard({ app, wide, pending, canMove, canBulk, selected, onSelect
     {showRequest && (app.request?.ticketNo || app.ticketNo) && <span className="pcard-request" title={app.request?.ticketNo || app.ticketNo}>{shortReqCode(app.request?.ticketNo || app.ticketNo)}</span>}
     {wide && <span className="pcard-status"><AppStatusBadge status={app.status} /></span>}
     {residual && <span className="pcard-residual" title={`Underlying status: ${app.status}`}>{residual}</span>}
+    {decisionButtons({ app, pending, onDecide })}
     <div className="pcard-footer"><span className="pcard-facts">{[cand.yearsExperience != null ? `${cand.yearsExperience}y exp` : null, cand.location, cand.noticePeriod].filter(Boolean).join(' · ') || 'Details not supplied'}</span>
       {app.matchScore != null && <span className="pcard-match" title="Match score">{app.matchScore}%</span>}
     </div>
@@ -7429,6 +7461,15 @@ function TalentPipeline({
       appId, status, reason,
       list: apps, setList: setApps, pending, setPending, toast,
     });
+  }
+  // A hiring manager's / interviewer's decision on a Shortlisted candidate:
+  // the server listed what this reader may do in `app.decisions`, so no
+  // move_stage button is needed; reasons are still collected the same way.
+  function decide(appId, status) {
+    const app = (apps || []).find(a => a.id === appId);
+    if (!app || pending.has(appId) || !(app.decisions || []).includes(toApiStatus(status))) return;
+    if (REASON_STATUSES.includes(status)) setMoveModal({ appIds: [appId], toStatus: status, reason: true });
+    else move(appId, status);
   }
   function requestMove(appId, status) {
     const app = (apps || []).find(a => a.id === appId);
@@ -7534,7 +7575,7 @@ function TalentPipeline({
                       canMove={canMove} canBulk={false} selected={false}
                       onSelect={() => {}}
                       onView={() => onOpenCandidate(a.candidate?.id || a.candidateId)}
-                      onMove={(s) => requestMove(a.id, s)}
+                      onMove={(s) => requestMove(a.id, s)} onDecide={(s) => decide(a.id, s)}
                       onReviewCv={cvReviewOpener(user, a)}
                       onUnlink={askUnlink ? () => askUnlink(a) : null}
                       btns={btns} />
