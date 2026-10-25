@@ -1793,7 +1793,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 .cvrev-panel {
   margin-inline-start: auto;
-  width: min(1040px, 100%);
+  /* 25 Oct 2026: the CV is the point of this panel — the panel takes the whole
+     viewport and the details column is capped, so the document gets roughly
+     twice the width it had at min(1040px, 50%). */
+  width: 100%;
   height: 100%;
   min-height: 0;
   display: flex;
@@ -1813,9 +1816,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   overflow: hidden;
 }
+.cvrev-body--doc { grid-template-columns: minmax(0, 1fr); }
 .cvrev-details { min-width: 0; min-height: 0; overflow-y: auto; padding: var(--cl-5) var(--cl-6); }
 .cvrev-col-title { margin: 0 0 var(--cl-3); }
 .cvrev-cv { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -2085,3 +2089,15 @@ button.cal-slot:focus-visible { outline: 0; }
 .pcard-decide .btn { min-height: 32px; }
 .btn-danger-text { color: var(--critical, #D01827); }
 .btn-danger-text:hover { background: rgba(208, 24, 39, .08); }
+
+/* ---- CV full page (25 Oct 2026): the CV alone, in its own browser tab ---- */
+.cvfull { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--canvas, #F4F5F7); }
+.cvfull-head { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface, #fff); border-bottom: 1px solid var(--line, #E4E4E4); border-top: 3px solid var(--brand, #D01827); }
+.cvfull-head-id { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.cvfull-head-id h1 { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink, #1A1A1A); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cvfull-head-id span { font-size: 12px; color: var(--muted, #6F6A64); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cvfull-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.cvfull-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.cvfull-body > .parse-review-cv { flex: 1 1 auto; min-height: 0; }
+.cvfull-body .parse-review-cv-frame { min-height: 0; height: 100%; }
+.cvfull-state { flex: 1 1 auto; display: grid; place-items: center; padding: 24px; }
