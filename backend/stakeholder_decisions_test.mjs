@@ -87,11 +87,13 @@ try {
   const nope = await move(t.hm, foreign.id, 'interviewing');
   c("the hiring manager cannot decide on another request's candidate", nope.status === 403 || nope.status === 404, nope.text.slice(0, 200));
 
-  // 4. A panel interviewer on this request gets the same three decisions.
-  const iv = Interviews.create({ interviewNo: Interviews.nextNo(), applicationId: a1.id, candidateId: a1.candidateId, requestId: rid, interviewType: 'technical', mode: 'onsite', scheduledAt: new Date(Date.now() + 86400000).toISOString(), durationMin: 60, organizerId: rec, status: 'scheduled', createdBy: rec });
+  // 4. An interviewer booked on a shortlisted candidate's panel gets the same three decisions — on that candidate.
+  const a5 = await link(mk('Dec Epsilon')); await move(t.rec, a5.id, 'shortlisted');
+  const iv = Interviews.create({ interviewNo: Interviews.nextNo(), applicationId: a4.id, candidateId: a4.candidateId, requestId: rid, interviewType: 'technical', mode: 'onsite', scheduledAt: new Date(Date.now() + 86400000).toISOString(), durationMin: 60, organizerId: rec, status: 'scheduled', createdBy: rec });
   InterviewPanel.set(iv.id, [{ interviewerId: ti, isLead: true }]);
   const tiSeen = await forRequest(t.ti);
-  c("an interviewer on the request's panel sees its shortlisted candidates, not only the one they interview", tiSeen.status === 200 && tiSeen.json.applications.some((x) => x.id === a4.id), tiSeen.text.slice(0, 300));
+  c('an interviewer booked on a shortlisted candidate sees that candidate', tiSeen.status === 200 && tiSeen.json.applications.some((x) => x.id === a4.id), tiSeen.text.slice(0, 300));
+  c("…and not the request's other candidates (an interviewer's scope stays per candidate)", !tiSeen.json.applications.some((x) => x.id === a5.id));
   const tiDec = (tiSeen.json.applications.find((x) => x.id === a4.id) || {}).decisions;
   c('…with the three decisions on each shortlisted card', JSON.stringify(tiDec) === JSON.stringify(['interviewing', 'on_hold', 'rejected']), JSON.stringify(tiDec));
   const tiMove = await move(t.ti, a4.id, 'interviewing');

@@ -95,6 +95,12 @@ function resolveRecipients(tokens, ctx, eventKey) {
       case 'hiring_manager': addStaff(ctx.hiringManager); break;
       case 'actor':          addStaff(ctx.actor); break;
       case 'panel':          for (const m of ctx.panel || []) addStaff(m); break;
+      case 'recruitment_team': {
+        let team = [];
+        try { team = Users.withRoles(['recruiter', 'recruitment_manager']); } catch { team = []; }
+        for (const u of team) addStaff(u);
+        break;
+      }
       case 'candidate':
         if (ctx.candidate?.email) addExternal(ctx.candidate.email, ctx.candidate.full_name || ctx.candidate.fullName);
         break;
