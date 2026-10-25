@@ -35,6 +35,7 @@ const SUITES = [
   'assessment_review_fixes_test.mjs', // AR-02/03/04/07: submit state, parent/child policy, print parity, document CSP
   'assessment_team_edit_test.mjs', // audit 2026-10-05: recruitment team edits both sections; reopen/edit with reason; history
   'talent_pool_test.mjs', // exact values and scoped department filtering
+  'form_meta_order_test.mjs', // 25 Oct 2026: hiring managers / recruiters / interviewers lists are alphabetical
   'shortlist_visibility_test.mjs', // shortlist release boundary for restricted roles
   'release_unlink_test.mjs',    // Shortlisted release notification + Unlink (2026-10-15)
   'request_detachment_test.mjs', // request-only deletion keeps linked records (2026-10-15)
