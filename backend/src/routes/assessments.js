@@ -11,6 +11,7 @@ import { canSeeApplicationStage } from '../lib/pipeline-visibility.js';
 // lib/assessment-policy.js — serialization, writes and the preview all ask it.
 import { Router } from 'express';
 import { Assessments, Applications, Candidates, Requests, Departments, Interviews, SystemSettings, Audit } from '../lib/models.js';
+import { notifyRecruitment } from '../lib/stakeholder-notify.js';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { tx } from '../lib/db.js';
@@ -326,6 +327,11 @@ router.post('/application/:applicationId', requirePermission('interview.feedback
       comments: prev?.submitted ? p.editReason : null,
     }, { strict: true });
   });
+  if (submitted) notifyRecruitment('feedback', {
+    req, requestId: app.request_id, candidateId: app.candidate_id,
+    what: `${prev?.submitted ? 'updated' : 'submitted'} the ${p.type === 'hr' ? 'behavioral' : 'technical'} assessment for ${(() => { try { return Candidates.byId(app.candidate_id)?.full_name || 'the candidate'; } catch { return 'the candidate'; } })()}`,
+    detail: recommendation ? `Recommendation: ${String(recommendation).replace(/_/g, ' ')}.` : null,
+  });
   res.status(201).json({ assessment: bundle(app, req.user) });
 });
 
@@ -352,6 +358,11 @@ router.post('/application/:applicationId/final', requirePermission('interview.fe
       newValue: { decision, decidedById: req.user.id, decidedByName: req.user.fullName },
       comments: notes || null,
     }, { strict: true });
+  });
+  notifyRecruitment('feedback', {
+    req, requestId: app.request_id, candidateId: app.candidate_id,
+    what: `recorded the final decision “${String(decision).replace(/_/g, ' ')}” for ${(() => { try { return Candidates.byId(app.candidate_id)?.full_name || 'the candidate'; } catch { return 'the candidate'; } })()}`,
+    detail: notes ? `“${String(notes).slice(0, 240)}”` : null,
   });
   res.status(201).json({ assessment: bundle(app, req.user) });
 });

@@ -116,6 +116,15 @@ export const Users = {
       JOIN permission p ON p.id = rp.permission_id
       WHERE p.code = ? AND u.status = 'active'`, [code]);
   },
+  // Active users holding any of the given roles (e.g. the recruitment team).
+  withRoles(codes) {
+    const list = Array.isArray(codes) ? codes.filter(Boolean) : [];
+    if (!list.length) return [];
+    return all(`SELECT DISTINCT u.* FROM users u
+      JOIN user_role ur ON ur.user_id = u.id
+      JOIN role r ON r.id = ur.role_id
+      WHERE r.code IN (${list.map(() => '?').join(',')}) AND u.status = 'active'`, list);
+  },
 };
 
 // ---------------- Notifications (C2.3) ----------------

@@ -1,9 +1,7 @@
 import { canSeeApplicationStage, hasFullPipelineAccess } from '../lib/pipeline-visibility.js';
 import { Router } from 'express';
-import {
-  Interviews, InterviewPanel, InterviewFeedback, InterviewActivity,
-  Applications, Candidates, Requests, Users, CandidateActivity,
-} from '../lib/models.js';
+import { Interviews, InterviewPanel, InterviewFeedback, InterviewActivity, Applications, Candidates, Requests, Users, CandidateActivity } from '../lib/models.js';
+import { notifyRecruitment } from '../lib/stakeholder-notify.js';
 import { requireAuth, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { ACTIVE_STATUSES, MAX_DURATION_MIN, findPanelClashes, intervalOf } from '../lib/interview-clashes.js';
 import { writeAudit } from '../lib/audit.js';
@@ -784,6 +782,12 @@ router.post('/:id/feedback', requirePermission('interview.feedback'), (req, res)
   InterviewActivity.add(iv.id, req.user, alreadyHad ? 'feedback_updated' : 'feedback_submitted', d.recommendation || null);
   CandidateActivity.add({ candidateId: iv.candidate_id, applicationId: iv.application_id, actorId: req.user.id, actorName: req.user.fullName, type: 'interview_feedback', note: d.recommendation || null });
   writeAudit(req, { action: fbAction, entityType: 'interview', entityId: iv.id, newValue: { interviewer: req.user.id, recommendation: d.recommendation, overallScore: d.overallScore } });
+  notifyRecruitment('feedback', {
+    req, requestId: iv.request_id || (iv.application_id ? Applications.byId(iv.application_id)?.request_id : null), candidateId: iv.candidate_id,
+    what: `${alreadyHad ? 'updated' : 'submitted'} interview feedback for ${(() => { try { return Candidates.byId(iv.candidate_id)?.full_name || 'the candidate'; } catch { return 'the candidate'; } })()}`,
+    detail: d.recommendation ? `Recommendation: ${String(d.recommendation).replace(/_/g, ' ')}.` : null,
+    linkType: 'interview', linkId: iv.id,
+  });
   res.status(201).json({ interview: serialize(Interviews.byId(iv.id), req.user, { detail: true }) });
 });
 

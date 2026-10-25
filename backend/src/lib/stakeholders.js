@@ -9,9 +9,11 @@
 //   Disqualify          → rejected  (reason required, as for everyone)
 //
 // Who counts: the hiring manager named on the request, and anyone with
-// interview.feedback who sits on an interview panel for that request. The
-// recruitment team (candidate.move_stage) is not a "stakeholder" here — it has
-// the whole board and gets no special buttons.
+// interview.feedback who sits on the panel of an interview booked for THIS
+// candidate's application (an interviewer's scope is per candidate, never the
+// whole request — see candidate-scope.js). The recruitment team
+// (candidate.move_stage) is not a "stakeholder" here — it has the whole board
+// and gets no special buttons.
 import { get } from './db.js';
 import { Requests } from './models.js';
 import { APP, appNorm } from './stages.js';
@@ -22,18 +24,18 @@ const has = (user, p) => (user?.permissions || []).includes(p);
 export const isRequestHiringManager = (user, r) =>
   !!(user?.id && r?.hiring_manager_id && Number(r.hiring_manager_id) === Number(user.id));
 
-/** On the panel of any interview held for this request (request-level or for one of its applications). */
-export function isRequestInterviewer(userId, requestId) {
-  if (!userId || !requestId) return false;
-  return !!get(`SELECT 1 AS x FROM interview_panel ip JOIN interview i ON i.id = ip.interview_id
-                 LEFT JOIN application a ON a.id = i.application_id
-                WHERE ip.interviewer_id = ? AND (i.request_id = ? OR a.request_id = ?) LIMIT 1`,
-  [userId, requestId, requestId]);
+/** On the panel (or the organiser) of an interview booked for this application. */
+export function isApplicationInterviewer(userId, applicationId) {
+  if (!userId || !applicationId) return false;
+  return !!get(`SELECT 1 AS x FROM interview i
+                WHERE i.application_id = ? AND (i.organizer_id = ? OR EXISTS
+                  (SELECT 1 FROM interview_panel ip WHERE ip.interview_id = i.id AND ip.interviewer_id = ?)) LIMIT 1`,
+  [applicationId, userId, userId]);
 }
 
-export function isRequestStakeholder(user, r) {
+export function isStakeholderFor(user, r, app) {
   if (!user || !r) return false;
-  return isRequestHiringManager(user, r) || (has(user, 'interview.feedback') && isRequestInterviewer(user.id, r.id));
+  return isRequestHiringManager(user, r) || (has(user, 'interview.feedback') && isApplicationInterviewer(user.id, app?.id));
 }
 
 /**
@@ -45,6 +47,6 @@ export function stakeholderDecisions(user, app, request) {
   if (!user || !app || has(user, 'candidate.move_stage')) return [];
   if (appNorm(app.status) !== APP.SHORTLISTED) return [];
   const r = request || (app.request_id ? Requests.byId(app.request_id) : null);
-  if (!r || !isRequestStakeholder(user, r)) return [];
+  if (!r || !isStakeholderFor(user, r, app)) return [];
   return [...STAKEHOLDER_DECISIONS];
 }

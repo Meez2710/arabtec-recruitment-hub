@@ -20,6 +20,7 @@ export const RECIPIENTS = {
   panel:          'Interview panel members',
   candidate:      'The candidate (external email)',
   actor:          'The person who performed the action',
+  recruitment_team: 'Recruitment team — every active recruiter and recruitment manager',
 };
 
 /** Recipients that reach someone OUTSIDE the company. Held to a higher bar in the
@@ -193,6 +194,28 @@ export const NOTIFICATION_EVENTS = [
     description: 'The candidate declined. The seat is still open.',
     template: 'offerOutcome',
     defaults: { enabled: true, inApp: true, email: true, recipients: ['owner', 'hiring_manager', 'requester'] },
+  },
+  // ------------------------------------------- hiring manager / interviewer actions
+  // Recruitment team request (25 Oct 2026): recruitment hears about everything a
+  // hiring manager or interviewer does on a request. Actions by recruitment
+  // users themselves are never announced through these.
+  {
+    key: 'stakeholder.decision', label: 'Hiring manager / interviewer decided on a shortlisted candidate', category: 'Hiring manager & interviewer actions',
+    description: 'A hiring manager or panel interviewer moved a shortlisted candidate to Interview, put them On Hold or disqualified them.',
+    template: null,
+    defaults: { enabled: true, inApp: true, email: true, recipients: ['owner', 'recruitment_team'] },
+  },
+  {
+    key: 'stakeholder.reply', label: 'Hiring manager / interviewer wrote in a request conversation', category: 'Hiring manager & interviewer actions',
+    description: 'A hiring manager or interviewer posted a message, a reply, a file or a CV in a request thread.',
+    template: null,
+    defaults: { enabled: true, inApp: true, email: false, recipients: ['owner', 'recruitment_team'] },
+  },
+  {
+    key: 'stakeholder.feedback', label: 'Hiring manager / interviewer gave feedback', category: 'Hiring manager & interviewer actions',
+    description: 'Interview feedback, an assessment or a final decision was submitted by a hiring manager or interviewer.',
+    template: null,
+    defaults: { enabled: true, inApp: true, email: true, recipients: ['owner', 'recruitment_team'] },
   },
 ];
 

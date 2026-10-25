@@ -25,10 +25,10 @@ export function hasBroadCandidateAccess(user) {
 // outside the request's scope unless they had also been its requester.
 const OWNS_REQUEST = '(r.requester_id = ? OR r.owner_id = ? OR r.created_by = ? OR r.hiring_manager_id = ?)';
 const ON_PANEL = '(i.organizer_id = ? OR EXISTS (SELECT 1 FROM interview_panel ip WHERE ip.interview_id = i.id AND ip.interviewer_id = ?))';
-// An interviewer on any panel of a request sees that request's released
-// candidates (Shortlisted onwards), not only the one they already interviewed:
-// Shortlisted is the first stage for them and where they take their decisions.
-const PANEL_REQUESTS = `(SELECT COALESCE(i.request_id, a2.request_id) FROM interview i LEFT JOIN application a2 ON a2.id = i.application_id WHERE ${ON_PANEL})`;
+// An interviewer's scope stays PER CANDIDATE: the applications whose interview
+// panel they sit on. (Widening it to every candidate of the request was tried
+// on 25 Oct 2026 and reverted — it let a panelist open the CV of a candidate
+// they were never booked for, which interview_booking_test guards against.)
 
 export function applicationScopeClause(user, alias = 'a') {
   const stage = applicationVisibilitySql(user, alias);
@@ -37,8 +37,6 @@ export function applicationScopeClause(user, alias = 'a') {
   const params = [user.id, user.id, user.id, user.id];
   if (has(user, 'interview.view_assigned')) {
     parts.push(`${alias}.id IN (SELECT i.application_id FROM interview i WHERE ${ON_PANEL})`);
-    params.push(user.id, user.id);
-    parts.push(`${alias}.request_id IN ${PANEL_REQUESTS}`);
     params.push(user.id, user.id);
   }
   return [`((${parts.join(' OR ')}) AND ${stage})`, params];
@@ -58,8 +56,6 @@ export function candidateScopeClause(user, column = 'id') {
   const params = broad ? [] : [u, u, u, u];
   if (has(user, 'interview.view_assigned')) {
     parts.push(`${column} IN (SELECT i.candidate_id FROM interview i JOIN application a ON a.id=i.application_id WHERE ${ON_PANEL} AND ${stage})`);
-    params.push(u, u);
-    parts.push(`${column} IN (SELECT a.candidate_id FROM application a WHERE a.request_id IN ${PANEL_REQUESTS} AND ${stage})`);
     params.push(u, u);
   }
   return [`(${parts.join(' OR ')})`, params];
@@ -88,9 +84,6 @@ export function applicationScopeFilter(user) {
   const assignedApps = new Set(has(user, 'interview.view_assigned')
     ? all(`SELECT DISTINCT i.application_id AS id FROM interview i WHERE i.application_id IS NOT NULL AND ${ON_PANEL}`, [u, u]).map((r) => Number(r.id))
     : []);
-  const panelRequests = new Set(has(user, 'interview.view_assigned')
-    ? all(`SELECT DISTINCT rid AS id FROM (SELECT COALESCE(i.request_id, a2.request_id) AS rid FROM interview i LEFT JOIN application a2 ON a2.id = i.application_id WHERE ${ON_PANEL}) t WHERE rid IS NOT NULL`, [u, u]).map((r) => Number(r.id))
-    : []);
-  return (a) => (ownedRequests.has(Number(a.request_id)) || panelRequests.has(Number(a.request_id)) || assignedApps.has(Number(a.id)))
+  return (a) => (ownedRequests.has(Number(a.request_id)) || assignedApps.has(Number(a.id)))
     && (!a.id || canSeeApplicationStage(user, a));
 }
