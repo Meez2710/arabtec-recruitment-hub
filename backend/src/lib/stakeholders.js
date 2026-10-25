@@ -33,6 +33,23 @@ export function isApplicationInterviewer(userId, applicationId) {
   [applicationId, userId, userId]);
 }
 
+/** On the panel (or organiser) of ANY interview held for this request. Used for
+ *  what a stakeholder may ADD to a request (a recommended candidate), never for
+ *  what they may read — reading stays per candidate (isApplicationInterviewer). */
+export function isRequestInterviewer(userId, requestId) {
+  if (!userId || !requestId) return false;
+  return !!get(`SELECT 1 AS x FROM interview_panel ip JOIN interview i ON i.id = ip.interview_id
+                 LEFT JOIN application a ON a.id = i.application_id
+                WHERE ip.interviewer_id = ? AND (i.request_id = ? OR a.request_id = ?) LIMIT 1`,
+  [userId, requestId, requestId]);
+}
+/** May this user recommend a candidate (CV) into this request's shortlist? */
+export function canRecommendCandidate(user, r) {
+  if (!user || !r) return false;
+  if (has(user, 'candidate.link')) return true;                       // recruitment: always (they also have Import CVs)
+  return isRequestHiringManager(user, r) || (has(user, 'interview.feedback') && isRequestInterviewer(user.id, r.id));
+}
+
 export function isStakeholderFor(user, r, app) {
   if (!user || !r) return false;
   return isRequestHiringManager(user, r) || (has(user, 'interview.feedback') && isApplicationInterviewer(user.id, app?.id));

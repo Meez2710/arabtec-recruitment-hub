@@ -16,6 +16,7 @@ export const STAKEHOLDER_EVENTS = {
   decision: 'stakeholder.decision',
   reply: 'stakeholder.reply',
   feedback: 'stakeholder.feedback',
+  recommendation: 'stakeholder.recommendation',
 };
 
 /** True when `user` is outside the recruitment roles — a hiring manager, interviewer, PM… */
