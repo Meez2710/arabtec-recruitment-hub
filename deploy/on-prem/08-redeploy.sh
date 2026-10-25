@@ -41,7 +41,9 @@ TS="$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$HOME/backups"
 DSN="$(tr '\0' '\n' < "/proc/$PID/environ" | sed -n 's/^DATABASE_URL=//p')"
 [ -n "$DSN" ] || { echo "REFUSING: could not read DATABASE_URL from the running service" >&2; exit 1; }
+chmod 700 "$HOME/backups"
 pg_dump --format=custom --no-owner --dbname="$DSN" --file="$HOME/backups/pre-deploy-$TS.dump"
+chmod 600 "$HOME/backups/pre-deploy-$TS.dump"   # a dump is the whole candidate database (audit F6)
 echo "    $HOME/backups/pre-deploy-$TS.dump"
 
 echo "==> fetch $REF"

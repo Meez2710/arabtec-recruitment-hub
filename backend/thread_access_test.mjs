@@ -76,9 +76,12 @@ try {
   c('hiring manager can still post in their request', (await http(`/thread/request/${L.id}`, T.hm, 'POST', { body: 'Feedback from the hiring manager' })).status < 300);
 
   console.log('\n— 3. Org-wide roles are unchanged —');
-  for (const role of ['hrMgr', 'hrDir', 'recMgr', 'recruiter', 'viewer']) {
+  for (const role of ['hrMgr', 'hrDir', 'recMgr', 'recruiter']) {
     c(`${role}: reads any thread and CV (200)`, (await http(`/thread/request/${A.id}`, T[role])).status === 200 && (await http(`/thread/post/${pA.id}/file`, T[role])).status === 200);
   }
+  // Audit F5 (25 Oct 2026): the viewer still reads every thread but no longer
+  // opens candidate CV files — that is candidate.cv_view, which viewer lacks.
+  c('viewer: reads any thread (200) but not the CV file in it (403)', (await http(`/thread/request/${A.id}`, T.viewer)).status === 200 && (await http(`/thread/post/${pA.id}/file`, T.viewer)).status === 403);
   for (const role of ['hrMgr', 'recMgr', 'recruiter']) {
     c(`${role}: still posts in any thread`, (await http(`/thread/request/${A.id}`, T[role], 'POST', { body: `note from ${role}` })).status < 300);
   }

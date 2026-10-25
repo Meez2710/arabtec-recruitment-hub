@@ -654,7 +654,7 @@ router.get('/intakes/:iid', requirePermission('candidate.view'), requireBroadCan
 // `?as=html`: a Word CV rendered for the side panel, where the browser cannot
 // preview .docx itself. Same permission as the file; see cv-preview.js.
 
-router.get('/intakes/:iid/document', requirePermission('candidate.view'), requireBroadCandidates, (req, res) => {
+router.get('/intakes/:iid/document', requirePermission('candidate.cv_view'), requireBroadCandidates, (req, res) => {
   const intake = intakeById(Number(req.params.iid));
   if (!intake) return res.status(404).json({ error: 'Intake not found.' });
   if (!intake.storedName) return res.status(404).json({ error: 'No document on file.' });
@@ -1197,7 +1197,7 @@ router.post('/:id/reparse', requirePermission('candidate.edit'), async (req, res
   }
 });
 
-router.get('/:id/resume', requirePermission('candidate.view'), (req, res) => {
+router.get('/:id/resume', requirePermission('candidate.cv_view'), (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
   // Profile upload, or the auto-ingested intake file (provenance-checked and
@@ -1210,7 +1210,7 @@ router.get('/:id/resume', requirePermission('candidate.view'), (req, res) => {
 
 // One CV document's own bytes (an older or newer version), by document id —
 // never by filename. Same scope (router.param) and permission as /resume.
-router.get('/:id/documents/:docId/file', requirePermission('candidate.view'), (req, res) => {
+router.get('/:id/documents/:docId/file', requirePermission('candidate.cv_view'), (req, res) => {
   const c = Candidates.byId(Number(req.params.id));
   if (!c) return res.status(404).json({ error: 'Candidate not found.' });
   const cv = loadCvDocument(c.id, Number(req.params.docId));

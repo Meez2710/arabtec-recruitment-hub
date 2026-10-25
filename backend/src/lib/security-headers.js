@@ -23,8 +23,9 @@
 // Content Security Policy and the frontend:
 //   The screens are compiled once on the server (lib/frontend-build.js) and
 //   served as plain JavaScript, so the browser no longer runs the Babel
-//   compiler and 'unsafe-eval' is no longer allowed. 'unsafe-inline' stays on
-//   script-src for the inline font-loader handler in index.html.
+//   compiler and 'unsafe-eval' is no longer allowed. Since 25 Oct 2026 (audit
+//   F7) there are no inline scripts either: the font loader and the pdf.js
+//   bootstrap live in /boot.js and /pdfjs-boot.js, so script-src is 'self' only.
 
 const isProd = process.env.NODE_ENV === 'production';
 // Set on a production deployment that is reached over plain HTTP. Read at call
@@ -32,11 +33,12 @@ const isProd = process.env.NODE_ENV === 'production';
 const isDirectHttp = () => process.env.DIRECT_HTTP === 'true';
 
 function buildCSP() {
-  // No 'unsafe-eval': nothing in the page compiles or evaluates code at run
-  // time any more. 'unsafe-inline' is for the font-loader handler only.
+  // No 'unsafe-eval' (nothing compiles code at run time) and no
+  // 'unsafe-inline' for scripts (none are inline): an injected <script> or
+  // onclick= cannot run even if markup were ever reflected.
   const directives = {
     'default-src': ["'self'"],
-    'script-src': ["'self'", "'unsafe-inline'"],
+    'script-src': ["'self'"],
     'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
     'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
     'img-src': ["'self'", 'data:', 'blob:'],

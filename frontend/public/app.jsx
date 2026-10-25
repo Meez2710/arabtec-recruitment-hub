@@ -7272,7 +7272,7 @@ function NextActionModal({ app, onClose, onSaved }) {
  */
 function cvReviewOpener(user, app) {
   const id = app.candidate?.id || app.candidateId;
-  if (!id || !can(user, 'candidate.view')) return null;
+  if (!id || !can(user, 'candidate.cv_view')) return null;   // opening the CV file is its own right (audit F5)
   return () => openCvReview(id, app.candidate || null);
 }
 // Unlink = undo a link (owner request 2026-10-15). Recruitment only; the server
