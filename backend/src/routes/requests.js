@@ -735,6 +735,11 @@ router.post('/:id/reopen', requirePermission('request.reopen'), (req, res) => {
 });
 
 /* ===================== Form metadata (selectors) ===================== */
+// People lists are alphabetical (recruitment team request, 25 Oct 2026): a
+// 50-name select in creation order is unusable. Locale-aware so Arabic and
+// Latin names sort the way a reader expects; ties broken by id for stability.
+const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }) || (a.id - b.id);
+const peopleList = (rows) => rows.map((u) => ({ id: u.id, name: u.full_name })).sort(byName);
 router.get('/meta/form', (req, res) => {
   res.json({
     projects: Projects.all().map((p) => ({ id: p.id, name: p.name, code: p.code, businessUnitId: p.business_unit_id })),
@@ -746,15 +751,15 @@ router.get('/meta/form', (req, res) => {
     businessUnits: BusinessUnits.all().map((b) => ({ id: b.id, name: b.name })),
     // Unfiltered — kept exactly as before; other callers (including existing
     // tests) already rely on this being every active user, not just recruiters.
-    recruiters: Users.list({}).map((u) => ({ id: u.id, name: u.full_name })),
+    recruiters: peopleList(Users.list({})),
     // Who Assign/Reassign should actually offer: anyone who can work a
     // pipeline (move a candidate through its stages) — a permission check,
     // not a hardcoded role list, so it stays correct as roles are edited in
     // Control Center. A new field, not a change to `recruiters` above, so
     // nothing already reading the unfiltered list is affected.
     // The System Administrator is never offered as a request owner (owner review, 4 Oct 2026).
-    assignableRecruiters: (() => { const admins = new Set(Users.withPermission('system.manage').map((u) => u.id)); return Users.withPermission('candidate.move_stage').filter((u) => !admins.has(u.id)).map((u) => ({ id: u.id, name: u.full_name })); })(),
-    hiringManagers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name })),
+    assignableRecruiters: (() => { const admins = new Set(Users.withPermission('system.manage').map((u) => u.id)); return peopleList(Users.withPermission('candidate.move_stage').filter((u) => !admins.has(u.id))); })(),
+    hiringManagers: peopleList(Users.list({})),
     justifications: [
       { value: 'replacement', label: 'Replacement' },
       { value: 'hiring_plan', label: 'Hiring Plan' },

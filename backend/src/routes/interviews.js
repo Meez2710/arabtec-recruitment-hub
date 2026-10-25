@@ -790,7 +790,9 @@ router.post('/:id/feedback', requirePermission('interview.feedback'), (req, res)
 /* ---------------- meta for scheduling form ---------------- */
 router.get('/meta/form', (req, res) => {
   res.json({
-    interviewers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name, jobTitle: u.job_title })),
+    // Alphabetical, like every people list in the request form (25 Oct 2026).
+    interviewers: Users.list({}).map((u) => ({ id: u.id, name: u.full_name, jobTitle: u.job_title }))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }) || (a.id - b.id)),
     types: IV_TYPES, modes: IV_MODES, recommendations: RECS,
     places: interviewPlaces(),
   });
