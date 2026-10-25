@@ -30,8 +30,9 @@ const login = async (e) => (await api('/api/auth/login', { method: 'POST', body:
 try {
   db.run('UPDATE users SET must_change_password=0');
   // Production shape: projects whose `location` is the old city text.
-  db.run("UPDATE project SET location='Cairo' WHERE id=(SELECT MIN(id) FROM project)");
-  db.run("UPDATE project SET location='Ras El Hikma' WHERE id=(SELECT MAX(id) FROM project)");
+  // (The Head Office row already exists — the server creates it at start-up.)
+  db.run("UPDATE project SET location='Cairo' WHERE id=(SELECT MIN(id) FROM project WHERE code<>'HEAD-OFFICE')");
+  db.run("UPDATE project SET location='Ras El Hikma' WHERE id=(SELECT MAX(id) FROM project WHERE code<>'HEAD-OFFICE')");
   const rec = await login('recruiter@arabtec.com'), hm = await login('hiring.manager@arabtec.com');
 
   // 1. Reading the list creates the Head Office once and normalises legacy areas.
@@ -39,6 +40,7 @@ try {
   c('recruiter reads the locations list', l1.status === 200, l1.text.slice(0, 200));
   c('default areas are Cairo Area and North Coast Area', JSON.stringify(l1.json.areas) === JSON.stringify(['Cairo Area', 'North Coast Area']), JSON.stringify(l1.json.areas));
   c('Head Office exists as its own row', l1.json.headOffice && l1.json.headOffice.name === 'Head Office' && l1.json.headOffice.isHeadOffice === true);
+  c('…created at start-up, before anyone opened a form', db.get("SELECT created_at FROM project WHERE code='HEAD-OFFICE'") != null);
   c('Head Office is not in the Sites list', !l1.json.sites.some((s) => s.isHeadOffice));
   c("legacy 'Cairo' became 'Cairo Area' and 'Ras El Hikma' became 'North Coast Area'", l1.json.sites.some((s) => s.area === 'Cairo Area') && l1.json.sites.some((s) => s.area === 'North Coast Area'), JSON.stringify(l1.json.sites.map((s) => s.area)));
   c('sites are alphabetical', l1.json.sites.every((s, i) => i === 0 || l1.json.sites[i - 1].name.localeCompare(s.name, undefined, { sensitivity: 'base' }) <= 0));
